@@ -1,0 +1,68 @@
+[package]
+name = "rustride"
+version = "0.1.0"
+edition = "2021"
+description = "Open-source, self-hosted indoor cycling training application"
+authors = ["Providence IT"]
+license = "MIT"
+repository = "https://github.com/ProvidenceIT/rust-ride"
+keywords = ["cycling", "trainer", "fitness", "bluetooth", "ble"]
+categories = ["games"]
+
+[dependencies]
+# GUI Framework
+eframe = "0.33"
+egui = "0.33"
+egui_plot = "0.33"
+
+# BLE Communication
+btleplug = { version = "0.11", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Async Runtime
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Configuration
+toml = "0.8"
+directories = "5.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# XML Parsing (for .zwo workouts and TCX export)
+quick-xml = { version = "0.31", features = ["serialize"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Channels
+crossbeam = "0.8"
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[[bin]]
+name = "rustride"
+path = "src/main.rs"
+
+[lib]
+name = "rustride"
+path = "src/lib.rs"

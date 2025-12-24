@@ -1,0 +1,31 @@
+# RustRide Configuration
+# T011: Default configuration template
+
+# Application version (managed by the application)
+version = "0.1.0"
+
+[sensors]
+# Automatically reconnect to sensors when they disconnect
+auto_reconnect = true
+# Timeout for sensor discovery in seconds
+discovery_timeout_secs = 30
+# Timeout for connection attempts in seconds
+connection_timeout_secs = 10
+
+[recording]
+# Auto-save interval in seconds (for crash recovery)
+autosave_interval_secs = 30
+# Maximum power value before treating as noise
+max_power_filter = 2000
+# Whether to record zero-power samples
+record_zeros = true
+
+[ui]
+# Show 3-second average power
+show_3s_power = true
+# Show normalized power during ride
+show_normalized_power = true
+# Show zone colors on metrics
+show_zone_colors = true
+# Font scale multiplier (1.0 = default)
+font_scale = 1.0

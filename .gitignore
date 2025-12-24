@@ -1,0 +1,58 @@
+# Rust build artifacts
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.so
+*.dll
+*.dylib
+
+# Profiling
+*.prof*
+perf.data
+perf.data.old
+flamegraph.svg
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*~
+
+# Logs
+*.log
+logs/
+
+# Database files (development)
+*.db
+*.sqlite
+*.sqlite3
+
+# User data (development)
+data/
+
+# Build artifacts
+*.exe
+*.out
+
+# Cargo lock for libraries (keep for binaries)
+# Cargo.lock  # Keep for binary crate
+
+# Coverage
+*.profraw
+*.profdata
+coverage/
+tarpaulin-report.html
