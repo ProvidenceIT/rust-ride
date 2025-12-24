@@ -189,7 +189,7 @@
 
 ### Workout Storage
 
-- [ ] T080 [US2] Implement workout CRUD in database in src/storage/database.rs
+- [x] T080 [US2] Implement workout CRUD in database in src/storage/database.rs
 
 **Checkpoint**: User Story 2 complete - can import workouts, execute with ERG mode
 
@@ -203,44 +203,44 @@
 
 ### Tests for User Story 3
 
-- [ ] T081 [P] [US3] Unit test for TCX export format in tests/unit/tcx_export_test.rs
-- [ ] T082 [P] [US3] Unit test for ride summary calculations in tests/unit/ride_summary_test.rs
-- [ ] T083 [P] [US3] Integration test for ride recording in tests/integration/ride_recording_test.rs
+- [x] T081 [P] [US3] Unit test for TCX export format in tests/unit/tcx_export_test.rs
+- [x] T082 [P] [US3] Unit test for ride summary calculations in tests/unit/ride_summary_test.rs
+- [x] T083 [P] [US3] Integration test for ride recording in tests/integration/ride_recording_test.rs
 
 ### Recording Types
 
-- [ ] T084 [P] [US3] Define Ride struct with summary fields in src/recording/types.rs
-- [ ] T085 [P] [US3] Define RecorderConfig struct in src/recording/types.rs
-- [ ] T086 [P] [US3] Define LiveRideSummary struct in src/recording/types.rs
+- [x] T084 [P] [US3] Define Ride struct with summary fields in src/recording/types.rs
+- [x] T085 [P] [US3] Define RecorderConfig struct in src/recording/types.rs
+- [x] T086 [P] [US3] Define LiveRideSummary struct in src/recording/types.rs
 
 ### Ride Recorder
 
-- [ ] T087 [US3] Implement RideRecorder struct with start(), record_sample(), finish() in src/recording/recorder.rs
-- [ ] T088 [US3] Implement auto-save to autosave table every 30 seconds in src/recording/recorder.rs
-- [ ] T089 [US3] Implement crash recovery with has_recovery_data(), recover() in src/recording/recorder.rs
-- [ ] T090 [US3] Implement get_live_summary() for real-time stats in src/recording/recorder.rs
+- [x] T087 [US3] Implement RideRecorder struct with start(), record_sample(), finish() in src/recording/recorder.rs
+- [x] T088 [US3] Implement auto-save to autosave table every 30 seconds in src/recording/recorder.rs
+- [x] T089 [US3] Implement crash recovery with has_recovery_data(), recover() in src/recording/recorder.rs
+- [x] T090 [US3] Implement get_live_summary() for real-time stats in src/recording/recorder.rs
 
 ### Summary Calculations
 
-- [ ] T091 [US3] Implement Normalized Power calculation (30s rolling, 4th power) in src/metrics/calculator.rs
-- [ ] T092 [US3] Implement TSS calculation in src/metrics/calculator.rs
-- [ ] T093 [US3] Implement IF (Intensity Factor) calculation in src/metrics/calculator.rs
-- [ ] T094 [US3] Implement calorie estimation from power in src/metrics/calculator.rs
+- [x] T091 [US3] Implement Normalized Power calculation (30s rolling, 4th power) in src/metrics/calculator.rs
+- [x] T092 [US3] Implement TSS calculation in src/metrics/calculator.rs
+- [x] T093 [US3] Implement IF (Intensity Factor) calculation in src/metrics/calculator.rs
+- [x] T094 [US3] Implement calorie estimation from power in src/metrics/calculator.rs
 
 ### Export - TCX
 
-- [ ] T095 [US3] Implement TCX XML structure generation with quick-xml in src/recording/exporter_tcx.rs
-- [ ] T096 [US3] Include power data in TCX ActivityExtension/TPX in src/recording/exporter_tcx.rs
-- [ ] T097 [US3] Validate TCX output against schema in tests/unit/tcx_export_test.rs
+- [x] T095 [US3] Implement TCX XML structure generation with quick-xml in src/recording/exporter_tcx.rs
+- [x] T096 [US3] Include power data in TCX ActivityExtension/TPX in src/recording/exporter_tcx.rs
+- [x] T097 [US3] Validate TCX output against schema in tests/unit/tcx_export_test.rs
 
 ### Export - CSV
 
-- [ ] T098 [P] [US3] Implement CSV export of raw samples in src/recording/exporter_csv.rs
+- [x] T098 [P] [US3] Implement CSV export of raw samples in src/recording/exporter_csv.rs
 
 ### Ride Storage
 
-- [ ] T099 [US3] Implement ride CRUD in database in src/storage/database.rs
-- [ ] T100 [US3] Implement ride_samples bulk insert in src/storage/database.rs
+- [x] T099 [US3] Implement ride CRUD in database in src/storage/database.rs
+- [x] T100 [US3] Implement ride_samples bulk insert in src/storage/database.rs
 
 ### UI - Ride Summary Screen
 
