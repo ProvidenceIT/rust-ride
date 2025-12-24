@@ -7,11 +7,14 @@
 //! T077: Display current interval, target power, time remaining
 //! T078: Implement pause/resume/skip interval buttons
 //! T079: Implement keyboard shortcuts: +/- for power adjustment
+//! T110: Implement full-screen mode toggle
+//! T111: Implement configurable metric panel layout
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::metrics::calculator::AggregatedMetrics;
 use crate::recording::types::RecordingStatus;
+use crate::storage::config::{DashboardLayout, MetricType};
 use crate::ui::theme::zone_colors;
 use crate::ui::widgets::{MetricDisplay, MetricSize};
 use crate::workouts::types::{SegmentProgress, SegmentType, Workout, WorkoutStatus};
@@ -54,6 +57,10 @@ pub struct RideScreen {
     pub current_segment_type: Option<SegmentType>,
     /// Current segment text event
     pub text_event: Option<String>,
+    /// Full-screen mode (hides top bar and shows only essential metrics)
+    pub full_screen_mode: bool,
+    /// Dashboard layout configuration
+    pub dashboard_layout: DashboardLayout,
 }
 
 impl Default for RideScreen {
@@ -72,6 +79,8 @@ impl Default for RideScreen {
             power_offset: 0,
             current_segment_type: None,
             text_event: None,
+            full_screen_mode: false,
+            dashboard_layout: DashboardLayout::default(),
         }
     }
 }
@@ -133,6 +142,14 @@ impl RideScreen {
             self.is_paused = !self.is_paused;
         }
 
+        // Full-screen toggle (F key or Escape to exit)
+        if ui.input(|i| i.key_pressed(egui::Key::F)) {
+            self.full_screen_mode = !self.full_screen_mode;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) && self.full_screen_mode {
+            self.full_screen_mode = false;
+        }
+
         // Power offset shortcuts (+/-)
         if self.mode == RideMode::Workout {
             if ui.input(|i| i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)) {
@@ -143,40 +160,46 @@ impl RideScreen {
             }
         }
 
-        ui.vertical(|ui| {
-            // Top bar with ride controls
-            self.render_top_bar(ui);
+        if self.full_screen_mode {
+            // Full-screen mode: show only essential metrics in large format
+            self.render_full_screen_mode(ui);
+        } else {
+            // Normal mode: show all UI elements
+            ui.vertical(|ui| {
+                // Top bar with ride controls
+                self.render_top_bar(ui);
 
-            ui.add_space(8.0);
-
-            // Workout progress bar (if in workout mode)
-            if self.mode == RideMode::Workout {
-                self.render_workout_progress(ui);
                 ui.add_space(8.0);
-            }
 
-            // Main metrics area
-            self.render_main_metrics(ui);
+                // Workout progress bar (if in workout mode)
+                if self.mode == RideMode::Workout {
+                    self.render_workout_progress(ui);
+                    ui.add_space(8.0);
+                }
 
-            ui.add_space(16.0);
+                // Main metrics area
+                self.render_main_metrics(ui);
 
-            // Workout controls (if in workout mode)
-            if self.mode == RideMode::Workout {
-                self.render_workout_controls(ui);
-                ui.add_space(8.0);
-            }
+                ui.add_space(16.0);
 
-            // Secondary metrics
-            self.render_secondary_metrics(ui);
+                // Workout controls (if in workout mode)
+                if self.mode == RideMode::Workout {
+                    self.render_workout_controls(ui);
+                    ui.add_space(8.0);
+                }
 
-            // Spacer
-            ui.add_space(ui.available_height() - 60.0);
+                // Secondary metrics
+                self.render_secondary_metrics(ui);
 
-            // Bottom controls
-            if let Some(screen) = self.render_bottom_controls(ui) {
-                next_screen = Some(screen);
-            }
-        });
+                // Spacer
+                ui.add_space(ui.available_height() - 60.0);
+
+                // Bottom controls
+                if let Some(screen) = self.render_bottom_controls(ui) {
+                    next_screen = Some(screen);
+                }
+            });
+        }
 
         // End ride confirmation dialog
         if self.show_end_dialog {
@@ -212,6 +235,14 @@ impl RideScreen {
             ui.label(RichText::new(status_icon).color(status_color));
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                // Full-screen button
+                if ui.button("⛶ Full Screen").clicked() {
+                    self.full_screen_mode = true;
+                }
+                ui.label(RichText::new("(F)").weak().small());
+
+                ui.separator();
+
                 // Pause/Resume button
                 let pause_text = if self.is_paused { "▶ Resume" } else { "❚❚ Pause" };
                 if ui.button(pause_text).clicked() {
@@ -580,5 +611,332 @@ impl RideScreen {
             ui.add_space(8.0);
             ui.label(RichText::new("(+/- keys)").weak().small());
         });
+    }
+
+    /// Render the full-screen mode with only essential metrics.
+    fn render_full_screen_mode(&mut self, ui: &mut Ui) {
+        // Fill background
+        let rect = ui.available_rect_before_wrap();
+        ui.painter().rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
+
+        ui.vertical_centered(|ui| {
+            // Small hint at top
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                    if ui.button("Exit Full Screen (F/Esc)").clicked() {
+                        self.full_screen_mode = false;
+                    }
+
+                    // Pause indicator
+                    if self.is_paused {
+                        ui.label(RichText::new("PAUSED").color(Color32::from_rgb(251, 188, 4)).size(14.0));
+                    } else {
+                        ui.label(RichText::new("●").color(Color32::from_rgb(234, 67, 53)));
+                    }
+                });
+            });
+
+            // Center the main metrics vertically
+            let available_height = ui.available_height();
+            let metrics_height = 300.0; // Approximate height of metrics
+            ui.add_space((available_height - metrics_height) / 2.0);
+
+            // Large power display (primary metric)
+            let power_color = self
+                .metrics
+                .power_zone
+                .map(zone_colors::power_zone_color)
+                .unwrap_or(Color32::WHITE);
+
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() - 800.0) / 2.0);
+
+                // Power - extra large
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("POWER").size(16.0).weak());
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}", self.metrics.power_instant))
+                                .size(96.0)
+                                .color(power_color)
+                                .strong(),
+                        );
+                        ui.label(RichText::new("W").size(32.0).weak());
+                    });
+                });
+
+                ui.add_space(48.0);
+
+                // Heart Rate
+                let hr_color = self
+                    .metrics
+                    .hr_zone
+                    .map(zone_colors::hr_zone_color)
+                    .unwrap_or(Color32::WHITE);
+
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("HR").size(16.0).weak());
+                    ui.horizontal(|ui| {
+                        let hr_text = self
+                            .metrics
+                            .heart_rate
+                            .map(|hr| hr.to_string())
+                            .unwrap_or_else(|| "--".to_string());
+                        ui.label(
+                            RichText::new(hr_text)
+                                .size(96.0)
+                                .color(hr_color)
+                                .strong(),
+                        );
+                        ui.label(RichText::new("bpm").size(32.0).weak());
+                    });
+                });
+
+                ui.add_space(48.0);
+
+                // Cadence
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("CADENCE").size(16.0).weak());
+                    ui.horizontal(|ui| {
+                        let cad_text = self
+                            .metrics
+                            .cadence
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "--".to_string());
+                        ui.label(RichText::new(cad_text).size(96.0).strong());
+                        ui.label(RichText::new("rpm").size(32.0).weak());
+                    });
+                });
+            });
+
+            ui.add_space(24.0);
+
+            // Workout info if in workout mode
+            if self.mode == RideMode::Workout {
+                if let Some(target) = self.target_power {
+                    let offset_str = if self.power_offset != 0 {
+                        format!(" ({:+})", self.power_offset)
+                    } else {
+                        String::new()
+                    };
+                    ui.label(
+                        RichText::new(format!("Target: {}W{}", target, offset_str))
+                            .size(32.0)
+                            .color(Color32::from_rgb(251, 188, 4)),
+                    );
+                }
+
+                if let Some(ref progress) = self.segment_progress {
+                    let remaining_min = progress.remaining_seconds / 60;
+                    let remaining_sec = progress.remaining_seconds % 60;
+                    ui.label(
+                        RichText::new(format!("{}:{:02} remaining", remaining_min, remaining_sec))
+                            .size(24.0),
+                    );
+                }
+            }
+
+            // Duration at bottom
+            ui.add_space(24.0);
+            let hours = self.elapsed_seconds / 3600;
+            let minutes = (self.elapsed_seconds % 3600) / 60;
+            let seconds = self.elapsed_seconds % 60;
+            let duration_str = if hours > 0 {
+                format!("{}:{:02}:{:02}", hours, minutes, seconds)
+            } else {
+                format!("{}:{:02}", minutes, seconds)
+            };
+            ui.label(RichText::new(duration_str).size(48.0).weak());
+        });
+    }
+
+    /// Set the dashboard layout from configuration.
+    pub fn set_dashboard_layout(&mut self, layout: DashboardLayout) {
+        self.dashboard_layout = layout;
+    }
+
+    /// Render a single metric based on its type.
+    fn render_metric(&self, ui: &mut Ui, metric_type: MetricType, size: MetricSize) {
+        match metric_type {
+            MetricType::Power => {
+                let power_color = self
+                    .metrics
+                    .power_zone
+                    .map(zone_colors::power_zone_color)
+                    .unwrap_or(Color32::WHITE);
+                MetricDisplay::power(self.metrics.power_instant)
+                    .with_size(size)
+                    .with_zone_color(power_color)
+                    .show(ui);
+            }
+            MetricType::Power3s => {
+                MetricDisplay::new(
+                    self.metrics
+                        .power_3s_avg
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "--".to_string()),
+                    "W",
+                    "3s Avg",
+                )
+                .with_size(size)
+                .show(ui);
+            }
+            MetricType::HeartRate => {
+                let hr_color = self
+                    .metrics
+                    .hr_zone
+                    .map(zone_colors::hr_zone_color)
+                    .unwrap_or(Color32::WHITE);
+                MetricDisplay::heart_rate(self.metrics.heart_rate)
+                    .with_size(size)
+                    .with_zone_color(hr_color)
+                    .show(ui);
+            }
+            MetricType::Cadence => {
+                MetricDisplay::cadence(self.metrics.cadence)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Speed => {
+                MetricDisplay::speed(self.metrics.speed)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Distance => {
+                MetricDisplay::distance(self.metrics.distance)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Duration => {
+                MetricDisplay::duration(self.elapsed_seconds)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Calories => {
+                MetricDisplay::new(self.metrics.calories.to_string(), "kcal", "Calories")
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::NormalizedPower => {
+                if let Some(np) = self.metrics.normalized_power {
+                    MetricDisplay::new(np.to_string(), "W", "NP")
+                        .with_size(size)
+                        .show(ui);
+                } else {
+                    MetricDisplay::new("--".to_string(), "W", "NP")
+                        .with_size(size)
+                        .show(ui);
+                }
+            }
+            MetricType::Tss => {
+                if let Some(tss) = self.metrics.tss {
+                    MetricDisplay::new(format!("{:.0}", tss), "", "TSS")
+                        .with_size(size)
+                        .show(ui);
+                } else {
+                    MetricDisplay::new("--".to_string(), "", "TSS")
+                        .with_size(size)
+                        .show(ui);
+                }
+            }
+            MetricType::IntensityFactor => {
+                if let Some(if_val) = self.metrics.intensity_factor {
+                    MetricDisplay::new(format!("{:.2}", if_val), "", "IF")
+                        .with_size(size)
+                        .show(ui);
+                } else {
+                    MetricDisplay::new("--".to_string(), "", "IF")
+                        .with_size(size)
+                        .show(ui);
+                }
+            }
+            MetricType::PowerZone => {
+                let zone_str = self
+                    .metrics
+                    .power_zone
+                    .map(|z| format!("Z{}", z))
+                    .unwrap_or_else(|| "--".to_string());
+                let zone_color = self
+                    .metrics
+                    .power_zone
+                    .map(zone_colors::power_zone_color)
+                    .unwrap_or(Color32::GRAY);
+                MetricDisplay::new(zone_str, "", "Power Zone")
+                    .with_size(size)
+                    .with_zone_color(zone_color)
+                    .show(ui);
+            }
+            MetricType::HrZone => {
+                let zone_str = self
+                    .metrics
+                    .hr_zone
+                    .map(|z| format!("Z{}", z))
+                    .unwrap_or_else(|| "--".to_string());
+                let zone_color = self
+                    .metrics
+                    .hr_zone
+                    .map(zone_colors::hr_zone_color)
+                    .unwrap_or(Color32::GRAY);
+                MetricDisplay::new(zone_str, "", "HR Zone")
+                    .with_size(size)
+                    .with_zone_color(zone_color)
+                    .show(ui);
+            }
+        }
+    }
+
+    /// Render metrics from a configurable layout.
+    #[allow(dead_code)]
+    fn render_configurable_metrics(&self, ui: &mut Ui) {
+        // Primary metrics (large)
+        ui.horizontal(|ui| {
+            let layout = &self.dashboard_layout;
+            let metric_count = layout.primary_metrics.len();
+            let total_width = (metric_count as f32) * 180.0 + ((metric_count - 1) as f32 * 32.0);
+            ui.add_space((ui.available_width() - total_width) / 2.0);
+
+            for (i, metric) in layout.primary_metrics.iter().enumerate() {
+                self.render_metric(ui, *metric, MetricSize::Large);
+                if i < layout.primary_metrics.len() - 1 {
+                    ui.add_space(32.0);
+                }
+            }
+        });
+
+        ui.add_space(16.0);
+
+        // Secondary metrics (medium)
+        ui.horizontal(|ui| {
+            let layout = &self.dashboard_layout;
+            let metric_count = layout.secondary_metrics.len();
+            let total_width = (metric_count as f32) * 120.0 + ((metric_count - 1) as f32 * 16.0);
+            ui.add_space((ui.available_width() - total_width) / 2.0);
+
+            for (i, metric) in layout.secondary_metrics.iter().enumerate() {
+                self.render_metric(ui, *metric, MetricSize::Medium);
+                if i < layout.secondary_metrics.len() - 1 {
+                    ui.add_space(16.0);
+                }
+            }
+        });
+
+        // Tertiary metrics (small) - only if any exist
+        if !self.dashboard_layout.tertiary_metrics.is_empty() {
+            ui.add_space(16.0);
+            ui.horizontal(|ui| {
+                let layout = &self.dashboard_layout;
+                let metric_count = layout.tertiary_metrics.len();
+                let total_width = (metric_count as f32) * 80.0 + ((metric_count - 1) as f32 * 16.0);
+                ui.add_space((ui.available_width() - total_width) / 2.0);
+
+                for (i, metric) in layout.tertiary_metrics.iter().enumerate() {
+                    self.render_metric(ui, *metric, MetricSize::Small);
+                    if i < layout.tertiary_metrics.len() - 1 {
+                        ui.add_space(16.0);
+                    }
+                }
+            });
+        }
     }
 }

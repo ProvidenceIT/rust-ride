@@ -4,8 +4,11 @@
 //! T080: Implement workout CRUD operations
 //! T099: Implement ride CRUD in database
 //! T100: Implement ride_samples bulk insert
+//! T115: Implement UserProfile CRUD in database
 
+use crate::metrics::zones::{HRZones, PowerZones};
 use crate::recording::types::{Ride, RideSample};
+use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{CURRENT_VERSION, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use chrono::{DateTime, Utc};
@@ -632,6 +635,222 @@ impl Database {
 
         Ok(())
     }
+
+    // ========== User Profile CRUD Operations (T115) ==========
+
+    /// Insert a new user profile into the database.
+    pub fn insert_user(&self, profile: &UserProfile) -> Result<(), DatabaseError> {
+        let power_zones_json = serde_json::to_string(&profile.power_zones)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+
+        let hr_zones_json = profile.hr_zones.as_ref().map(|zones| {
+            serde_json::to_string(zones).map_err(|e| DatabaseError::SerializationError(e.to_string()))
+        }).transpose()?;
+
+        self.conn
+            .execute(
+                "INSERT INTO users (id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
+                 power_zones_json, hr_zones_json, units, theme, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    profile.id.to_string(),
+                    profile.name,
+                    profile.ftp,
+                    profile.max_hr,
+                    profile.resting_hr,
+                    profile.weight_kg,
+                    profile.height_cm,
+                    power_zones_json,
+                    hr_zones_json,
+                    format!("{:?}", profile.units).to_lowercase(),
+                    format!("{:?}", profile.theme).to_lowercase(),
+                    profile.created_at.to_rfc3339(),
+                    profile.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get a user profile by ID.
+    pub fn get_user(&self, id: &Uuid) -> Result<Option<UserProfile>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
+                 power_zones_json, hr_zones_json, units, theme, created_at, updated_at
+                 FROM users WHERE id = ?1"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![id.to_string()], |row| {
+            Ok(UserProfileRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                ftp: row.get(2)?,
+                max_hr: row.get(3)?,
+                resting_hr: row.get(4)?,
+                weight_kg: row.get(5)?,
+                height_cm: row.get(6)?,
+                power_zones_json: row.get(7)?,
+                hr_zones_json: row.get(8)?,
+                units: row.get(9)?,
+                theme: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        });
+
+        match result {
+            Ok(row) => Ok(Some(row.into_user_profile()?)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get all user profiles.
+    pub fn list_users(&self) -> Result<Vec<UserProfile>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
+                 power_zones_json, hr_zones_json, units, theme, created_at, updated_at
+                 FROM users ORDER BY created_at DESC"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(UserProfileRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                ftp: row.get(2)?,
+                max_hr: row.get(3)?,
+                resting_hr: row.get(4)?,
+                weight_kg: row.get(5)?,
+                height_cm: row.get(6)?,
+                power_zones_json: row.get(7)?,
+                hr_zones_json: row.get(8)?,
+                units: row.get(9)?,
+                theme: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut profiles = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            profiles.push(row.into_user_profile()?);
+        }
+
+        Ok(profiles)
+    }
+
+    /// Get the first (default) user profile.
+    pub fn get_default_user(&self) -> Result<Option<UserProfile>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
+                 power_zones_json, hr_zones_json, units, theme, created_at, updated_at
+                 FROM users ORDER BY created_at ASC LIMIT 1"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row([], |row| {
+            Ok(UserProfileRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                ftp: row.get(2)?,
+                max_hr: row.get(3)?,
+                resting_hr: row.get(4)?,
+                weight_kg: row.get(5)?,
+                height_cm: row.get(6)?,
+                power_zones_json: row.get(7)?,
+                hr_zones_json: row.get(8)?,
+                units: row.get(9)?,
+                theme: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        });
+
+        match result {
+            Ok(row) => Ok(Some(row.into_user_profile()?)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Update an existing user profile.
+    pub fn update_user(&self, profile: &UserProfile) -> Result<(), DatabaseError> {
+        let power_zones_json = serde_json::to_string(&profile.power_zones)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+
+        let hr_zones_json = profile.hr_zones.as_ref().map(|zones| {
+            serde_json::to_string(zones).map_err(|e| DatabaseError::SerializationError(e.to_string()))
+        }).transpose()?;
+
+        let rows_affected = self.conn
+            .execute(
+                "UPDATE users SET name = ?2, ftp = ?3, max_hr = ?4, resting_hr = ?5,
+                 weight_kg = ?6, height_cm = ?7, power_zones_json = ?8, hr_zones_json = ?9,
+                 units = ?10, theme = ?11, updated_at = ?12 WHERE id = ?1",
+                params![
+                    profile.id.to_string(),
+                    profile.name,
+                    profile.ftp,
+                    profile.max_hr,
+                    profile.resting_hr,
+                    profile.weight_kg,
+                    profile.height_cm,
+                    power_zones_json,
+                    hr_zones_json,
+                    format!("{:?}", profile.units).to_lowercase(),
+                    format!("{:?}", profile.theme).to_lowercase(),
+                    profile.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("User {}", profile.id)));
+        }
+
+        Ok(())
+    }
+
+    /// Delete a user profile by ID.
+    pub fn delete_user(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        let rows_affected = self.conn
+            .execute("DELETE FROM users WHERE id = ?1", params![id.to_string()])
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("User {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Count users in the database.
+    pub fn count_users(&self) -> Result<usize, DatabaseError> {
+        let count: i64 = self.conn
+            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    /// Get or create a default user profile.
+    pub fn get_or_create_default_user(&self) -> Result<UserProfile, DatabaseError> {
+        if let Some(user) = self.get_default_user()? {
+            return Ok(user);
+        }
+
+        // Create a default user
+        let profile = UserProfile::default();
+        self.insert_user(&profile)?;
+        Ok(profile)
+    }
 }
 
 /// Intermediate struct for reading workout rows from database.
@@ -764,6 +983,72 @@ impl WorkoutRow {
             estimated_if: self.estimated_if,
             tags,
             created_at,
+        })
+    }
+}
+
+/// Intermediate struct for reading user profile rows from database.
+struct UserProfileRow {
+    id: String,
+    name: String,
+    ftp: u16,
+    max_hr: Option<u8>,
+    resting_hr: Option<u8>,
+    weight_kg: f32,
+    height_cm: Option<u16>,
+    power_zones_json: String,
+    hr_zones_json: Option<String>,
+    units: String,
+    theme: String,
+    created_at: String,
+    updated_at: String,
+}
+
+impl UserProfileRow {
+    fn into_user_profile(self) -> Result<UserProfile, DatabaseError> {
+        let id = Uuid::parse_str(&self.id)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
+
+        let power_zones: PowerZones = serde_json::from_str(&self.power_zones_json)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid power zones JSON: {}", e)))?;
+
+        let hr_zones: Option<HRZones> = self.hr_zones_json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid HR zones JSON: {}", e)))?;
+
+        let units = match self.units.to_lowercase().as_str() {
+            "imperial" => Units::Imperial,
+            _ => Units::Metric,
+        };
+
+        let theme = match self.theme.to_lowercase().as_str() {
+            "light" => Theme::Light,
+            _ => Theme::Dark,
+        };
+
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid created date: {}", e)))?;
+
+        let updated_at = DateTime::parse_from_rfc3339(&self.updated_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid updated date: {}", e)))?;
+
+        Ok(UserProfile {
+            id,
+            name: self.name,
+            ftp: self.ftp,
+            max_hr: self.max_hr,
+            resting_hr: self.resting_hr,
+            weight_kg: self.weight_kg,
+            height_cm: self.height_cm,
+            power_zones,
+            hr_zones,
+            units,
+            theme,
+            created_at,
+            updated_at,
         })
     }
 }
@@ -1274,5 +1559,148 @@ mod tests {
         let (recovered_ride, recovered_samples) = db.load_autosave().unwrap().unwrap();
         assert_eq!(recovered_ride.id, ride2.id);
         assert_eq!(recovered_samples.len(), 20);
+    }
+
+    // ========== User Profile CRUD Tests ==========
+
+    fn create_test_user(name: &str) -> UserProfile {
+        let mut profile = UserProfile::new(name.to_string());
+        profile.ftp = 250;
+        profile.weight_kg = 70.0;
+        profile.max_hr = Some(180);
+        profile.resting_hr = Some(50);
+        profile.height_cm = Some(175);
+        profile.set_heart_rate(Some(180), Some(50));
+        profile
+    }
+
+    #[test]
+    fn test_user_insert_and_get() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let profile = create_test_user("Test Cyclist");
+        let user_id = profile.id;
+
+        db.insert_user(&profile).expect("Failed to insert user");
+
+        let retrieved = db.get_user(&user_id)
+            .expect("Failed to get user")
+            .expect("User not found");
+
+        assert_eq!(retrieved.id, profile.id);
+        assert_eq!(retrieved.name, "Test Cyclist");
+        assert_eq!(retrieved.ftp, 250);
+        assert_eq!(retrieved.weight_kg, 70.0);
+        assert_eq!(retrieved.max_hr, Some(180));
+        assert_eq!(retrieved.resting_hr, Some(50));
+        assert!(retrieved.hr_zones.is_some());
+    }
+
+    #[test]
+    fn test_user_list() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+
+        db.insert_user(&create_test_user("User One")).unwrap();
+        db.insert_user(&create_test_user("User Two")).unwrap();
+        db.insert_user(&create_test_user("User Three")).unwrap();
+
+        let users = db.list_users().expect("Failed to list users");
+        assert_eq!(users.len(), 3);
+    }
+
+    #[test]
+    fn test_user_get_default() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+
+        // Initially no users
+        let result = db.get_default_user().expect("Failed to query");
+        assert!(result.is_none());
+
+        // Insert some users
+        let user1 = create_test_user("First User");
+        let user2 = create_test_user("Second User");
+
+        db.insert_user(&user1).unwrap();
+        db.insert_user(&user2).unwrap();
+
+        // Should return the first one inserted
+        let default = db.get_default_user().expect("Failed to get default")
+            .expect("No default user");
+
+        assert_eq!(default.id, user1.id);
+    }
+
+    #[test]
+    fn test_user_update() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let mut profile = create_test_user("Original Name");
+        let user_id = profile.id;
+
+        db.insert_user(&profile).expect("Failed to insert user");
+
+        // Update the profile
+        profile.name = "Updated Name".to_string();
+        let _ = profile.set_ftp(300);
+        profile.weight_kg = 75.0;
+
+        db.update_user(&profile).expect("Failed to update user");
+
+        // Verify update
+        let retrieved = db.get_user(&user_id)
+            .expect("Failed to get user")
+            .expect("User not found");
+
+        assert_eq!(retrieved.name, "Updated Name");
+        assert_eq!(retrieved.ftp, 300);
+        assert_eq!(retrieved.weight_kg, 75.0);
+    }
+
+    #[test]
+    fn test_user_delete() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let profile = create_test_user("To Delete");
+        let user_id = profile.id;
+
+        db.insert_user(&profile).expect("Failed to insert user");
+        assert_eq!(db.count_users().unwrap(), 1);
+
+        db.delete_user(&user_id).expect("Failed to delete user");
+        assert_eq!(db.count_users().unwrap(), 0);
+
+        let result = db.get_user(&user_id).expect("Failed to query");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_user_get_or_create_default() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+
+        // Initially no users, should create one
+        let profile1 = db.get_or_create_default_user().expect("Failed to get or create");
+        assert_eq!(db.count_users().unwrap(), 1);
+
+        // Should return the same one on subsequent calls
+        let profile2 = db.get_or_create_default_user().expect("Failed to get or create");
+        assert_eq!(db.count_users().unwrap(), 1);
+        assert_eq!(profile1.id, profile2.id);
+    }
+
+    #[test]
+    fn test_user_zones_roundtrip() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let profile = create_test_user("Zone Test");
+        let user_id = profile.id;
+
+        db.insert_user(&profile).expect("Failed to insert user");
+
+        let retrieved = db.get_user(&user_id)
+            .expect("Failed to get user")
+            .expect("User not found");
+
+        // Verify power zones are preserved
+        assert_eq!(retrieved.power_zones.z4_threshold.name, "Threshold");
+
+        // Verify HR zones are preserved
+        let hr_zones = retrieved.hr_zones.expect("HR zones should be present");
+        assert_eq!(hr_zones.z1_recovery.name, "Recovery");
     }
 }

@@ -246,6 +246,93 @@ impl Default for RecordingSettings {
     }
 }
 
+/// Metric types that can be displayed on the dashboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricType {
+    /// Instantaneous power
+    Power,
+    /// 3-second power average
+    Power3s,
+    /// Heart rate
+    HeartRate,
+    /// Cadence
+    Cadence,
+    /// Speed
+    Speed,
+    /// Distance
+    Distance,
+    /// Elapsed time
+    Duration,
+    /// Calories
+    Calories,
+    /// Normalized power
+    NormalizedPower,
+    /// Training Stress Score
+    Tss,
+    /// Intensity Factor
+    IntensityFactor,
+    /// Current power zone
+    PowerZone,
+    /// Current HR zone
+    HrZone,
+}
+
+impl std::fmt::Display for MetricType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MetricType::Power => write!(f, "Power"),
+            MetricType::Power3s => write!(f, "3s Power"),
+            MetricType::HeartRate => write!(f, "Heart Rate"),
+            MetricType::Cadence => write!(f, "Cadence"),
+            MetricType::Speed => write!(f, "Speed"),
+            MetricType::Distance => write!(f, "Distance"),
+            MetricType::Duration => write!(f, "Duration"),
+            MetricType::Calories => write!(f, "Calories"),
+            MetricType::NormalizedPower => write!(f, "NP"),
+            MetricType::Tss => write!(f, "TSS"),
+            MetricType::IntensityFactor => write!(f, "IF"),
+            MetricType::PowerZone => write!(f, "Power Zone"),
+            MetricType::HrZone => write!(f, "HR Zone"),
+        }
+    }
+}
+
+/// Dashboard layout configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardLayout {
+    /// Primary metrics (shown large, in order)
+    pub primary_metrics: Vec<MetricType>,
+    /// Secondary metrics (shown medium, in order)
+    pub secondary_metrics: Vec<MetricType>,
+    /// Tertiary metrics (shown small, in order)
+    pub tertiary_metrics: Vec<MetricType>,
+}
+
+impl Default for DashboardLayout {
+    fn default() -> Self {
+        Self {
+            primary_metrics: vec![
+                MetricType::Power,
+                MetricType::HeartRate,
+                MetricType::Cadence,
+            ],
+            secondary_metrics: vec![
+                MetricType::Duration,
+                MetricType::Distance,
+                MetricType::Speed,
+                MetricType::Power3s,
+                MetricType::Calories,
+            ],
+            tertiary_metrics: vec![
+                MetricType::NormalizedPower,
+                MetricType::Tss,
+                MetricType::IntensityFactor,
+            ],
+        }
+    }
+}
+
 /// UI-related settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiSettings {
@@ -257,6 +344,9 @@ pub struct UiSettings {
     pub show_zone_colors: bool,
     /// Font scale multiplier
     pub font_scale: f32,
+    /// Dashboard metric layout
+    #[serde(default)]
+    pub dashboard_layout: DashboardLayout,
 }
 
 impl Default for UiSettings {
@@ -266,6 +356,7 @@ impl Default for UiSettings {
             show_normalized_power: true,
             show_zone_colors: true,
             font_scale: 1.0,
+            dashboard_layout: DashboardLayout::default(),
         }
     }
 }
