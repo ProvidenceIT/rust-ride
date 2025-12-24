@@ -87,12 +87,12 @@
 
 - [x] T028 [P] [US1] Define DiscoveredSensor, SensorState, SensorEvent types in src/sensors/types.rs
 - [x] T029 [P] [US1] Define SensorConfig struct in src/sensors/types.rs
-- [ ] T030 [US1] Implement SensorManager struct with btleplug adapter initialization in src/sensors/manager.rs
-- [ ] T031 [US1] Implement start_discovery() with FTMS/CPS/HRS service UUID filtering in src/sensors/manager.rs
-- [ ] T032 [US1] Implement stop_discovery() in src/sensors/manager.rs
-- [ ] T033 [US1] Implement connect() with characteristic subscription in src/sensors/manager.rs
-- [ ] T034 [US1] Implement disconnect() in src/sensors/manager.rs
-- [ ] T035 [US1] Implement event channel for SensorEvent streaming in src/sensors/manager.rs
+- [x] T030 [US1] Implement SensorManager struct with btleplug adapter initialization in src/sensors/manager.rs
+- [x] T031 [US1] Implement start_discovery() with FTMS/CPS/HRS service UUID filtering in src/sensors/manager.rs
+- [x] T032 [US1] Implement stop_discovery() in src/sensors/manager.rs
+- [x] T033 [US1] Implement connect() with characteristic subscription in src/sensors/manager.rs
+- [x] T034 [US1] Implement disconnect() in src/sensors/manager.rs
+- [x] T035 [US1] Implement event channel for SensorEvent streaming in src/sensors/manager.rs
 
 ### FTMS Protocol Implementation
 
@@ -122,7 +122,7 @@
 
 - [x] T048 [US1] Implement ride screen layout with metric panels in src/ui/screens/ride.rs
 - [x] T049 [US1] Implement metric display widget (large readable numbers) in src/ui/widgets/metric_display.rs
-- [ ] T050 [US1] Wire sensor data to UI via crossbeam channel in src/app.rs
+- [x] T050 [US1] Wire sensor data to UI via crossbeam channel in src/app.rs
 - [x] T051 [US1] Implement "End Ride" button in src/ui/screens/ride.rs
 
 ### Theme & Polish

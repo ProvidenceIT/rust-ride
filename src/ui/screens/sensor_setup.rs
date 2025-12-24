@@ -30,6 +30,63 @@ impl SensorSetupScreen {
         Self::default()
     }
 
+    /// Add a newly discovered sensor to the list.
+    pub fn add_discovered_sensor(&mut self, sensor: DiscoveredSensor) {
+        // Check if sensor already exists (by device_id)
+        if !self
+            .discovered_sensors
+            .iter()
+            .any(|s| s.device_id == sensor.device_id)
+        {
+            self.discovered_sensors.push(sensor);
+        }
+    }
+
+    /// Update connection state for a sensor.
+    pub fn update_connection_state(&mut self, device_id: &str, state: ConnectionState) {
+        // If connecting/connected, move from discovered to connected list
+        if state == ConnectionState::Connected {
+            if let Some(idx) = self
+                .discovered_sensors
+                .iter()
+                .position(|s| s.device_id == device_id)
+            {
+                let sensor = self.discovered_sensors.remove(idx);
+                let sensor_state = SensorState {
+                    id: uuid::Uuid::new_v4(),
+                    device_id: sensor.device_id,
+                    name: sensor.name,
+                    sensor_type: sensor.sensor_type,
+                    protocol: sensor.protocol,
+                    connection_state: state,
+                    signal_strength: sensor.signal_strength,
+                    battery_level: None,
+                    last_data_at: None,
+                    is_primary: self.connected_sensors.is_empty(), // First sensor is primary
+                };
+                self.connected_sensors.push(sensor_state);
+            }
+        } else if state == ConnectionState::Disconnected {
+            // Remove from connected list
+            self.connected_sensors
+                .retain(|s| s.device_id != device_id);
+        } else {
+            // Update state of existing connected sensor
+            if let Some(sensor) = self
+                .connected_sensors
+                .iter_mut()
+                .find(|s| s.device_id == device_id)
+            {
+                sensor.connection_state = state;
+            }
+        }
+    }
+
+    /// Set whether scanning is active.
+    pub fn set_scanning(&mut self, scanning: bool) {
+        self.is_scanning = scanning;
+    }
+
     /// Render the sensor setup screen.
     pub fn show(&mut self, ui: &mut Ui) -> Option<Screen> {
         let mut next_screen = None;

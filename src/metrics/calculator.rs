@@ -224,6 +224,11 @@ impl MetricsCalculator {
         &self.current_metrics
     }
 
+    /// Get a copy of the current aggregated metrics.
+    pub fn get_aggregated(&self) -> AggregatedMetrics {
+        self.current_metrics.clone()
+    }
+
     /// Get power-specific metrics.
     pub fn power_metrics(&self) -> PowerMetrics {
         PowerMetrics {

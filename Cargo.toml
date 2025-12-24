@@ -21,6 +21,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Async Runtime
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+futures = "0.3"
 
 # Database
 rusqlite = { version = "0.31", features = ["bundled"] }
