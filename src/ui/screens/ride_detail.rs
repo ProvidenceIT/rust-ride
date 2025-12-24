@@ -382,7 +382,7 @@ impl RideDetailScreen {
             for sample in &self.samples {
                 if let Some(power) = sample.power_watts {
                     let zone = power_zones.get_zone(power);
-                    if zone >= 1 && zone <= 7 {
+                    if (1..=7).contains(&zone) {
                         zone_times[(zone - 1) as usize] += 1;
                     }
                 }

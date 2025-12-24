@@ -122,10 +122,9 @@ impl SettingsScreen {
                         egui::Button::new("Save").fill(Color32::from_rgb(52, 168, 83)),
                     )
                     .clicked()
+                    && self.validate()
                 {
-                    if self.validate() {
-                        action = SettingsAction::Save;
-                    }
+                    action = SettingsAction::Save;
                 }
 
                 if ui.button("Cancel").clicked() {

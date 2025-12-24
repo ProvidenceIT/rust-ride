@@ -7,37 +7,39 @@
 use uuid::Uuid;
 
 /// FTMS Service UUID (0x1826)
-pub const FTMS_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001826_0000_1000_8000_00805f9b34fb);
+pub const FTMS_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000_1826_0000_1000_8000_0080_5f9b_34fb);
 
 /// Indoor Bike Data Characteristic UUID (0x2AD2)
-pub const INDOOR_BIKE_DATA_UUID: Uuid = Uuid::from_u128(0x00002AD2_0000_1000_8000_00805f9b34fb);
+pub const INDOOR_BIKE_DATA_UUID: Uuid = Uuid::from_u128(0x0000_2ad2_0000_1000_8000_0080_5f9b_34fb);
 
 /// Fitness Machine Control Point UUID (0x2AD9)
-pub const FTMS_CONTROL_POINT_UUID: Uuid = Uuid::from_u128(0x00002AD9_0000_1000_8000_00805f9b34fb);
+pub const FTMS_CONTROL_POINT_UUID: Uuid =
+    Uuid::from_u128(0x0000_2ad9_0000_1000_8000_0080_5f9b_34fb);
 
 /// Fitness Machine Feature UUID (0x2ACC)
-pub const FTMS_FEATURE_UUID: Uuid = Uuid::from_u128(0x00002ACC_0000_1000_8000_00805f9b34fb);
+pub const FTMS_FEATURE_UUID: Uuid = Uuid::from_u128(0x0000_2acc_0000_1000_8000_0080_5f9b_34fb);
 
 /// Training Status UUID (0x2AD3)
-pub const TRAINING_STATUS_UUID: Uuid = Uuid::from_u128(0x00002AD3_0000_1000_8000_00805f9b34fb);
+pub const TRAINING_STATUS_UUID: Uuid = Uuid::from_u128(0x0000_2ad3_0000_1000_8000_0080_5f9b_34fb);
 
 /// Cycling Power Service UUID (0x1818)
 pub const CYCLING_POWER_SERVICE_UUID: Uuid =
-    Uuid::from_u128(0x00001818_0000_1000_8000_00805f9b34fb);
+    Uuid::from_u128(0x0000_1818_0000_1000_8000_0080_5f9b_34fb);
 
 /// Cycling Power Measurement UUID (0x2A63)
 pub const CYCLING_POWER_MEASUREMENT_UUID: Uuid =
-    Uuid::from_u128(0x00002A63_0000_1000_8000_00805f9b34fb);
+    Uuid::from_u128(0x0000_2a63_0000_1000_8000_0080_5f9b_34fb);
 
 /// Heart Rate Service UUID (0x180D)
-pub const HEART_RATE_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000180D_0000_1000_8000_00805f9b34fb);
+pub const HEART_RATE_SERVICE_UUID: Uuid =
+    Uuid::from_u128(0x0000_180d_0000_1000_8000_0080_5f9b_34fb);
 
 /// Heart Rate Measurement UUID (0x2A37)
 pub const HEART_RATE_MEASUREMENT_UUID: Uuid =
-    Uuid::from_u128(0x00002A37_0000_1000_8000_00805f9b34fb);
+    Uuid::from_u128(0x0000_2a37_0000_1000_8000_0080_5f9b_34fb);
 
 /// Cycling Speed and Cadence Service UUID (0x1816)
-pub const CSC_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001816_0000_1000_8000_00805f9b34fb);
+pub const CSC_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000_1816_0000_1000_8000_0080_5f9b_34fb);
 
 /// Parsed data from Indoor Bike Data characteristic.
 #[derive(Debug, Clone, Default)]
@@ -470,11 +472,9 @@ pub fn parse_heart_rate_measurement(data: &[u8]) -> Option<HeartRateData> {
     };
 
     // Energy expended
-    if energy_expended_present {
-        if offset + 2 <= data.len() {
-            result.energy_expended = Some(u16::from_le_bytes([data[offset], data[offset + 1]]));
-            offset += 2;
-        }
+    if energy_expended_present && offset + 2 <= data.len() {
+        result.energy_expended = Some(u16::from_le_bytes([data[offset], data[offset + 1]]));
+        offset += 2;
     }
 
     // RR intervals

@@ -28,7 +28,7 @@ use uuid::Uuid;
 /// Manages BLE sensor discovery, connection, and data streaming.
 pub struct SensorManager {
     /// Configuration
-    config: SensorConfig,
+    _config: SensorConfig,
     /// BLE adapter
     adapter: Option<Adapter>,
     /// Channel for sending sensor events
@@ -47,7 +47,7 @@ impl SensorManager {
     /// Create a new sensor manager.
     pub fn new(config: SensorConfig) -> Self {
         Self {
-            config,
+            _config: config,
             adapter: None,
             event_tx: None,
             discovered: Arc::new(Mutex::new(HashMap::new())),
@@ -424,7 +424,7 @@ impl SensorManager {
     }
 
     /// Parse FTMS Indoor Bike Data notification.
-    fn parse_ftms_notification(data: &[u8], device_id: &str) -> Option<SensorReading> {
+    fn parse_ftms_notification(data: &[u8], _device_id: &str) -> Option<SensorReading> {
         let parsed = parse_indoor_bike_data(data)?;
 
         Some(SensorReading {
@@ -439,7 +439,7 @@ impl SensorManager {
     }
 
     /// Parse Cycling Power Measurement notification.
-    fn parse_power_notification(data: &[u8], device_id: &str) -> Option<SensorReading> {
+    fn parse_power_notification(data: &[u8], _device_id: &str) -> Option<SensorReading> {
         let parsed = parse_cycling_power_measurement(data)?;
 
         Some(SensorReading {
@@ -454,7 +454,7 @@ impl SensorManager {
     }
 
     /// Parse Heart Rate Measurement notification.
-    fn parse_hr_notification(data: &[u8], device_id: &str) -> Option<SensorReading> {
+    fn parse_hr_notification(data: &[u8], _device_id: &str) -> Option<SensorReading> {
         let parsed = parse_heart_rate_measurement(data)?;
 
         Some(SensorReading {

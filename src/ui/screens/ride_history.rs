@@ -192,7 +192,7 @@ impl RideHistoryScreen {
 
         // Ride list
         let filtered = self.filtered_rides();
-        let total_pages = (filtered.len() + self.items_per_page - 1) / self.items_per_page;
+        let total_pages = filtered.len().div_ceil(self.items_per_page);
         let start = self.current_page * self.items_per_page;
         let end = (start + self.items_per_page).min(filtered.len());
         // Clone the rides to avoid borrow conflicts

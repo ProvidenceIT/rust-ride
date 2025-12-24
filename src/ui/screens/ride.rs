@@ -382,7 +382,7 @@ impl RideScreen {
 
     /// Render the bottom control buttons.
     fn render_bottom_controls(&mut self, ui: &mut Ui) -> Option<Screen> {
-        let mut next_screen = None;
+        let next_screen = None;
 
         ui.separator();
 
@@ -608,10 +608,8 @@ impl RideScreen {
                 self.power_offset += 5;
             }
 
-            if self.power_offset != 0 {
-                if ui.button("Reset").clicked() {
-                    self.power_offset = 0;
-                }
+            if self.power_offset != 0 && ui.button("Reset").clicked() {
+                self.power_offset = 0;
             }
 
             ui.add_space(8.0);

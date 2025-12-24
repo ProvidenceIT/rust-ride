@@ -20,6 +20,7 @@ use std::time::Instant;
 
 /// Crash recovery dialog state.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum RecoveryState {
     /// No recovery data or already handled
     None,
@@ -49,11 +50,11 @@ pub struct RustRideApp {
     /// Application configuration
     _config: AppConfig,
     /// Sensor manager
-    sensor_manager: SensorManager,
+    _sensor_manager: SensorManager,
     /// Workout engine
     _workout_engine: WorkoutEngine,
     /// Ride recorder
-    ride_recorder: RideRecorder,
+    _ride_recorder: RideRecorder,
     /// Metrics calculator
     metrics_calculator: MetricsCalculator,
     /// Sensor setup screen state
@@ -113,9 +114,9 @@ impl RustRideApp {
             theme,
             profile,
             _config: config,
-            sensor_manager,
+            _sensor_manager: sensor_manager,
             _workout_engine: workout_engine,
-            ride_recorder,
+            _ride_recorder: ride_recorder,
             metrics_calculator,
             sensor_setup_screen: SensorSetupScreen::new(),
             ride_screen: RideScreen::new(),
@@ -316,7 +317,6 @@ impl RustRideApp {
                                 .clicked()
                             {
                                 tracing::info!("User discarded crash recovery data");
-                                self.recovery_state = RecoveryState::Discarding;
                                 // TODO: Actually discard the recovery data
                                 self.recovery_state = RecoveryState::None;
                             }
@@ -331,7 +331,6 @@ impl RustRideApp {
                                 .clicked()
                             {
                                 tracing::info!("User chose to recover crash data");
-                                self.recovery_state = RecoveryState::Recovering;
                                 // TODO: Actually recover the data and show ride summary
                                 self.recovery_state = RecoveryState::None;
                                 // Navigate to ride summary with recovered data
@@ -358,10 +357,8 @@ impl eframe::App for RustRideApp {
         }
 
         // Handle keyboard shortcuts
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            if self.current_screen != Screen::Home {
-                self.navigate(Screen::Home);
-            }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.current_screen != Screen::Home {
+            self.navigate(Screen::Home);
         }
 
         // Top panel with navigation

@@ -224,13 +224,11 @@ fn parse_segment<'a>(
             min_rpm: low,
             max_rpm: high,
         })
-    } else if let Some(c) = cadence {
-        Some(CadenceTarget {
+    } else {
+        cadence.map(|c| CadenceTarget {
             min_rpm: c.saturating_sub(5),
             max_rpm: c.saturating_add(5),
         })
-    } else {
-        None
     };
 
     Ok(Some(WorkoutSegment {

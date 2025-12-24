@@ -170,9 +170,10 @@ pub struct SensorStatusSummary {
 impl SensorStatusSummary {
     /// Create a summary from a list of sensor states.
     pub fn from_sensors(sensors: &[SensorState]) -> Self {
-        let mut summary = Self::default();
-
-        summary.total = sensors.len();
+        let mut summary = Self {
+            total: sensors.len(),
+            ..Default::default()
+        };
 
         for sensor in sensors {
             if sensor.connection_state == ConnectionState::Connected {
