@@ -7,12 +7,11 @@
 //! T124: Implement unit preference toggle (metric/imperial)
 //! T125: Implement theme toggle (dark/light)
 
-use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::storage::config::{Theme, Units, UserProfile};
 
-use super::Screen;
 
 /// Settings screen state.
 pub struct SettingsScreen {

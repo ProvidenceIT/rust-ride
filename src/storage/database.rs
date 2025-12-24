@@ -224,49 +224,40 @@ impl Database {
             .prepare(sql)
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        let rows = if let Some(query) = search {
-            let pattern = format!("%{}%", query);
-            stmt.query_map(params![pattern], |row| {
-                Ok(WorkoutRow {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    author: row.get(3)?,
-                    source_file: row.get(4)?,
-                    source_format: row.get(5)?,
-                    segments_json: row.get(6)?,
-                    total_duration_seconds: row.get(7)?,
-                    estimated_tss: row.get(8)?,
-                    estimated_if: row.get(9)?,
-                    tags_json: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
-        } else {
-            stmt.query_map([], |row| {
-                Ok(WorkoutRow {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    author: row.get(3)?,
-                    source_file: row.get(4)?,
-                    source_format: row.get(5)?,
-                    segments_json: row.get(6)?,
-                    total_duration_seconds: row.get(7)?,
-                    estimated_tss: row.get(8)?,
-                    estimated_if: row.get(9)?,
-                    tags_json: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<WorkoutRow> {
+            Ok(WorkoutRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                author: row.get(3)?,
+                source_file: row.get(4)?,
+                source_format: row.get(5)?,
+                segments_json: row.get(6)?,
+                total_duration_seconds: row.get(7)?,
+                estimated_tss: row.get(8)?,
+                estimated_if: row.get(9)?,
+                tags_json: row.get(10)?,
+                created_at: row.get(11)?,
             })
         };
 
-        let rows = rows.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-
         let mut workouts = Vec::new();
-        for row in rows {
-            let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-            workouts.push(row.into_workout()?);
+
+        if let Some(query) = search {
+            let pattern = format!("%{}%", query);
+            let rows = stmt.query_map(params![pattern], map_row)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            for row in rows {
+                let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                workouts.push(row.into_workout()?);
+            }
+        } else {
+            let rows = stmt.query_map([], map_row)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            for row in rows {
+                let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                workouts.push(row.into_workout()?);
+            }
         }
 
         Ok(workouts)

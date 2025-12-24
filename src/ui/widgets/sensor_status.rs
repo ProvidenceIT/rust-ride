@@ -90,10 +90,10 @@ impl<'a> SensorConnectionCard<'a> {
             ConnectionState::Disconnected => Color32::from_rgba_unmultiplied(160, 160, 170, 20),
         };
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(bg_color)
             .inner_margin(12.0)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .show(ui, |ui| {
                 ui.set_min_size(Vec2::new(200.0, 60.0));
 

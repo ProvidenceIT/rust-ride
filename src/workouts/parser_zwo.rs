@@ -16,7 +16,7 @@ use crate::workouts::types::{
 /// Parse a ZWO workout from XML content.
 pub fn parse_zwo(content: &str) -> Result<Workout, WorkoutParseError> {
     let mut reader = Reader::from_str(content);
-    reader.config_mut().trim_text(true);
+    reader.trim_text(true);
 
     let mut workout_name: Option<String> = None;
     let mut workout_author: Option<String> = None;

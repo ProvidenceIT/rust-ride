@@ -209,9 +209,8 @@ impl RideRecorder {
     ///
     /// Returns the storage status based on available disk space.
     pub fn check_storage_status(&self) -> StorageStatus {
-        // Try to get available space from the database path or current directory
-        let path = self.config.database_path.as_deref().unwrap_or(".");
-        check_disk_space(path)
+        // Check available space from current directory
+        check_disk_space(".")
     }
 
     /// Check if there's enough storage to continue recording.

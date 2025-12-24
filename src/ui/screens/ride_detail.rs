@@ -8,13 +8,11 @@
 
 use chrono::Local;
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
-use uuid::Uuid;
 
 use crate::recording::types::{Ride, RideSample};
 use crate::storage::config::Units;
 use crate::ui::theme::zone_colors;
 
-use super::Screen;
 
 /// Actions that can result from the ride detail screen.
 #[derive(Debug, Clone, PartialEq)]

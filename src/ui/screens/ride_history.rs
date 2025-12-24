@@ -6,7 +6,7 @@
 //! T132: Implement pagination
 
 use chrono::{Duration, Local, Utc};
-use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use uuid::Uuid;
 
 use crate::recording::types::Ride;
@@ -193,7 +193,9 @@ impl RideHistoryScreen {
         let total_pages = (filtered.len() + self.items_per_page - 1) / self.items_per_page;
         let start = self.current_page * self.items_per_page;
         let end = (start + self.items_per_page).min(filtered.len());
-        let page_rides: Vec<_> = filtered[start..end].to_vec();
+        // Clone the rides to avoid borrow conflicts
+        let page_rides: Vec<Ride> = filtered[start..end].iter().map(|&r| r.clone()).collect();
+        drop(filtered); // Explicitly drop the borrowed references
 
         ScrollArea::vertical().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -206,7 +208,7 @@ impl RideHistoryScreen {
                     ui.label(RichText::new("Start recording to see your rides here").weak());
                 });
             } else {
-                for ride in page_rides {
+                for ride in &page_rides {
                     if self.render_ride_card(ui, ride) {
                         self.selected_ride = Some(ride.id);
                         next_screen = Some(Screen::RideDetail);

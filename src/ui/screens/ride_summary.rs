@@ -8,8 +8,6 @@ use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::recording::types::{ExportFormat, Ride, RideSample};
 
-use super::Screen;
-
 /// Ride summary screen state.
 pub struct RideSummaryScreen {
     /// The completed ride
@@ -279,10 +277,10 @@ impl RideSummaryScreen {
     fn render_stat_panel(&self, ui: &mut Ui, label: &str, value: &str, fill: Color32) {
         let available_width = (ui.available_width() - 16.0) / 3.0;
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(fill)
             .inner_margin(12.0)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .show(ui, |ui| {
                 ui.set_min_width(available_width);
                 ui.set_max_width(available_width);

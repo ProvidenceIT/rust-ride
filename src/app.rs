@@ -7,14 +7,14 @@
 
 use eframe::egui;
 
-use crate::metrics::MetricsCalculator;
-use crate::recording::RideRecorder;
-use crate::sensors::types::{ConnectionState, SensorEvent};
-use crate::sensors::SensorManager;
-use crate::storage::config::{AppConfig, UserProfile};
-use crate::ui::screens::{HomeScreen, RideScreen, Screen, SensorSetupScreen};
-use crate::ui::theme::Theme;
-use crate::workouts::WorkoutEngine;
+use rustride::metrics::MetricsCalculator;
+use rustride::recording::RideRecorder;
+use rustride::sensors::types::{ConnectionState, SensorEvent};
+use rustride::sensors::SensorManager;
+use rustride::storage::config::{AppConfig, UserProfile};
+use rustride::ui::screens::{HomeScreen, RideScreen, Screen, SensorSetupScreen};
+use rustride::ui::theme::Theme;
+use rustride::workouts::WorkoutEngine;
 use crossbeam::channel::Receiver;
 use std::time::Instant;
 
@@ -76,7 +76,7 @@ impl RustRideApp {
     /// Create a new application instance.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Load configuration
-        let config = crate::storage::config::load_config().unwrap_or_default();
+        let config = rustride::storage::config::load_config().unwrap_or_default();
 
         // Create default profile
         let profile = UserProfile::default();
@@ -203,7 +203,7 @@ impl RustRideApp {
     fn update_ride_time(&mut self) {
         if self.current_screen == Screen::Ride
             && !self.ride_screen.is_paused
-            && self.ride_screen.recording_status == crate::recording::types::RecordingStatus::Recording
+            && self.ride_screen.recording_status == rustride::recording::types::RecordingStatus::Recording
         {
             let now = Instant::now();
             let elapsed = now.duration_since(self.last_update);
@@ -394,7 +394,7 @@ impl eframe::App for RustRideApp {
                 }
                 Screen::Ride => {
                     // Start free ride if coming from home
-                    if self.ride_screen.recording_status == crate::recording::types::RecordingStatus::Idle {
+                    if self.ride_screen.recording_status == rustride::recording::types::RecordingStatus::Idle {
                         self.ride_screen.start_free_ride();
                     }
 

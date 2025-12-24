@@ -3,7 +3,7 @@
 //! T098: Implement CSV export of raw samples
 
 use crate::recording::types::{ExportError, Ride, RideSample};
-use chrono::{DateTime, Duration, Utc};
+use chrono::Duration;
 use std::io::Write;
 
 /// Export ride samples to CSV format.
@@ -98,6 +98,7 @@ pub fn generate_csv_filename(ride: &Ride) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use uuid::Uuid;
 
     fn create_test_ride() -> Ride {

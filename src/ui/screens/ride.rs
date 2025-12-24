@@ -467,10 +467,10 @@ impl RideScreen {
 
     /// Render the workout progress bar and current segment info.
     fn render_workout_progress(&self, ui: &mut Ui) {
-        let frame = egui::Frame::none()
+        let frame = egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .inner_margin(12.0)
-            .rounding(4.0);
+            .corner_radius(4.0);
 
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -657,7 +657,11 @@ impl RideScreen {
                     ui.label(RichText::new("POWER").size(16.0).weak());
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new(format!("{}", self.metrics.power_instant))
+                            RichText::new(
+                                self.metrics.power_instant
+                                    .map(|p| p.to_string())
+                                    .unwrap_or_else(|| "--".to_string())
+                            )
                                 .size(96.0)
                                 .color(power_color)
                                 .strong(),

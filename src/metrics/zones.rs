@@ -62,6 +62,7 @@ pub struct HRZoneRange {
 
 /// Coggan 7-zone power zones.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PowerZones {
     /// Zone 1: Active Recovery (0-55% FTP)
     pub z1_recovery: ZoneRange,
@@ -196,6 +197,13 @@ impl PowerZones {
             &self.z6_anaerobic,
             &self.z7_neuromuscular,
         ]
+    }
+}
+
+impl Default for PowerZones {
+    fn default() -> Self {
+        // Default to 200W FTP as a reasonable starting point
+        Self::from_ftp(200)
     }
 }
 

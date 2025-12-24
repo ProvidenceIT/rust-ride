@@ -135,7 +135,7 @@ impl<'a> MetricDisplay<'a> {
             MetricSize::Large => Vec2::new(180.0, 100.0),
         };
 
-        egui::Frame::none()
+        egui::Frame::new()
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.set_min_size(min_size);

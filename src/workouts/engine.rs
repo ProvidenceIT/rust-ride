@@ -7,7 +7,7 @@
 //! T067: Implement adjust_power() for manual +/- offset
 
 use crate::workouts::types::{
-    PowerTarget, SegmentProgress, SegmentType, Workout, WorkoutError, WorkoutState, WorkoutStatus,
+    SegmentProgress, SegmentType, Workout, WorkoutError, WorkoutState, WorkoutStatus,
 };
 
 /// Default ramp transition time in seconds.
@@ -306,14 +306,16 @@ impl WorkoutEngine {
 
     /// Adjust the power offset by the specified amount.
     pub fn adjust_power(&mut self, offset_delta: i16) -> Result<(), WorkoutError> {
-        let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
-
-        state.power_offset += offset_delta;
+        let power_offset = {
+            let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
+            state.power_offset += offset_delta;
+            state.power_offset
+        };
 
         // Update progress to reflect new target
         self.update_segment_progress();
 
-        tracing::debug!("Power offset adjusted to {}", state.power_offset);
+        tracing::debug!("Power offset adjusted to {}", power_offset);
         Ok(())
     }
 
@@ -449,7 +451,7 @@ impl Default for WorkoutEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workouts::types::WorkoutSegment;
+    use crate::workouts::types::{PowerTarget, WorkoutSegment};
 
     fn simple_workout() -> Workout {
         Workout::new(

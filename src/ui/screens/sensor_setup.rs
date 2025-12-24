@@ -147,7 +147,9 @@ impl SensorSetupScreen {
                             ui.label("• Try restarting the sensor if it won't appear");
                         });
                     } else {
-                        for (i, sensor) in self.discovered_sensors.iter().enumerate() {
+                        // Clone sensors to avoid borrow conflict with mutable self
+                        let sensors: Vec<_> = self.discovered_sensors.clone();
+                        for (i, sensor) in sensors.iter().enumerate() {
                             self.render_discovered_sensor(ui, sensor, i);
                         }
                     }
@@ -173,8 +175,9 @@ impl SensorSetupScreen {
         if self.show_pairing_dialog {
             if let Some(idx) = self.selected_sensor {
                 if idx < self.discovered_sensors.len() {
-                    let sensor = &self.discovered_sensors[idx];
-                    self.render_pairing_dialog(ui, sensor);
+                    // Clone to avoid borrow conflict
+                    let sensor = self.discovered_sensors[idx].clone();
+                    self.render_pairing_dialog(ui, &sensor);
                 }
             }
         }
@@ -184,10 +187,10 @@ impl SensorSetupScreen {
 
     /// Render a discovered sensor item.
     fn render_discovered_sensor(&mut self, ui: &mut Ui, sensor: &DiscoveredSensor, index: usize) {
-        let frame = egui::Frame::none()
+        let frame = egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .inner_margin(12.0)
-            .rounding(4.0);
+            .corner_radius(4.0);
 
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -221,10 +224,10 @@ impl SensorSetupScreen {
 
     /// Render a connected sensor item.
     fn render_connected_sensor(&self, ui: &mut Ui, sensor: &SensorState) {
-        let frame = egui::Frame::none()
+        let frame = egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .inner_margin(12.0)
-            .rounding(4.0);
+            .corner_radius(4.0);
 
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());

@@ -68,7 +68,7 @@ impl WorkoutLibraryScreen {
                     "Ensure you have permission to read the file".to_string(),
                 ],
             ),
-            WorkoutParseError::XmlParseError(msg) => (
+            WorkoutParseError::InvalidXml(msg) => (
                 format!("Invalid XML format: {}", msg),
                 vec![
                     "The file may be corrupted or not a valid workout file".to_string(),
@@ -76,8 +76,8 @@ impl WorkoutLibraryScreen {
                     "Make sure the file has a .zwo extension for Zwift workouts".to_string(),
                 ],
             ),
-            WorkoutParseError::InvalidFormat(msg) => (
-                format!("Invalid workout format: {}", msg),
+            WorkoutParseError::UnsupportedFormat(msg) => (
+                format!("Unsupported workout format: {}", msg),
                 vec![
                     "This file type may not be supported".to_string(),
                     "Supported formats: .zwo (Zwift), .mrc (TrainerRoad)".to_string(),
@@ -92,12 +92,18 @@ impl WorkoutLibraryScreen {
                     format!("Required field: {}", field),
                 ],
             ),
-            WorkoutParseError::InvalidValue { field, value, expected } => (
+            WorkoutParseError::InvalidValue { field, value } => (
                 format!("Invalid value '{}' for field '{}'", value, field),
                 vec![
-                    format!("Expected: {}", expected),
                     "The workout file may have been manually edited incorrectly".to_string(),
                     "Try using the original workout file".to_string(),
+                ],
+            ),
+            WorkoutParseError::EmptyWorkout => (
+                "The workout file contains no segments".to_string(),
+                vec![
+                    "The workout file appears to be empty".to_string(),
+                    "Try re-exporting from the original application".to_string(),
                 ],
             ),
         };
@@ -172,7 +178,8 @@ impl WorkoutLibraryScreen {
                     egui::ScrollArea::vertical()
                         .max_height(ui.available_height() - 60.0)
                         .show(ui, |ui| {
-                            let filtered_workouts = self.filter_workouts();
+                            // Clone filtered workouts to avoid borrow conflicts
+                            let filtered_workouts: Vec<_> = self.filter_workouts().into_iter().cloned().collect();
 
                             if filtered_workouts.is_empty() {
                                 ui.label(RichText::new("No workouts found").weak());
@@ -257,10 +264,10 @@ impl WorkoutLibraryScreen {
             ui.visuals().faint_bg_color
         };
 
-        let frame = egui::Frame::none()
+        let frame = egui::Frame::new()
             .fill(fill_color)
             .inner_margin(12.0)
-            .rounding(4.0);
+            .corner_radius(4.0);
 
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
