@@ -142,37 +142,37 @@
 
 ### Tests for User Story 2
 
-- [ ] T054 [P] [US2] Unit test for .zwo parsing with sample files in tests/unit/workout_parser_test.rs
-- [ ] T055 [P] [US2] Unit test for .mrc parsing in tests/unit/workout_parser_test.rs
-- [ ] T056 [P] [US2] Unit test for WorkoutEngine state machine in tests/unit/workout_engine_test.rs
+- [x] T054 [P] [US2] Unit test for .zwo parsing with sample files in tests/unit/workout_parser_test.rs
+- [x] T055 [P] [US2] Unit test for .mrc parsing in tests/unit/workout_parser_test.rs
+- [x] T056 [P] [US2] Unit test for WorkoutEngine state machine in tests/unit/workout_engine_test.rs
 - [ ] T057 [P] [US2] Integration test for workout execution in tests/integration/workout_execution_test.rs
 
 ### Workout Types
 
-- [ ] T058 [P] [US2] Define Workout, WorkoutSegment structs in src/workouts/types.rs
-- [ ] T059 [P] [US2] Define WorkoutState, SegmentProgress structs in src/workouts/types.rs
+- [x] T058 [P] [US2] Define Workout, WorkoutSegment structs in src/workouts/types.rs
+- [x] T059 [P] [US2] Define WorkoutState, SegmentProgress structs in src/workouts/types.rs
 
 ### Workout Parsers
 
-- [ ] T060 [US2] Implement .zwo XML parser with quick-xml in src/workouts/parser_zwo.rs
-- [ ] T061 [P] [US2] Implement .mrc/.erg text parser in src/workouts/parser_mrc.rs
-- [ ] T062 [US2] Add sample .zwo workout files to tests/fixtures/workouts/
+- [x] T060 [US2] Implement .zwo XML parser with quick-xml in src/workouts/parser_zwo.rs
+- [x] T061 [P] [US2] Implement .mrc/.erg text parser in src/workouts/parser_mrc.rs
+- [x] T062 [US2] Add sample .zwo workout files to tests/fixtures/workouts/
 
 ### Workout Engine
 
-- [ ] T063 [US2] Implement WorkoutEngine struct with load(), start(), pause(), resume(), stop() in src/workouts/engine.rs
-- [ ] T064 [US2] Implement tick() for time progression and segment transitions in src/workouts/engine.rs
-- [ ] T065 [US2] Implement skip_segment() and extend_segment() in src/workouts/engine.rs
-- [ ] T066 [US2] Implement power ramp calculation for smooth transitions (3s default) in src/workouts/engine.rs
-- [ ] T067 [US2] Implement adjust_power() for manual +/- offset in src/workouts/engine.rs
+- [x] T063 [US2] Implement WorkoutEngine struct with load(), start(), pause(), resume(), stop() in src/workouts/engine.rs
+- [x] T064 [US2] Implement tick() for time progression and segment transitions in src/workouts/engine.rs
+- [x] T065 [US2] Implement skip_segment() and extend_segment() in src/workouts/engine.rs
+- [x] T066 [US2] Implement power ramp calculation for smooth transitions (3s default) in src/workouts/engine.rs
+- [x] T067 [US2] Implement adjust_power() for manual +/- offset in src/workouts/engine.rs
 
 ### ERG Mode Control
 
-- [ ] T068 [US2] Implement FTMS Control Point (0x2AD9) write for target power in src/sensors/ftms.rs
-- [ ] T069 [US2] Implement request_control() command in src/sensors/ftms.rs
-- [ ] T070 [US2] Implement start_training() command in src/sensors/ftms.rs
-- [ ] T071 [US2] Implement set_target_power() command in src/sensors/ftms.rs
-- [ ] T072 [US2] Add SensorConnection::set_target_power() method in src/sensors/manager.rs
+- [x] T068 [US2] Implement FTMS Control Point (0x2AD9) write for target power in src/sensors/ftms.rs
+- [x] T069 [US2] Implement request_control() command in src/sensors/ftms.rs
+- [x] T070 [US2] Implement start_training() command in src/sensors/ftms.rs
+- [x] T071 [US2] Implement set_target_power() command in src/sensors/ftms.rs
+- [x] T072 [US2] Add SensorConnection::set_target_power() method in src/sensors/manager.rs
 
 ### UI - Workout Library Screen
 

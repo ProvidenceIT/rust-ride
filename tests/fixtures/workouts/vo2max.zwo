@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+    <author>RustRide</author>
+    <name>VO2max Intervals</name>
+    <description>High intensity VO2max workout with 5x3 minute intervals at 110-120% FTP</description>
+    <sportType>bike</sportType>
+    <tags>
+        <tag name="VO2max"/>
+        <tag name="Intervals"/>
+        <tag name="High Intensity"/>
+    </tags>
+    <workout>
+        <!-- Warmup: 10 minutes, 40% to 75% -->
+        <Warmup Duration="600" PowerLow="0.4" PowerHigh="0.75"/>
+
+        <!-- Activation: 3x30s at 100% with 30s rest -->
+        <IntervalsT Repeat="3" OnDuration="30" OffDuration="30" OnPower="1.0" OffPower="0.5"/>
+
+        <!-- Rest before main set -->
+        <SteadyState Duration="180" Power="0.5"/>
+
+        <!-- Main set: 5x3min at 115% with 3min recovery -->
+        <IntervalsT Repeat="5" OnDuration="180" OffDuration="180" OnPower="1.15" OffPower="0.4"/>
+
+        <!-- Cooldown: 8 minutes, 60% to 40% -->
+        <Cooldown Duration="480" PowerLow="0.6" PowerHigh="0.4"/>
+    </workout>
+</workout_file>
