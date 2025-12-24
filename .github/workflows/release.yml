@@ -1,0 +1,342 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  APP_NAME: rustride
+
+permissions:
+  contents: write
+
+jobs:
+  # Create the release first
+  create-release:
+    name: Create Release
+    runs-on: [self-hosted, Linux, X64]
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "First release - no previous tag found"
+            CHANGES=$(git log --pretty=format:"- %s" HEAD | head -50)
+          else
+            CHANGES=$(git log --pretty=format:"- %s" ${PREV_TAG}..HEAD)
+          fi
+
+          # Create release body
+          cat << EOF > RELEASE_BODY.md
+          ## RustRide v${VERSION}
+
+          ### What's Changed
+          ${CHANGES}
+
+          ### Installation
+
+          Download the appropriate archive for your platform:
+
+          | Platform | File |
+          |----------|------|
+          | Windows (64-bit) | \`rustride-v${VERSION}-windows-x64.zip\` |
+          | macOS (Intel) | \`rustride-v${VERSION}-macos-x64.tar.gz\` |
+          | macOS (Apple Silicon) | \`rustride-v${VERSION}-macos-arm64.tar.gz\` |
+          | Linux (64-bit) | \`rustride-v${VERSION}-linux-x64.tar.gz\` |
+
+          ### System Requirements
+
+          - **Windows**: Windows 10 or later, Bluetooth LE support
+          - **macOS**: macOS 11 (Big Sur) or later, Bluetooth LE support
+          - **Linux**: X11 or Wayland, BlueZ 5.x, Bluetooth LE support
+
+          ### Quick Start
+
+          1. Download and extract the archive for your platform
+          2. Run the \`rustride\` executable
+          3. Connect your smart trainer via Bluetooth
+          4. Start riding!
+
+          For detailed instructions, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md).
+          EOF
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: RustRide v${{ steps.get_version.outputs.version }}
+          body_path: RELEASE_BODY.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build for Windows
+  build-windows:
+    name: Build (Windows x64)
+    needs: create-release
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-x64-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            windows-x64-cargo-release-
+            windows-x64-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Prepare release directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release
+          Copy-Item target/x86_64-pc-windows-msvc/release/rustride.exe release/
+          if (Test-Path README.md) { Copy-Item README.md release/ }
+          if (Test-Path LICENSE) { Copy-Item LICENSE release/ }
+
+      - name: Create archive
+        shell: pwsh
+        run: |
+          $version = "${{ needs.create-release.outputs.version }}"
+          Compress-Archive -Path release/* -DestinationPath "rustride-v${version}-windows-x64.zip"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: rustride-v${{ needs.create-release.outputs.version }}-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build for macOS Intel
+  build-macos-x64:
+    name: Build (macOS x64 Intel)
+    needs: create-release
+    runs-on: [self-hosted, macOS, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-x64-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-x64-cargo-release-
+            macos-x64-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Prepare and create archive
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          mkdir -p release
+          cp target/x86_64-apple-darwin/release/rustride release/
+          cp README.md release/ 2>/dev/null || true
+          cp LICENSE release/ 2>/dev/null || true
+          cd release
+          tar -czvf ../rustride-v${VERSION}-macos-x64.tar.gz *
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: rustride-v${{ needs.create-release.outputs.version }}-macos-x64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build for macOS Apple Silicon
+  build-macos-arm64:
+    name: Build (macOS ARM64 Apple Silicon)
+    needs: create-release
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-arm64-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-arm64-cargo-release-
+            macos-arm64-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Prepare and create archive
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          mkdir -p release
+          cp target/aarch64-apple-darwin/release/rustride release/
+          cp README.md release/ 2>/dev/null || true
+          cp LICENSE release/ 2>/dev/null || true
+          cd release
+          tar -czvf ../rustride-v${VERSION}-macos-arm64.tar.gz *
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: rustride-v${{ needs.create-release.outputs.version }}-macos-arm64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build for Linux
+  build-linux:
+    name: Build (Linux x64)
+    needs: create-release
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-x64-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            linux-x64-cargo-release-
+            linux-x64-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Prepare and create archive
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          mkdir -p release
+          cp target/x86_64-unknown-linux-gnu/release/rustride release/
+          cp README.md release/ 2>/dev/null || true
+          cp LICENSE release/ 2>/dev/null || true
+          cd release
+          tar -czvf ../rustride-v${VERSION}-linux-x64.tar.gz *
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: rustride-v${{ needs.create-release.outputs.version }}-linux-x64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build checksums after all binaries are uploaded
+  checksums:
+    name: Generate Checksums
+    needs: [create-release, build-windows, build-macos-x64, build-macos-arm64, build-linux]
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - name: Download all release assets
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: 'rustride-*'
+          out-file-path: 'artifacts'
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums-sha256.txt
+          echo "=== Checksums ==="
+          cat checksums-sha256.txt
+
+      - name: Upload checksums
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/checksums-sha256.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Summary
+  release-summary:
+    name: Release Summary
+    needs: [create-release, build-windows, build-macos-x64, build-macos-arm64, build-linux, checksums]
+    runs-on: [self-hosted, Linux, X64]
+    if: always()
+    steps:
+      - name: Check release status
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ needs.create-release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows x64 | ${{ needs.build-windows.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS x64 | ${{ needs.build-macos-x64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS ARM64 | ${{ needs.build-macos-arm64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux x64 | ${{ needs.build-linux.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Checksums | ${{ needs.checksums.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any build failed
+        if: |
+          needs.build-windows.result != 'success' ||
+          needs.build-macos-x64.result != 'success' ||
+          needs.build-macos-arm64.result != 'success' ||
+          needs.build-linux.result != 'success'
+        run: |
+          echo "::error::One or more platform builds failed!"
+          exit 1
