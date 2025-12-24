@@ -5,9 +5,11 @@
 //! T099: Implement ride CRUD in database
 //! T100: Implement ride_samples bulk insert
 //! T115: Implement UserProfile CRUD in database
+//! T145: Implement sensor CRUD in database
 
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::recording::types::{Ride, RideSample};
+use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{CURRENT_VERSION, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
@@ -851,6 +853,192 @@ impl Database {
         self.insert_user(&profile)?;
         Ok(profile)
     }
+
+    // ========== Sensor CRUD Operations (T145) ==========
+
+    /// Insert a new saved sensor into the database.
+    pub fn insert_sensor(&self, sensor: &SavedSensor) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "INSERT INTO sensors (id, user_id, device_id, name, sensor_type, protocol,
+                 last_seen_at, is_primary, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    sensor.id.to_string(),
+                    sensor.user_id.to_string(),
+                    sensor.device_id,
+                    sensor.name,
+                    format!("{:?}", sensor.sensor_type).to_lowercase(),
+                    format!("{:?}", sensor.protocol).to_lowercase(),
+                    sensor.last_seen_at.map(|dt| dt.to_rfc3339()),
+                    sensor.is_primary as i32,
+                    sensor.created_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get a sensor by ID.
+    pub fn get_sensor(&self, id: &Uuid) -> Result<Option<SavedSensor>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, user_id, device_id, name, sensor_type, protocol,
+                 last_seen_at, is_primary, created_at FROM sensors WHERE id = ?1"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![id.to_string()], |row| {
+            Ok(SensorRow {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                device_id: row.get(2)?,
+                name: row.get(3)?,
+                sensor_type: row.get(4)?,
+                protocol: row.get(5)?,
+                last_seen_at: row.get(6)?,
+                is_primary: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        });
+
+        match result {
+            Ok(row) => Ok(Some(row.into_saved_sensor()?)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get a sensor by device ID for a user.
+    pub fn get_sensor_by_device_id(&self, user_id: &Uuid, device_id: &str) -> Result<Option<SavedSensor>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, user_id, device_id, name, sensor_type, protocol,
+                 last_seen_at, is_primary, created_at FROM sensors
+                 WHERE user_id = ?1 AND device_id = ?2"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![user_id.to_string(), device_id], |row| {
+            Ok(SensorRow {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                device_id: row.get(2)?,
+                name: row.get(3)?,
+                sensor_type: row.get(4)?,
+                protocol: row.get(5)?,
+                last_seen_at: row.get(6)?,
+                is_primary: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        });
+
+        match result {
+            Ok(row) => Ok(Some(row.into_saved_sensor()?)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get all sensors for a user.
+    pub fn list_sensors(&self, user_id: &Uuid) -> Result<Vec<SavedSensor>, DatabaseError> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, user_id, device_id, name, sensor_type, protocol,
+                 last_seen_at, is_primary, created_at FROM sensors
+                 WHERE user_id = ?1 ORDER BY is_primary DESC, name ASC"
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt.query_map(params![user_id.to_string()], |row| {
+            Ok(SensorRow {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                device_id: row.get(2)?,
+                name: row.get(3)?,
+                sensor_type: row.get(4)?,
+                protocol: row.get(5)?,
+                last_seen_at: row.get(6)?,
+                is_primary: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut sensors = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            sensors.push(row.into_saved_sensor()?);
+        }
+
+        Ok(sensors)
+    }
+
+    /// Update a sensor's last seen timestamp.
+    pub fn update_sensor_last_seen(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self.conn
+            .execute(
+                "UPDATE sensors SET last_seen_at = ?2 WHERE id = ?1",
+                params![id.to_string(), now],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Sensor {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Set a sensor as primary for its type (and unset others).
+    pub fn set_sensor_primary(&self, user_id: &Uuid, sensor_id: &Uuid, sensor_type: SensorType) -> Result<(), DatabaseError> {
+        let type_str = format!("{:?}", sensor_type).to_lowercase();
+
+        // Unset all sensors of this type as primary
+        self.conn
+            .execute(
+                "UPDATE sensors SET is_primary = 0 WHERE user_id = ?1 AND sensor_type = ?2",
+                params![user_id.to_string(), type_str],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        // Set the specified sensor as primary
+        self.conn
+            .execute(
+                "UPDATE sensors SET is_primary = 1 WHERE id = ?1",
+                params![sensor_id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete a sensor by ID.
+    pub fn delete_sensor(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        let rows_affected = self.conn
+            .execute("DELETE FROM sensors WHERE id = ?1", params![id.to_string()])
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Sensor {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Count sensors for a user.
+    pub fn count_sensors(&self, user_id: &Uuid) -> Result<usize, DatabaseError> {
+        let count: i64 = self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM sensors WHERE user_id = ?1",
+                params![user_id.to_string()],
+                |row| row.get(0)
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
 }
 
 /// Intermediate struct for reading workout rows from database.
@@ -1049,6 +1237,68 @@ impl UserProfileRow {
             theme,
             created_at,
             updated_at,
+        })
+    }
+}
+
+/// Intermediate struct for reading sensor rows from database.
+struct SensorRow {
+    id: String,
+    user_id: String,
+    device_id: String,
+    name: String,
+    sensor_type: String,
+    protocol: String,
+    last_seen_at: Option<String>,
+    is_primary: i32,
+    created_at: String,
+}
+
+impl SensorRow {
+    fn into_saved_sensor(self) -> Result<SavedSensor, DatabaseError> {
+        let id = Uuid::parse_str(&self.id)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
+
+        let user_id = Uuid::parse_str(&self.user_id)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid user UUID: {}", e)))?;
+
+        let sensor_type = match self.sensor_type.to_lowercase().as_str() {
+            "trainer" => SensorType::Trainer,
+            "powermeter" => SensorType::PowerMeter,
+            "heartrate" => SensorType::HeartRate,
+            "cadence" => SensorType::Cadence,
+            "speed" => SensorType::Speed,
+            "speedcadence" => SensorType::SpeedCadence,
+            _ => return Err(DatabaseError::DeserializationError(format!("Unknown sensor type: {}", self.sensor_type))),
+        };
+
+        let protocol = match self.protocol.to_lowercase().as_str() {
+            "bleftms" => Protocol::BleFtms,
+            "blecyclingpower" => Protocol::BleCyclingPower,
+            "bleheartrate" => Protocol::BleHeartRate,
+            "blecsc" => Protocol::BleCsc,
+            _ => return Err(DatabaseError::DeserializationError(format!("Unknown protocol: {}", self.protocol))),
+        };
+
+        let last_seen_at = self.last_seen_at
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&Utc)))
+            .transpose()
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid last_seen_at date: {}", e)))?;
+
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid created_at date: {}", e)))?;
+
+        Ok(SavedSensor {
+            id,
+            user_id,
+            device_id: self.device_id,
+            name: self.name,
+            sensor_type,
+            protocol,
+            last_seen_at,
+            is_primary: self.is_primary != 0,
+            created_at,
         })
     }
 }

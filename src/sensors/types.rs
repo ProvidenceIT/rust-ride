@@ -199,6 +199,47 @@ impl Default for SensorConfig {
     }
 }
 
+/// A sensor saved in the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedSensor {
+    /// Unique identifier in the database
+    pub id: Uuid,
+    /// User ID who owns this sensor
+    pub user_id: Uuid,
+    /// BLE device address/identifier
+    pub device_id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Type of sensor
+    pub sensor_type: SensorType,
+    /// Communication protocol
+    pub protocol: Protocol,
+    /// When the sensor was last seen online
+    pub last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Is this the primary source for its data type
+    pub is_primary: bool,
+    /// When the sensor was first added
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl SavedSensor {
+    /// Create a new saved sensor from a discovered sensor.
+    pub fn from_discovered(discovered: &DiscoveredSensor, user_id: Uuid) -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            user_id,
+            device_id: discovered.device_id.clone(),
+            name: discovered.name.clone(),
+            sensor_type: discovered.sensor_type,
+            protocol: discovered.protocol,
+            last_seen_at: Some(now),
+            is_primary: false,
+            created_at: now,
+        }
+    }
+}
+
 /// Errors that can occur in the sensor system.
 #[derive(Debug, Error)]
 pub enum SensorError {
