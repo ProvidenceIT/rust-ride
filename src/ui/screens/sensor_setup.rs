@@ -127,8 +127,25 @@ impl SensorSetupScreen {
                     ui.add_space(8.0);
 
                     if self.discovered_sensors.is_empty() {
-                        ui.label(RichText::new("No sensors found").weak());
-                        ui.label(RichText::new("Start scanning to discover nearby sensors").weak());
+                        if self.is_scanning {
+                            ui.label(RichText::new("Searching...").weak());
+                        } else {
+                            ui.label(RichText::new("No sensors found").weak());
+                            ui.label(RichText::new("Start scanning to discover nearby sensors").weak());
+                        }
+
+                        // T154: Troubleshooting tips
+                        ui.add_space(16.0);
+                        ui.group(|ui| {
+                            ui.label(RichText::new("Troubleshooting Tips").size(14.0).strong());
+                            ui.add_space(4.0);
+                            ui.label("• Make sure Bluetooth is enabled on your device");
+                            ui.label("• Ensure your trainer/sensors are powered on");
+                            ui.label("• Keep sensors within 10 meters of your computer");
+                            ui.label("• Wake up your sensors by moving/pedaling");
+                            ui.label("• Check that no other app is connected to the sensor");
+                            ui.label("• Try restarting the sensor if it won't appear");
+                        });
                     } else {
                         for (i, sensor) in self.discovered_sensors.iter().enumerate() {
                             self.render_discovered_sensor(ui, sensor, i);
