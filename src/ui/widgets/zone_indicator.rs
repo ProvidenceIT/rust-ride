@@ -4,7 +4,7 @@
 
 use egui::{Color32, Pos2, Rect, RichText, Ui, Vec2};
 
-use crate::metrics::zones::{Color, HRZones, PowerZones, POWER_ZONE_COLORS, HR_ZONE_COLORS};
+use crate::metrics::zones::{Color, HRZones, PowerZones, HR_ZONE_COLORS, POWER_ZONE_COLORS};
 
 /// Convert internal Color to egui Color32.
 fn to_color32(color: &Color) -> Color32 {
@@ -170,7 +170,11 @@ impl ZoneIndicator {
             ui.label(RichText::new(label).size(12.0).weak());
 
             if let Some(z) = zone {
-                let colors = if is_power { &POWER_ZONE_COLORS[..] } else { &HR_ZONE_COLORS[..] };
+                let colors = if is_power {
+                    &POWER_ZONE_COLORS[..]
+                } else {
+                    &HR_ZONE_COLORS[..]
+                };
                 let max_zone = colors.len();
 
                 if z > 0 && (z as usize) <= max_zone {

@@ -179,11 +179,15 @@ impl WorkoutLibraryScreen {
                         .max_height(ui.available_height() - 60.0)
                         .show(ui, |ui| {
                             // Clone filtered workouts to avoid borrow conflicts
-                            let filtered_workouts: Vec<_> = self.filter_workouts().into_iter().cloned().collect();
+                            let filtered_workouts: Vec<_> =
+                                self.filter_workouts().into_iter().cloned().collect();
 
                             if filtered_workouts.is_empty() {
                                 ui.label(RichText::new("No workouts found").weak());
-                                ui.label(RichText::new("Import a .zwo or .mrc file to get started").weak());
+                                ui.label(
+                                    RichText::new("Import a .zwo or .mrc file to get started")
+                                        .weak(),
+                                );
                             } else {
                                 for (i, workout) in filtered_workouts.iter().enumerate() {
                                     let is_selected = self.selected_index == Some(i);
@@ -203,7 +207,9 @@ impl WorkoutLibraryScreen {
                     if let Some(idx) = self.selected_index {
                         let filtered = self.filter_workouts();
                         if let Some(workout) = filtered.get(idx) {
-                            if let Some((screen, selected)) = self.render_workout_preview(ui, workout) {
+                            if let Some((screen, selected)) =
+                                self.render_workout_preview(ui, workout)
+                            {
                                 result = Some((screen, selected));
                             }
                         }
@@ -236,7 +242,10 @@ impl WorkoutLibraryScreen {
                 if !self.search_query.is_empty() {
                     let query = self.search_query.to_lowercase();
                     if !w.name.to_lowercase().contains(&query)
-                        && !w.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query))
+                        && !w
+                            .description
+                            .as_ref()
+                            .map_or(false, |d| d.to_lowercase().contains(&query))
                     {
                         return false;
                     }
@@ -272,10 +281,8 @@ impl WorkoutLibraryScreen {
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
 
-            let response = ui.allocate_response(
-                Vec2::new(ui.available_width(), 0.0),
-                egui::Sense::click(),
-            );
+            let response =
+                ui.allocate_response(Vec2::new(ui.available_width(), 0.0), egui::Sense::click());
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
@@ -323,7 +330,11 @@ impl WorkoutLibraryScreen {
     }
 
     /// Render the workout preview panel.
-    fn render_workout_preview(&self, ui: &mut Ui, workout: &Workout) -> Option<(Screen, Option<Workout>)> {
+    fn render_workout_preview(
+        &self,
+        ui: &mut Ui,
+        workout: &Workout,
+    ) -> Option<(Screen, Option<Workout>)> {
         let mut result = None;
 
         // Workout info
@@ -368,8 +379,12 @@ impl WorkoutLibraryScreen {
                     let duration_sec = segment.duration_seconds % 60;
 
                     let power_text = match &segment.power_target {
-                        crate::workouts::types::PowerTarget::Absolute { watts } => format!("{}W", watts),
-                        crate::workouts::types::PowerTarget::PercentFtp { percent } => format!("{}%", percent),
+                        crate::workouts::types::PowerTarget::Absolute { watts } => {
+                            format!("{}W", watts)
+                        }
+                        crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                            format!("{}%", percent)
+                        }
                         crate::workouts::types::PowerTarget::Range { start, end } => {
                             match (start.as_ref(), end.as_ref()) {
                                 (
@@ -473,8 +488,16 @@ impl WorkoutLibraryScreen {
                 ui.vertical(|ui| {
                     // Error icon and title
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("⚠").size(24.0).color(Color32::from_rgb(234, 67, 53)));
-                        ui.label(RichText::new("Failed to Import Workout").size(18.0).strong());
+                        ui.label(
+                            RichText::new("⚠")
+                                .size(24.0)
+                                .color(Color32::from_rgb(234, 67, 53)),
+                        );
+                        ui.label(
+                            RichText::new("Failed to Import Workout")
+                                .size(18.0)
+                                .strong(),
+                        );
                     });
 
                     ui.add_space(12.0);
@@ -490,7 +513,10 @@ impl WorkoutLibraryScreen {
                     // Error message
                     ui.group(|ui| {
                         ui.set_min_width(ui.available_width() - 8.0);
-                        ui.label(RichText::new(&error.error_message).color(Color32::from_rgb(234, 67, 53)));
+                        ui.label(
+                            RichText::new(&error.error_message)
+                                .color(Color32::from_rgb(234, 67, 53)),
+                        );
                     });
 
                     ui.add_space(12.0);

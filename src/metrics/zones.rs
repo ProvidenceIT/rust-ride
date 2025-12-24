@@ -87,9 +87,7 @@ impl PowerZones {
     pub fn from_ftp(ftp: u16) -> Self {
         // Helper to calculate watts from percentage, using round() to avoid
         // floating-point truncation issues (e.g., 209.9999 -> 210, not 209)
-        let calc_watts = |percent: f32| -> u16 {
-            (ftp as f32 * percent).round() as u16
-        };
+        let calc_watts = |percent: f32| -> u16 { (ftp as f32 * percent).round() as u16 };
 
         Self {
             z1_recovery: ZoneRange {
@@ -383,7 +381,7 @@ mod tests {
     fn test_power_zone_lookup() {
         let zones = PowerZones::from_ftp(200);
 
-        assert_eq!(zones.get_zone(50), 1);  // Recovery
+        assert_eq!(zones.get_zone(50), 1); // Recovery
         assert_eq!(zones.get_zone(130), 2); // Endurance
         assert_eq!(zones.get_zone(170), 3); // Tempo
         assert_eq!(zones.get_zone(200), 4); // Threshold (at FTP)

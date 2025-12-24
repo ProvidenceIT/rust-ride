@@ -7,6 +7,7 @@
 
 use eframe::egui;
 
+use crossbeam::channel::Receiver;
 use rustride::metrics::MetricsCalculator;
 use rustride::recording::RideRecorder;
 use rustride::sensors::types::{ConnectionState, SensorEvent};
@@ -15,7 +16,6 @@ use rustride::storage::config::{AppConfig, UserProfile};
 use rustride::ui::screens::{HomeScreen, RideScreen, Screen, SensorSetupScreen};
 use rustride::ui::theme::Theme;
 use rustride::workouts::WorkoutEngine;
-use crossbeam::channel::Receiver;
 use std::time::Instant;
 
 /// Crash recovery dialog state.
@@ -134,7 +134,11 @@ impl RustRideApp {
             while let Ok(event) = rx.try_recv() {
                 match event {
                     SensorEvent::Discovered(sensor) => {
-                        tracing::debug!("Discovered sensor: {} ({})", sensor.name, sensor.device_id);
+                        tracing::debug!(
+                            "Discovered sensor: {} ({})",
+                            sensor.name,
+                            sensor.device_id
+                        );
                         // Update sensor setup screen with discovered sensors
                         self.sensor_setup_screen.add_discovered_sensor(sensor);
                     }
@@ -146,7 +150,11 @@ impl RustRideApp {
                                 self.sensor_status = format!(
                                     "{} sensor{} connected",
                                     self.connected_sensor_count,
-                                    if self.connected_sensor_count == 1 { "" } else { "s" }
+                                    if self.connected_sensor_count == 1 {
+                                        ""
+                                    } else {
+                                        "s"
+                                    }
                                 );
                             }
                             ConnectionState::Disconnected => {
@@ -159,7 +167,11 @@ impl RustRideApp {
                                     self.sensor_status = format!(
                                         "{} sensor{} connected",
                                         self.connected_sensor_count,
-                                        if self.connected_sensor_count == 1 { "" } else { "s" }
+                                        if self.connected_sensor_count == 1 {
+                                            ""
+                                        } else {
+                                            "s"
+                                        }
                                     );
                                 }
                             }
@@ -170,7 +182,8 @@ impl RustRideApp {
                                 self.sensor_status = "Reconnecting...".to_string();
                             }
                         }
-                        self.sensor_setup_screen.update_connection_state(&device_id, state);
+                        self.sensor_setup_screen
+                            .update_connection_state(&device_id, state);
                     }
                     SensorEvent::Data(reading) => {
                         // Only process data if we're on the ride screen and recording
@@ -203,7 +216,8 @@ impl RustRideApp {
     fn update_ride_time(&mut self) {
         if self.current_screen == Screen::Ride
             && !self.ride_screen.is_paused
-            && self.ride_screen.recording_status == rustride::recording::types::RecordingStatus::Recording
+            && self.ride_screen.recording_status
+                == rustride::recording::types::RecordingStatus::Recording
         {
             let now = Instant::now();
             let elapsed = now.duration_since(self.last_update);
@@ -394,7 +408,9 @@ impl eframe::App for RustRideApp {
                 }
                 Screen::Ride => {
                     // Start free ride if coming from home
-                    if self.ride_screen.recording_status == rustride::recording::types::RecordingStatus::Idle {
+                    if self.ride_screen.recording_status
+                        == rustride::recording::types::RecordingStatus::Idle
+                    {
                         self.ride_screen.start_free_ride();
                     }
 

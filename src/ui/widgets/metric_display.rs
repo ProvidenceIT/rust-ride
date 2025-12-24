@@ -70,19 +70,25 @@ impl<'a> MetricDisplay<'a> {
 
     /// Create a metric display for power in watts.
     pub fn power(watts: Option<u16>) -> Self {
-        let value = watts.map(|w| w.to_string()).unwrap_or_else(|| "--".to_string());
+        let value = watts
+            .map(|w| w.to_string())
+            .unwrap_or_else(|| "--".to_string());
         Self::new(value, "W", "Power")
     }
 
     /// Create a metric display for heart rate.
     pub fn heart_rate(bpm: Option<u8>) -> Self {
-        let value = bpm.map(|b| b.to_string()).unwrap_or_else(|| "--".to_string());
+        let value = bpm
+            .map(|b| b.to_string())
+            .unwrap_or_else(|| "--".to_string());
         Self::new(value, "bpm", "Heart Rate")
     }
 
     /// Create a metric display for cadence.
     pub fn cadence(rpm: Option<u8>) -> Self {
-        let value = rpm.map(|r| r.to_string()).unwrap_or_else(|| "--".to_string());
+        let value = rpm
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "--".to_string());
         Self::new(value, "rpm", "Cadence")
     }
 
@@ -135,44 +141,38 @@ impl<'a> MetricDisplay<'a> {
             MetricSize::Large => Vec2::new(180.0, 100.0),
         };
 
-        egui::Frame::new()
-            .inner_margin(8.0)
-            .show(ui, |ui| {
-                ui.set_min_size(min_size);
+        egui::Frame::new().inner_margin(8.0).show(ui, |ui| {
+            ui.set_min_size(min_size);
 
-                ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                    // Label
-                    ui.label(
-                        RichText::new(self.label)
-                            .size(self.size.label_size())
-                            .weak(),
-                    );
+            ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                // Label
+                ui.label(
+                    RichText::new(self.label)
+                        .size(self.size.label_size())
+                        .weak(),
+                );
 
-                    ui.add_space(4.0);
+                ui.add_space(4.0);
 
-                    // Value with optional zone color
-                    let value_text = RichText::new(&self.value)
-                        .size(self.size.value_size())
-                        .strong();
+                // Value with optional zone color
+                let value_text = RichText::new(&self.value)
+                    .size(self.size.value_size())
+                    .strong();
 
-                    let value_text = if let Some(color) = self.zone_color {
-                        value_text.color(color)
-                    } else {
-                        value_text
-                    };
+                let value_text = if let Some(color) = self.zone_color {
+                    value_text.color(color)
+                } else {
+                    value_text
+                };
 
-                    // Value and unit on same line
-                    ui.horizontal(|ui| {
-                        ui.label(value_text);
-                        if !self.unit.is_empty() {
-                            ui.label(
-                                RichText::new(self.unit)
-                                    .size(self.size.unit_size())
-                                    .weak(),
-                            );
-                        }
-                    });
+                // Value and unit on same line
+                ui.horizontal(|ui| {
+                    ui.label(value_text);
+                    if !self.unit.is_empty() {
+                        ui.label(RichText::new(self.unit).size(self.size.unit_size()).weak());
+                    }
                 });
             });
+        });
     }
 }

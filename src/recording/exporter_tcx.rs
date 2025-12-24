@@ -88,10 +88,18 @@ fn write_lap<W: std::io::Write>(
         .map_err(|e| ExportError::XmlError(e.to_string()))?;
 
     // TotalTimeSeconds
-    write_element(writer, "TotalTimeSeconds", &ride.duration_seconds.to_string())?;
+    write_element(
+        writer,
+        "TotalTimeSeconds",
+        &ride.duration_seconds.to_string(),
+    )?;
 
     // DistanceMeters
-    write_element(writer, "DistanceMeters", &format!("{:.1}", ride.distance_meters))?;
+    write_element(
+        writer,
+        "DistanceMeters",
+        &format!("{:.1}", ride.distance_meters),
+    )?;
 
     // MaximumSpeed (convert from km/h to m/s if available)
     // TODO: Calculate from samples
@@ -170,7 +178,11 @@ fn write_trackpoint<W: std::io::Write>(
     write_element(writer, "Time", &sample_time.to_rfc3339())?;
 
     // DistanceMeters
-    write_element(writer, "DistanceMeters", &format!("{:.1}", sample.distance_meters))?;
+    write_element(
+        writer,
+        "DistanceMeters",
+        &format!("{:.1}", sample.distance_meters),
+    )?;
 
     // HeartRateBpm
     if let Some(hr) = sample.heart_rate_bpm {

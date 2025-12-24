@@ -44,8 +44,7 @@ pub fn parse_zwo(content: &str) -> Result<Workout, WorkoutParseError> {
                         // Extract tag name attribute
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"name" {
-                                let tag_value =
-                                    String::from_utf8_lossy(&attr.value).to_string();
+                                let tag_value = String::from_utf8_lossy(&attr.value).to_string();
                                 tags.push(tag_value);
                             }
                         }
@@ -153,66 +152,55 @@ fn parse_segment<'a>(
 
         match key.as_ref() {
             "Duration" => {
-                duration_seconds = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
+                duration_seconds =
+                    Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
                         field: "Duration".to_string(),
                         value: value.to_string(),
-                    }
-                })?);
+                    })?);
             }
             "Power" => {
-                power = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
-                        field: "Power".to_string(),
-                        value: value.to_string(),
-                    }
+                power = Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
+                    field: "Power".to_string(),
+                    value: value.to_string(),
                 })?);
             }
             "PowerLow" => {
-                power_low = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
-                        field: "PowerLow".to_string(),
-                        value: value.to_string(),
-                    }
+                power_low = Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
+                    field: "PowerLow".to_string(),
+                    value: value.to_string(),
                 })?);
             }
             "PowerHigh" => {
-                power_high = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
-                        field: "PowerHigh".to_string(),
-                        value: value.to_string(),
-                    }
+                power_high = Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
+                    field: "PowerHigh".to_string(),
+                    value: value.to_string(),
                 })?);
             }
             "Cadence" => {
-                cadence = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
-                        field: "Cadence".to_string(),
-                        value: value.to_string(),
-                    }
+                cadence = Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
+                    field: "Cadence".to_string(),
+                    value: value.to_string(),
                 })?);
             }
             "CadenceLow" => {
-                cadence_low = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
-                        field: "CadenceLow".to_string(),
-                        value: value.to_string(),
-                    }
+                cadence_low = Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
+                    field: "CadenceLow".to_string(),
+                    value: value.to_string(),
                 })?);
             }
             "CadenceHigh" => {
-                cadence_high = Some(value.parse().map_err(|_| {
-                    WorkoutParseError::InvalidValue {
+                cadence_high =
+                    Some(value.parse().map_err(|_| WorkoutParseError::InvalidValue {
                         field: "CadenceHigh".to_string(),
                         value: value.to_string(),
-                    }
-                })?);
+                    })?);
             }
             _ => {}
         }
     }
 
-    let duration = duration_seconds.ok_or(WorkoutParseError::MissingField("Duration".to_string()))?;
+    let duration =
+        duration_seconds.ok_or(WorkoutParseError::MissingField("Duration".to_string()))?;
 
     // Build power target
     let power_target = if let (Some(low), Some(high)) = (power_low, power_high) {
@@ -323,7 +311,9 @@ fn parse_intervals<'a>(
     }
 
     if on_duration == 0 && off_duration == 0 {
-        return Err(WorkoutParseError::MissingField("OnDuration/OffDuration".to_string()));
+        return Err(WorkoutParseError::MissingField(
+            "OnDuration/OffDuration".to_string(),
+        ));
     }
 
     let mut segments = Vec::new();
@@ -363,8 +353,8 @@ fn parse_intervals<'a>(
 
 /// Parse a ZWO file from disk.
 pub fn parse_zwo_file(path: &std::path::Path) -> Result<Workout, WorkoutParseError> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| WorkoutParseError::IoError(e.to_string()))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| WorkoutParseError::IoError(e.to_string()))?;
 
     let mut workout = parse_zwo(&content)?;
     workout.source_file = Some(path.display().to_string());
@@ -407,15 +397,16 @@ mod tests {
         assert_eq!(segment.segment_type, SegmentType::Warmup);
 
         match &segment.power_target {
-            PowerTarget::Range { start, end } => {
-                match (start.as_ref(), end.as_ref()) {
-                    (PowerTarget::PercentFtp { percent: s }, PowerTarget::PercentFtp { percent: e }) => {
-                        assert_eq!(*s, 40);
-                        assert_eq!(*e, 70);
-                    }
-                    _ => panic!("Expected PercentFtp"),
+            PowerTarget::Range { start, end } => match (start.as_ref(), end.as_ref()) {
+                (
+                    PowerTarget::PercentFtp { percent: s },
+                    PowerTarget::PercentFtp { percent: e },
+                ) => {
+                    assert_eq!(*s, 40);
+                    assert_eq!(*e, 70);
                 }
-            }
+                _ => panic!("Expected PercentFtp"),
+            },
             _ => panic!("Expected Range"),
         }
     }

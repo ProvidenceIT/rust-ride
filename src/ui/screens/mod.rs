@@ -9,12 +9,12 @@ pub mod sensor_setup;
 pub mod settings;
 pub mod workout_library;
 
+pub use crate::recording::types::ExportFormat;
 pub use home::HomeScreen;
 pub use ride::RideScreen;
 pub use ride_detail::{ExportFormat as DetailExportFormat, RideDetailAction, RideDetailScreen};
 pub use ride_history::{DateFilter, RideHistoryScreen, SortOrder};
 pub use ride_summary::{RideSummaryAction, RideSummaryScreen};
-pub use crate::recording::types::ExportFormat;
 pub use sensor_setup::SensorSetupScreen;
 pub use settings::{SettingsAction, SettingsScreen};
 pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};

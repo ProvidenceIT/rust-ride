@@ -22,16 +22,19 @@ pub const FTMS_FEATURE_UUID: Uuid = Uuid::from_u128(0x00002ACC_0000_1000_8000_00
 pub const TRAINING_STATUS_UUID: Uuid = Uuid::from_u128(0x00002AD3_0000_1000_8000_00805f9b34fb);
 
 /// Cycling Power Service UUID (0x1818)
-pub const CYCLING_POWER_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001818_0000_1000_8000_00805f9b34fb);
+pub const CYCLING_POWER_SERVICE_UUID: Uuid =
+    Uuid::from_u128(0x00001818_0000_1000_8000_00805f9b34fb);
 
 /// Cycling Power Measurement UUID (0x2A63)
-pub const CYCLING_POWER_MEASUREMENT_UUID: Uuid = Uuid::from_u128(0x00002A63_0000_1000_8000_00805f9b34fb);
+pub const CYCLING_POWER_MEASUREMENT_UUID: Uuid =
+    Uuid::from_u128(0x00002A63_0000_1000_8000_00805f9b34fb);
 
 /// Heart Rate Service UUID (0x180D)
 pub const HEART_RATE_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000180D_0000_1000_8000_00805f9b34fb);
 
 /// Heart Rate Measurement UUID (0x2A37)
-pub const HEART_RATE_MEASUREMENT_UUID: Uuid = Uuid::from_u128(0x00002A37_0000_1000_8000_00805f9b34fb);
+pub const HEART_RATE_MEASUREMENT_UUID: Uuid =
+    Uuid::from_u128(0x00002A37_0000_1000_8000_00805f9b34fb);
 
 /// Cycling Speed and Cadence Service UUID (0x1816)
 pub const CSC_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001816_0000_1000_8000_00805f9b34fb);
@@ -313,7 +316,10 @@ pub fn build_start_training() -> Vec<u8> {
 ///
 /// `pause` - true to pause, false to stop
 pub fn build_stop_training(pause: bool) -> Vec<u8> {
-    vec![FtmsControlOpcode::StopOrPause as u8, if pause { 0x02 } else { 0x01 }]
+    vec![
+        FtmsControlOpcode::StopOrPause as u8,
+        if pause { 0x02 } else { 0x01 },
+    ]
 }
 
 /// Build a control point command to set target power (ERG mode).
@@ -404,7 +410,8 @@ pub fn parse_cycling_power_measurement(data: &[u8]) -> Option<CyclingPowerData> 
             return Some(result);
         }
         result.crank_revolutions = Some(u16::from_le_bytes([data[offset], data[offset + 1]]));
-        result.last_crank_event_time = Some(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
+        result.last_crank_event_time =
+            Some(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
         // offset += 4;
     }
 

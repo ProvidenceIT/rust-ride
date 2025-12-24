@@ -185,7 +185,12 @@ impl RideSummaryScreen {
 
         // Duration and Distance row
         ui.horizontal(|ui| {
-            self.render_stat_panel(ui, "Duration", &format_duration(ride.duration_seconds), panel_color);
+            self.render_stat_panel(
+                ui,
+                "Duration",
+                &format_duration(ride.duration_seconds),
+                panel_color,
+            );
             self.render_stat_panel(
                 ui,
                 "Distance",
@@ -237,15 +242,12 @@ impl RideSummaryScreen {
             self.render_stat_panel(
                 ui,
                 "IF",
-                &ride.intensity_factor.map_or("-".to_string(), |v| format!("{:.2}", v)),
+                &ride
+                    .intensity_factor
+                    .map_or("-".to_string(), |v| format!("{:.2}", v)),
                 panel_color,
             );
-            self.render_stat_panel(
-                ui,
-                "FTP",
-                &format!("{} W", ride.ftp_at_ride),
-                panel_color,
-            );
+            self.render_stat_panel(ui, "FTP", &format!("{} W", ride.ftp_at_ride), panel_color);
         });
 
         ui.add_space(8.0);
@@ -255,19 +257,25 @@ impl RideSummaryScreen {
             self.render_stat_panel(
                 ui,
                 "Avg HR",
-                &ride.avg_hr.map_or("-".to_string(), |v| format!("{} bpm", v)),
+                &ride
+                    .avg_hr
+                    .map_or("-".to_string(), |v| format!("{} bpm", v)),
                 panel_color,
             );
             self.render_stat_panel(
                 ui,
                 "Max HR",
-                &ride.max_hr.map_or("-".to_string(), |v| format!("{} bpm", v)),
+                &ride
+                    .max_hr
+                    .map_or("-".to_string(), |v| format!("{} bpm", v)),
                 panel_color,
             );
             self.render_stat_panel(
                 ui,
                 "Avg Cadence",
-                &ride.avg_cadence.map_or("-".to_string(), |v| format!("{} rpm", v)),
+                &ride
+                    .avg_cadence
+                    .map_or("-".to_string(), |v| format!("{} rpm", v)),
                 panel_color,
             );
         });

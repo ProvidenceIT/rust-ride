@@ -34,13 +34,18 @@ impl<'a> SensorStatusIndicator<'a> {
     /// Render a single sensor badge.
     fn render_sensor_badge(&self, ui: &mut Ui, sensor: &SensorState) {
         let (icon, color) = match sensor.connection_state {
-            ConnectionState::Connected => (sensor_icon(sensor.sensor_type), Color32::from_rgb(52, 168, 83)),
-            ConnectionState::Connecting | ConnectionState::Reconnecting => {
-                (sensor_icon(sensor.sensor_type), Color32::from_rgb(251, 188, 4))
-            }
-            ConnectionState::Disconnected => {
-                (sensor_icon(sensor.sensor_type), Color32::from_rgb(160, 160, 170))
-            }
+            ConnectionState::Connected => (
+                sensor_icon(sensor.sensor_type),
+                Color32::from_rgb(52, 168, 83),
+            ),
+            ConnectionState::Connecting | ConnectionState::Reconnecting => (
+                sensor_icon(sensor.sensor_type),
+                Color32::from_rgb(251, 188, 4),
+            ),
+            ConnectionState::Disconnected => (
+                sensor_icon(sensor.sensor_type),
+                Color32::from_rgb(160, 160, 170),
+            ),
         };
 
         ui.label(RichText::new(icon).color(color));
@@ -128,17 +133,13 @@ impl<'a> SensorConnectionCard<'a> {
                             ui.horizontal(|ui| {
                                 if let Some(battery) = self.sensor.battery_level {
                                     ui.label(
-                                        RichText::new(format!("🔋 {}%", battery))
-                                            .weak()
-                                            .small(),
+                                        RichText::new(format!("🔋 {}%", battery)).weak().small(),
                                     );
                                 }
 
                                 if let Some(rssi) = self.sensor.signal_strength {
                                     ui.label(
-                                        RichText::new(format!("📶 {} dBm", rssi))
-                                            .weak()
-                                            .small(),
+                                        RichText::new(format!("📶 {} dBm", rssi)).weak().small(),
                                     );
                                 }
                             });

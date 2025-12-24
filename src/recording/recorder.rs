@@ -267,8 +267,8 @@ fn check_disk_space(path: &str) -> StorageStatus {
 
 #[cfg(target_os = "windows")]
 fn check_disk_space_windows(path: &str) -> StorageStatus {
-    use std::os::windows::ffi::OsStrExt;
     use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
 
     // Get the drive letter from the path
     let path = Path::new(path);
@@ -322,7 +322,8 @@ fn check_disk_space_windows(path: &str) -> StorageStatus {
 fn check_disk_space_unix(path: &str) -> StorageStatus {
     use std::mem::MaybeUninit;
 
-    let path = std::ffi::CString::new(path).unwrap_or_else(|_| std::ffi::CString::new(".").unwrap());
+    let path =
+        std::ffi::CString::new(path).unwrap_or_else(|_| std::ffi::CString::new(".").unwrap());
 
     unsafe {
         let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();

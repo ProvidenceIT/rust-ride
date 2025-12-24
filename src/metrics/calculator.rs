@@ -160,8 +160,9 @@ impl MetricsCalculator {
 
                 // Calculate power zone
                 if let Some(zones) = &self.power_zones {
-                    self.current_metrics.power_zone =
-                        Some(zones.get_zone(self.current_metrics.power_3s_avg.unwrap_or(filtered_power)));
+                    self.current_metrics.power_zone = Some(
+                        zones.get_zone(self.current_metrics.power_3s_avg.unwrap_or(filtered_power)),
+                    );
                 }
 
                 // Update calories (kJ ≈ kcal for cycling)

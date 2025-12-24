@@ -144,9 +144,11 @@ impl RideHistoryScreen {
             SortOrder::DurationDesc => {
                 filtered.sort_by(|a, b| b.duration_seconds.cmp(&a.duration_seconds))
             }
-            SortOrder::TssDesc => {
-                filtered.sort_by(|a, b| b.tss.partial_cmp(&a.tss).unwrap_or(std::cmp::Ordering::Equal))
-            }
+            SortOrder::TssDesc => filtered.sort_by(|a, b| {
+                b.tss
+                    .partial_cmp(&a.tss)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }),
         }
 
         filtered
@@ -298,21 +300,33 @@ impl RideHistoryScreen {
 
             ui.group(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{}h {}m", hours, minutes)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{}h {}m", hours, minutes))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label(RichText::new("Total Time").weak());
                 });
             });
 
             ui.group(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{:.0} {}", distance_val, distance_unit)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{:.0} {}", distance_val, distance_unit))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label(RichText::new("Distance").weak());
                 });
             });
 
             ui.group(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{:.0}", total_tss)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{:.0}", total_tss))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label(RichText::new("Total TSS").weak());
                 });
             });
@@ -330,7 +344,11 @@ impl RideHistoryScreen {
                 // Date and time
                 ui.vertical(|ui| {
                     let local = ride.started_at.with_timezone(&Local);
-                    ui.label(RichText::new(local.format("%b %d, %Y").to_string()).size(14.0).strong());
+                    ui.label(
+                        RichText::new(local.format("%b %d, %Y").to_string())
+                            .size(14.0)
+                            .strong(),
+                    );
                     ui.label(RichText::new(local.format("%H:%M").to_string()).weak());
                 });
 
@@ -405,20 +423,29 @@ impl RideHistoryScreen {
     /// Render pagination controls.
     fn render_pagination(&mut self, ui: &mut Ui, total_pages: usize) {
         ui.horizontal(|ui| {
-            ui.with_layout(Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
-                if ui.add_enabled(self.current_page > 0, egui::Button::new("← Previous")).clicked() {
-                    self.current_page = self.current_page.saturating_sub(1);
-                }
+            ui.with_layout(
+                Layout::centered_and_justified(egui::Direction::LeftToRight),
+                |ui| {
+                    if ui
+                        .add_enabled(self.current_page > 0, egui::Button::new("← Previous"))
+                        .clicked()
+                    {
+                        self.current_page = self.current_page.saturating_sub(1);
+                    }
 
-                ui.label(format!("Page {} of {}", self.current_page + 1, total_pages));
+                    ui.label(format!("Page {} of {}", self.current_page + 1, total_pages));
 
-                if ui
-                    .add_enabled(self.current_page < total_pages - 1, egui::Button::new("Next →"))
-                    .clicked()
-                {
-                    self.current_page += 1;
-                }
-            });
+                    if ui
+                        .add_enabled(
+                            self.current_page < total_pages - 1,
+                            egui::Button::new("Next →"),
+                        )
+                        .clicked()
+                    {
+                        self.current_page += 1;
+                    }
+                },
+            );
         });
     }
 }

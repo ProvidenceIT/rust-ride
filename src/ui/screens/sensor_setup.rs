@@ -68,8 +68,7 @@ impl SensorSetupScreen {
             }
         } else if state == ConnectionState::Disconnected {
             // Remove from connected list
-            self.connected_sensors
-                .retain(|s| s.device_id != device_id);
+            self.connected_sensors.retain(|s| s.device_id != device_id);
         } else {
             // Update state of existing connected sensor
             if let Some(sensor) = self
@@ -131,7 +130,9 @@ impl SensorSetupScreen {
                             ui.label(RichText::new("Searching...").weak());
                         } else {
                             ui.label(RichText::new("No sensors found").weak());
-                            ui.label(RichText::new("Start scanning to discover nearby sensors").weak());
+                            ui.label(
+                                RichText::new("Start scanning to discover nearby sensors").weak(),
+                            );
                         }
 
                         // T154: Troubleshooting tips
@@ -300,10 +301,7 @@ impl SensorSetupScreen {
                         ui.add_space(16.0);
 
                         if ui
-                            .add(
-                                egui::Button::new("Connect")
-                                    .fill(Color32::from_rgb(66, 133, 244)),
-                            )
+                            .add(egui::Button::new("Connect").fill(Color32::from_rgb(66, 133, 244)))
                             .clicked()
                         {
                             // TODO: Actually connect to the sensor
@@ -355,7 +353,9 @@ fn battery_indicator(level: u8) -> RichText {
         ("🪫", Color32::from_rgb(234, 67, 53))
     };
 
-    RichText::new(format!("{} {}%", icon, level)).color(color).small()
+    RichText::new(format!("{} {}%", icon, level))
+        .color(color)
+        .small()
 }
 
 /// Get a connection status label.

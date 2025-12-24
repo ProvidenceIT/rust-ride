@@ -12,7 +12,6 @@ use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::storage::config::{Theme, Units, UserProfile};
 
-
 /// Settings screen state.
 pub struct SettingsScreen {
     /// Current user profile being edited
@@ -53,7 +52,10 @@ impl SettingsScreen {
     pub fn new(profile: UserProfile) -> Self {
         let ftp_input = profile.ftp.to_string();
         let max_hr_input = profile.max_hr.map(|v| v.to_string()).unwrap_or_default();
-        let resting_hr_input = profile.resting_hr.map(|v| v.to_string()).unwrap_or_default();
+        let resting_hr_input = profile
+            .resting_hr
+            .map(|v| v.to_string())
+            .unwrap_or_default();
         let weight_input = format!("{:.1}", profile.weight_kg);
         let height_input = profile.height_cm.map(|v| v.to_string()).unwrap_or_default();
         let auto_power = !profile.power_zones.custom;
@@ -87,10 +89,22 @@ impl SettingsScreen {
     /// Sync input buffers from profile values.
     fn sync_inputs(&mut self) {
         self.ftp_input = self.profile.ftp.to_string();
-        self.max_hr_input = self.profile.max_hr.map(|v| v.to_string()).unwrap_or_default();
-        self.resting_hr_input = self.profile.resting_hr.map(|v| v.to_string()).unwrap_or_default();
+        self.max_hr_input = self
+            .profile
+            .max_hr
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        self.resting_hr_input = self
+            .profile
+            .resting_hr
+            .map(|v| v.to_string())
+            .unwrap_or_default();
         self.weight_input = format!("{:.1}", self.profile.weight_kg);
-        self.height_input = self.profile.height_cm.map(|v| v.to_string()).unwrap_or_default();
+        self.height_input = self
+            .profile
+            .height_cm
+            .map(|v| v.to_string())
+            .unwrap_or_default();
     }
 
     /// Render the settings screen.
@@ -125,7 +139,9 @@ impl SettingsScreen {
         // Error message
         if let Some(ref error) = self.error_message {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("⚠ {}", error)).color(Color32::from_rgb(234, 67, 53)));
+                ui.label(
+                    RichText::new(format!("⚠ {}", error)).color(Color32::from_rgb(234, 67, 53)),
+                );
             });
             ui.add_space(8.0);
         }
@@ -173,8 +189,7 @@ impl SettingsScreen {
                     // Name
                     ui.label("Name:");
                     let name_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.profile.name)
-                            .desired_width(200.0),
+                        egui::TextEdit::singleline(&mut self.profile.name).desired_width(200.0),
                     );
                     if name_response.changed() {
                         self.has_changes = true;
@@ -183,10 +198,8 @@ impl SettingsScreen {
 
                     // FTP
                     ui.label("FTP (watts):");
-                    let ftp_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.ftp_input)
-                            .desired_width(100.0),
-                    );
+                    let ftp_response = ui
+                        .add(egui::TextEdit::singleline(&mut self.ftp_input).desired_width(100.0));
                     if ftp_response.changed() {
                         self.has_changes = true;
                         if let Ok(ftp) = self.ftp_input.parse::<u16>() {
@@ -197,7 +210,8 @@ impl SettingsScreen {
                                 }
                                 self.error_message = None;
                             } else {
-                                self.error_message = Some("FTP must be between 50 and 600 watts".to_string());
+                                self.error_message =
+                                    Some("FTP must be between 50 and 600 watts".to_string());
                             }
                         }
                     }
@@ -206,8 +220,7 @@ impl SettingsScreen {
                     // Weight
                     ui.label("Weight (kg):");
                     let weight_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.weight_input)
-                            .desired_width(100.0),
+                        egui::TextEdit::singleline(&mut self.weight_input).desired_width(100.0),
                     );
                     if weight_response.changed() {
                         self.has_changes = true;
@@ -216,7 +229,8 @@ impl SettingsScreen {
                                 self.profile.weight_kg = weight;
                                 self.error_message = None;
                             } else {
-                                self.error_message = Some("Weight must be between 30 and 200 kg".to_string());
+                                self.error_message =
+                                    Some("Weight must be between 30 and 200 kg".to_string());
                             }
                         }
                     }
@@ -225,8 +239,7 @@ impl SettingsScreen {
                     // Height
                     ui.label("Height (cm):");
                     let height_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.height_input)
-                            .desired_width(100.0),
+                        egui::TextEdit::singleline(&mut self.height_input).desired_width(100.0),
                     );
                     if height_response.changed() {
                         self.has_changes = true;
@@ -237,7 +250,8 @@ impl SettingsScreen {
                                 self.profile.height_cm = Some(height);
                                 self.error_message = None;
                             } else {
-                                self.error_message = Some("Height must be between 100 and 250 cm".to_string());
+                                self.error_message =
+                                    Some("Height must be between 100 and 250 cm".to_string());
                             }
                         }
                     }
@@ -246,8 +260,7 @@ impl SettingsScreen {
                     // Max HR
                     ui.label("Max HR (bpm):");
                     let max_hr_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.max_hr_input)
-                            .desired_width(100.0),
+                        egui::TextEdit::singleline(&mut self.max_hr_input).desired_width(100.0),
                     );
                     if max_hr_response.changed() {
                         self.has_changes = true;
@@ -258,8 +271,7 @@ impl SettingsScreen {
                     // Resting HR
                     ui.label("Resting HR (bpm):");
                     let resting_hr_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.resting_hr_input)
-                            .desired_width(100.0),
+                        egui::TextEdit::singleline(&mut self.resting_hr_input).desired_width(100.0),
                     );
                     if resting_hr_response.changed() {
                         self.has_changes = true;
@@ -304,7 +316,14 @@ impl SettingsScreen {
                 ui.label(RichText::new("Power Zones").size(18.0).strong());
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button(if self.show_power_zones { "Hide" } else { "Show" }).clicked() {
+                    if ui
+                        .button(if self.show_power_zones {
+                            "Hide"
+                        } else {
+                            "Show"
+                        })
+                        .clicked()
+                    {
                         self.show_power_zones = !self.show_power_zones;
                     }
                 });
@@ -314,7 +333,10 @@ impl SettingsScreen {
 
             // Auto-calculate checkbox
             if ui
-                .checkbox(&mut self.auto_calculate_power_zones, "Auto-calculate from FTP")
+                .checkbox(
+                    &mut self.auto_calculate_power_zones,
+                    "Auto-calculate from FTP",
+                )
                 .changed()
             {
                 self.has_changes = true;
@@ -369,7 +391,10 @@ impl SettingsScreen {
                 ui.label(RichText::new("Heart Rate Zones").size(18.0).strong());
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button(if self.show_hr_zones { "Hide" } else { "Show" }).clicked() {
+                    if ui
+                        .button(if self.show_hr_zones { "Hide" } else { "Show" })
+                        .clicked()
+                    {
                         self.show_hr_zones = !self.show_hr_zones;
                     }
                 });
@@ -377,13 +402,20 @@ impl SettingsScreen {
 
             if self.profile.hr_zones.is_none() {
                 ui.add_space(4.0);
-                ui.label(RichText::new("Enter Max HR and Resting HR to calculate zones").weak().italics());
+                ui.label(
+                    RichText::new("Enter Max HR and Resting HR to calculate zones")
+                        .weak()
+                        .italics(),
+                );
             } else {
                 ui.add_space(4.0);
 
                 // Auto-calculate checkbox
                 if ui
-                    .checkbox(&mut self.auto_calculate_hr_zones, "Auto-calculate from Max/Resting HR")
+                    .checkbox(
+                        &mut self.auto_calculate_hr_zones,
+                        "Auto-calculate from Max/Resting HR",
+                    )
                     .changed()
                 {
                     self.has_changes = true;
@@ -422,7 +454,8 @@ impl SettingsScreen {
                         ui.label(format!("Z{}", zone.zone));
                         ui.label(&zone.name);
                         // Calculate percentage
-                        let hrr = self.profile.max_hr.unwrap_or(180) - self.profile.resting_hr.unwrap_or(60);
+                        let hrr = self.profile.max_hr.unwrap_or(180)
+                            - self.profile.resting_hr.unwrap_or(60);
                         let rest = self.profile.resting_hr.unwrap_or(60);
                         let min_pct = ((zone.min_bpm - rest) as f32 / hrr as f32 * 100.0) as u8;
                         let max_pct = ((zone.max_bpm - rest) as f32 / hrr as f32 * 100.0) as u8;
@@ -450,14 +483,20 @@ impl SettingsScreen {
                     ui.label("Units:");
                     ui.horizontal(|ui| {
                         if ui
-                            .selectable_label(self.profile.units == Units::Metric, "Metric (km, kg)")
+                            .selectable_label(
+                                self.profile.units == Units::Metric,
+                                "Metric (km, kg)",
+                            )
                             .clicked()
                         {
                             self.profile.units = Units::Metric;
                             self.has_changes = true;
                         }
                         if ui
-                            .selectable_label(self.profile.units == Units::Imperial, "Imperial (mi, lbs)")
+                            .selectable_label(
+                                self.profile.units == Units::Imperial,
+                                "Imperial (mi, lbs)",
+                            )
                             .clicked()
                         {
                             self.profile.units = Units::Imperial;
@@ -543,7 +582,8 @@ impl SettingsScreen {
         if !self.resting_hr_input.is_empty() {
             if let Ok(hr) = self.resting_hr_input.parse::<u8>() {
                 if !(30..=100).contains(&hr) {
-                    self.error_message = Some("Resting HR must be between 30 and 100 bpm".to_string());
+                    self.error_message =
+                        Some("Resting HR must be between 30 and 100 bpm".to_string());
                     return false;
                 }
             } else {

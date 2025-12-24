@@ -385,7 +385,8 @@ pub fn load_config() -> Result<AppConfig, ConfigError> {
         return Ok(config);
     }
 
-    let content = std::fs::read_to_string(&path).map_err(|e| ConfigError::IoError(e.to_string()))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| ConfigError::IoError(e.to_string()))?;
 
     let mut config: AppConfig =
         toml::from_str(&content).map_err(|e| ConfigError::ParseError(e.to_string()))?;
@@ -404,7 +405,8 @@ pub fn save_config(config: &AppConfig) -> Result<(), ConfigError> {
         std::fs::create_dir_all(parent).map_err(|e| ConfigError::IoError(e.to_string()))?;
     }
 
-    let content = toml::to_string_pretty(config).map_err(|e| ConfigError::SerializeError(e.to_string()))?;
+    let content =
+        toml::to_string_pretty(config).map_err(|e| ConfigError::SerializeError(e.to_string()))?;
 
     std::fs::write(&path, content).map_err(|e| ConfigError::IoError(e.to_string()))?;
 

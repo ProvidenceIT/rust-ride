@@ -20,11 +20,7 @@ impl HomeScreen {
             // Title
             ui.label(RichText::new("RustRide").size(48.0).strong());
             ui.add_space(8.0);
-            ui.label(
-                RichText::new("Indoor Cycling Training")
-                    .size(18.0)
-                    .weak(),
-            );
+            ui.label(RichText::new("Indoor Cycling Training").size(18.0).weak());
 
             ui.add_space(60.0);
 

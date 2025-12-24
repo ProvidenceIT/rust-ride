@@ -244,7 +244,11 @@ impl RideScreen {
                 ui.separator();
 
                 // Pause/Resume button
-                let pause_text = if self.is_paused { "▶ Resume" } else { "❚❚ Pause" };
+                let pause_text = if self.is_paused {
+                    "▶ Resume"
+                } else {
+                    "❚❚ Pause"
+                };
                 if ui.button(pause_text).clicked() {
                     self.is_paused = !self.is_paused;
                 }
@@ -534,8 +538,11 @@ impl RideScreen {
                         let remaining_min = progress.remaining_seconds / 60;
                         let remaining_sec = progress.remaining_seconds % 60;
                         ui.label(
-                            RichText::new(format!("{}:{:02} remaining", remaining_min, remaining_sec))
-                                .size(16.0),
+                            RichText::new(format!(
+                                "{}:{:02} remaining",
+                                remaining_min, remaining_sec
+                            ))
+                            .size(16.0),
                         );
                     });
 
@@ -587,16 +594,15 @@ impl RideScreen {
                 self.power_offset -= 5;
             }
 
-            ui.label(
-                RichText::new(format!("{:+}W", self.power_offset))
-                    .color(if self.power_offset == 0 {
-                        Color32::GRAY
-                    } else if self.power_offset > 0 {
-                        Color32::from_rgb(52, 168, 83)
-                    } else {
-                        Color32::from_rgb(234, 67, 53)
-                    }),
-            );
+            ui.label(RichText::new(format!("{:+}W", self.power_offset)).color(
+                if self.power_offset == 0 {
+                    Color32::GRAY
+                } else if self.power_offset > 0 {
+                    Color32::from_rgb(52, 168, 83)
+                } else {
+                    Color32::from_rgb(234, 67, 53)
+                },
+            ));
 
             if ui.button("+5W").clicked() {
                 self.power_offset += 5;
@@ -617,7 +623,8 @@ impl RideScreen {
     fn render_full_screen_mode(&mut self, ui: &mut Ui) {
         // Fill background
         let rect = ui.available_rect_before_wrap();
-        ui.painter().rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
+        ui.painter()
+            .rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
 
         ui.vertical_centered(|ui| {
             // Small hint at top
@@ -630,7 +637,11 @@ impl RideScreen {
 
                     // Pause indicator
                     if self.is_paused {
-                        ui.label(RichText::new("PAUSED").color(Color32::from_rgb(251, 188, 4)).size(14.0));
+                        ui.label(
+                            RichText::new("PAUSED")
+                                .color(Color32::from_rgb(251, 188, 4))
+                                .size(14.0),
+                        );
                     } else {
                         ui.label(RichText::new("●").color(Color32::from_rgb(234, 67, 53)));
                     }
@@ -658,13 +669,14 @@ impl RideScreen {
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(
-                                self.metrics.power_instant
+                                self.metrics
+                                    .power_instant
                                     .map(|p| p.to_string())
-                                    .unwrap_or_else(|| "--".to_string())
+                                    .unwrap_or_else(|| "--".to_string()),
                             )
-                                .size(96.0)
-                                .color(power_color)
-                                .strong(),
+                            .size(96.0)
+                            .color(power_color)
+                            .strong(),
                         );
                         ui.label(RichText::new("W").size(32.0).weak());
                     });
@@ -687,12 +699,7 @@ impl RideScreen {
                             .heart_rate
                             .map(|hr| hr.to_string())
                             .unwrap_or_else(|| "--".to_string());
-                        ui.label(
-                            RichText::new(hr_text)
-                                .size(96.0)
-                                .color(hr_color)
-                                .strong(),
-                        );
+                        ui.label(RichText::new(hr_text).size(96.0).color(hr_color).strong());
                         ui.label(RichText::new("bpm").size(32.0).weak());
                     });
                 });

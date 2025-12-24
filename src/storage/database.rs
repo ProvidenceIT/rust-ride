@@ -14,7 +14,7 @@ use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{CURRENT_VERSION, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, Result as SqliteResult, params};
+use rusqlite::{params, Connection, Result as SqliteResult};
 use std::path::PathBuf;
 use thiserror::Error;
 use uuid::Uuid;
@@ -43,8 +43,8 @@ impl Database {
 
     /// Open an in-memory database (for testing).
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
-        let conn =
-            Connection::open_in_memory().map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+        let conn = Connection::open_in_memory()
+            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
 
         let db = Self { conn };
         db.initialize()?;
@@ -115,7 +115,11 @@ impl Database {
     }
 
     /// Execute a query and return the number of rows affected.
-    pub fn execute(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, DatabaseError> {
+    pub fn execute(
+        &self,
+        sql: &str,
+        params: &[&dyn rusqlite::ToSql],
+    ) -> Result<usize, DatabaseError> {
         self.conn
             .execute(sql, params)
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
@@ -138,11 +142,15 @@ impl Database {
         let tags_json = if workout.tags.is_empty() {
             None
         } else {
-            Some(serde_json::to_string(&workout.tags)
-                .map_err(|e| DatabaseError::SerializationError(e.to_string()))?)
+            Some(
+                serde_json::to_string(&workout.tags)
+                    .map_err(|e| DatabaseError::SerializationError(e.to_string()))?,
+            )
         };
 
-        let source_format = workout.source_format.map(|f| format!("{:?}", f).to_lowercase());
+        let source_format = workout
+            .source_format
+            .map(|f| format!("{:?}", f).to_lowercase());
 
         self.conn
             .execute(
@@ -171,11 +179,12 @@ impl Database {
 
     /// Get a workout by ID.
     pub fn get_workout(&self, id: &Uuid) -> Result<Option<Workout>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, name, description, author, source_file, source_format,
                  segments_json, total_duration_seconds, estimated_tss, estimated_if,
-                 tags_json, created_at FROM workouts WHERE id = ?1"
+                 tags_json, created_at FROM workouts WHERE id = ?1",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -220,7 +229,8 @@ impl Database {
             }
         };
 
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(sql)
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -245,14 +255,16 @@ impl Database {
 
         if let Some(query) = search {
             let pattern = format!("%{}%", query);
-            let rows = stmt.query_map(params![pattern], map_row)
+            let rows = stmt
+                .query_map(params![pattern], map_row)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
             for row in rows {
                 let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
                 workouts.push(row.into_workout()?);
             }
         } else {
-            let rows = stmt.query_map([], map_row)
+            let rows = stmt
+                .query_map([], map_row)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
             for row in rows {
                 let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
@@ -271,13 +283,18 @@ impl Database {
         let tags_json = if workout.tags.is_empty() {
             None
         } else {
-            Some(serde_json::to_string(&workout.tags)
-                .map_err(|e| DatabaseError::SerializationError(e.to_string()))?)
+            Some(
+                serde_json::to_string(&workout.tags)
+                    .map_err(|e| DatabaseError::SerializationError(e.to_string()))?,
+            )
         };
 
-        let source_format = workout.source_format.map(|f| format!("{:?}", f).to_lowercase());
+        let source_format = workout
+            .source_format
+            .map(|f| format!("{:?}", f).to_lowercase());
 
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute(
                 "UPDATE workouts SET name = ?2, description = ?3, author = ?4,
                  source_file = ?5, source_format = ?6, segments_json = ?7,
@@ -308,8 +325,12 @@ impl Database {
 
     /// Delete a workout by ID.
     pub fn delete_workout(&self, id: &Uuid) -> Result<(), DatabaseError> {
-        let rows_affected = self.conn
-            .execute("DELETE FROM workouts WHERE id = ?1", params![id.to_string()])
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM workouts WHERE id = ?1",
+                params![id.to_string()],
+            )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         if rows_affected == 0 {
@@ -321,7 +342,8 @@ impl Database {
 
     /// Count workouts in the database.
     pub fn count_workouts(&self) -> Result<usize, DatabaseError> {
-        let count: i64 = self.conn
+        let count: i64 = self
+            .conn
             .query_row("SELECT COUNT(*) FROM workouts", [], |row| row.get(0))
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -367,12 +389,17 @@ impl Database {
     }
 
     /// Insert ride samples in bulk.
-    pub fn insert_ride_samples(&mut self, ride_id: &Uuid, samples: &[RideSample]) -> Result<(), DatabaseError> {
+    pub fn insert_ride_samples(
+        &mut self,
+        ride_id: &Uuid,
+        samples: &[RideSample],
+    ) -> Result<(), DatabaseError> {
         if samples.is_empty() {
             return Ok(());
         }
 
-        let tx = self.conn
+        let tx = self
+            .conn
             .transaction()
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
 
@@ -382,7 +409,7 @@ impl Database {
                     "INSERT INTO ride_samples (ride_id, elapsed_seconds, power_watts, cadence_rpm,
                      heart_rate_bpm, speed_kmh, distance_meters, calories, resistance_level,
                      target_power, trainer_grade)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 )
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -412,12 +439,13 @@ impl Database {
 
     /// Get a ride by ID.
     pub fn get_ride(&self, id: &Uuid) -> Result<Option<Ride>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, user_id, workout_id, started_at, ended_at, duration_seconds,
                  distance_meters, avg_power, max_power, normalized_power, intensity_factor,
                  tss, avg_hr, max_hr, avg_cadence, calories, ftp_at_ride, notes, created_at
-                 FROM rides WHERE id = ?1"
+                 FROM rides WHERE id = ?1",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -454,28 +482,31 @@ impl Database {
 
     /// Get ride samples by ride ID.
     pub fn get_ride_samples(&self, ride_id: &Uuid) -> Result<Vec<RideSample>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT elapsed_seconds, power_watts, cadence_rpm, heart_rate_bpm,
                  speed_kmh, distance_meters, calories, resistance_level, target_power, trainer_grade
-                 FROM ride_samples WHERE ride_id = ?1 ORDER BY elapsed_seconds"
+                 FROM ride_samples WHERE ride_id = ?1 ORDER BY elapsed_seconds",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        let rows = stmt.query_map(params![ride_id.to_string()], |row| {
-            Ok(RideSample {
-                elapsed_seconds: row.get(0)?,
-                power_watts: row.get(1)?,
-                cadence_rpm: row.get(2)?,
-                heart_rate_bpm: row.get(3)?,
-                speed_kmh: row.get(4)?,
-                distance_meters: row.get(5)?,
-                calories: row.get(6)?,
-                resistance_level: row.get(7)?,
-                target_power: row.get(8)?,
-                trainer_grade: row.get(9)?,
+        let rows = stmt
+            .query_map(params![ride_id.to_string()], |row| {
+                Ok(RideSample {
+                    elapsed_seconds: row.get(0)?,
+                    power_watts: row.get(1)?,
+                    cadence_rpm: row.get(2)?,
+                    heart_rate_bpm: row.get(3)?,
+                    speed_kmh: row.get(4)?,
+                    distance_meters: row.get(5)?,
+                    calories: row.get(6)?,
+                    resistance_level: row.get(7)?,
+                    target_power: row.get(8)?,
+                    trainer_grade: row.get(9)?,
+                })
             })
-        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         let mut samples = Vec::new();
         for row in rows {
@@ -486,7 +517,10 @@ impl Database {
     }
 
     /// Get a ride with its samples.
-    pub fn get_ride_with_samples(&self, id: &Uuid) -> Result<Option<(Ride, Vec<RideSample>)>, DatabaseError> {
+    pub fn get_ride_with_samples(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<(Ride, Vec<RideSample>)>, DatabaseError> {
         let ride = self.get_ride(id)?;
         match ride {
             Some(ride) => {
@@ -498,42 +532,50 @@ impl Database {
     }
 
     /// List all rides for a user, ordered by date descending.
-    pub fn list_rides(&self, user_id: &Uuid, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<Ride>, DatabaseError> {
+    pub fn list_rides(
+        &self,
+        user_id: &Uuid,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Ride>, DatabaseError> {
         let limit = limit.unwrap_or(100);
         let offset = offset.unwrap_or(0);
 
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, user_id, workout_id, started_at, ended_at, duration_seconds,
                  distance_meters, avg_power, max_power, normalized_power, intensity_factor,
                  tss, avg_hr, max_hr, avg_cadence, calories, ftp_at_ride, notes, created_at
-                 FROM rides WHERE user_id = ?1 ORDER BY started_at DESC LIMIT ?2 OFFSET ?3"
+                 FROM rides WHERE user_id = ?1 ORDER BY started_at DESC LIMIT ?2 OFFSET ?3",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        let rows = stmt.query_map(params![user_id.to_string(), limit, offset], |row| {
-            Ok(RideRow {
-                id: row.get(0)?,
-                user_id: row.get(1)?,
-                workout_id: row.get(2)?,
-                started_at: row.get(3)?,
-                ended_at: row.get(4)?,
-                duration_seconds: row.get(5)?,
-                distance_meters: row.get(6)?,
-                avg_power: row.get(7)?,
-                max_power: row.get(8)?,
-                normalized_power: row.get(9)?,
-                intensity_factor: row.get(10)?,
-                tss: row.get(11)?,
-                avg_hr: row.get(12)?,
-                max_hr: row.get(13)?,
-                avg_cadence: row.get(14)?,
-                calories: row.get(15)?,
-                ftp_at_ride: row.get(16)?,
-                notes: row.get(17)?,
-                created_at: row.get(18)?,
+        let rows = stmt
+            .query_map(params![user_id.to_string(), limit, offset], |row| {
+                Ok(RideRow {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    workout_id: row.get(2)?,
+                    started_at: row.get(3)?,
+                    ended_at: row.get(4)?,
+                    duration_seconds: row.get(5)?,
+                    distance_meters: row.get(6)?,
+                    avg_power: row.get(7)?,
+                    max_power: row.get(8)?,
+                    normalized_power: row.get(9)?,
+                    intensity_factor: row.get(10)?,
+                    tss: row.get(11)?,
+                    avg_hr: row.get(12)?,
+                    max_hr: row.get(13)?,
+                    avg_cadence: row.get(14)?,
+                    calories: row.get(15)?,
+                    ftp_at_ride: row.get(16)?,
+                    notes: row.get(17)?,
+                    created_at: row.get(18)?,
+                })
             })
-        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         let mut rides = Vec::new();
         for row in rows {
@@ -546,7 +588,8 @@ impl Database {
 
     /// Delete a ride by ID (cascades to samples).
     pub fn delete_ride(&self, id: &Uuid) -> Result<(), DatabaseError> {
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute("DELETE FROM rides WHERE id = ?1", params![id.to_string()])
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -559,7 +602,8 @@ impl Database {
 
     /// Count rides for a user.
     pub fn count_rides(&self, user_id: &Uuid) -> Result<usize, DatabaseError> {
-        let count: i64 = self.conn
+        let count: i64 = self
+            .conn
             .query_row(
                 "SELECT COUNT(*) FROM rides WHERE user_id = ?1",
                 params![user_id.to_string()],
@@ -592,7 +636,8 @@ impl Database {
 
     /// Check if autosave data exists.
     pub fn has_autosave(&self) -> Result<bool, DatabaseError> {
-        let count: i64 = self.conn
+        let count: i64 = self
+            .conn
             .query_row("SELECT COUNT(*) FROM autosave", [], |row| row.get(0))
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -636,9 +681,14 @@ impl Database {
         let power_zones_json = serde_json::to_string(&profile.power_zones)
             .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
 
-        let hr_zones_json = profile.hr_zones.as_ref().map(|zones| {
-            serde_json::to_string(zones).map_err(|e| DatabaseError::SerializationError(e.to_string()))
-        }).transpose()?;
+        let hr_zones_json = profile
+            .hr_zones
+            .as_ref()
+            .map(|zones| {
+                serde_json::to_string(zones)
+                    .map_err(|e| DatabaseError::SerializationError(e.to_string()))
+            })
+            .transpose()?;
 
         self.conn
             .execute(
@@ -668,11 +718,12 @@ impl Database {
 
     /// Get a user profile by ID.
     pub fn get_user(&self, id: &Uuid) -> Result<Option<UserProfile>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
                  power_zones_json, hr_zones_json, units, theme, created_at, updated_at
-                 FROM users WHERE id = ?1"
+                 FROM users WHERE id = ?1",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -703,31 +754,34 @@ impl Database {
 
     /// Get all user profiles.
     pub fn list_users(&self) -> Result<Vec<UserProfile>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
                  power_zones_json, hr_zones_json, units, theme, created_at, updated_at
-                 FROM users ORDER BY created_at DESC"
+                 FROM users ORDER BY created_at DESC",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(UserProfileRow {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                ftp: row.get(2)?,
-                max_hr: row.get(3)?,
-                resting_hr: row.get(4)?,
-                weight_kg: row.get(5)?,
-                height_cm: row.get(6)?,
-                power_zones_json: row.get(7)?,
-                hr_zones_json: row.get(8)?,
-                units: row.get(9)?,
-                theme: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(UserProfileRow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    ftp: row.get(2)?,
+                    max_hr: row.get(3)?,
+                    resting_hr: row.get(4)?,
+                    weight_kg: row.get(5)?,
+                    height_cm: row.get(6)?,
+                    power_zones_json: row.get(7)?,
+                    hr_zones_json: row.get(8)?,
+                    units: row.get(9)?,
+                    theme: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
             })
-        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         let mut profiles = Vec::new();
         for row in rows {
@@ -740,11 +794,12 @@ impl Database {
 
     /// Get the first (default) user profile.
     pub fn get_default_user(&self) -> Result<Option<UserProfile>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, name, ftp, max_hr, resting_hr, weight_kg, height_cm,
                  power_zones_json, hr_zones_json, units, theme, created_at, updated_at
-                 FROM users ORDER BY created_at ASC LIMIT 1"
+                 FROM users ORDER BY created_at ASC LIMIT 1",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -778,11 +833,17 @@ impl Database {
         let power_zones_json = serde_json::to_string(&profile.power_zones)
             .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
 
-        let hr_zones_json = profile.hr_zones.as_ref().map(|zones| {
-            serde_json::to_string(zones).map_err(|e| DatabaseError::SerializationError(e.to_string()))
-        }).transpose()?;
+        let hr_zones_json = profile
+            .hr_zones
+            .as_ref()
+            .map(|zones| {
+                serde_json::to_string(zones)
+                    .map_err(|e| DatabaseError::SerializationError(e.to_string()))
+            })
+            .transpose()?;
 
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute(
                 "UPDATE users SET name = ?2, ftp = ?3, max_hr = ?4, resting_hr = ?5,
                  weight_kg = ?6, height_cm = ?7, power_zones_json = ?8, hr_zones_json = ?9,
@@ -813,7 +874,8 @@ impl Database {
 
     /// Delete a user profile by ID.
     pub fn delete_user(&self, id: &Uuid) -> Result<(), DatabaseError> {
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute("DELETE FROM users WHERE id = ?1", params![id.to_string()])
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -826,7 +888,8 @@ impl Database {
 
     /// Count users in the database.
     pub fn count_users(&self) -> Result<usize, DatabaseError> {
-        let count: i64 = self.conn
+        let count: i64 = self
+            .conn
             .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -873,10 +936,11 @@ impl Database {
 
     /// Get a sensor by ID.
     pub fn get_sensor(&self, id: &Uuid) -> Result<Option<SavedSensor>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, user_id, device_id, name, sensor_type, protocol,
-                 last_seen_at, is_primary, created_at FROM sensors WHERE id = ?1"
+                 last_seen_at, is_primary, created_at FROM sensors WHERE id = ?1",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -902,12 +966,17 @@ impl Database {
     }
 
     /// Get a sensor by device ID for a user.
-    pub fn get_sensor_by_device_id(&self, user_id: &Uuid, device_id: &str) -> Result<Option<SavedSensor>, DatabaseError> {
-        let mut stmt = self.conn
+    pub fn get_sensor_by_device_id(
+        &self,
+        user_id: &Uuid,
+        device_id: &str,
+    ) -> Result<Option<SavedSensor>, DatabaseError> {
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, user_id, device_id, name, sensor_type, protocol,
                  last_seen_at, is_primary, created_at FROM sensors
-                 WHERE user_id = ?1 AND device_id = ?2"
+                 WHERE user_id = ?1 AND device_id = ?2",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -934,27 +1003,30 @@ impl Database {
 
     /// Get all sensors for a user.
     pub fn list_sensors(&self, user_id: &Uuid) -> Result<Vec<SavedSensor>, DatabaseError> {
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT id, user_id, device_id, name, sensor_type, protocol,
                  last_seen_at, is_primary, created_at FROM sensors
-                 WHERE user_id = ?1 ORDER BY is_primary DESC, name ASC"
+                 WHERE user_id = ?1 ORDER BY is_primary DESC, name ASC",
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        let rows = stmt.query_map(params![user_id.to_string()], |row| {
-            Ok(SensorRow {
-                id: row.get(0)?,
-                user_id: row.get(1)?,
-                device_id: row.get(2)?,
-                name: row.get(3)?,
-                sensor_type: row.get(4)?,
-                protocol: row.get(5)?,
-                last_seen_at: row.get(6)?,
-                is_primary: row.get(7)?,
-                created_at: row.get(8)?,
+        let rows = stmt
+            .query_map(params![user_id.to_string()], |row| {
+                Ok(SensorRow {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    device_id: row.get(2)?,
+                    name: row.get(3)?,
+                    sensor_type: row.get(4)?,
+                    protocol: row.get(5)?,
+                    last_seen_at: row.get(6)?,
+                    is_primary: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
             })
-        }).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         let mut sensors = Vec::new();
         for row in rows {
@@ -968,7 +1040,8 @@ impl Database {
     /// Update a sensor's last seen timestamp.
     pub fn update_sensor_last_seen(&self, id: &Uuid) -> Result<(), DatabaseError> {
         let now = Utc::now().to_rfc3339();
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute(
                 "UPDATE sensors SET last_seen_at = ?2 WHERE id = ?1",
                 params![id.to_string(), now],
@@ -983,7 +1056,12 @@ impl Database {
     }
 
     /// Set a sensor as primary for its type (and unset others).
-    pub fn set_sensor_primary(&self, user_id: &Uuid, sensor_id: &Uuid, sensor_type: SensorType) -> Result<(), DatabaseError> {
+    pub fn set_sensor_primary(
+        &self,
+        user_id: &Uuid,
+        sensor_id: &Uuid,
+        sensor_type: SensorType,
+    ) -> Result<(), DatabaseError> {
         let type_str = format!("{:?}", sensor_type).to_lowercase();
 
         // Unset all sensors of this type as primary
@@ -1007,7 +1085,8 @@ impl Database {
 
     /// Delete a sensor by ID.
     pub fn delete_sensor(&self, id: &Uuid) -> Result<(), DatabaseError> {
-        let rows_affected = self.conn
+        let rows_affected = self
+            .conn
             .execute("DELETE FROM sensors WHERE id = ?1", params![id.to_string()])
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -1020,11 +1099,12 @@ impl Database {
 
     /// Count sensors for a user.
     pub fn count_sensors(&self, user_id: &Uuid) -> Result<usize, DatabaseError> {
-        let count: i64 = self.conn
+        let count: i64 = self
+            .conn
             .query_row(
                 "SELECT COUNT(*) FROM sensors WHERE user_id = ?1",
                 params![user_id.to_string()],
-                |row| row.get(0)
+                |row| row.get(0),
             )
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -1076,26 +1156,35 @@ impl RideRow {
         let id = Uuid::parse_str(&self.id)
             .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
 
-        let user_id = Uuid::parse_str(&self.user_id)
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid user UUID: {}", e)))?;
+        let user_id = Uuid::parse_str(&self.user_id).map_err(|e| {
+            DatabaseError::DeserializationError(format!("Invalid user UUID: {}", e))
+        })?;
 
-        let workout_id = self.workout_id
+        let workout_id = self
+            .workout_id
             .map(|s| Uuid::parse_str(&s))
             .transpose()
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid workout UUID: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid workout UUID: {}", e))
+            })?;
 
         let started_at = DateTime::parse_from_rfc3339(&self.started_at)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid start date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid start date: {}", e))
+            })?;
 
-        let ended_at = self.ended_at
+        let ended_at = self
+            .ended_at
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| DatabaseError::DeserializationError(format!("Invalid end date: {}", e)))?;
 
         let created_at = DateTime::parse_from_rfc3339(&self.created_at)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid created date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid created date: {}", e))
+            })?;
 
         Ok(Ride {
             id,
@@ -1126,24 +1215,27 @@ impl WorkoutRow {
         let id = Uuid::parse_str(&self.id)
             .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
 
-        let segments: Vec<WorkoutSegment> = serde_json::from_str(&self.segments_json)
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid segments JSON: {}", e)))?;
+        let segments: Vec<WorkoutSegment> =
+            serde_json::from_str(&self.segments_json).map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid segments JSON: {}", e))
+            })?;
 
         let tags: Vec<String> = match self.tags_json {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| DatabaseError::DeserializationError(format!("Invalid tags JSON: {}", e)))?,
+            Some(json) => serde_json::from_str(&json).map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid tags JSON: {}", e))
+            })?,
             None => Vec::new(),
         };
 
-        let source_format = self.source_format.and_then(|s| {
-            match s.to_lowercase().as_str() {
+        let source_format = self
+            .source_format
+            .and_then(|s| match s.to_lowercase().as_str() {
                 "zwo" => Some(WorkoutFormat::Zwo),
                 "mrc" => Some(WorkoutFormat::Mrc),
                 "fit" => Some(WorkoutFormat::Fit),
                 "native" => Some(WorkoutFormat::Native),
                 _ => None,
-            }
-        });
+            });
 
         let created_at = DateTime::parse_from_rfc3339(&self.created_at)
             .map(|dt| dt.with_timezone(&Utc))
@@ -1188,13 +1280,18 @@ impl UserProfileRow {
         let id = Uuid::parse_str(&self.id)
             .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
 
-        let power_zones: PowerZones = serde_json::from_str(&self.power_zones_json)
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid power zones JSON: {}", e)))?;
+        let power_zones: PowerZones =
+            serde_json::from_str(&self.power_zones_json).map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid power zones JSON: {}", e))
+            })?;
 
-        let hr_zones: Option<HRZones> = self.hr_zones_json
+        let hr_zones: Option<HRZones> = self
+            .hr_zones_json
             .map(|json| serde_json::from_str(&json))
             .transpose()
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid HR zones JSON: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid HR zones JSON: {}", e))
+            })?;
 
         let units = match self.units.to_lowercase().as_str() {
             "imperial" => Units::Imperial,
@@ -1208,11 +1305,15 @@ impl UserProfileRow {
 
         let created_at = DateTime::parse_from_rfc3339(&self.created_at)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid created date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid created date: {}", e))
+            })?;
 
         let updated_at = DateTime::parse_from_rfc3339(&self.updated_at)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid updated date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid updated date: {}", e))
+            })?;
 
         Ok(UserProfile {
             id,
@@ -1250,8 +1351,9 @@ impl SensorRow {
         let id = Uuid::parse_str(&self.id)
             .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
 
-        let user_id = Uuid::parse_str(&self.user_id)
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid user UUID: {}", e)))?;
+        let user_id = Uuid::parse_str(&self.user_id).map_err(|e| {
+            DatabaseError::DeserializationError(format!("Invalid user UUID: {}", e))
+        })?;
 
         let sensor_type = match self.sensor_type.to_lowercase().as_str() {
             "trainer" => SensorType::Trainer,
@@ -1260,7 +1362,12 @@ impl SensorRow {
             "cadence" => SensorType::Cadence,
             "speed" => SensorType::Speed,
             "speedcadence" => SensorType::SpeedCadence,
-            _ => return Err(DatabaseError::DeserializationError(format!("Unknown sensor type: {}", self.sensor_type))),
+            _ => {
+                return Err(DatabaseError::DeserializationError(format!(
+                    "Unknown sensor type: {}",
+                    self.sensor_type
+                )))
+            }
         };
 
         let protocol = match self.protocol.to_lowercase().as_str() {
@@ -1268,17 +1375,27 @@ impl SensorRow {
             "blecyclingpower" => Protocol::BleCyclingPower,
             "bleheartrate" => Protocol::BleHeartRate,
             "blecsc" => Protocol::BleCsc,
-            _ => return Err(DatabaseError::DeserializationError(format!("Unknown protocol: {}", self.protocol))),
+            _ => {
+                return Err(DatabaseError::DeserializationError(format!(
+                    "Unknown protocol: {}",
+                    self.protocol
+                )))
+            }
         };
 
-        let last_seen_at = self.last_seen_at
+        let last_seen_at = self
+            .last_seen_at
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&Utc)))
             .transpose()
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid last_seen_at date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid last_seen_at date: {}", e))
+            })?;
 
         let created_at = DateTime::parse_from_rfc3339(&self.created_at)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid created_at date: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid created_at date: {}", e))
+            })?;
 
         Ok(SavedSensor {
             id,
@@ -1409,10 +1526,12 @@ mod tests {
         let workout_id = workout.id;
 
         // Insert workout
-        db.insert_workout(&workout).expect("Failed to insert workout");
+        db.insert_workout(&workout)
+            .expect("Failed to insert workout");
 
         // Retrieve workout
-        let retrieved = db.get_workout(&workout_id)
+        let retrieved = db
+            .get_workout(&workout_id)
             .expect("Failed to get workout")
             .expect("Workout not found");
 
@@ -1433,9 +1552,12 @@ mod tests {
         let db = Database::open_in_memory().expect("Failed to create database");
 
         // Insert multiple workouts
-        db.insert_workout(&create_test_workout("Workout One")).unwrap();
-        db.insert_workout(&create_test_workout("Workout Two")).unwrap();
-        db.insert_workout(&create_test_workout("Workout Three")).unwrap();
+        db.insert_workout(&create_test_workout("Workout One"))
+            .unwrap();
+        db.insert_workout(&create_test_workout("Workout Two"))
+            .unwrap();
+        db.insert_workout(&create_test_workout("Workout Three"))
+            .unwrap();
 
         // List all
         let workouts = db.list_workouts(None).expect("Failed to list workouts");
@@ -1446,17 +1568,24 @@ mod tests {
     fn test_workout_list_with_search() {
         let db = Database::open_in_memory().expect("Failed to create database");
 
-        db.insert_workout(&create_test_workout("Sweet Spot Training")).unwrap();
-        db.insert_workout(&create_test_workout("VO2 Max Intervals")).unwrap();
-        db.insert_workout(&create_test_workout("Endurance Ride")).unwrap();
+        db.insert_workout(&create_test_workout("Sweet Spot Training"))
+            .unwrap();
+        db.insert_workout(&create_test_workout("VO2 Max Intervals"))
+            .unwrap();
+        db.insert_workout(&create_test_workout("Endurance Ride"))
+            .unwrap();
 
         // Search for "spot"
-        let workouts = db.list_workouts(Some("spot")).expect("Failed to list workouts");
+        let workouts = db
+            .list_workouts(Some("spot"))
+            .expect("Failed to list workouts");
         assert_eq!(workouts.len(), 1);
         assert_eq!(workouts[0].name, "Sweet Spot Training");
 
         // Search for "ride" (case insensitive via SQL LIKE)
-        let workouts = db.list_workouts(Some("Ride")).expect("Failed to list workouts");
+        let workouts = db
+            .list_workouts(Some("Ride"))
+            .expect("Failed to list workouts");
         assert_eq!(workouts.len(), 1);
     }
 
@@ -1466,22 +1595,28 @@ mod tests {
         let mut workout = create_test_workout("Original Name");
         let workout_id = workout.id;
 
-        db.insert_workout(&workout).expect("Failed to insert workout");
+        db.insert_workout(&workout)
+            .expect("Failed to insert workout");
 
         // Update the workout
         workout.name = "Updated Name".to_string();
         workout.description = Some("Updated description".to_string());
         workout.tags.push("updated".to_string());
 
-        db.update_workout(&workout).expect("Failed to update workout");
+        db.update_workout(&workout)
+            .expect("Failed to update workout");
 
         // Verify update
-        let retrieved = db.get_workout(&workout_id)
+        let retrieved = db
+            .get_workout(&workout_id)
             .expect("Failed to get workout")
             .expect("Workout not found");
 
         assert_eq!(retrieved.name, "Updated Name");
-        assert_eq!(retrieved.description, Some("Updated description".to_string()));
+        assert_eq!(
+            retrieved.description,
+            Some("Updated description".to_string())
+        );
         assert!(retrieved.tags.contains(&"updated".to_string()));
     }
 
@@ -1491,11 +1626,13 @@ mod tests {
         let workout = create_test_workout("To Delete");
         let workout_id = workout.id;
 
-        db.insert_workout(&workout).expect("Failed to insert workout");
+        db.insert_workout(&workout)
+            .expect("Failed to insert workout");
         assert_eq!(db.count_workouts().unwrap(), 1);
 
         // Delete the workout
-        db.delete_workout(&workout_id).expect("Failed to delete workout");
+        db.delete_workout(&workout_id)
+            .expect("Failed to delete workout");
         assert_eq!(db.count_workouts().unwrap(), 0);
 
         // Verify it's gone
@@ -1563,7 +1700,8 @@ mod tests {
 
         db.insert_workout(&workout).expect("Failed to insert");
 
-        let retrieved = db.get_workout(&workout_id)
+        let retrieved = db
+            .get_workout(&workout_id)
             .expect("Failed to get")
             .expect("Not found");
 
@@ -1596,7 +1734,10 @@ mod tests {
         }
 
         // Check text event
-        assert_eq!(retrieved.segments[1].text_event, Some("Go hard!".to_string()));
+        assert_eq!(
+            retrieved.segments[1].text_event,
+            Some("Go hard!".to_string())
+        );
 
         // Check source format
         assert_eq!(retrieved.source_format, Some(WorkoutFormat::Mrc));
@@ -1645,14 +1786,16 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
         db.insert_ride(&ride).expect("Failed to insert ride");
 
-        let retrieved = db.get_ride(&ride_id)
+        let retrieved = db
+            .get_ride(&ride_id)
             .expect("Failed to get ride")
             .expect("Ride not found");
 
@@ -1671,7 +1814,8 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
@@ -1679,9 +1823,12 @@ mod tests {
         db.insert_ride(&ride).expect("Failed to insert ride");
 
         let samples = create_test_samples(60);
-        db.insert_ride_samples(&ride_id, &samples).expect("Failed to insert samples");
+        db.insert_ride_samples(&ride_id, &samples)
+            .expect("Failed to insert samples");
 
-        let retrieved_samples = db.get_ride_samples(&ride_id).expect("Failed to get samples");
+        let retrieved_samples = db
+            .get_ride_samples(&ride_id)
+            .expect("Failed to get samples");
 
         assert_eq!(retrieved_samples.len(), 60);
         assert_eq!(retrieved_samples[0].elapsed_seconds, 0);
@@ -1694,7 +1841,8 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
@@ -1702,9 +1850,12 @@ mod tests {
         db.insert_ride(&ride).expect("Failed to insert ride");
 
         let samples = create_test_samples(30);
-        db.insert_ride_samples(&ride_id, &samples).expect("Failed to insert samples");
+        db.insert_ride_samples(&ride_id, &samples)
+            .expect("Failed to insert samples");
 
-        let result = db.get_ride_with_samples(&ride_id).expect("Failed to get ride");
+        let result = db
+            .get_ride_with_samples(&ride_id)
+            .expect("Failed to get ride");
         assert!(result.is_some());
 
         let (retrieved_ride, retrieved_samples) = result.unwrap();
@@ -1718,7 +1869,8 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         // Insert 3 rides
         for _ in 0..3 {
@@ -1726,7 +1878,9 @@ mod tests {
             db.insert_ride(&ride).expect("Failed to insert ride");
         }
 
-        let rides = db.list_rides(&user_id, None, None).expect("Failed to list rides");
+        let rides = db
+            .list_rides(&user_id, None, None)
+            .expect("Failed to list rides");
         assert_eq!(rides.len(), 3);
     }
 
@@ -1736,7 +1890,8 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
@@ -1754,23 +1909,29 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Insert user first (foreign key constraint)
-        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+        db.insert_user(&create_test_user_with_id(user_id))
+            .expect("Failed to insert user");
 
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
         db.insert_ride(&ride).expect("Failed to insert ride");
-        db.insert_ride_samples(&ride_id, &create_test_samples(100)).expect("Failed to insert samples");
+        db.insert_ride_samples(&ride_id, &create_test_samples(100))
+            .expect("Failed to insert samples");
 
         // Verify samples exist
-        let samples = db.get_ride_samples(&ride_id).expect("Failed to get samples");
+        let samples = db
+            .get_ride_samples(&ride_id)
+            .expect("Failed to get samples");
         assert_eq!(samples.len(), 100);
 
         // Delete ride
         db.delete_ride(&ride_id).expect("Failed to delete ride");
 
         // Samples should be gone
-        let samples = db.get_ride_samples(&ride_id).expect("Failed to get samples");
+        let samples = db
+            .get_ride_samples(&ride_id)
+            .expect("Failed to get samples");
         assert_eq!(samples.len(), 0);
     }
 
@@ -1787,7 +1948,8 @@ mod tests {
         assert!(!db.has_autosave().unwrap());
 
         // Save autosave
-        db.save_autosave(&ride, &samples).expect("Failed to save autosave");
+        db.save_autosave(&ride, &samples)
+            .expect("Failed to save autosave");
         assert!(db.has_autosave().unwrap());
 
         // Load autosave
@@ -1806,7 +1968,8 @@ mod tests {
         let ride = create_test_ride(user_id);
         let samples = create_test_samples(10);
 
-        db.save_autosave(&ride, &samples).expect("Failed to save autosave");
+        db.save_autosave(&ride, &samples)
+            .expect("Failed to save autosave");
         assert!(db.has_autosave().unwrap());
 
         db.clear_autosave().expect("Failed to clear autosave");
@@ -1821,12 +1984,14 @@ mod tests {
         // First save
         let ride1 = create_test_ride(user_id);
         let samples1 = create_test_samples(10);
-        db.save_autosave(&ride1, &samples1).expect("Failed to save first autosave");
+        db.save_autosave(&ride1, &samples1)
+            .expect("Failed to save first autosave");
 
         // Second save (overwrite)
         let ride2 = create_test_ride(user_id);
         let samples2 = create_test_samples(20);
-        db.save_autosave(&ride2, &samples2).expect("Failed to save second autosave");
+        db.save_autosave(&ride2, &samples2)
+            .expect("Failed to save second autosave");
 
         // Should get the second one
         let (recovered_ride, recovered_samples) = db.load_autosave().unwrap().unwrap();
@@ -1855,7 +2020,8 @@ mod tests {
 
         db.insert_user(&profile).expect("Failed to insert user");
 
-        let retrieved = db.get_user(&user_id)
+        let retrieved = db
+            .get_user(&user_id)
             .expect("Failed to get user")
             .expect("User not found");
 
@@ -1896,7 +2062,9 @@ mod tests {
         db.insert_user(&user2).unwrap();
 
         // Should return the first one inserted
-        let default = db.get_default_user().expect("Failed to get default")
+        let default = db
+            .get_default_user()
+            .expect("Failed to get default")
             .expect("No default user");
 
         assert_eq!(default.id, user1.id);
@@ -1918,7 +2086,8 @@ mod tests {
         db.update_user(&profile).expect("Failed to update user");
 
         // Verify update
-        let retrieved = db.get_user(&user_id)
+        let retrieved = db
+            .get_user(&user_id)
             .expect("Failed to get user")
             .expect("User not found");
 
@@ -1948,11 +2117,15 @@ mod tests {
         let db = Database::open_in_memory().expect("Failed to create database");
 
         // Initially no users, should create one
-        let profile1 = db.get_or_create_default_user().expect("Failed to get or create");
+        let profile1 = db
+            .get_or_create_default_user()
+            .expect("Failed to get or create");
         assert_eq!(db.count_users().unwrap(), 1);
 
         // Should return the same one on subsequent calls
-        let profile2 = db.get_or_create_default_user().expect("Failed to get or create");
+        let profile2 = db
+            .get_or_create_default_user()
+            .expect("Failed to get or create");
         assert_eq!(db.count_users().unwrap(), 1);
         assert_eq!(profile1.id, profile2.id);
     }
@@ -1965,7 +2138,8 @@ mod tests {
 
         db.insert_user(&profile).expect("Failed to insert user");
 
-        let retrieved = db.get_user(&user_id)
+        let retrieved = db
+            .get_user(&user_id)
             .expect("Failed to get user")
             .expect("User not found");
 

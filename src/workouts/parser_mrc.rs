@@ -231,8 +231,8 @@ fn build_segments(points: &[CoursePoint], text_events: &[TextEvent]) -> Vec<Work
 
 /// Parse an MRC file from disk.
 pub fn parse_mrc_file(path: &std::path::Path) -> Result<Workout, WorkoutParseError> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| WorkoutParseError::IoError(e.to_string()))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| WorkoutParseError::IoError(e.to_string()))?;
 
     let mut workout = parse_mrc(&content)?;
     workout.source_file = Some(path.display().to_string());
@@ -295,18 +295,16 @@ FILE NAME = ramp_test
         // Should be warmup type with range
         assert_eq!(segment.segment_type, SegmentType::Warmup);
         match &segment.power_target {
-            PowerTarget::Range { start, end } => {
-                match (start.as_ref(), end.as_ref()) {
-                    (
-                        PowerTarget::PercentFtp { percent: s },
-                        PowerTarget::PercentFtp { percent: e },
-                    ) => {
-                        assert_eq!(*s, 50);
-                        assert_eq!(*e, 100);
-                    }
-                    _ => panic!("Expected PercentFtp"),
+            PowerTarget::Range { start, end } => match (start.as_ref(), end.as_ref()) {
+                (
+                    PowerTarget::PercentFtp { percent: s },
+                    PowerTarget::PercentFtp { percent: e },
+                ) => {
+                    assert_eq!(*s, 50);
+                    assert_eq!(*e, 100);
                 }
-            }
+                _ => panic!("Expected PercentFtp"),
+            },
             _ => panic!("Expected Range"),
         }
     }

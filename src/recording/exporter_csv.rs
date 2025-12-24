@@ -31,8 +31,12 @@ pub fn export_csv(ride: &Ride, samples: &[RideSample]) -> Result<String, ExportE
             sample.elapsed_seconds,
             sample.power_watts.map_or(String::new(), |v| v.to_string()),
             sample.cadence_rpm.map_or(String::new(), |v| v.to_string()),
-            sample.heart_rate_bpm.map_or(String::new(), |v| v.to_string()),
-            sample.speed_kmh.map_or(String::new(), |v| format!("{:.2}", v)),
+            sample
+                .heart_rate_bpm
+                .map_or(String::new(), |v| v.to_string()),
+            sample
+                .speed_kmh
+                .map_or(String::new(), |v| format!("{:.2}", v)),
             sample.distance_meters,
             sample.calories,
             sample.target_power.map_or(String::new(), |v| v.to_string()),
@@ -64,7 +68,8 @@ pub fn export_summary_csv(ride: &Ride) -> Result<String, ExportError> {
         ride.distance_meters,
         ride.avg_power.map_or(String::new(), |v| v.to_string()),
         ride.max_power.map_or(String::new(), |v| v.to_string()),
-        ride.normalized_power.map_or(String::new(), |v| v.to_string()),
+        ride.normalized_power
+            .map_or(String::new(), |v| v.to_string()),
         ride.intensity_factor.unwrap_or(0.0),
         ride.tss.unwrap_or(0.0),
         ride.avg_hr.map_or(String::new(), |v| v.to_string()),
@@ -222,20 +227,18 @@ mod tests {
     #[test]
     fn test_csv_handles_missing_data() {
         let ride = create_test_ride();
-        let samples = vec![
-            RideSample {
-                elapsed_seconds: 0,
-                power_watts: Some(200),
-                cadence_rpm: None, // Missing
-                heart_rate_bpm: None, // Missing
-                speed_kmh: Some(30.0),
-                distance_meters: 0.0,
-                calories: 0,
-                resistance_level: None,
-                target_power: None, // Missing
-                trainer_grade: None,
-            },
-        ];
+        let samples = vec![RideSample {
+            elapsed_seconds: 0,
+            power_watts: Some(200),
+            cadence_rpm: None,    // Missing
+            heart_rate_bpm: None, // Missing
+            speed_kmh: Some(30.0),
+            distance_meters: 0.0,
+            calories: 0,
+            resistance_level: None,
+            target_power: None, // Missing
+            trainer_grade: None,
+        }];
 
         let csv = export_csv(&ride, &samples).unwrap();
         let data_row = csv.lines().nth(1).unwrap();

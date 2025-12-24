@@ -16,9 +16,7 @@ use crate::sensors::types::{
     ConnectionState, DiscoveredSensor, Protocol, SensorConfig, SensorError, SensorEvent,
     SensorReading, SensorState, SensorType,
 };
-use btleplug::api::{
-    Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter, WriteType,
-};
+use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use crossbeam::channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -106,10 +104,7 @@ impl SensorManager {
 
     /// Start scanning for BLE sensors.
     pub async fn start_discovery(&mut self) -> Result<(), SensorError> {
-        let adapter = self
-            .adapter
-            .as_ref()
-            .ok_or(SensorError::AdapterNotFound)?;
+        let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
 
         {
             let mut is_scanning = self.is_scanning.lock().await;
@@ -188,7 +183,10 @@ impl SensorManager {
                             let device_id = peripheral.id().to_string();
 
                             // Store discovered sensor
-                            discovered.lock().await.insert(device_id.clone(), sensor.clone());
+                            discovered
+                                .lock()
+                                .await
+                                .insert(device_id.clone(), sensor.clone());
 
                             // Send discovery event
                             if let Some(tx) = &event_tx {
@@ -345,7 +343,10 @@ impl SensorManager {
     }
 
     /// Subscribe to sensor data characteristics.
-    async fn subscribe_to_characteristics(&self, peripheral: &Peripheral) -> Result<(), SensorError> {
+    async fn subscribe_to_characteristics(
+        &self,
+        peripheral: &Peripheral,
+    ) -> Result<(), SensorError> {
         let characteristics = peripheral.characteristics();
 
         for char in characteristics {

@@ -13,7 +13,6 @@ use crate::recording::types::{Ride, RideSample};
 use crate::storage::config::Units;
 use crate::ui::theme::zone_colors;
 
-
 /// Actions that can result from the ride detail screen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RideDetailAction {
@@ -185,7 +184,11 @@ impl RideDetailScreen {
                 .spacing([32.0, 8.0])
                 .show(ui, |ui| {
                     // Row 1: Duration, Distance, Avg Speed, Calories
-                    self.render_metric_cell(ui, "Duration", &self.format_duration(ride.duration_seconds));
+                    self.render_metric_cell(
+                        ui,
+                        "Duration",
+                        &self.format_duration(ride.duration_seconds),
+                    );
 
                     let (dist, dist_unit) = match self.units {
                         Units::Metric => (ride.distance_meters / 1000.0, "km"),
@@ -195,7 +198,8 @@ impl RideDetailScreen {
 
                     // Calculate average speed
                     let avg_speed = if ride.duration_seconds > 0 {
-                        ride.distance_meters / ride.duration_seconds as f64 * 3.6 // km/h
+                        ride.distance_meters / ride.duration_seconds as f64 * 3.6
+                    // km/h
                     } else {
                         0.0
                     };
@@ -203,21 +207,35 @@ impl RideDetailScreen {
                         Units::Metric => (avg_speed, "km/h"),
                         Units::Imperial => (avg_speed * 0.621371, "mph"),
                     };
-                    self.render_metric_cell(ui, "Avg Speed", &format!("{:.1} {}", speed, speed_unit));
+                    self.render_metric_cell(
+                        ui,
+                        "Avg Speed",
+                        &format!("{:.1} {}", speed, speed_unit),
+                    );
 
                     self.render_metric_cell(ui, "Calories", &format!("{} kcal", ride.calories));
                     ui.end_row();
 
                     // Row 2: TSS, IF, Work
-                    let tss_str = ride.tss.map(|t| format!("{:.0}", t)).unwrap_or_else(|| "--".to_string());
+                    let tss_str = ride
+                        .tss
+                        .map(|t| format!("{:.0}", t))
+                        .unwrap_or_else(|| "--".to_string());
                     self.render_metric_cell(ui, "TSS", &tss_str);
 
-                    let if_str = ride.intensity_factor.map(|i| format!("{:.2}", i)).unwrap_or_else(|| "--".to_string());
+                    let if_str = ride
+                        .intensity_factor
+                        .map(|i| format!("{:.2}", i))
+                        .unwrap_or_else(|| "--".to_string());
                     self.render_metric_cell(ui, "IF", &if_str);
 
                     // Calculate work (kJ)
-                    let work_kj = ride.avg_power.map(|p| p as f32 * ride.duration_seconds as f32 / 1000.0);
-                    let work_str = work_kj.map(|w| format!("{:.0} kJ", w)).unwrap_or_else(|| "--".to_string());
+                    let work_kj = ride
+                        .avg_power
+                        .map(|p| p as f32 * ride.duration_seconds as f32 / 1000.0);
+                    let work_str = work_kj
+                        .map(|w| format!("{:.0} kJ", w))
+                        .unwrap_or_else(|| "--".to_string());
                     self.render_metric_cell(ui, "Work", &work_str);
 
                     self.render_metric_cell(ui, "FTP", &format!("{} W", ride.ftp_at_ride));
@@ -246,7 +264,10 @@ impl RideDetailScreen {
                 // Average Power
                 ui.group(|ui| {
                     ui.vertical(|ui| {
-                        let avg_power = ride.avg_power.map(|p| format!("{} W", p)).unwrap_or_else(|| "--".to_string());
+                        let avg_power = ride
+                            .avg_power
+                            .map(|p| format!("{} W", p))
+                            .unwrap_or_else(|| "--".to_string());
                         ui.label(RichText::new(avg_power).size(24.0).strong());
                         ui.label(RichText::new("Average").weak());
                     });
@@ -255,7 +276,10 @@ impl RideDetailScreen {
                 // Max Power
                 ui.group(|ui| {
                     ui.vertical(|ui| {
-                        let max_power = ride.max_power.map(|p| format!("{} W", p)).unwrap_or_else(|| "--".to_string());
+                        let max_power = ride
+                            .max_power
+                            .map(|p| format!("{} W", p))
+                            .unwrap_or_else(|| "--".to_string());
                         ui.label(RichText::new(max_power).size(24.0).strong());
                         ui.label(RichText::new("Max").weak());
                     });
@@ -264,7 +288,10 @@ impl RideDetailScreen {
                 // Normalized Power
                 ui.group(|ui| {
                     ui.vertical(|ui| {
-                        let np = ride.normalized_power.map(|p| format!("{} W", p)).unwrap_or_else(|| "--".to_string());
+                        let np = ride
+                            .normalized_power
+                            .map(|p| format!("{} W", p))
+                            .unwrap_or_else(|| "--".to_string());
                         ui.label(RichText::new(np).size(24.0).strong());
                         ui.label(RichText::new("Normalized").weak());
                     });
@@ -323,7 +350,11 @@ impl RideDetailScreen {
                 if let Some(avg_cad) = ride.avg_cadence {
                     ui.group(|ui| {
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(format!("{} rpm", avg_cad)).size(24.0).strong());
+                            ui.label(
+                                RichText::new(format!("{} rpm", avg_cad))
+                                    .size(24.0)
+                                    .strong(),
+                            );
                             ui.label(RichText::new("Avg Cadence").weak());
                         });
                     });
@@ -380,7 +411,8 @@ impl RideDetailScreen {
                     let bar_width = bar_max_width * pct;
                     let bar_color = zone_colors::power_zone_color((i + 1) as u8);
 
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(bar_max_width, 16.0), egui::Sense::hover());
+                    let (rect, _) = ui
+                        .allocate_exact_size(Vec2::new(bar_max_width, 16.0), egui::Sense::hover());
                     ui.painter().rect_filled(
                         egui::Rect::from_min_size(rect.min, Vec2::new(bar_width, 16.0)),
                         2.0,
@@ -450,13 +482,19 @@ impl RideDetailScreen {
 
                 ui.horizontal(|ui| {
                     if ui
-                        .selectable_label(self.export_format == ExportFormat::Tcx, "TCX (Strava/Garmin)")
+                        .selectable_label(
+                            self.export_format == ExportFormat::Tcx,
+                            "TCX (Strava/Garmin)",
+                        )
                         .clicked()
                     {
                         self.export_format = ExportFormat::Tcx;
                     }
                     if ui
-                        .selectable_label(self.export_format == ExportFormat::Csv, "CSV (Data Analysis)")
+                        .selectable_label(
+                            self.export_format == ExportFormat::Csv,
+                            "CSV (Data Analysis)",
+                        )
                         .clicked()
                     {
                         self.export_format = ExportFormat::Csv;
