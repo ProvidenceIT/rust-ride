@@ -244,9 +244,9 @@
 
 ### UI - Ride Summary Screen
 
-- [ ] T101 [US3] Create ride summary screen with stats display in src/ui/screens/ride_summary.rs
-- [ ] T102 [US3] Implement export button with format selection in src/ui/screens/ride_summary.rs
-- [ ] T103 [US3] Implement save/discard controls in src/ui/screens/ride_summary.rs
+- [x] T101 [US3] Create ride summary screen with stats display in src/ui/screens/ride_summary.rs
+- [x] T102 [US3] Implement export button with format selection in src/ui/screens/ride_summary.rs
+- [x] T103 [US3] Implement save/discard controls in src/ui/screens/ride_summary.rs
 
 **Checkpoint**: User Story 3 complete - rides recorded, exported, and uploadable
 
