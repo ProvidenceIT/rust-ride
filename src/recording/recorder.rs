@@ -1,12 +1,32 @@
 //! Ride recorder for capturing sensor data.
 //!
 //! T087: Implement RideRecorder struct
-//! Placeholder for Phase 5 implementation
+//! T156: Implement storage-full warning
 
 use crate::recording::types::{
     LiveRideSummary, RecorderConfig, RecorderError, RecordingStatus, Ride, RideSample,
 };
+use std::path::Path;
 use uuid::Uuid;
+
+/// Minimum disk space in bytes required to continue recording (50 MB)
+const MIN_DISK_SPACE_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Warning threshold for low disk space (500 MB)
+const LOW_DISK_SPACE_WARNING_BYTES: u64 = 500 * 1024 * 1024;
+
+/// Storage status for the recorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageStatus {
+    /// Plenty of storage available
+    Ok,
+    /// Storage is running low (warning threshold)
+    Low,
+    /// Storage is critically low (recording should stop)
+    Critical,
+    /// Unable to determine storage status
+    Unknown,
+}
 
 /// Records ride data from sensors.
 pub struct RideRecorder {
@@ -182,6 +202,147 @@ impl RideRecorder {
             self.live_summary.current_cadence = sample.cadence_rpm;
             self.live_summary.current_speed = sample.speed_kmh;
             self.live_summary.calories = sample.calories;
+        }
+    }
+
+    /// Check the current storage status.
+    ///
+    /// Returns the storage status based on available disk space.
+    pub fn check_storage_status(&self) -> StorageStatus {
+        // Try to get available space from the database path or current directory
+        let path = self.config.database_path.as_deref().unwrap_or(".");
+        check_disk_space(path)
+    }
+
+    /// Check if there's enough storage to continue recording.
+    ///
+    /// Returns `Err(RecorderError::StorageFull)` if storage is critically low.
+    pub fn ensure_storage_available(&self) -> Result<(), RecorderError> {
+        match self.check_storage_status() {
+            StorageStatus::Critical => {
+                tracing::error!("Storage is critically low - cannot continue recording");
+                Err(RecorderError::StorageFull)
+            }
+            StorageStatus::Low => {
+                tracing::warn!("Storage is running low");
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Get the estimated storage used by the current recording in bytes.
+    pub fn estimated_storage_used(&self) -> u64 {
+        // Rough estimate: each sample is about 100 bytes when serialized
+        const BYTES_PER_SAMPLE: u64 = 100;
+        self.samples.len() as u64 * BYTES_PER_SAMPLE
+    }
+
+    /// Get a human-readable storage warning message if storage is low.
+    pub fn get_storage_warning(&self) -> Option<String> {
+        match self.check_storage_status() {
+            StorageStatus::Critical => Some(
+                "Critical: Storage is almost full! Recording will be stopped to prevent data loss."
+                    .to_string(),
+            ),
+            StorageStatus::Low => Some(
+                "Warning: Storage space is running low. Consider freeing up disk space."
+                    .to_string(),
+            ),
+            _ => None,
+        }
+    }
+}
+
+/// Check available disk space for a path.
+fn check_disk_space(path: &str) -> StorageStatus {
+    #[cfg(target_os = "windows")]
+    {
+        check_disk_space_windows(path)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        check_disk_space_unix(path)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn check_disk_space_windows(path: &str) -> StorageStatus {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ffi::OsStr;
+
+    // Get the drive letter from the path
+    let path = Path::new(path);
+    let root = path
+        .components()
+        .next()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .unwrap_or_else(|| "C:\\".to_string());
+
+    // Append backslash if needed
+    let root = if root.ends_with('\\') || root.ends_with('/') {
+        root
+    } else {
+        format!("{}\\", root)
+    };
+
+    // Use winapi to get disk space
+    unsafe {
+        let mut free_bytes_available: u64 = 0;
+        let mut total_bytes: u64 = 0;
+        let mut total_free_bytes: u64 = 0;
+
+        let root_wide: Vec<u16> = OsStr::new(&root)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let result = windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            root_wide.as_ptr(),
+            &mut free_bytes_available,
+            &mut total_bytes,
+            &mut total_free_bytes,
+        );
+
+        if result == 0 {
+            tracing::warn!("Failed to get disk space for {}", root);
+            return StorageStatus::Unknown;
+        }
+
+        if free_bytes_available < MIN_DISK_SPACE_BYTES {
+            StorageStatus::Critical
+        } else if free_bytes_available < LOW_DISK_SPACE_WARNING_BYTES {
+            StorageStatus::Low
+        } else {
+            StorageStatus::Ok
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn check_disk_space_unix(path: &str) -> StorageStatus {
+    use std::mem::MaybeUninit;
+
+    let path = std::ffi::CString::new(path).unwrap_or_else(|_| std::ffi::CString::new(".").unwrap());
+
+    unsafe {
+        let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+        let result = libc::statvfs(path.as_ptr(), stat.as_mut_ptr());
+
+        if result != 0 {
+            tracing::warn!("Failed to get disk space");
+            return StorageStatus::Unknown;
+        }
+
+        let stat = stat.assume_init();
+        let free_bytes = stat.f_bavail as u64 * stat.f_frsize as u64;
+
+        if free_bytes < MIN_DISK_SPACE_BYTES {
+            StorageStatus::Critical
+        } else if free_bytes < LOW_DISK_SPACE_WARNING_BYTES {
+            StorageStatus::Low
+        } else {
+            StorageStatus::Ok
         }
     }
 }

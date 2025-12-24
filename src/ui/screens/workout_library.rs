@@ -6,7 +6,7 @@
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
-use crate::workouts::types::{Workout, WorkoutFormat};
+use crate::workouts::types::{Workout, WorkoutFormat, WorkoutParseError};
 
 use super::Screen;
 
@@ -25,6 +25,21 @@ pub struct WorkoutLibraryScreen {
     pub show_import_dialog: bool,
     /// Error message to display
     pub error_message: Option<String>,
+    /// Show detailed error dialog
+    pub show_error_dialog: bool,
+    /// Detailed error info
+    pub error_details: Option<WorkoutImportError>,
+}
+
+/// Detailed information about a workout import error.
+#[derive(Debug, Clone)]
+pub struct WorkoutImportError {
+    /// The filename that failed to import
+    pub filename: String,
+    /// The error that occurred
+    pub error_message: String,
+    /// Helpful suggestions for the user
+    pub suggestions: Vec<String>,
 }
 
 impl WorkoutLibraryScreen {
@@ -41,6 +56,66 @@ impl WorkoutLibraryScreen {
     /// Add a workout to the library.
     pub fn add_workout(&mut self, workout: Workout) {
         self.workouts.push(workout);
+    }
+
+    /// Handle a workout parse error with user-friendly messaging.
+    pub fn handle_parse_error(&mut self, filename: &str, error: WorkoutParseError) {
+        let (error_message, suggestions) = match &error {
+            WorkoutParseError::IoError(msg) => (
+                format!("Could not read file: {}", msg),
+                vec![
+                    "Check that the file exists and is not corrupted".to_string(),
+                    "Ensure you have permission to read the file".to_string(),
+                ],
+            ),
+            WorkoutParseError::XmlParseError(msg) => (
+                format!("Invalid XML format: {}", msg),
+                vec![
+                    "The file may be corrupted or not a valid workout file".to_string(),
+                    "Try re-exporting the workout from the original application".to_string(),
+                    "Make sure the file has a .zwo extension for Zwift workouts".to_string(),
+                ],
+            ),
+            WorkoutParseError::InvalidFormat(msg) => (
+                format!("Invalid workout format: {}", msg),
+                vec![
+                    "This file type may not be supported".to_string(),
+                    "Supported formats: .zwo (Zwift), .mrc (TrainerRoad)".to_string(),
+                    "Try converting the workout to a supported format".to_string(),
+                ],
+            ),
+            WorkoutParseError::MissingField(field) => (
+                format!("Missing required field: {}", field),
+                vec![
+                    "The workout file is missing required data".to_string(),
+                    "Try re-exporting from the original application".to_string(),
+                    format!("Required field: {}", field),
+                ],
+            ),
+            WorkoutParseError::InvalidValue { field, value, expected } => (
+                format!("Invalid value '{}' for field '{}'", value, field),
+                vec![
+                    format!("Expected: {}", expected),
+                    "The workout file may have been manually edited incorrectly".to_string(),
+                    "Try using the original workout file".to_string(),
+                ],
+            ),
+        };
+
+        self.error_details = Some(WorkoutImportError {
+            filename: filename.to_string(),
+            error_message,
+            suggestions,
+        });
+        self.show_error_dialog = true;
+        self.error_message = Some(format!("Failed to import: {}", filename));
+    }
+
+    /// Clear any error state.
+    pub fn clear_error(&mut self) {
+        self.error_message = None;
+        self.error_details = None;
+        self.show_error_dialog = false;
     }
 
     /// Render the workout library screen.
@@ -135,6 +210,11 @@ impl WorkoutLibraryScreen {
         // Import dialog
         if self.show_import_dialog {
             self.render_import_dialog(ui);
+        }
+
+        // Error dialog
+        if self.show_error_dialog {
+            self.render_error_dialog(ui);
         }
 
         result
@@ -366,6 +446,77 @@ impl WorkoutLibraryScreen {
         // Close dialog on click outside (simplified)
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.show_import_dialog = false;
+        }
+    }
+
+    /// Render the error dialog for invalid workout files.
+    fn render_error_dialog(&mut self, ui: &mut Ui) {
+        let error = match &self.error_details {
+            Some(e) => e.clone(),
+            None => return,
+        };
+
+        egui::Window::new("Import Error")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.set_min_size(Vec2::new(450.0, 250.0));
+
+                ui.vertical(|ui| {
+                    // Error icon and title
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("⚠").size(24.0).color(Color32::from_rgb(234, 67, 53)));
+                        ui.label(RichText::new("Failed to Import Workout").size(18.0).strong());
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Filename
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("File:").strong());
+                        ui.label(&error.filename);
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Error message
+                    ui.group(|ui| {
+                        ui.set_min_width(ui.available_width() - 8.0);
+                        ui.label(RichText::new(&error.error_message).color(Color32::from_rgb(234, 67, 53)));
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Suggestions
+                    if !error.suggestions.is_empty() {
+                        ui.label(RichText::new("Suggestions:").strong());
+                        ui.add_space(4.0);
+
+                        for suggestion in &error.suggestions {
+                            ui.horizontal(|ui| {
+                                ui.label("•");
+                                ui.label(suggestion);
+                            });
+                        }
+                    }
+
+                    ui.add_space(16.0);
+
+                    // Close button
+                    ui.horizontal(|ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui.button("Close").clicked() {
+                                self.clear_error();
+                            }
+                        });
+                    });
+                });
+            });
+
+        // Close on Escape
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.clear_error();
         }
     }
 }

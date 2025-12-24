@@ -145,7 +145,7 @@
 - [x] T054 [P] [US2] Unit test for .zwo parsing with sample files in tests/unit/workout_parser_test.rs
 - [x] T055 [P] [US2] Unit test for .mrc parsing in tests/unit/workout_parser_test.rs
 - [x] T056 [P] [US2] Unit test for WorkoutEngine state machine in tests/unit/workout_engine_test.rs
-- [ ] T057 [P] [US2] Integration test for workout execution in tests/integration/workout_execution_test.rs
+- [x] T057 [P] [US2] Integration test for workout execution in tests/integration/workout_execution_test.rs
 
 ### Workout Types
 
@@ -272,12 +272,12 @@
 
 - [x] T108 [US4] Implement zone indicator widget with color band in src/ui/widgets/zone_indicator.rs
 - [x] T109 [US4] Display running NP, TSS, IF on ride screen in src/ui/screens/ride.rs
-- [ ] T110 [US4] Implement full-screen mode toggle in src/ui/screens/ride.rs
+- [x] T110 [US4] Implement full-screen mode toggle in src/ui/screens/ride.rs
 
 ### Dashboard Customization
 
-- [ ] T111 [US4] Implement configurable metric panel layout in src/ui/screens/ride.rs
-- [ ] T112 [US4] Save dashboard layout to config in src/storage/config.rs
+- [x] T111 [US4] Implement configurable metric panel layout in src/ui/screens/ride.rs
+- [x] T112 [US4] Save dashboard layout to config in src/storage/config.rs
 
 **Checkpoint**: User Story 4 complete - rich metrics display with zones
 
@@ -291,32 +291,32 @@
 
 ### Tests for User Story 5
 
-- [ ] T113 [P] [US5] Unit test for zone calculation from FTP in tests/unit/zones_test.rs
-- [ ] T114 [P] [US5] Unit test for HR zone calculation in tests/unit/zones_test.rs
+- [x] T113 [P] [US5] Unit test for zone calculation from FTP in tests/unit/zones_test.rs
+- [x] T114 [P] [US5] Unit test for HR zone calculation in tests/unit/zones_test.rs
 
 ### Profile Management
 
-- [ ] T115 [US5] Implement UserProfile CRUD in database in src/storage/database.rs
-- [ ] T116 [US5] Implement profile loading on app startup in src/app.rs
-- [ ] T117 [US5] Implement FTP validation (50-600W) in src/storage/config.rs
+- [x] T115 [US5] Implement UserProfile CRUD in database in src/storage/database.rs
+- [x] T116 [US5] Implement profile loading on app startup in src/app.rs
+- [x] T117 [US5] Implement FTP validation (50-600W) in src/storage/config.rs
 
 ### Zone Customization
 
-- [ ] T118 [US5] Allow custom zone boundaries override in src/metrics/zones.rs
-- [ ] T119 [US5] Persist custom zones to config in src/storage/config.rs
+- [x] T118 [US5] Allow custom zone boundaries override in src/metrics/zones.rs
+- [x] T119 [US5] Persist custom zones to config in src/storage/config.rs
 
 ### UI - Settings Screen
 
-- [ ] T120 [US5] Create settings screen with profile section in src/ui/screens/settings.rs
-- [ ] T121 [US5] Implement FTP, max HR, resting HR, weight, height inputs in src/ui/screens/settings.rs
-- [ ] T122 [US5] Implement power zone editor with auto-calculate toggle in src/ui/screens/settings.rs
-- [ ] T123 [US5] Implement HR zone editor in src/ui/screens/settings.rs
-- [ ] T124 [US5] Implement unit preference toggle (metric/imperial) in src/ui/screens/settings.rs
-- [ ] T125 [US5] Implement theme toggle (dark/light) in src/ui/screens/settings.rs
+- [x] T120 [US5] Create settings screen with profile section in src/ui/screens/settings.rs
+- [x] T121 [US5] Implement FTP, max HR, resting HR, weight, height inputs in src/ui/screens/settings.rs
+- [x] T122 [US5] Implement power zone editor with auto-calculate toggle in src/ui/screens/settings.rs
+- [x] T123 [US5] Implement HR zone editor in src/ui/screens/settings.rs
+- [x] T124 [US5] Implement unit preference toggle (metric/imperial) in src/ui/screens/settings.rs
+- [x] T125 [US5] Implement theme toggle (dark/light) in src/ui/screens/settings.rs
 
 ### Light Theme
 
-- [ ] T126 [P] [US5] Implement light theme colors in src/ui/theme.rs
+- [x] T126 [P] [US5] Implement light theme colors in src/ui/theme.rs
 
 **Checkpoint**: User Story 5 complete - profile and zones configurable
 
@@ -330,28 +330,28 @@
 
 ### Tests for User Story 6
 
-- [ ] T127 [P] [US6] Unit test for ride query with date filtering in tests/unit/ride_query_test.rs
+- [x] T127 [P] [US6] Unit test for ride query with date filtering in tests/unit/ride_history_test.rs
 
 ### Ride History Queries
 
-- [ ] T128 [US6] Implement list_rides() with pagination in src/storage/database.rs
-- [ ] T129 [US6] Implement get_ride_with_samples() in src/storage/database.rs
-- [ ] T130 [US6] Implement filter_rides_by_date() in src/storage/database.rs
-- [ ] T131 [US6] Implement delete_ride() in src/storage/database.rs
+- [x] T128 [US6] Implement list_rides() with pagination in src/storage/database.rs
+- [x] T129 [US6] Implement get_ride_with_samples() in src/storage/database.rs
+- [x] T130 [US6] Implement filter_rides_by_date() in src/storage/database.rs
+- [x] T131 [US6] Implement delete_ride() in src/storage/database.rs
 
 ### UI - Ride History Screen
 
-- [ ] T132 [US6] Create ride history list screen in src/ui/screens/ride_history.rs
-- [ ] T133 [US6] Display date, duration, distance, avg power per ride in src/ui/screens/ride_history.rs
-- [ ] T134 [US6] Implement date range filter UI in src/ui/screens/ride_history.rs
+- [x] T132 [US6] Create ride history list screen in src/ui/screens/ride_history.rs
+- [x] T133 [US6] Display date, duration, distance, avg power per ride in src/ui/screens/ride_history.rs
+- [x] T134 [US6] Implement date range filter UI in src/ui/screens/ride_history.rs
 
 ### UI - Ride Detail Screen
 
-- [ ] T135 [US6] Create ride detail screen with summary stats in src/ui/screens/ride_detail.rs
-- [ ] T136 [US6] Implement power/HR/cadence charts over time with egui_plot in src/ui/screens/ride_detail.rs
-- [ ] T137 [US6] Implement min-max downsampling for chart performance in src/ui/screens/ride_detail.rs
-- [ ] T138 [US6] Implement re-export button in src/ui/screens/ride_detail.rs
-- [ ] T139 [US6] Implement delete ride with confirmation in src/ui/screens/ride_detail.rs
+- [x] T135 [US6] Create ride detail screen with summary stats in src/ui/screens/ride_detail.rs
+- [x] T136 [US6] Implement power/HR/cadence charts over time with egui_plot in src/ui/screens/ride_detail.rs
+- [x] T137 [US6] Implement min-max downsampling for chart performance in src/ui/screens/ride_detail.rs
+- [x] T138 [US6] Implement re-export button in src/ui/screens/ride_detail.rs
+- [x] T139 [US6] Implement delete ride with confirmation in src/ui/screens/ride_detail.rs
 
 **Checkpoint**: User Story 6 complete - full ride history browsing
 
@@ -365,26 +365,26 @@
 
 ### Tests for User Story 7
 
-- [ ] T140 [P] [US7] Unit test for multi-sensor data aggregation in tests/unit/sensor_aggregation_test.rs
+- [x] T140 [P] [US7] Unit test for multi-sensor data aggregation in tests/unit/sensor_aggregation_test.rs
 
 ### Multi-Sensor Support
 
-- [ ] T141 [US7] Implement Cycling Power Service (0x1818) parsing in src/sensors/cycling_power.rs
-- [ ] T142 [US7] Implement Heart Rate Service (0x180D) parsing in src/sensors/heart_rate.rs
-- [ ] T143 [US7] Extend SensorManager for simultaneous connections in src/sensors/manager.rs
-- [ ] T144 [US7] Implement data source priority selection in src/sensors/manager.rs
+- [x] T141 [US7] Implement Cycling Power Service (0x1818) parsing in src/sensors/cycling_power.rs
+- [x] T142 [US7] Implement Heart Rate Service (0x180D) parsing in src/sensors/heart_rate.rs
+- [x] T143 [US7] Extend SensorManager for simultaneous connections in src/sensors/manager.rs
+- [x] T144 [US7] Implement data source priority selection in src/sensors/manager.rs
 
 ### Sensor Persistence
 
-- [ ] T145 [US7] Implement sensor CRUD in database in src/storage/database.rs
-- [ ] T146 [US7] Implement auto-reconnect on app startup in src/sensors/manager.rs
-- [ ] T147 [US7] Save is_primary flag per sensor type in src/storage/database.rs
+- [x] T145 [US7] Implement sensor CRUD in database in src/storage/database.rs
+- [x] T146 [US7] Implement auto-reconnect on app startup in src/sensors/manager.rs
+- [x] T147 [US7] Save is_primary flag per sensor type in src/storage/database.rs
 
 ### UI - Multi-Sensor Setup
 
-- [ ] T148 [US7] Show all discovered sensors with type icons in src/ui/screens/sensor_setup.rs
-- [ ] T149 [US7] Show all connected sensors with status in src/ui/screens/sensor_setup.rs
-- [ ] T150 [US7] Implement primary source selector when conflicts exist in src/ui/screens/sensor_setup.rs
+- [x] T148 [US7] Show all discovered sensors with type icons in src/ui/screens/sensor_setup.rs
+- [x] T149 [US7] Show all connected sensors with status in src/ui/screens/sensor_setup.rs
+- [x] T150 [US7] Implement primary source selector when conflicts exist in src/ui/screens/sensor_setup.rs
 
 **Checkpoint**: User Story 7 complete - multi-sensor support working
 
@@ -401,11 +401,11 @@
 
 ### Edge Cases & Error Handling
 
-- [ ] T153 Implement trainer disconnect mid-workout handling in src/workouts/engine.rs
-- [ ] T154 Implement no-sensors-found troubleshooting tips in src/ui/screens/sensor_setup.rs
-- [ ] T155 Implement invalid workout file error display in src/ui/screens/workout_library.rs
-- [ ] T156 Implement storage-full warning in src/recording/recorder.rs
-- [ ] T157 Implement crash recovery prompt on startup in src/app.rs
+- [x] T153 Implement trainer disconnect mid-workout handling in src/workouts/engine.rs
+- [x] T154 Implement no-sensors-found troubleshooting tips in src/ui/screens/sensor_setup.rs
+- [x] T155 Implement invalid workout file error display in src/ui/screens/workout_library.rs
+- [x] T156 Implement storage-full warning in src/recording/recorder.rs
+- [x] T157 Implement crash recovery prompt on startup in src/app.rs
 
 ### Performance Optimization
 

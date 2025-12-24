@@ -51,6 +51,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Channels
 crossbeam = "0.8"
 
+# Platform-specific disk space checking
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3.0"
 

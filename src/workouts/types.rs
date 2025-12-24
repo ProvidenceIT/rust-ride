@@ -122,6 +122,8 @@ pub enum WorkoutStatus {
     Completed,
     /// Workout stopped early
     Stopped,
+    /// Trainer disconnected - workout paused waiting for reconnection
+    TrainerDisconnected,
 }
 
 /// Source format of imported workout.

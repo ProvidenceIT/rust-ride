@@ -3,6 +3,7 @@
 //! T042: Create App struct with egui state
 //! T044: Implement screen navigation state machine
 //! T050: Wire sensor data to UI via crossbeam channel
+//! T157: Implement crash recovery prompt on startup
 
 use eframe::egui;
 
@@ -16,6 +17,26 @@ use crate::ui::theme::Theme;
 use crate::workouts::WorkoutEngine;
 use crossbeam::channel::Receiver;
 use std::time::Instant;
+
+/// Crash recovery dialog state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryState {
+    /// No recovery data or already handled
+    None,
+    /// Recovery data found, showing prompt
+    Pending {
+        /// Timestamp of the recovered ride
+        timestamp: String,
+        /// Duration of the recovered ride
+        duration: String,
+        /// Number of samples in the recovered ride
+        sample_count: usize,
+    },
+    /// User chose to recover
+    Recovering,
+    /// User chose to discard
+    Discarding,
+}
 
 /// Main application state.
 pub struct RustRideApp {
@@ -32,7 +53,7 @@ pub struct RustRideApp {
     /// Workout engine
     _workout_engine: WorkoutEngine,
     /// Ride recorder
-    _ride_recorder: RideRecorder,
+    ride_recorder: RideRecorder,
     /// Metrics calculator
     metrics_calculator: MetricsCalculator,
     /// Sensor setup screen state
@@ -47,6 +68,8 @@ pub struct RustRideApp {
     sensor_status: String,
     /// Number of connected sensors
     connected_sensor_count: usize,
+    /// Crash recovery state
+    recovery_state: RecoveryState,
 }
 
 impl RustRideApp {
@@ -72,6 +95,19 @@ impl RustRideApp {
         let ride_recorder = RideRecorder::with_defaults();
         let metrics_calculator = MetricsCalculator::new(profile.ftp);
 
+        // Check for crash recovery data
+        let recovery_state = if ride_recorder.has_recovery_data() {
+            // In a real implementation, we'd get the actual recovery data here
+            tracing::info!("Found crash recovery data from previous session");
+            RecoveryState::Pending {
+                timestamp: "Unknown".to_string(),
+                duration: "Unknown".to_string(),
+                sample_count: 0,
+            }
+        } else {
+            RecoveryState::None
+        };
+
         Self {
             current_screen: Screen::Home,
             theme,
@@ -79,7 +115,7 @@ impl RustRideApp {
             _config: config,
             sensor_manager,
             _workout_engine: workout_engine,
-            _ride_recorder: ride_recorder,
+            ride_recorder,
             metrics_calculator,
             sensor_setup_screen: SensorSetupScreen::new(),
             ride_screen: RideScreen::new(),
@@ -87,6 +123,7 @@ impl RustRideApp {
             last_update: Instant::now(),
             sensor_status: "No sensors connected".to_string(),
             connected_sensor_count: 0,
+            recovery_state,
         }
     }
 
@@ -190,6 +227,106 @@ impl RustRideApp {
             Theme::Light => Theme::Dark,
         };
         ctx.set_visuals(self.theme.visuals());
+    }
+
+    /// Render the crash recovery dialog.
+    fn render_recovery_dialog(&mut self, ctx: &egui::Context) {
+        if let RecoveryState::Pending {
+            timestamp,
+            duration,
+            sample_count,
+        } = &self.recovery_state
+        {
+            let timestamp = timestamp.clone();
+            let duration = duration.clone();
+            let sample_count = *sample_count;
+
+            egui::Window::new("Recover Previous Ride?")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(400.0);
+
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("⚠")
+                                    .size(24.0)
+                                    .color(egui::Color32::from_rgb(251, 188, 4)),
+                            );
+                            ui.label(
+                                egui::RichText::new("Unsaved Ride Detected")
+                                    .size(18.0)
+                                    .strong(),
+                            );
+                        });
+
+                        ui.add_space(12.0);
+
+                        ui.label(
+                            "It looks like RustRide closed unexpectedly during your last ride.",
+                        );
+                        ui.label("Would you like to recover your ride data?");
+
+                        ui.add_space(12.0);
+
+                        // Recovery data details
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width() - 8.0);
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Started:").strong());
+                                ui.label(&timestamp);
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Duration:").strong());
+                                ui.label(&duration);
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Data points:").strong());
+                                ui.label(format!("{}", sample_count));
+                            });
+                        });
+
+                        ui.add_space(16.0);
+
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new("Discard")
+                                        .fill(egui::Color32::from_rgb(160, 160, 170)),
+                                )
+                                .clicked()
+                            {
+                                tracing::info!("User discarded crash recovery data");
+                                self.recovery_state = RecoveryState::Discarding;
+                                // TODO: Actually discard the recovery data
+                                self.recovery_state = RecoveryState::None;
+                            }
+
+                            ui.add_space(16.0);
+
+                            if ui
+                                .add(
+                                    egui::Button::new("Recover Ride")
+                                        .fill(egui::Color32::from_rgb(52, 168, 83)),
+                                )
+                                .clicked()
+                            {
+                                tracing::info!("User chose to recover crash data");
+                                self.recovery_state = RecoveryState::Recovering;
+                                // TODO: Actually recover the data and show ride summary
+                                self.recovery_state = RecoveryState::None;
+                                // Navigate to ride summary with recovered data
+                                self.current_screen = Screen::RideSummary;
+                            }
+                        });
+                    });
+                });
+        }
     }
 }
 
@@ -306,5 +443,8 @@ impl eframe::App for RustRideApp {
                 ui.label(&self.sensor_status);
             });
         });
+
+        // Crash recovery dialog (shown on top of everything)
+        self.render_recovery_dialog(ctx);
     }
 }

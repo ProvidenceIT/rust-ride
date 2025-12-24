@@ -16,7 +16,7 @@ pub use ride_history::{DateFilter, RideHistoryScreen, SortOrder};
 pub use ride_summary::{ExportFormat, RideSummaryAction, RideSummaryScreen};
 pub use sensor_setup::SensorSetupScreen;
 pub use settings::{SettingsAction, SettingsScreen};
-pub use workout_library::WorkoutLibraryScreen;
+pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};
 
 /// Screen navigation state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

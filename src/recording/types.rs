@@ -259,6 +259,10 @@ pub enum RecorderError {
     /// Sample buffer overflow
     #[error("Sample buffer overflow")]
     BufferOverflow,
+
+    /// Storage is full or critically low
+    #[error("Storage is full - cannot continue recording")]
+    StorageFull,
 }
 
 /// Errors during ride export.

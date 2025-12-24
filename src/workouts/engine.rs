@@ -130,9 +130,14 @@ impl WorkoutEngine {
     /// Advance the workout by one second.
     ///
     /// Should be called once per second when the workout is in progress.
+    /// Note: Time does not advance when paused, stopped, or trainer is disconnected.
     pub fn tick(&mut self) {
         let state = match self.state.as_mut() {
             Some(s) if s.status == WorkoutStatus::InProgress => s,
+            Some(s) if s.status == WorkoutStatus::TrainerDisconnected => {
+                // Don't advance time when trainer is disconnected
+                return;
+            }
             _ => return,
         };
 
@@ -359,11 +364,15 @@ impl WorkoutEngine {
             .unwrap_or(false)
     }
 
-    /// Check if workout is active (in progress or paused).
+    /// Check if workout is active (in progress, paused, or trainer disconnected).
     pub fn is_active(&self) -> bool {
         self.state
             .as_ref()
-            .map(|s| s.status == WorkoutStatus::InProgress || s.status == WorkoutStatus::Paused)
+            .map(|s| {
+                s.status == WorkoutStatus::InProgress
+                    || s.status == WorkoutStatus::Paused
+                    || s.status == WorkoutStatus::TrainerDisconnected
+            })
             .unwrap_or(false)
     }
 
@@ -378,6 +387,56 @@ impl WorkoutEngine {
         self.segment_extension = 0;
         self.ramp_elapsed = 0;
         self.previous_power = None;
+    }
+
+    /// Handle trainer disconnection during workout.
+    ///
+    /// This method should be called when the trainer loses connection.
+    /// It pauses the workout and sets it to the TrainerDisconnected state,
+    /// preserving the current progress so the workout can be resumed when
+    /// the trainer reconnects.
+    pub fn on_trainer_disconnect(&mut self) -> Result<(), WorkoutError> {
+        let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
+
+        match state.status {
+            WorkoutStatus::InProgress => {
+                state.status = WorkoutStatus::TrainerDisconnected;
+                tracing::warn!("Trainer disconnected during workout - workout paused");
+                Ok(())
+            }
+            WorkoutStatus::TrainerDisconnected => {
+                // Already in disconnected state
+                Ok(())
+            }
+            _ => {
+                // Workout not actively running, no action needed
+                tracing::debug!("Trainer disconnected but workout not in progress");
+                Ok(())
+            }
+        }
+    }
+
+    /// Handle trainer reconnection during workout.
+    ///
+    /// This method should be called when the trainer reconnects.
+    /// If the workout was paused due to disconnection, it will resume.
+    pub fn on_trainer_reconnect(&mut self) -> Result<(), WorkoutError> {
+        let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
+
+        if state.status == WorkoutStatus::TrainerDisconnected {
+            state.status = WorkoutStatus::InProgress;
+            tracing::info!("Trainer reconnected - workout resumed");
+        }
+
+        Ok(())
+    }
+
+    /// Check if the workout is paused due to trainer disconnection.
+    pub fn is_trainer_disconnected(&self) -> bool {
+        self.state
+            .as_ref()
+            .map(|s| s.status == WorkoutStatus::TrainerDisconnected)
+            .unwrap_or(false)
     }
 }
 
@@ -469,5 +528,101 @@ mod tests {
             engine.tick();
         }
         assert_eq!(engine.current_target_power(), Some(200));
+    }
+
+    #[test]
+    fn test_trainer_disconnect_pauses_workout() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+        engine.start().unwrap();
+
+        // Tick for 10 seconds
+        for _ in 0..10 {
+            engine.tick();
+        }
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 10);
+
+        // Disconnect trainer
+        engine.on_trainer_disconnect().unwrap();
+        assert!(engine.is_trainer_disconnected());
+        assert_eq!(
+            engine.state().unwrap().status,
+            WorkoutStatus::TrainerDisconnected
+        );
+
+        // Time should NOT advance while disconnected
+        for _ in 0..5 {
+            engine.tick();
+        }
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 10);
+
+        // Workout should still be considered "active"
+        assert!(engine.is_active());
+    }
+
+    #[test]
+    fn test_trainer_reconnect_resumes_workout() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+        engine.start().unwrap();
+
+        // Tick for 10 seconds
+        for _ in 0..10 {
+            engine.tick();
+        }
+
+        // Disconnect and reconnect
+        engine.on_trainer_disconnect().unwrap();
+        assert!(engine.is_trainer_disconnected());
+
+        engine.on_trainer_reconnect().unwrap();
+        assert!(!engine.is_trainer_disconnected());
+        assert_eq!(engine.state().unwrap().status, WorkoutStatus::InProgress);
+
+        // Time should advance again
+        for _ in 0..5 {
+            engine.tick();
+        }
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 15);
+    }
+
+    #[test]
+    fn test_disconnect_preserves_progress() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+        engine.start().unwrap();
+
+        // Get to specific point in workout
+        for _ in 0..30 {
+            engine.tick();
+        }
+        let elapsed_before = engine.state().unwrap().total_elapsed_seconds;
+        let segment_before = engine
+            .state()
+            .unwrap()
+            .segment_progress
+            .as_ref()
+            .unwrap()
+            .segment_index;
+
+        // Disconnect and reconnect
+        engine.on_trainer_disconnect().unwrap();
+        engine.on_trainer_reconnect().unwrap();
+
+        // Progress should be preserved
+        assert_eq!(
+            engine.state().unwrap().total_elapsed_seconds,
+            elapsed_before
+        );
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            segment_before
+        );
     }
 }
