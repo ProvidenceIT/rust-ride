@@ -6,6 +6,7 @@
 use crate::recording::types::{
     LiveRideSummary, RecorderConfig, RecorderError, RecordingStatus, Ride, RideSample,
 };
+#[cfg(target_os = "windows")]
 use std::path::Path;
 use uuid::Uuid;
 
@@ -335,6 +336,7 @@ fn check_disk_space_unix(path: &str) -> StorageStatus {
         }
 
         let stat = stat.assume_init();
+        #[allow(clippy::unnecessary_cast)]
         let free_bytes = stat.f_bavail as u64 * stat.f_frsize as u64;
 
         if free_bytes < MIN_DISK_SPACE_BYTES {

@@ -1450,10 +1450,11 @@ mod tests {
 
     /// Create a test user with the specified ID (for ride foreign key tests).
     fn create_test_user_with_id(user_id: Uuid) -> UserProfile {
-        let mut profile = UserProfile::default();
-        profile.id = user_id;
-        profile.name = "Test User".to_string();
-        profile
+        UserProfile {
+            id: user_id,
+            name: "Test User".to_string(),
+            ..Default::default()
+        }
     }
 
     #[test]
