@@ -176,16 +176,16 @@
 
 ### UI - Workout Library Screen
 
-- [ ] T073 [US2] Implement workout library list with name, duration, TSS in src/ui/screens/workout_library.rs
-- [ ] T074 [US2] Implement workout import file picker in src/ui/screens/workout_library.rs
-- [ ] T075 [US2] Implement workout preview with profile graph in src/ui/widgets/workout_graph.rs
+- [x] T073 [US2] Implement workout library list with name, duration, TSS in src/ui/screens/workout_library.rs
+- [x] T074 [US2] Implement workout import file picker in src/ui/screens/workout_library.rs
+- [x] T075 [US2] Implement workout preview with profile graph in src/ui/widgets/workout_graph.rs
 
 ### UI - Ride Screen (Workout Mode)
 
-- [ ] T076 [US2] Extend ride screen with workout progress bar in src/ui/screens/ride.rs
-- [ ] T077 [US2] Display current interval, target power, time remaining in src/ui/screens/ride.rs
-- [ ] T078 [US2] Implement pause/resume/skip interval buttons in src/ui/screens/ride.rs
-- [ ] T079 [US2] Implement keyboard shortcuts: +/- for power adjustment in src/ui/screens/ride.rs
+- [x] T076 [US2] Extend ride screen with workout progress bar in src/ui/screens/ride.rs
+- [x] T077 [US2] Display current interval, target power, time remaining in src/ui/screens/ride.rs
+- [x] T078 [US2] Implement pause/resume/skip interval buttons in src/ui/screens/ride.rs
+- [x] T079 [US2] Implement keyboard shortcuts: +/- for power adjustment in src/ui/screens/ride.rs
 
 ### Workout Storage
 

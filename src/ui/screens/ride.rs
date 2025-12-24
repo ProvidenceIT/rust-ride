@@ -3,6 +3,10 @@
 //! T048: Implement ride screen layout with metric panels
 //! T051: Implement "End Ride" button
 //! T053: Implement keyboard shortcut: Space for pause
+//! T076: Extend ride screen with workout progress bar
+//! T077: Display current interval, target power, time remaining
+//! T078: Implement pause/resume/skip interval buttons
+//! T079: Implement keyboard shortcuts: +/- for power adjustment
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
@@ -10,6 +14,7 @@ use crate::metrics::calculator::AggregatedMetrics;
 use crate::recording::types::RecordingStatus;
 use crate::ui::theme::zone_colors;
 use crate::ui::widgets::{MetricDisplay, MetricSize};
+use crate::workouts::types::{SegmentProgress, SegmentType, Workout, WorkoutStatus};
 
 use super::Screen;
 
@@ -35,6 +40,20 @@ pub struct RideScreen {
     pub elapsed_seconds: u32,
     /// Show end ride confirmation
     pub show_end_dialog: bool,
+    /// Loaded workout (if in workout mode)
+    pub workout: Option<Workout>,
+    /// Current workout status
+    pub workout_status: WorkoutStatus,
+    /// Current segment progress
+    pub segment_progress: Option<SegmentProgress>,
+    /// Target power (from workout engine)
+    pub target_power: Option<u16>,
+    /// Power offset adjustment
+    pub power_offset: i16,
+    /// Current segment type
+    pub current_segment_type: Option<SegmentType>,
+    /// Current segment text event
+    pub text_event: Option<String>,
 }
 
 impl Default for RideScreen {
@@ -46,6 +65,13 @@ impl Default for RideScreen {
             metrics: AggregatedMetrics::default(),
             elapsed_seconds: 0,
             show_end_dialog: false,
+            workout: None,
+            workout_status: WorkoutStatus::NotStarted,
+            segment_progress: None,
+            target_power: None,
+            power_offset: 0,
+            current_segment_type: None,
+            text_event: None,
         }
     }
 }
@@ -63,6 +89,39 @@ impl RideScreen {
         self.is_paused = false;
         self.elapsed_seconds = 0;
         self.metrics = AggregatedMetrics::default();
+        self.workout = None;
+        self.workout_status = WorkoutStatus::NotStarted;
+        self.segment_progress = None;
+        self.target_power = None;
+        self.power_offset = 0;
+    }
+
+    /// Start a workout ride.
+    pub fn start_workout(&mut self, workout: Workout) {
+        self.mode = RideMode::Workout;
+        self.recording_status = RecordingStatus::Recording;
+        self.is_paused = false;
+        self.elapsed_seconds = 0;
+        self.metrics = AggregatedMetrics::default();
+        self.workout = Some(workout);
+        self.workout_status = WorkoutStatus::InProgress;
+        self.power_offset = 0;
+    }
+
+    /// Update workout progress from engine.
+    pub fn update_workout_progress(
+        &mut self,
+        progress: Option<SegmentProgress>,
+        target_power: Option<u16>,
+        segment_type: Option<SegmentType>,
+        text_event: Option<String>,
+        status: WorkoutStatus,
+    ) {
+        self.segment_progress = progress;
+        self.target_power = target_power;
+        self.current_segment_type = segment_type;
+        self.text_event = text_event;
+        self.workout_status = status;
     }
 
     /// Render the ride screen.
@@ -74,16 +133,38 @@ impl RideScreen {
             self.is_paused = !self.is_paused;
         }
 
+        // Power offset shortcuts (+/-)
+        if self.mode == RideMode::Workout {
+            if ui.input(|i| i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)) {
+                self.power_offset += 5;
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Minus)) {
+                self.power_offset -= 5;
+            }
+        }
+
         ui.vertical(|ui| {
             // Top bar with ride controls
             self.render_top_bar(ui);
 
-            ui.add_space(16.0);
+            ui.add_space(8.0);
+
+            // Workout progress bar (if in workout mode)
+            if self.mode == RideMode::Workout {
+                self.render_workout_progress(ui);
+                ui.add_space(8.0);
+            }
 
             // Main metrics area
             self.render_main_metrics(ui);
 
             ui.add_space(16.0);
+
+            // Workout controls (if in workout mode)
+            if self.mode == RideMode::Workout {
+                self.render_workout_controls(ui);
+                ui.add_space(8.0);
+            }
 
             // Secondary metrics
             self.render_secondary_metrics(ui);
@@ -351,5 +432,153 @@ impl RideScreen {
             });
 
         next_screen
+    }
+
+    /// Render the workout progress bar and current segment info.
+    fn render_workout_progress(&self, ui: &mut Ui) {
+        let frame = egui::Frame::none()
+            .fill(ui.visuals().faint_bg_color)
+            .inner_margin(12.0)
+            .rounding(4.0);
+
+        frame.show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+
+            if let Some(ref workout) = self.workout {
+                // Workout name and overall progress
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&workout.name).strong());
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let total_elapsed = self.elapsed_seconds;
+                        let total_duration = workout.total_duration_seconds;
+                        let overall_progress = total_elapsed as f32 / total_duration.max(1) as f32;
+                        ui.label(format!(
+                            "{:.0}% complete",
+                            (overall_progress * 100.0).min(100.0)
+                        ));
+                    });
+                });
+
+                ui.add_space(4.0);
+
+                // Overall progress bar
+                let total_progress =
+                    self.elapsed_seconds as f32 / workout.total_duration_seconds.max(1) as f32;
+                let progress_bar = egui::ProgressBar::new(total_progress.min(1.0))
+                    .fill(Color32::from_rgb(66, 133, 244));
+                ui.add(progress_bar);
+
+                ui.add_space(8.0);
+
+                // Current segment info
+                if let Some(ref progress) = self.segment_progress {
+                    ui.horizontal(|ui| {
+                        // Segment type
+                        let segment_name = self
+                            .current_segment_type
+                            .map(|t| format!("{}", t))
+                            .unwrap_or_else(|| "Segment".to_string());
+                        ui.label(RichText::new(segment_name).size(16.0));
+
+                        ui.separator();
+
+                        // Target power
+                        if let Some(target) = self.target_power {
+                            let offset_str = if self.power_offset != 0 {
+                                format!(" ({:+}W)", self.power_offset)
+                            } else {
+                                String::new()
+                            };
+                            ui.label(
+                                RichText::new(format!("Target: {}W{}", target, offset_str))
+                                    .size(16.0)
+                                    .color(Color32::from_rgb(251, 188, 4)),
+                            );
+                        }
+
+                        ui.separator();
+
+                        // Time remaining in segment
+                        let remaining_min = progress.remaining_seconds / 60;
+                        let remaining_sec = progress.remaining_seconds % 60;
+                        ui.label(
+                            RichText::new(format!("{}:{:02} remaining", remaining_min, remaining_sec))
+                                .size(16.0),
+                        );
+                    });
+
+                    // Segment progress bar
+                    let segment_bar = egui::ProgressBar::new(progress.progress)
+                        .fill(Color32::from_rgb(52, 168, 83));
+                    ui.add(segment_bar);
+
+                    // Text event message
+                    if let Some(ref text) = self.text_event {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(text)
+                                .size(14.0)
+                                .italics()
+                                .color(Color32::from_rgb(251, 188, 4)),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    /// Render workout-specific controls (skip, extend, power adjustment).
+    fn render_workout_controls(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space((ui.available_width() - 400.0) / 2.0);
+
+            // Skip segment button
+            if ui.button("⏭ Skip Segment").clicked() {
+                // Signal to app to skip segment (handled in app.rs)
+            }
+
+            ui.add_space(8.0);
+
+            // Extend segment button
+            if ui.button("+30s").clicked() {
+                // Signal to app to extend segment
+            }
+
+            ui.add_space(16.0);
+            ui.separator();
+            ui.add_space(16.0);
+
+            // Power adjustment
+            ui.label("Power:");
+
+            if ui.button("-5W").clicked() {
+                self.power_offset -= 5;
+            }
+
+            ui.label(
+                RichText::new(format!("{:+}W", self.power_offset))
+                    .color(if self.power_offset == 0 {
+                        Color32::GRAY
+                    } else if self.power_offset > 0 {
+                        Color32::from_rgb(52, 168, 83)
+                    } else {
+                        Color32::from_rgb(234, 67, 53)
+                    }),
+            );
+
+            if ui.button("+5W").clicked() {
+                self.power_offset += 5;
+            }
+
+            if self.power_offset != 0 {
+                if ui.button("Reset").clicked() {
+                    self.power_offset = 0;
+                }
+            }
+
+            ui.add_space(8.0);
+            ui.label(RichText::new("(+/- keys)").weak().small());
+        });
     }
 }
