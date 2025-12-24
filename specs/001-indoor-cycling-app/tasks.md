@@ -260,18 +260,18 @@
 
 ### Tests for User Story 4
 
-- [ ] T104 [P] [US4] Unit test for zone determination from power/HR in tests/unit/zones_test.rs
+- [x] T104 [P] [US4] Unit test for zone determination from power/HR in tests/unit/zones_test.rs
 
 ### Zone Calculation
 
-- [ ] T105 [US4] Implement current_power_zone() in src/metrics/calculator.rs
-- [ ] T106 [US4] Implement current_hr_zone() in src/metrics/calculator.rs
-- [ ] T107 [US4] Add zone colors (7 for power, 5 for HR) in src/metrics/zones.rs
+- [x] T105 [US4] Implement current_power_zone() in src/metrics/calculator.rs
+- [x] T106 [US4] Implement current_hr_zone() in src/metrics/calculator.rs
+- [x] T107 [US4] Add zone colors (7 for power, 5 for HR) in src/metrics/zones.rs
 
 ### Enhanced Metrics Display
 
-- [ ] T108 [US4] Implement zone indicator widget with color band in src/ui/widgets/zone_indicator.rs
-- [ ] T109 [US4] Display running NP, TSS, IF on ride screen in src/ui/screens/ride.rs
+- [x] T108 [US4] Implement zone indicator widget with color band in src/ui/widgets/zone_indicator.rs
+- [x] T109 [US4] Display running NP, TSS, IF on ride screen in src/ui/screens/ride.rs
 - [ ] T110 [US4] Implement full-screen mode toggle in src/ui/screens/ride.rs
 
 ### Dashboard Customization
