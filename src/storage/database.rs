@@ -1328,7 +1328,16 @@ pub enum DatabaseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::config::UserProfile;
     use crate::workouts::types::{PowerTarget, SegmentType, WorkoutSegment};
+
+    /// Create a test user with the specified ID (for ride foreign key tests).
+    fn create_test_user_with_id(user_id: Uuid) -> UserProfile {
+        let mut profile = UserProfile::default();
+        profile.id = user_id;
+        profile.name = "Test User".to_string();
+        profile
+    }
 
     #[test]
     fn test_create_in_memory_database() {
@@ -1634,6 +1643,10 @@ mod tests {
     fn test_ride_insert_and_get() {
         let db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
+
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
@@ -1656,6 +1669,10 @@ mod tests {
     fn test_ride_samples_insert_and_get() {
         let mut db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
+
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
@@ -1675,6 +1692,10 @@ mod tests {
     fn test_ride_with_samples() {
         let mut db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
+
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
@@ -1696,6 +1717,9 @@ mod tests {
         let db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
 
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         // Insert 3 rides
         for _ in 0..3 {
             let ride = create_test_ride(user_id);
@@ -1710,6 +1734,10 @@ mod tests {
     fn test_ride_delete() {
         let db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
+
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 
@@ -1724,6 +1752,10 @@ mod tests {
     fn test_ride_delete_cascades_samples() {
         let mut db = Database::open_in_memory().expect("Failed to create database");
         let user_id = Uuid::new_v4();
+
+        // Insert user first (foreign key constraint)
+        db.insert_user(&create_test_user_with_id(user_id)).expect("Failed to insert user");
+
         let ride = create_test_ride(user_id);
         let ride_id = ride.id;
 

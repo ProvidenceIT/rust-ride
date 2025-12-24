@@ -85,13 +85,19 @@ pub struct PowerZones {
 impl PowerZones {
     /// Calculate power zones from FTP using Coggan 7-zone model.
     pub fn from_ftp(ftp: u16) -> Self {
+        // Helper to calculate watts from percentage, using round() to avoid
+        // floating-point truncation issues (e.g., 209.9999 -> 210, not 209)
+        let calc_watts = |percent: f32| -> u16 {
+            (ftp as f32 * percent).round() as u16
+        };
+
         Self {
             z1_recovery: ZoneRange {
                 zone: 1,
                 min_percent: 0,
                 max_percent: 55,
                 min_watts: 0,
-                max_watts: (ftp as f32 * 0.55) as u16,
+                max_watts: calc_watts(0.55),
                 color: POWER_ZONE_COLORS[0],
                 name: "Active Recovery".to_string(),
             },
@@ -99,8 +105,8 @@ impl PowerZones {
                 zone: 2,
                 min_percent: 56,
                 max_percent: 75,
-                min_watts: (ftp as f32 * 0.56) as u16,
-                max_watts: (ftp as f32 * 0.75) as u16,
+                min_watts: calc_watts(0.56),
+                max_watts: calc_watts(0.75),
                 color: POWER_ZONE_COLORS[1],
                 name: "Endurance".to_string(),
             },
@@ -108,8 +114,8 @@ impl PowerZones {
                 zone: 3,
                 min_percent: 76,
                 max_percent: 90,
-                min_watts: (ftp as f32 * 0.76) as u16,
-                max_watts: (ftp as f32 * 0.90) as u16,
+                min_watts: calc_watts(0.76),
+                max_watts: calc_watts(0.90),
                 color: POWER_ZONE_COLORS[2],
                 name: "Tempo".to_string(),
             },
@@ -117,8 +123,8 @@ impl PowerZones {
                 zone: 4,
                 min_percent: 91,
                 max_percent: 105,
-                min_watts: (ftp as f32 * 0.91) as u16,
-                max_watts: (ftp as f32 * 1.05) as u16,
+                min_watts: calc_watts(0.91),
+                max_watts: calc_watts(1.05),
                 color: POWER_ZONE_COLORS[3],
                 name: "Threshold".to_string(),
             },
@@ -126,8 +132,8 @@ impl PowerZones {
                 zone: 5,
                 min_percent: 106,
                 max_percent: 120,
-                min_watts: (ftp as f32 * 1.06) as u16,
-                max_watts: (ftp as f32 * 1.20) as u16,
+                min_watts: calc_watts(1.06),
+                max_watts: calc_watts(1.20),
                 color: POWER_ZONE_COLORS[4],
                 name: "VO2max".to_string(),
             },
@@ -135,8 +141,8 @@ impl PowerZones {
                 zone: 6,
                 min_percent: 121,
                 max_percent: 150,
-                min_watts: (ftp as f32 * 1.21) as u16,
-                max_watts: (ftp as f32 * 1.50) as u16,
+                min_watts: calc_watts(1.21),
+                max_watts: calc_watts(1.50),
                 color: POWER_ZONE_COLORS[5],
                 name: "Anaerobic".to_string(),
             },
@@ -144,7 +150,7 @@ impl PowerZones {
                 zone: 7,
                 min_percent: 151,
                 max_percent: 255,
-                min_watts: (ftp as f32 * 1.51) as u16,
+                min_watts: calc_watts(1.51),
                 max_watts: u16::MAX,
                 color: POWER_ZONE_COLORS[6],
                 name: "Neuromuscular".to_string(),
