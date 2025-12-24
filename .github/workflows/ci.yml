@@ -14,7 +14,7 @@ jobs:
   # Format check
   fmt:
     name: Format Check
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +30,11 @@ jobs:
       matrix:
         include:
           - os: Linux
-            runner: [self-hosted, Linux, X64]
+            runner: ubuntu-latest
           - os: Windows
-            runner: [self-hosted, Windows, X64]
+            runner: windows-latest
           - os: macOS
-            runner: [self-hosted, macOS]
+            runner: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -50,13 +50,13 @@ jobs:
       matrix:
         include:
           - os: Linux
-            runner: [self-hosted, Linux, X64]
+            runner: ubuntu-latest
           - os: Windows
-            runner: [self-hosted, Windows, X64]
+            runner: windows-latest
           - os: macOS-x64
-            runner: [self-hosted, macOS, X64]
+            runner: macos-13
           - os: macOS-arm64
-            runner: [self-hosted, macOS, ARM64]
+            runner: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +72,7 @@ jobs:
   # Documentation check
   docs:
     name: Documentation
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +84,7 @@ jobs:
   # Security audit
   security:
     name: Security Audit
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
