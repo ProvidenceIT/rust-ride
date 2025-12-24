@@ -58,7 +58,7 @@ jobs:
           - os: Windows
             runner: windows-latest
           - os: macOS-x64
-            runner: macos-13
+            runner: macos-15
           - os: macOS-arm64
             runner: macos-latest
     steps:
