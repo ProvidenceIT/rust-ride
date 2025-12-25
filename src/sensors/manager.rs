@@ -25,6 +25,18 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+/// Context for handling notifications from a connected peripheral.
+/// Groups related parameters to reduce function argument count.
+struct NotificationContext {
+    event_tx: Option<Sender<SensorEvent>>,
+    sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
+    device_id: String,
+    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
+    max_reconnect_attempts: u32,
+    reconnect_delay_secs: u64,
+    auto_reconnect: bool,
+}
+
 /// Manages BLE sensor discovery, connection, and data streaming.
 pub struct SensorManager {
     /// Configuration
@@ -374,26 +386,18 @@ impl SensorManager {
         });
 
         // Start notification handler with auto-reconnect support (T029)
-        let event_tx = self.event_tx.clone();
-        let sensor_states = self.sensor_states.clone();
-        let reconnect_attempts = self.reconnect_attempts.clone();
-        let max_reconnect_attempts = self.config.max_reconnect_attempts;
-        let reconnect_delay_secs = self.config.reconnect_delay_secs;
-        let auto_reconnect = self.config.auto_reconnect;
-        let device_id_clone = device_id.to_string();
+        let ctx = NotificationContext {
+            event_tx: self.event_tx.clone(),
+            sensor_states: self.sensor_states.clone(),
+            device_id: device_id.to_string(),
+            reconnect_attempts: self.reconnect_attempts.clone(),
+            max_reconnect_attempts: self.config.max_reconnect_attempts,
+            reconnect_delay_secs: self.config.reconnect_delay_secs,
+            auto_reconnect: self.config.auto_reconnect,
+        };
 
         tokio::spawn(async move {
-            Self::handle_notifications(
-                peripheral,
-                event_tx,
-                sensor_states,
-                device_id_clone,
-                reconnect_attempts,
-                max_reconnect_attempts,
-                reconnect_delay_secs,
-                auto_reconnect,
-            )
-            .await;
+            Self::handle_notifications(peripheral, ctx).await;
         });
 
         tracing::info!("Connected to sensor: {}", device_id);
@@ -429,16 +433,7 @@ impl SensorManager {
     }
 
     /// Handle notifications from a connected peripheral.
-    async fn handle_notifications(
-        peripheral: Peripheral,
-        event_tx: Option<Sender<SensorEvent>>,
-        sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
-        device_id: String,
-        reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
-        max_reconnect_attempts: u32,
-        reconnect_delay_secs: u64,
-        auto_reconnect: bool,
-    ) {
+    async fn handle_notifications(peripheral: Peripheral, ctx: NotificationContext) {
         use futures::stream::StreamExt;
 
         let mut notification_stream = match peripheral.notifications().await {
@@ -455,26 +450,26 @@ impl SensorManager {
 
             // Parse the data based on characteristic
             let reading = if char_uuid == INDOOR_BIKE_DATA_UUID {
-                Self::parse_ftms_notification(&data, &device_id)
+                Self::parse_ftms_notification(&data, &ctx.device_id)
             } else if char_uuid == CYCLING_POWER_MEASUREMENT_UUID {
-                Self::parse_power_notification(&data, &device_id)
+                Self::parse_power_notification(&data, &ctx.device_id)
             } else if char_uuid == HEART_RATE_MEASUREMENT_UUID {
-                Self::parse_hr_notification(&data, &device_id)
+                Self::parse_hr_notification(&data, &ctx.device_id)
             } else {
                 None
             };
 
             if let Some(reading) = reading {
                 // Update last data time
-                if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+                if let Some(state) = ctx.sensor_states.lock().await.get_mut(&ctx.device_id) {
                     state.last_data_at = Some(Instant::now());
                 }
 
                 // Reset reconnect attempts on successful data
-                reconnect_attempts.lock().await.remove(&device_id);
+                ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
 
                 // Send data event
-                if let Some(tx) = &event_tx {
+                if let Some(tx) = &ctx.event_tx {
                     let _ = tx.send(SensorEvent::Data(reading));
                 }
             }
@@ -483,20 +478,20 @@ impl SensorManager {
         // Stream ended - peripheral disconnected
         tracing::warn!(
             "Sensor {} notification stream ended (disconnected)",
-            device_id
+            ctx.device_id
         );
 
         // Update sensor state to disconnected
-        if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+        if let Some(state) = ctx.sensor_states.lock().await.get_mut(&ctx.device_id) {
             state.connection_state = ConnectionState::Disconnected;
         }
 
         // Check if we should attempt auto-reconnect (T029)
-        if auto_reconnect {
-            let mut attempts = reconnect_attempts.lock().await;
-            let attempt_count = attempts.entry(device_id.clone()).or_insert(0);
+        if ctx.auto_reconnect {
+            let mut attempts = ctx.reconnect_attempts.lock().await;
+            let attempt_count = attempts.entry(ctx.device_id.clone()).or_insert(0);
 
-            if *attempt_count < max_reconnect_attempts {
+            if *attempt_count < ctx.max_reconnect_attempts {
                 *attempt_count += 1;
                 let current_attempt = *attempt_count;
                 drop(attempts);
@@ -504,45 +499,45 @@ impl SensorManager {
                 tracing::info!(
                     "Auto-reconnect attempt {}/{} for sensor {}",
                     current_attempt,
-                    max_reconnect_attempts,
-                    device_id
+                    ctx.max_reconnect_attempts,
+                    ctx.device_id
                 );
 
                 // Send reconnecting state
-                if let Some(tx) = &event_tx {
+                if let Some(tx) = &ctx.event_tx {
                     let _ = tx.send(SensorEvent::ConnectionChanged {
-                        device_id: device_id.clone(),
+                        device_id: ctx.device_id.clone(),
                         state: ConnectionState::Reconnecting,
                     });
                 }
 
                 // Update sensor state
-                if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+                if let Some(state) = ctx.sensor_states.lock().await.get_mut(&ctx.device_id) {
                     state.connection_state = ConnectionState::Reconnecting;
                 }
 
                 // Wait before reconnect attempt
-                tokio::time::sleep(std::time::Duration::from_secs(reconnect_delay_secs)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(ctx.reconnect_delay_secs)).await;
 
                 // Try to reconnect
                 if let Err(e) = peripheral.connect().await {
-                    tracing::warn!("Reconnection failed for {}: {}", device_id, e);
+                    tracing::warn!("Reconnection failed for {}: {}", ctx.device_id, e);
 
                     // Send final disconnected state if all attempts exhausted
-                    if current_attempt >= max_reconnect_attempts {
-                        if let Some(tx) = &event_tx {
+                    if current_attempt >= ctx.max_reconnect_attempts {
+                        if let Some(tx) = &ctx.event_tx {
                             let _ = tx.send(SensorEvent::ConnectionChanged {
-                                device_id: device_id.clone(),
+                                device_id: ctx.device_id.clone(),
                                 state: ConnectionState::Disconnected,
                             });
                             let _ = tx.send(SensorEvent::Error(format!(
                                 "Failed to reconnect to {} after {} attempts",
-                                device_id, max_reconnect_attempts
+                                ctx.device_id, ctx.max_reconnect_attempts
                             )));
                         }
                     }
                 } else {
-                    tracing::info!("Reconnected to sensor {}", device_id);
+                    tracing::info!("Reconnected to sensor {}", ctx.device_id);
 
                     // Rediscover services and resubscribe
                     if let Err(e) = peripheral.discover_services().await {
@@ -564,48 +559,38 @@ impl SensorManager {
                     }
 
                     // Update state to connected
-                    if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+                    if let Some(state) = ctx.sensor_states.lock().await.get_mut(&ctx.device_id) {
                         state.connection_state = ConnectionState::Connected;
                     }
 
-                    if let Some(tx) = &event_tx {
+                    if let Some(tx) = &ctx.event_tx {
                         let _ = tx.send(SensorEvent::ConnectionChanged {
-                            device_id: device_id.clone(),
+                            device_id: ctx.device_id.clone(),
                             state: ConnectionState::Connected,
                         });
                     }
 
                     // Reset attempts on successful reconnect
-                    reconnect_attempts.lock().await.remove(&device_id);
+                    ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
 
                     // Recursively handle notifications again
-                    Box::pin(Self::handle_notifications(
-                        peripheral,
-                        event_tx,
-                        sensor_states,
-                        device_id,
-                        reconnect_attempts,
-                        max_reconnect_attempts,
-                        reconnect_delay_secs,
-                        auto_reconnect,
-                    ))
-                    .await;
+                    Box::pin(Self::handle_notifications(peripheral, ctx)).await;
                     return;
                 }
             } else {
                 // Max attempts reached
                 tracing::warn!(
                     "Max reconnect attempts ({}) reached for sensor {}",
-                    max_reconnect_attempts,
-                    device_id
+                    ctx.max_reconnect_attempts,
+                    ctx.device_id
                 );
             }
         }
 
         // Send final disconnected event
-        if let Some(tx) = &event_tx {
+        if let Some(tx) = &ctx.event_tx {
             let _ = tx.send(SensorEvent::ConnectionChanged {
-                device_id,
+                device_id: ctx.device_id,
                 state: ConnectionState::Disconnected,
             });
         }

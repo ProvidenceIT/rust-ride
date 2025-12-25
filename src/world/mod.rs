@@ -99,8 +99,6 @@ pub struct World3D {
     width: u32,
     /// Render height
     height: u32,
-    /// egui texture ID for the rendered output
-    egui_texture_id: Option<egui::TextureId>,
 }
 
 impl std::fmt::Debug for World3D {
@@ -160,7 +158,6 @@ impl World3D {
             active: false,
             width: 800,
             height: 600,
-            egui_texture_id: None,
         })
     }
 
