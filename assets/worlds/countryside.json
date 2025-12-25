@@ -1,0 +1,39 @@
+{
+  "id": "countryside",
+  "name": "Rolling Hills",
+  "description": "A pastoral countryside with gentle rolling hills, farmland, and quiet country roads. Perfect for endurance training.",
+  "theme": "countryside",
+  "preview_image": "countryside_preview.png",
+  "assets_path": "assets/worlds/countryside",
+  "default_route": "pastoral_loop",
+  "time_of_day": "morning",
+  "routes": [
+    {
+      "id": "pastoral_loop",
+      "name": "Pastoral Loop",
+      "distance_meters": 15000,
+      "elevation_gain_meters": 150,
+      "difficulty": "easy",
+      "is_loop": true,
+      "waypoints_file": "pastoral_loop.json"
+    },
+    {
+      "id": "farm_circuit",
+      "name": "Farm Circuit",
+      "distance_meters": 25000,
+      "elevation_gain_meters": 280,
+      "difficulty": "moderate",
+      "is_loop": true,
+      "waypoints_file": "farm_circuit.json"
+    },
+    {
+      "id": "village_tour",
+      "name": "Village Tour",
+      "distance_meters": 40000,
+      "elevation_gain_meters": 450,
+      "difficulty": "moderate",
+      "is_loop": true,
+      "waypoints_file": "village_tour.json"
+    }
+  ]
+}

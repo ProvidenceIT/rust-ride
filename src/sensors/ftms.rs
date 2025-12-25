@@ -357,6 +357,24 @@ pub fn build_set_simulation(wind_speed: i16, grade: i16, crr: u8, cw: u8) -> Vec
     cmd
 }
 
+/// Build a control point command to set simulation grade only.
+///
+/// Uses default values for wind (0 m/s), CRR (0.004), and CW (0.51).
+///
+/// `grade_percent` - Grade in percent (e.g., 5.5 for 5.5%)
+pub fn build_set_simulation_grade(grade_percent: f32) -> Vec<u8> {
+    // Grade is in 0.01% resolution, so multiply by 100
+    let grade = (grade_percent * 100.0) as i16;
+    // Wind speed: 0 m/s (0.001 resolution)
+    let wind_speed: i16 = 0;
+    // CRR: 0.004 (0.0001 resolution = 40)
+    let crr: u8 = 40;
+    // CW (wind resistance coefficient): 0.51 (0.01 resolution = 51)
+    let cw: u8 = 51;
+
+    build_set_simulation(wind_speed, grade, crr, cw)
+}
+
 /// Parse Cycling Power Measurement data.
 #[derive(Debug, Clone, Default)]
 pub struct CyclingPowerData {

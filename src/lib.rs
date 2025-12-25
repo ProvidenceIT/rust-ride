@@ -10,6 +10,7 @@ pub mod sensors;
 pub mod storage;
 pub mod ui;
 pub mod workouts;
+pub mod world;
 
 // Re-export commonly used types
 pub use metrics::calculator::MetricsCalculator;

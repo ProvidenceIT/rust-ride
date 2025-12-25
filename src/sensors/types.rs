@@ -240,6 +240,53 @@ impl SavedSensor {
     }
 }
 
+/// Commands that can be sent to the sensor manager from the UI.
+#[derive(Debug, Clone)]
+pub enum SensorCommand {
+    /// Start BLE discovery
+    StartDiscovery,
+    /// Stop BLE discovery
+    StopDiscovery,
+    /// Connect to a sensor by device ID
+    Connect(String),
+    /// Disconnect from a sensor by device ID
+    Disconnect(String),
+    /// Set ERG mode power target in watts
+    SetErgTarget(u16),
+    /// Set simulation mode gradient
+    SetSimGrade(f32),
+}
+
+/// Connection status for display in UI
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionStatus {
+    /// Sensor discovered but not connected
+    Discovered,
+    /// Connection attempt in progress
+    Connecting,
+    /// Successfully connected
+    Connected,
+    /// Disconnection in progress
+    Disconnecting,
+    /// Not connected
+    Disconnected,
+    /// Connection attempt failed
+    Error,
+}
+
+impl std::fmt::Display for ConnectionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConnectionStatus::Discovered => write!(f, "Found"),
+            ConnectionStatus::Connecting => write!(f, "Connecting..."),
+            ConnectionStatus::Connected => write!(f, "Connected"),
+            ConnectionStatus::Disconnecting => write!(f, "Disconnecting..."),
+            ConnectionStatus::Disconnected => write!(f, "Disconnected"),
+            ConnectionStatus::Error => write!(f, "Error"),
+        }
+    }
+}
+
 /// Errors that can occur in the sensor system.
 #[derive(Debug, Error)]
 pub enum SensorError {

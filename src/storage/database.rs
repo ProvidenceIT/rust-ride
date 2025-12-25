@@ -5,6 +5,8 @@
 //! T099: Implement ride CRUD in database
 //! T100: Implement ride_samples bulk insert
 //! T115: Implement UserProfile CRUD in database
+//! T126: Implement save_avatar database operation
+//! T127: Implement get_avatar database operation
 //! T145: Implement sensor CRUD in database
 
 use crate::metrics::zones::{HRZones, PowerZones};
@@ -13,6 +15,7 @@ use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{CURRENT_VERSION, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
+use crate::world::avatar::{AvatarConfig, BikeStyle};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result as SqliteResult};
 use std::path::PathBuf;
@@ -1110,6 +1113,117 @@ impl Database {
 
         Ok(count as usize)
     }
+
+    // ============= Avatar CRUD Operations (T126-T127) =============
+
+    /// Save or update avatar configuration for a user.
+    pub fn save_avatar(&self, user_id: &Uuid, config: &AvatarConfig) -> Result<(), DatabaseError> {
+        let id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+        let jersey_color = format!(
+            "#{:02X}{:02X}{:02X}",
+            config.jersey_color[0], config.jersey_color[1], config.jersey_color[2]
+        );
+        let jersey_secondary = config
+            .jersey_secondary
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2]));
+        let helmet_color = config
+            .helmet_color
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2]));
+        let bike_style = match config.bike_style {
+            BikeStyle::RoadBike => "road_bike",
+            BikeStyle::TimeTrial => "time_trial",
+            BikeStyle::Gravel => "gravel",
+        };
+
+        // Use INSERT OR REPLACE to upsert (user_id is UNIQUE)
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO avatars (id, user_id, jersey_color, jersey_secondary, bike_style, helmet_color, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    jersey_color = excluded.jersey_color,
+                    jersey_secondary = excluded.jersey_secondary,
+                    bike_style = excluded.bike_style,
+                    helmet_color = excluded.helmet_color,
+                    updated_at = excluded.updated_at
+                "#,
+                params![
+                    id.to_string(),
+                    user_id.to_string(),
+                    jersey_color,
+                    jersey_secondary,
+                    bike_style,
+                    helmet_color,
+                    now
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get avatar configuration for a user.
+    pub fn get_avatar(&self, user_id: &Uuid) -> Result<Option<AvatarConfig>, DatabaseError> {
+        let result = self.conn.query_row(
+            "SELECT jersey_color, jersey_secondary, bike_style, helmet_color FROM avatars WHERE user_id = ?1",
+            params![user_id.to_string()],
+            |row| {
+                let jersey_color: String = row.get(0)?;
+                let jersey_secondary: Option<String> = row.get(1)?;
+                let bike_style: String = row.get(2)?;
+                let helmet_color: Option<String> = row.get(3)?;
+                Ok((jersey_color, jersey_secondary, bike_style, helmet_color))
+            },
+        );
+
+        match result {
+            Ok((jersey_color, jersey_secondary, bike_style, helmet_color)) => {
+                let jersey_color = parse_hex_color(&jersey_color).unwrap_or([255, 0, 0]);
+                let jersey_secondary = jersey_secondary.as_ref().and_then(|s| parse_hex_color(s));
+                let helmet_color = helmet_color.as_ref().and_then(|s| parse_hex_color(s));
+                let bike_style = match bike_style.as_str() {
+                    "time_trial" => BikeStyle::TimeTrial,
+                    "gravel" => BikeStyle::Gravel,
+                    _ => BikeStyle::RoadBike,
+                };
+
+                Ok(Some(AvatarConfig {
+                    jersey_color,
+                    bike_style,
+                    jersey_secondary,
+                    helmet_color,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Delete avatar configuration for a user.
+    pub fn delete_avatar(&self, user_id: &Uuid) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "DELETE FROM avatars WHERE user_id = ?1",
+                params![user_id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// Parse a hex color string (e.g., "#FF0000") to RGB array.
+fn parse_hex_color(hex: &str) -> Option<[u8; 3]> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([r, g, b])
 }
 
 /// Intermediate struct for reading workout rows from database.

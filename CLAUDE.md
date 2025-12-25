@@ -1,4 +1,4 @@
-# RustRide - Claude Code Context
+﻿# RustRide - Claude Code Context
 
 ## Project Overview
 

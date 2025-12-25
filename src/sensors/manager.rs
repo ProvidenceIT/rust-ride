@@ -28,7 +28,7 @@ use uuid::Uuid;
 /// Manages BLE sensor discovery, connection, and data streaming.
 pub struct SensorManager {
     /// Configuration
-    _config: SensorConfig,
+    config: SensorConfig,
     /// BLE adapter
     adapter: Option<Adapter>,
     /// Channel for sending sensor events
@@ -41,19 +41,25 @@ pub struct SensorManager {
     sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
     /// Whether currently scanning
     is_scanning: Arc<Mutex<bool>>,
+    /// Discovery timeout handle (for cancellation)
+    discovery_timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Reconnection attempts (device_id -> attempt count)
+    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl SensorManager {
     /// Create a new sensor manager.
     pub fn new(config: SensorConfig) -> Self {
         Self {
-            _config: config,
+            config,
             adapter: None,
             event_tx: None,
             discovered: Arc::new(Mutex::new(HashMap::new())),
             connected: Arc::new(Mutex::new(HashMap::new())),
             sensor_states: Arc::new(Mutex::new(HashMap::new())),
             is_scanning: Arc::new(Mutex::new(false)),
+            discovery_timeout_handle: Arc::new(Mutex::new(None)),
+            reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -144,6 +150,40 @@ impl SensorManager {
         tokio::spawn(async move {
             Self::process_discovery_events(adapter_clone, discovered, event_tx, is_scanning).await;
         });
+
+        // Start discovery timeout (T030)
+        let timeout_secs = self.config.discovery_timeout_secs;
+        let is_scanning_timeout = self.is_scanning.clone();
+        let event_tx_timeout = self.event_tx.clone();
+        let adapter_timeout = adapter.clone();
+        let timeout_handle = self.discovery_timeout_handle.clone();
+
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
+
+            // Check if still scanning
+            let mut is_scanning = is_scanning_timeout.lock().await;
+            if *is_scanning {
+                tracing::info!(
+                    "Discovery timeout reached ({}s), stopping scan",
+                    timeout_secs
+                );
+                *is_scanning = false;
+                drop(is_scanning);
+
+                // Stop the scan
+                if let Err(e) = adapter_timeout.stop_scan().await {
+                    tracing::warn!("Failed to stop scan on timeout: {}", e);
+                }
+
+                // Send scan stopped event
+                if let Some(tx) = &event_tx_timeout {
+                    let _ = tx.send(SensorEvent::ScanStopped);
+                }
+            }
+        });
+
+        *timeout_handle.lock().await = Some(handle);
 
         Ok(())
     }
@@ -244,6 +284,11 @@ impl SensorManager {
             *is_scanning = false;
         }
 
+        // Cancel the timeout task
+        if let Some(handle) = self.discovery_timeout_handle.lock().await.take() {
+            handle.abort();
+        }
+
         tracing::info!("Stopping sensor discovery");
 
         adapter
@@ -328,13 +373,27 @@ impl SensorManager {
             state: ConnectionState::Connected,
         });
 
-        // Start notification handler
+        // Start notification handler with auto-reconnect support (T029)
         let event_tx = self.event_tx.clone();
         let sensor_states = self.sensor_states.clone();
+        let reconnect_attempts = self.reconnect_attempts.clone();
+        let max_reconnect_attempts = self.config.max_reconnect_attempts;
+        let reconnect_delay_secs = self.config.reconnect_delay_secs;
+        let auto_reconnect = self.config.auto_reconnect;
         let device_id_clone = device_id.to_string();
 
         tokio::spawn(async move {
-            Self::handle_notifications(peripheral, event_tx, sensor_states, device_id_clone).await;
+            Self::handle_notifications(
+                peripheral,
+                event_tx,
+                sensor_states,
+                device_id_clone,
+                reconnect_attempts,
+                max_reconnect_attempts,
+                reconnect_delay_secs,
+                auto_reconnect,
+            )
+            .await;
         });
 
         tracing::info!("Connected to sensor: {}", device_id);
@@ -375,6 +434,10 @@ impl SensorManager {
         event_tx: Option<Sender<SensorEvent>>,
         sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
         device_id: String,
+        reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
+        max_reconnect_attempts: u32,
+        reconnect_delay_secs: u64,
+        auto_reconnect: bool,
     ) {
         use futures::stream::StreamExt;
 
@@ -407,6 +470,9 @@ impl SensorManager {
                     state.last_data_at = Some(Instant::now());
                 }
 
+                // Reset reconnect attempts on successful data
+                reconnect_attempts.lock().await.remove(&device_id);
+
                 // Send data event
                 if let Some(tx) = &event_tx {
                     let _ = tx.send(SensorEvent::Data(reading));
@@ -415,6 +481,128 @@ impl SensorManager {
         }
 
         // Stream ended - peripheral disconnected
+        tracing::warn!(
+            "Sensor {} notification stream ended (disconnected)",
+            device_id
+        );
+
+        // Update sensor state to disconnected
+        if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+            state.connection_state = ConnectionState::Disconnected;
+        }
+
+        // Check if we should attempt auto-reconnect (T029)
+        if auto_reconnect {
+            let mut attempts = reconnect_attempts.lock().await;
+            let attempt_count = attempts.entry(device_id.clone()).or_insert(0);
+
+            if *attempt_count < max_reconnect_attempts {
+                *attempt_count += 1;
+                let current_attempt = *attempt_count;
+                drop(attempts);
+
+                tracing::info!(
+                    "Auto-reconnect attempt {}/{} for sensor {}",
+                    current_attempt,
+                    max_reconnect_attempts,
+                    device_id
+                );
+
+                // Send reconnecting state
+                if let Some(tx) = &event_tx {
+                    let _ = tx.send(SensorEvent::ConnectionChanged {
+                        device_id: device_id.clone(),
+                        state: ConnectionState::Reconnecting,
+                    });
+                }
+
+                // Update sensor state
+                if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+                    state.connection_state = ConnectionState::Reconnecting;
+                }
+
+                // Wait before reconnect attempt
+                tokio::time::sleep(std::time::Duration::from_secs(reconnect_delay_secs)).await;
+
+                // Try to reconnect
+                if let Err(e) = peripheral.connect().await {
+                    tracing::warn!("Reconnection failed for {}: {}", device_id, e);
+
+                    // Send final disconnected state if all attempts exhausted
+                    if current_attempt >= max_reconnect_attempts {
+                        if let Some(tx) = &event_tx {
+                            let _ = tx.send(SensorEvent::ConnectionChanged {
+                                device_id: device_id.clone(),
+                                state: ConnectionState::Disconnected,
+                            });
+                            let _ = tx.send(SensorEvent::Error(format!(
+                                "Failed to reconnect to {} after {} attempts",
+                                device_id, max_reconnect_attempts
+                            )));
+                        }
+                    }
+                } else {
+                    tracing::info!("Reconnected to sensor {}", device_id);
+
+                    // Rediscover services and resubscribe
+                    if let Err(e) = peripheral.discover_services().await {
+                        tracing::error!("Failed to rediscover services: {}", e);
+                        return;
+                    }
+
+                    // Resubscribe to characteristics
+                    for char in peripheral.characteristics() {
+                        let char_uuid = char.uuid;
+                        if char_uuid == INDOOR_BIKE_DATA_UUID
+                            || char_uuid == CYCLING_POWER_MEASUREMENT_UUID
+                            || char_uuid == HEART_RATE_MEASUREMENT_UUID
+                        {
+                            if let Err(e) = peripheral.subscribe(&char).await {
+                                tracing::warn!("Failed to resubscribe to {}: {}", char_uuid, e);
+                            }
+                        }
+                    }
+
+                    // Update state to connected
+                    if let Some(state) = sensor_states.lock().await.get_mut(&device_id) {
+                        state.connection_state = ConnectionState::Connected;
+                    }
+
+                    if let Some(tx) = &event_tx {
+                        let _ = tx.send(SensorEvent::ConnectionChanged {
+                            device_id: device_id.clone(),
+                            state: ConnectionState::Connected,
+                        });
+                    }
+
+                    // Reset attempts on successful reconnect
+                    reconnect_attempts.lock().await.remove(&device_id);
+
+                    // Recursively handle notifications again
+                    Box::pin(Self::handle_notifications(
+                        peripheral,
+                        event_tx,
+                        sensor_states,
+                        device_id,
+                        reconnect_attempts,
+                        max_reconnect_attempts,
+                        reconnect_delay_secs,
+                        auto_reconnect,
+                    ))
+                    .await;
+                    return;
+                }
+            } else {
+                // Max attempts reached
+                tracing::warn!(
+                    "Max reconnect attempts ({}) reached for sensor {}",
+                    max_reconnect_attempts,
+                    device_id
+                );
+            }
+        }
+
+        // Send final disconnected event
         if let Some(tx) = &event_tx {
             let _ = tx.send(SensorEvent::ConnectionChanged {
                 device_id,
@@ -546,6 +734,53 @@ impl SensorManager {
     /// Check if currently scanning.
     pub async fn is_scanning(&self) -> bool {
         *self.is_scanning.lock().await
+    }
+
+    /// Get all sensor states (connected and recently seen).
+    pub async fn get_sensor_states(&self) -> Vec<SensorState> {
+        self.sensor_states.lock().await.values().cloned().collect()
+    }
+
+    /// Check if a controllable trainer is connected (FTMS support).
+    pub async fn has_controllable_trainer(&self) -> bool {
+        let states = self.sensor_states.lock().await;
+        states.values().any(|s| {
+            s.sensor_type == SensorType::Trainer
+                && s.connection_state == ConnectionState::Connected
+                && s.protocol == Protocol::BleFtms
+        })
+    }
+
+    /// Set simulation mode grade on a trainer.
+    pub async fn set_simulation_grade(
+        &self,
+        device_id: &str,
+        grade_percent: f32,
+    ) -> Result<(), SensorError> {
+        let connected = self.connected.lock().await;
+
+        let peripheral = connected
+            .get(device_id)
+            .ok_or_else(|| SensorError::SensorNotFound(device_id.to_string()))?;
+
+        // Find FTMS Control Point characteristic
+        let characteristics = peripheral.characteristics();
+        let control_point = characteristics
+            .iter()
+            .find(|c| c.uuid == crate::sensors::ftms::FTMS_CONTROL_POINT_UUID)
+            .ok_or(SensorError::Unsupported)?;
+
+        // Build and send the simulation parameters command
+        let cmd = crate::sensors::ftms::build_set_simulation_grade(grade_percent);
+
+        peripheral
+            .write(control_point, &cmd, WriteType::WithResponse)
+            .await
+            .map_err(|e| SensorError::WriteFailed(e.to_string()))?;
+
+        tracing::debug!("Set simulation grade to {}%", grade_percent);
+
+        Ok(())
     }
 
     /// Shutdown the sensor manager.

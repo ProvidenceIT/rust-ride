@@ -1,0 +1,20 @@
+# Assets Directory
+
+This directory contains 3D models, textures, and world data for the RustRide virtual world.
+
+## Structure
+
+- models/ - GLTF/GLB 3D models
+  - cyclist.glb - Avatar with cycling animation
+  - bikes/ - Bike models (road_bike.glb, tt_bike.glb, gravel_bike.glb)
+  - environment/ - Trees, buildings, road segments
+
+- textures/ - PNG textures
+  - terrain/ - Ground textures (grass, asphalt, dirt)
+  - sky/ - Sky gradient textures
+  - objects/ - Object textures
+
+- worlds/ - World definitions and route data
+  - countryside/ - Rolling hills world
+  - mountains/ - Alpine world
+  - coastal/ - Beach/ocean world

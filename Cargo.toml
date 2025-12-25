@@ -11,9 +11,10 @@ categories = ["games"]
 
 [dependencies]
 # GUI Framework
-eframe = "0.33"
+eframe = { version = "0.33", features = ["wgpu"] }
 egui = "0.33"
 egui_plot = "0.33"
+wgpu = "0.20"
 
 # BLE Communication
 btleplug = { version = "0.11", features = ["serde"] }
@@ -50,6 +51,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Channels
 crossbeam = "0.8"
+
+# 3D Rendering & Math
+glam = { version = "0.27", features = ["serde"] }
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Model & Texture Loading
+gltf = "1.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Native File Dialogs
+rfd = "0.14"
 
 # Platform-specific disk space checking
 [target.'cfg(windows)'.dependencies]

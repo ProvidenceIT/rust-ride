@@ -102,6 +102,19 @@ CREATE TABLE IF NOT EXISTS autosave (
     samples_json TEXT NOT NULL,
     saved_at TEXT NOT NULL
 );
+
+-- Avatar customization table
+CREATE TABLE IF NOT EXISTS avatars (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    jersey_color TEXT NOT NULL DEFAULT '#FF0000',
+    jersey_secondary TEXT,
+    bike_style TEXT NOT NULL DEFAULT 'road_bike',
+    helmet_color TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id)
+);
 "#;
 
 /// SQL for schema version tracking (migrations)
