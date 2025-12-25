@@ -1,0 +1,161 @@
+{
+  "description": "Sample ride power data for analytics testing",
+  "rides": [
+    {
+      "id": "ride_001",
+      "name": "Endurance ride",
+      "duration_seconds": 3600,
+      "description": "1-hour steady endurance ride at 150W",
+      "power_samples": {
+        "type": "constant",
+        "value": 150,
+        "duration_seconds": 3600
+      },
+      "expected_metrics": {
+        "average_power": 150,
+        "normalized_power": 150,
+        "tss_estimate": 56
+      }
+    },
+    {
+      "id": "ride_002",
+      "name": "FTP test simulation",
+      "duration_seconds": 2400,
+      "description": "Warmup + 20-min FTP test at 280W",
+      "segments": [
+        {
+          "name": "warmup",
+          "duration_seconds": 600,
+          "power": 150
+        },
+        {
+          "name": "ftp_effort",
+          "duration_seconds": 1200,
+          "power": 280
+        },
+        {
+          "name": "cooldown",
+          "duration_seconds": 600,
+          "power": 120
+        }
+      ],
+      "expected_metrics": {
+        "mmp_20min": 280,
+        "estimated_ftp": 266
+      }
+    },
+    {
+      "id": "ride_003",
+      "name": "Interval session",
+      "duration_seconds": 3600,
+      "description": "5x5min intervals at 300W with 5min recovery at 150W",
+      "segments": [
+        {"name": "warmup", "duration_seconds": 600, "power": 150},
+        {"name": "interval_1", "duration_seconds": 300, "power": 300},
+        {"name": "recovery_1", "duration_seconds": 300, "power": 150},
+        {"name": "interval_2", "duration_seconds": 300, "power": 300},
+        {"name": "recovery_2", "duration_seconds": 300, "power": 150},
+        {"name": "interval_3", "duration_seconds": 300, "power": 300},
+        {"name": "recovery_3", "duration_seconds": 300, "power": 150},
+        {"name": "interval_4", "duration_seconds": 300, "power": 300},
+        {"name": "recovery_4", "duration_seconds": 300, "power": 150},
+        {"name": "interval_5", "duration_seconds": 300, "power": 300},
+        {"name": "cooldown", "duration_seconds": 300, "power": 120}
+      ],
+      "expected_metrics": {
+        "mmp_5min": 300,
+        "mmp_10min": 225
+      }
+    },
+    {
+      "id": "ride_004",
+      "name": "Sprint session",
+      "duration_seconds": 1800,
+      "description": "Short ride with sprint efforts for neuromuscular testing",
+      "segments": [
+        {"name": "warmup", "duration_seconds": 600, "power": 150},
+        {"name": "sprint_1", "duration_seconds": 10, "power": 800},
+        {"name": "recovery_1", "duration_seconds": 290, "power": 100},
+        {"name": "sprint_2", "duration_seconds": 10, "power": 850},
+        {"name": "recovery_2", "duration_seconds": 290, "power": 100},
+        {"name": "sprint_3", "duration_seconds": 10, "power": 820},
+        {"name": "cooldown", "duration_seconds": 290, "power": 100}
+      ],
+      "expected_metrics": {
+        "mmp_5s": 850,
+        "mmp_10s": 823
+      }
+    },
+    {
+      "id": "ride_005",
+      "name": "CP test efforts",
+      "duration_seconds": 3600,
+      "description": "Multiple maximal efforts for CP model fitting",
+      "segments": [
+        {"name": "warmup", "duration_seconds": 600, "power": 150},
+        {"name": "effort_3min", "duration_seconds": 180, "power": 361},
+        {"name": "recovery_1", "duration_seconds": 600, "power": 120},
+        {"name": "effort_12min", "duration_seconds": 720, "power": 278},
+        {"name": "recovery_2", "duration_seconds": 600, "power": 120},
+        {"name": "effort_20min", "duration_seconds": 1200, "power": 267}
+      ],
+      "expected_metrics": {
+        "cp_estimate": 250,
+        "w_prime_estimate": 20000,
+        "comment": "Based on CP=250W, W'=20000J model"
+      }
+    }
+  ],
+  "pdc_test_data": {
+    "description": "Pre-calculated PDC points for testing",
+    "athlete_ftp": 250,
+    "points": [
+      {"duration_secs": 5, "power_watts": 800},
+      {"duration_secs": 10, "power_watts": 700},
+      {"duration_secs": 30, "power_watts": 500},
+      {"duration_secs": 60, "power_watts": 400},
+      {"duration_secs": 120, "power_watts": 350},
+      {"duration_secs": 180, "power_watts": 320},
+      {"duration_secs": 300, "power_watts": 290},
+      {"duration_secs": 600, "power_watts": 275},
+      {"duration_secs": 1200, "power_watts": 263},
+      {"duration_secs": 2700, "power_watts": 250},
+      {"duration_secs": 3600, "power_watts": 245}
+    ]
+  },
+  "training_load_history": {
+    "description": "30-day TSS history for ATL/CTL testing",
+    "daily_tss": [
+      {"date": "2024-01-01", "tss": 75},
+      {"date": "2024-01-02", "tss": 0},
+      {"date": "2024-01-03", "tss": 85},
+      {"date": "2024-01-04", "tss": 60},
+      {"date": "2024-01-05", "tss": 120},
+      {"date": "2024-01-06", "tss": 45},
+      {"date": "2024-01-07", "tss": 0},
+      {"date": "2024-01-08", "tss": 80},
+      {"date": "2024-01-09", "tss": 70},
+      {"date": "2024-01-10", "tss": 90},
+      {"date": "2024-01-11", "tss": 55},
+      {"date": "2024-01-12", "tss": 100},
+      {"date": "2024-01-13", "tss": 40},
+      {"date": "2024-01-14", "tss": 0},
+      {"date": "2024-01-15", "tss": 75},
+      {"date": "2024-01-16", "tss": 65},
+      {"date": "2024-01-17", "tss": 95},
+      {"date": "2024-01-18", "tss": 50},
+      {"date": "2024-01-19", "tss": 110},
+      {"date": "2024-01-20", "tss": 35},
+      {"date": "2024-01-21", "tss": 0},
+      {"date": "2024-01-22", "tss": 85},
+      {"date": "2024-01-23", "tss": 70},
+      {"date": "2024-01-24", "tss": 80},
+      {"date": "2024-01-25", "tss": 60},
+      {"date": "2024-01-26", "tss": 105},
+      {"date": "2024-01-27", "tss": 45},
+      {"date": "2024-01-28", "tss": 0},
+      {"date": "2024-01-29", "tss": 90},
+      {"date": "2024-01-30", "tss": 75}
+    ]
+  }
+}

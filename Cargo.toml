@@ -13,7 +13,7 @@ categories = ["games"]
 # GUI Framework
 eframe = { version = "0.33", features = ["wgpu"] }
 egui = "0.33"
-egui_plot = "0.33"
+egui_plot = "0.34"
 wgpu = "0.20"
 
 # BLE Communication

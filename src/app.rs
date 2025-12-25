@@ -14,7 +14,8 @@ use rustride::sensors::types::{ConnectionState, SensorEvent};
 use rustride::sensors::SensorManager;
 use rustride::storage::config::{AppConfig, UserProfile};
 use rustride::ui::screens::{
-    AvatarScreen, HomeScreen, RideScreen, Screen, SensorSetupScreen, WorldSelectScreen,
+    AnalyticsScreen, AvatarScreen, HomeScreen, RideScreen, Screen, SensorSetupScreen,
+    WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
 use rustride::workouts::WorkoutEngine;
@@ -67,6 +68,8 @@ pub struct RustRideApp {
     world_select_screen: WorldSelectScreen,
     /// Avatar customization screen state
     avatar_screen: AvatarScreen,
+    /// Analytics screen state
+    analytics_screen: AnalyticsScreen,
     /// Sensor event receiver
     sensor_event_rx: Option<Receiver<SensorEvent>>,
     /// Last UI update time
@@ -128,6 +131,7 @@ impl RustRideApp {
             ride_screen: RideScreen::new(),
             world_select_screen: WorldSelectScreen::new(),
             avatar_screen: AvatarScreen::new(),
+            analytics_screen: AnalyticsScreen::new(),
             sensor_event_rx,
             last_update: Instant::now(),
             sensor_status: "No sensors connected".to_string(),
@@ -463,6 +467,12 @@ impl eframe::App for RustRideApp {
                     if let Some((next, _config)) = self.avatar_screen.show(ui) {
                         // TODO: Save avatar config to database
                         self.navigate(next);
+                    }
+                }
+                Screen::Analytics => {
+                    self.analytics_screen.show(ui);
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
                     }
                 }
             }

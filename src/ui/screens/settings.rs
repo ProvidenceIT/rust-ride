@@ -6,9 +6,12 @@
 //! T123: Implement HR zone editor
 //! T124: Implement unit preference toggle (metric/imperial)
 //! T125: Implement theme toggle (dark/light)
+//! T076: Display current FTP with confidence on profile screen
+//! T124: Add rider type display to profile screen
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
+use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::storage::config::{Theme, Units, UserProfile};
 
@@ -34,6 +37,12 @@ pub struct SettingsScreen {
     resting_hr_input: String,
     weight_input: String,
     height_input: String,
+    /// T076: FTP confidence from auto-detection
+    pub ftp_confidence: Option<FtpConfidence>,
+    /// T124: Rider type classification
+    pub rider_type: Option<RiderType>,
+    /// Power profile for radar display
+    pub power_profile: Option<PowerProfile>,
 }
 
 /// Actions that can result from the settings screen.
@@ -75,7 +84,23 @@ impl SettingsScreen {
             resting_hr_input,
             weight_input,
             height_input,
+            ftp_confidence: None,
+            rider_type: None,
+            power_profile: None,
         }
+    }
+
+    /// Set FTP confidence from auto-detection.
+    /// T076: Display current FTP with confidence on profile screen.
+    pub fn set_ftp_confidence(&mut self, confidence: Option<FtpConfidence>) {
+        self.ftp_confidence = confidence;
+    }
+
+    /// Set rider type classification.
+    /// T124: Add rider type display to profile screen.
+    pub fn set_rider_type(&mut self, rider_type: Option<RiderType>, profile: Option<PowerProfile>) {
+        self.rider_type = rider_type;
+        self.power_profile = profile;
     }
 
     /// Update the profile (e.g., after loading from database).
@@ -154,6 +179,11 @@ impl SettingsScreen {
 
             ui.add_space(16.0);
 
+            // T124: Rider type section
+            self.render_rider_type_section(ui);
+
+            ui.add_space(16.0);
+
             // Power zones section
             self.render_power_zones_section(ui);
 
@@ -195,25 +225,45 @@ impl SettingsScreen {
                     }
                     ui.end_row();
 
-                    // FTP
+                    // FTP with confidence indicator (T076)
                     ui.label("FTP (watts):");
-                    let ftp_response = ui
-                        .add(egui::TextEdit::singleline(&mut self.ftp_input).desired_width(100.0));
-                    if ftp_response.changed() {
-                        self.has_changes = true;
-                        if let Ok(ftp) = self.ftp_input.parse::<u16>() {
-                            if UserProfile::validate_ftp(ftp) {
-                                let _ = self.profile.set_ftp(ftp);
-                                if self.auto_calculate_power_zones {
-                                    self.profile.power_zones = PowerZones::from_ftp(ftp);
+                    ui.horizontal(|ui| {
+                        let ftp_response = ui.add(
+                            egui::TextEdit::singleline(&mut self.ftp_input).desired_width(100.0),
+                        );
+                        if ftp_response.changed() {
+                            self.has_changes = true;
+                            if let Ok(ftp) = self.ftp_input.parse::<u16>() {
+                                if UserProfile::validate_ftp(ftp) {
+                                    let _ = self.profile.set_ftp(ftp);
+                                    if self.auto_calculate_power_zones {
+                                        self.profile.power_zones = PowerZones::from_ftp(ftp);
+                                    }
+                                    self.error_message = None;
+                                } else {
+                                    self.error_message =
+                                        Some("FTP must be between 50 and 600 watts".to_string());
                                 }
-                                self.error_message = None;
-                            } else {
-                                self.error_message =
-                                    Some("FTP must be between 50 and 600 watts".to_string());
                             }
                         }
-                    }
+
+                        // Show confidence badge if auto-detected
+                        if let Some(confidence) = &self.ftp_confidence {
+                            let (color, label) = match confidence {
+                                FtpConfidence::High => (Color32::from_rgb(50, 205, 50), "High"),
+                                FtpConfidence::Medium => {
+                                    (Color32::from_rgb(255, 165, 0), "Medium")
+                                }
+                                FtpConfidence::Low => (Color32::from_rgb(220, 20, 60), "Low"),
+                            };
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(format!("({} confidence)", label))
+                                    .color(color)
+                                    .small(),
+                            );
+                        }
+                    });
                     ui.end_row();
 
                     // Weight
@@ -612,5 +662,124 @@ impl SettingsScreen {
         self.has_changes = false;
         self.error_message = None;
         self.sync_inputs();
+    }
+
+    /// Render the rider type section.
+    ///
+    /// T124: Add rider type display to profile screen.
+    fn render_rider_type_section(&self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.label(RichText::new("Rider Classification").size(18.0).strong());
+            ui.add_space(8.0);
+
+            if let Some(rider_type) = &self.rider_type {
+                // Rider type display
+                ui.horizontal(|ui| {
+                    ui.label("Type:");
+                    ui.label(
+                        RichText::new(rider_type.name())
+                            .strong()
+                            .color(Color32::from_rgb(66, 133, 244)),
+                    );
+                });
+
+                ui.add_space(4.0);
+
+                // Description
+                ui.label(
+                    RichText::new(rider_type.description())
+                        .weak()
+                        .italics(),
+                );
+
+                ui.add_space(8.0);
+
+                // Training focus recommendation
+                ui.label("Suggested focus:");
+                ui.label(
+                    RichText::new(rider_type.training_focus())
+                        .color(Color32::from_rgb(52, 168, 83)),
+                );
+
+                // Power profile if available
+                if let Some(profile) = &self.power_profile {
+                    ui.add_space(12.0);
+                    ui.label(RichText::new("Power Profile").strong());
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("power_profile_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Neuromuscular (5s):");
+                            self.render_profile_bar(ui, profile.neuromuscular);
+                            ui.end_row();
+
+                            ui.label("Anaerobic (1min):");
+                            self.render_profile_bar(ui, profile.anaerobic);
+                            ui.end_row();
+
+                            ui.label("VO2max (5min):");
+                            self.render_profile_bar(ui, profile.vo2max);
+                            ui.end_row();
+
+                            ui.label("Threshold (20min):");
+                            self.render_profile_bar(ui, profile.threshold);
+                            ui.end_row();
+                        });
+                }
+            } else {
+                ui.label(
+                    RichText::new("Rider classification requires more ride data")
+                        .weak()
+                        .italics(),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Record rides with varied efforts to build your power profile")
+                        .weak()
+                        .small(),
+                );
+            }
+        });
+    }
+
+    /// Render a power profile bar.
+    fn render_profile_bar(&self, ui: &mut Ui, value: f32) {
+        let width = 150.0;
+        let height = 12.0;
+
+        // Background
+        let (rect, _response) = ui.allocate_exact_size(
+            egui::Vec2::new(width, height),
+            egui::Sense::hover(),
+        );
+
+        ui.painter().rect_filled(
+            rect,
+            2.0,
+            Color32::from_gray(60),
+        );
+
+        // Fill based on value (0.0-1.5 typical range, 1.0 = average)
+        let fill_width = (value.min(1.5) / 1.5 * width).max(0.0);
+        let fill_color = if value > 1.1 {
+            Color32::from_rgb(52, 168, 83) // Green for strength
+        } else if value > 0.9 {
+            Color32::from_rgb(66, 133, 244) // Blue for average
+        } else {
+            Color32::from_rgb(234, 67, 53) // Red for weakness
+        };
+
+        let fill_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::Vec2::new(fill_width, height),
+        );
+        ui.painter().rect_filled(fill_rect, 2.0, fill_color);
+
+        // Value label
+        ui.label(RichText::new(format!("{:.2}", value)).small());
     }
 }

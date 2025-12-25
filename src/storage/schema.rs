@@ -115,6 +115,100 @@ CREATE TABLE IF NOT EXISTS avatars (
     updated_at TEXT NOT NULL,
     UNIQUE(user_id)
 );
+
+-- Power Duration Curve points table
+CREATE TABLE IF NOT EXISTS pdc_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    duration_secs INTEGER NOT NULL,
+    power_watts INTEGER NOT NULL,
+    achieved_at TEXT NOT NULL,
+    ride_id TEXT REFERENCES rides(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, duration_secs)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdc_points_user_id ON pdc_points(user_id);
+CREATE INDEX IF NOT EXISTS idx_pdc_points_duration ON pdc_points(user_id, duration_secs);
+
+-- Critical Power model history table
+CREATE TABLE IF NOT EXISTS cp_models (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cp_watts INTEGER NOT NULL,
+    w_prime_joules INTEGER NOT NULL,
+    r_squared REAL NOT NULL,
+    calculated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cp_models_user_id ON cp_models(user_id);
+CREATE INDEX IF NOT EXISTS idx_cp_models_current ON cp_models(user_id, is_current);
+
+-- FTP estimates table
+CREATE TABLE IF NOT EXISTS ftp_estimates (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ftp_watts INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    supporting_data_json TEXT,
+    detected_at TEXT NOT NULL,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    accepted_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ftp_estimates_user_id ON ftp_estimates(user_id);
+CREATE INDEX IF NOT EXISTS idx_ftp_estimates_accepted ON ftp_estimates(user_id, accepted);
+
+-- Daily training load table
+CREATE TABLE IF NOT EXISTS daily_training_load (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    tss REAL NOT NULL,
+    atl REAL NOT NULL,
+    ctl REAL NOT NULL,
+    tsb REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_training_load_user_date ON daily_training_load(user_id, date);
+
+-- VO2max estimates table
+CREATE TABLE IF NOT EXISTS vo2max_estimates (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vo2max REAL NOT NULL,
+    method TEXT NOT NULL,
+    classification TEXT NOT NULL,
+    estimated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vo2max_estimates_user_id ON vo2max_estimates(user_id);
+CREATE INDEX IF NOT EXISTS idx_vo2max_estimates_current ON vo2max_estimates(user_id, is_current);
+
+-- Rider analytics profile table
+CREATE TABLE IF NOT EXISTS rider_profiles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rider_type TEXT NOT NULL,
+    neuromuscular_pct REAL NOT NULL,
+    anaerobic_pct REAL NOT NULL,
+    vo2max_pct REAL NOT NULL,
+    threshold_pct REAL NOT NULL DEFAULT 100.0,
+    calculated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, is_current) -- Only one current profile per user
+);
+
+CREATE INDEX IF NOT EXISTS idx_rider_profiles_user_id ON rider_profiles(user_id);
 "#;
 
 /// SQL for schema version tracking (migrations)
@@ -126,4 +220,100 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 1;
+pub const CURRENT_VERSION: i32 = 2;
+
+/// SQL for migration from v1 to v2 (analytics tables)
+pub const MIGRATION_V1_TO_V2: &str = r#"
+-- Power Duration Curve points table
+CREATE TABLE IF NOT EXISTS pdc_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    duration_secs INTEGER NOT NULL,
+    power_watts INTEGER NOT NULL,
+    achieved_at TEXT NOT NULL,
+    ride_id TEXT REFERENCES rides(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, duration_secs)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdc_points_user_id ON pdc_points(user_id);
+CREATE INDEX IF NOT EXISTS idx_pdc_points_duration ON pdc_points(user_id, duration_secs);
+
+-- Critical Power model history table
+CREATE TABLE IF NOT EXISTS cp_models (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cp_watts INTEGER NOT NULL,
+    w_prime_joules INTEGER NOT NULL,
+    r_squared REAL NOT NULL,
+    calculated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cp_models_user_id ON cp_models(user_id);
+CREATE INDEX IF NOT EXISTS idx_cp_models_current ON cp_models(user_id, is_current);
+
+-- FTP estimates table
+CREATE TABLE IF NOT EXISTS ftp_estimates (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ftp_watts INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    supporting_data_json TEXT,
+    detected_at TEXT NOT NULL,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    accepted_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ftp_estimates_user_id ON ftp_estimates(user_id);
+CREATE INDEX IF NOT EXISTS idx_ftp_estimates_accepted ON ftp_estimates(user_id, accepted);
+
+-- Daily training load table
+CREATE TABLE IF NOT EXISTS daily_training_load (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    tss REAL NOT NULL,
+    atl REAL NOT NULL,
+    ctl REAL NOT NULL,
+    tsb REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_training_load_user_date ON daily_training_load(user_id, date);
+
+-- VO2max estimates table
+CREATE TABLE IF NOT EXISTS vo2max_estimates (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vo2max REAL NOT NULL,
+    method TEXT NOT NULL,
+    classification TEXT NOT NULL,
+    estimated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vo2max_estimates_user_id ON vo2max_estimates(user_id);
+CREATE INDEX IF NOT EXISTS idx_vo2max_estimates_current ON vo2max_estimates(user_id, is_current);
+
+-- Rider analytics profile table
+CREATE TABLE IF NOT EXISTS rider_profiles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rider_type TEXT NOT NULL,
+    neuromuscular_pct REAL NOT NULL,
+    anaerobic_pct REAL NOT NULL,
+    vo2max_pct REAL NOT NULL,
+    threshold_pct REAL NOT NULL DEFAULT 100.0,
+    calculated_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rider_profiles_user_id ON rider_profiles(user_id);
+"#;

@@ -13,7 +13,7 @@ use crate::metrics::zones::{HRZones, PowerZones};
 use crate::recording::types::{Ride, RideSample};
 use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
-use crate::storage::schema::{CURRENT_VERSION, SCHEMA, SCHEMA_VERSION_TABLE};
+use crate::storage::schema::{CURRENT_VERSION, MIGRATION_V1_TO_V2, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
 use chrono::{DateTime, Utc};
@@ -95,19 +95,33 @@ impl Database {
                 .execute_batch(SCHEMA)
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
-            // Record version
+            // Record version 1
             self.conn
                 .execute(
-                    "INSERT INTO schema_version (version, applied_at) VALUES (?, datetime('now'))",
-                    [CURRENT_VERSION],
+                    "INSERT INTO schema_version (version, applied_at) VALUES (1, datetime('now'))",
+                    [],
                 )
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
-            tracing::info!("Database migrated to version {}", CURRENT_VERSION);
+            tracing::info!("Database migrated to version 1");
         }
 
-        // Future migrations would go here:
-        // if from_version < 2 { ... }
+        // Migration v1 -> v2: Add analytics tables
+        if from_version < 2 {
+            self.conn
+                .execute_batch(MIGRATION_V1_TO_V2)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 2
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (2, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 2 (analytics tables)");
+        }
 
         Ok(())
     }

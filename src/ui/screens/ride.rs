@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
+use crate::metrics::analytics::sweet_spot::SweetSpotRecommender;
 use crate::metrics::calculator::AggregatedMetrics;
 use crate::recording::types::RecordingStatus;
 use crate::storage::config::{DashboardLayout, MetricType};
@@ -70,6 +71,8 @@ pub struct RideScreen {
     pub world_3d_enabled: bool,
     /// Last frame time for delta calculation
     pub last_frame_time: Option<Instant>,
+    /// Athlete's FTP for Sweet Spot calculation
+    pub ftp: u16,
 }
 
 impl Default for RideScreen {
@@ -92,6 +95,7 @@ impl Default for RideScreen {
             dashboard_layout: DashboardLayout::default(),
             world_3d_enabled: false,
             last_frame_time: None,
+            ftp: 200, // Default FTP
         }
     }
 }
@@ -415,6 +419,13 @@ impl RideScreen {
                 }
             });
         }
+
+        // T112: Sweet Spot zone indicator
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.add_space((ui.available_width() - 200.0) / 2.0);
+            self.render_sweet_spot_indicator(ui);
+        });
     }
 
     /// Render the bottom control buttons.
@@ -984,5 +995,76 @@ impl RideScreen {
                 }
             });
         }
+    }
+
+    /// Check if current power is in Sweet Spot zone (88-94% FTP).
+    ///
+    /// T112: Add live Sweet Spot zone indicator to ride screen.
+    pub fn is_in_sweet_spot(&self) -> bool {
+        if let Some(power) = self.metrics.power_instant {
+            let recommender = SweetSpotRecommender::new(self.ftp);
+            let (min, max) =
+                recommender.zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot);
+            power >= min && power <= max
+        } else {
+            false
+        }
+    }
+
+    /// Get Sweet Spot zone power range.
+    pub fn sweet_spot_range(&self) -> (u16, u16) {
+        let recommender = SweetSpotRecommender::new(self.ftp);
+        recommender.zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot)
+    }
+
+    /// Render the Sweet Spot zone indicator.
+    ///
+    /// Shows a visual indicator when rider is in the Sweet Spot zone.
+    pub fn render_sweet_spot_indicator(&self, ui: &mut Ui) {
+        let (min, max) = self.sweet_spot_range();
+        let in_sweet_spot = self.is_in_sweet_spot();
+
+        ui.horizontal(|ui| {
+            // Sweet Spot indicator badge
+            let (bg_color, text_color, icon) = if in_sweet_spot {
+                (
+                    Color32::from_rgb(255, 140, 0), // Orange background when in zone
+                    Color32::WHITE,
+                    "●",
+                )
+            } else {
+                (
+                    ui.visuals().faint_bg_color,
+                    Color32::GRAY,
+                    "○",
+                )
+            };
+
+            let frame = egui::Frame::new()
+                .fill(bg_color)
+                .inner_margin(egui::Margin::symmetric(8, 4))
+                .corner_radius(4.0);
+
+            frame.show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(icon).color(text_color));
+                    ui.label(
+                        RichText::new("Sweet Spot")
+                            .color(text_color)
+                            .strong(),
+                    );
+                    ui.label(
+                        RichText::new(format!("{}-{}W", min, max))
+                            .color(text_color)
+                            .small(),
+                    );
+                });
+            });
+        });
+    }
+
+    /// Set the athlete's FTP for Sweet Spot calculations.
+    pub fn set_ftp(&mut self, ftp: u16) {
+        self.ftp = ftp;
     }
 }

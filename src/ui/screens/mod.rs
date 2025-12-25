@@ -1,5 +1,6 @@
 //! UI screens for the application.
 
+pub mod analytics;
 pub mod avatar;
 pub mod home;
 pub mod ride;
@@ -12,6 +13,7 @@ pub mod workout_library;
 pub mod world_select;
 
 pub use crate::recording::types::ExportFormat;
+pub use analytics::{AnalyticsScreen, AnalyticsTab};
 pub use avatar::AvatarScreen;
 pub use home::HomeScreen;
 pub use ride::RideScreen;
@@ -47,4 +49,6 @@ pub enum Screen {
     WorldSelect,
     /// Avatar customization screen
     Avatar,
+    /// Analytics screen (training science)
+    Analytics,
 }

@@ -53,9 +53,9 @@ impl HomeScreen {
 
             // Secondary buttons in a row
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let small_button_size = Vec2::new(130.0, 44.0);
+                let small_button_size = Vec2::new(100.0, 44.0);
 
-                ui.add_space((ui.available_width() - small_button_size.x * 3.0 - 32.0) / 2.0);
+                ui.add_space((ui.available_width() - small_button_size.x * 4.0 - 48.0) / 2.0);
 
                 if ui
                     .add_sized(
@@ -65,6 +65,18 @@ impl HomeScreen {
                     .clicked()
                 {
                     next_screen = Some(Screen::SensorSetup);
+                }
+
+                ui.add_space(16.0);
+
+                if ui
+                    .add_sized(
+                        small_button_size,
+                        egui::Button::new(RichText::new("Analytics").size(16.0)),
+                    )
+                    .clicked()
+                {
+                    next_screen = Some(Screen::Analytics);
                 }
 
                 ui.add_space(16.0);

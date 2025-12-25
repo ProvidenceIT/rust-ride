@@ -202,6 +202,14 @@ impl PowerZones {
             &self.z7_neuromuscular,
         ]
     }
+
+    /// Update zones based on a new FTP value.
+    ///
+    /// T075: Trigger zone recalculation on FTP acceptance.
+    /// Returns the new zones calculated from the updated FTP.
+    pub fn update_from_ftp(&mut self, new_ftp: u16) {
+        *self = Self::from_ftp(new_ftp);
+    }
 }
 
 impl Default for PowerZones {
