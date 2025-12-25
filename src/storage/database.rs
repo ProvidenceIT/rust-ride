@@ -13,7 +13,7 @@ use crate::metrics::zones::{HRZones, PowerZones};
 use crate::recording::types::{Ride, RideSample};
 use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
-use crate::storage::schema::{CURRENT_VERSION, MIGRATION_V1_TO_V2, SCHEMA, SCHEMA_VERSION_TABLE};
+use crate::storage::schema::{CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, SCHEMA, SCHEMA_VERSION_TABLE};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
 use chrono::{DateTime, Utc};
@@ -121,6 +121,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 2 (analytics tables)");
+        }
+
+        // Migration v2 -> v3: Add ML coaching tables
+        if from_version < 3 {
+            self.conn
+                .execute_batch(MIGRATION_V2_TO_V3)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 3
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (3, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 3 (ML coaching tables)");
         }
 
         Ok(())

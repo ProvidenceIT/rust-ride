@@ -52,6 +52,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Channels
 crossbeam = "0.8"
 
+# HTTP Client (for ML cloud API)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
 # 3D Rendering & Math
 glam = { version = "0.27", features = ["serde"] }
 bytemuck = { version = "1.14", features = ["derive"] }

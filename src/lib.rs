@@ -4,7 +4,9 @@
 //! Provides BLE sensor connectivity, structured workout execution with ERG mode,
 //! real-time metrics display, and ride recording with export capabilities.
 
+pub mod goals;
 pub mod metrics;
+pub mod ml;
 pub mod recording;
 pub mod sensors;
 pub mod storage;

@@ -211,6 +211,111 @@ CREATE TABLE IF NOT EXISTS rider_profiles (
 CREATE INDEX IF NOT EXISTS idx_rider_profiles_user_id ON rider_profiles(user_id);
 "#;
 
+/// SQL for migration from v2 to v3 (ML coaching tables)
+pub const MIGRATION_V2_TO_V3: &str = r#"
+-- Training Goals table
+CREATE TABLE IF NOT EXISTS training_goals (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    goal_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    target_date TEXT,
+    target_metric_type TEXT,
+    target_metric_value REAL,
+    target_metric_current REAL,
+    priority INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_goals_user_id ON training_goals(user_id);
+CREATE INDEX IF NOT EXISTS idx_training_goals_status ON training_goals(user_id, status);
+
+-- ML Prediction Cache table
+CREATE TABLE IF NOT EXISTS ml_predictions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    prediction_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_user_type ON ml_predictions(user_id, prediction_type);
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_expires ON ml_predictions(expires_at);
+
+-- Workout Recommendations table
+CREATE TABLE IF NOT EXISTS workout_recommendations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workout_id TEXT NOT NULL,
+    workout_source TEXT NOT NULL,
+    suitability_score REAL NOT NULL,
+    reasoning TEXT NOT NULL,
+    target_energy_systems TEXT NOT NULL,
+    expected_tss REAL NOT NULL,
+    goal_id TEXT REFERENCES training_goals(id) ON DELETE SET NULL,
+    training_gap TEXT,
+    recommended_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_workout_recommendations_user ON workout_recommendations(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_recommendations_status ON workout_recommendations(user_id, status);
+
+-- Performance Projections table
+CREATE TABLE IF NOT EXISTS performance_projections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    projected_at TEXT NOT NULL,
+    forecast_weeks INTEGER NOT NULL,
+    data_points TEXT NOT NULL,
+    plateau_detected INTEGER NOT NULL DEFAULT 0,
+    detraining_risk TEXT NOT NULL,
+    event_readiness TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_performance_projections_user ON performance_projections(user_id);
+
+-- Built-in Workout Library table
+CREATE TABLE IF NOT EXISTS builtin_workouts (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    energy_systems TEXT NOT NULL,
+    goal_alignment TEXT NOT NULL,
+    difficulty_tier TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    base_tss REAL NOT NULL,
+    segments TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_builtin_workouts_category ON builtin_workouts(category);
+CREATE INDEX IF NOT EXISTS idx_builtin_workouts_difficulty ON builtin_workouts(difficulty_tier);
+
+-- Fatigue States table (per-ride tracking)
+CREATE TABLE IF NOT EXISTS fatigue_states (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ride_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    aerobic_decoupling_score REAL NOT NULL,
+    power_variability_index REAL NOT NULL,
+    hrv_fatigue_indicator REAL,
+    alert_triggered INTEGER NOT NULL DEFAULT 0,
+    alert_dismissed INTEGER NOT NULL DEFAULT 0,
+    cooldown_expires_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_fatigue_states_ride ON fatigue_states(ride_id);
+"#;
+
 /// SQL for schema version tracking (migrations)
 pub const SCHEMA_VERSION_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -220,7 +325,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 2;
+pub const CURRENT_VERSION: i32 = 3;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
