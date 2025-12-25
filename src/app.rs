@@ -13,7 +13,9 @@ use rustride::recording::RideRecorder;
 use rustride::sensors::types::{ConnectionState, SensorEvent};
 use rustride::sensors::SensorManager;
 use rustride::storage::config::{AppConfig, UserProfile};
-use rustride::ui::screens::{HomeScreen, RideScreen, Screen, SensorSetupScreen};
+use rustride::ui::screens::{
+    AvatarScreen, HomeScreen, RideScreen, Screen, SensorSetupScreen, WorldSelectScreen,
+};
 use rustride::ui::theme::Theme;
 use rustride::workouts::WorkoutEngine;
 use std::time::Instant;
@@ -61,6 +63,10 @@ pub struct RustRideApp {
     sensor_setup_screen: SensorSetupScreen,
     /// Ride screen state
     ride_screen: RideScreen,
+    /// World selection screen state
+    world_select_screen: WorldSelectScreen,
+    /// Avatar customization screen state
+    avatar_screen: AvatarScreen,
     /// Sensor event receiver
     sensor_event_rx: Option<Receiver<SensorEvent>>,
     /// Last UI update time
@@ -120,6 +126,8 @@ impl RustRideApp {
             metrics_calculator,
             sensor_setup_screen: SensorSetupScreen::new(),
             ride_screen: RideScreen::new(),
+            world_select_screen: WorldSelectScreen::new(),
+            avatar_screen: AvatarScreen::new(),
             sensor_event_rx,
             last_update: Instant::now(),
             sensor_status: "No sensors connected".to_string(),
@@ -443,6 +451,18 @@ impl eframe::App for RustRideApp {
                     ui.label("Settings - coming soon");
                     if ui.button("Back to Home").clicked() {
                         self.navigate(Screen::Home);
+                    }
+                }
+                Screen::WorldSelect => {
+                    if let Some((next, _selection)) = self.world_select_screen.show(ui) {
+                        // TODO: Pass selection to ride screen when starting 3D ride
+                        self.navigate(next);
+                    }
+                }
+                Screen::Avatar => {
+                    if let Some((next, _config)) = self.avatar_screen.show(ui) {
+                        // TODO: Save avatar config to database
+                        self.navigate(next);
                     }
                 }
             }

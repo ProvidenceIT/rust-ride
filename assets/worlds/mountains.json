@@ -1,0 +1,39 @@
+{
+  "id": "mountains",
+  "name": "Alpine Peaks",
+  "description": "Challenging mountain terrain with steep climbs, switchbacks, and stunning alpine vistas. For serious climbers.",
+  "theme": "mountains",
+  "preview_image": "mountains_preview.png",
+  "assets_path": "assets/worlds/mountains",
+  "default_route": "summit_climb",
+  "time_of_day": "morning",
+  "routes": [
+    {
+      "id": "summit_climb",
+      "name": "Summit Climb",
+      "distance_meters": 12000,
+      "elevation_gain_meters": 800,
+      "difficulty": "challenging",
+      "is_loop": false,
+      "waypoints_file": "summit_climb.json"
+    },
+    {
+      "id": "alpine_loop",
+      "name": "Alpine Loop",
+      "distance_meters": 35000,
+      "elevation_gain_meters": 1200,
+      "difficulty": "challenging",
+      "is_loop": true,
+      "waypoints_file": "alpine_loop.json"
+    },
+    {
+      "id": "epic_ascent",
+      "name": "Epic Ascent",
+      "distance_meters": 20000,
+      "elevation_gain_meters": 1500,
+      "difficulty": "extreme",
+      "is_loop": false,
+      "waypoints_file": "epic_ascent.json"
+    }
+  ]
+}

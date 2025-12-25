@@ -1,0 +1,39 @@
+{
+  "id": "coastal",
+  "name": "Ocean Drive",
+  "description": "Scenic coastal roads with ocean views, beach towns, and refreshing sea breezes. A mix of flat and hilly terrain.",
+  "theme": "coastal",
+  "preview_image": "coastal_preview.png",
+  "assets_path": "assets/worlds/coastal",
+  "default_route": "beach_cruise",
+  "time_of_day": "afternoon",
+  "routes": [
+    {
+      "id": "beach_cruise",
+      "name": "Beach Cruise",
+      "distance_meters": 20000,
+      "elevation_gain_meters": 100,
+      "difficulty": "easy",
+      "is_loop": true,
+      "waypoints_file": "beach_cruise.json"
+    },
+    {
+      "id": "coastal_cliffs",
+      "name": "Coastal Cliffs",
+      "distance_meters": 30000,
+      "elevation_gain_meters": 500,
+      "difficulty": "moderate",
+      "is_loop": true,
+      "waypoints_file": "coastal_cliffs.json"
+    },
+    {
+      "id": "harbor_tour",
+      "name": "Harbor Tour",
+      "distance_meters": 45000,
+      "elevation_gain_meters": 350,
+      "difficulty": "moderate",
+      "is_loop": true,
+      "waypoints_file": "harbor_tour.json"
+    }
+  ]
+}

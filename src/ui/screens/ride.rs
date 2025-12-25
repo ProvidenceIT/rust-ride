@@ -7,8 +7,12 @@
 //! T077: Display current interval, target power, time remaining
 //! T078: Implement pause/resume/skip interval buttons
 //! T079: Implement keyboard shortcuts: +/- for power adjustment
+//! T105: Integrate 3D view into ride screen
+//! T107: Wire power data to World3D::update()
 //! T110: Implement full-screen mode toggle
 //! T111: Implement configurable metric panel layout
+
+use std::time::Instant;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
@@ -27,6 +31,7 @@ pub enum RideMode {
     #[default]
     FreeRide,
     Workout,
+    World3D,
 }
 
 /// Ride screen state.
@@ -61,6 +66,10 @@ pub struct RideScreen {
     pub full_screen_mode: bool,
     /// Dashboard layout configuration
     pub dashboard_layout: DashboardLayout,
+    /// 3D world mode enabled
+    pub world_3d_enabled: bool,
+    /// Last frame time for delta calculation
+    pub last_frame_time: Option<Instant>,
 }
 
 impl Default for RideScreen {
@@ -81,6 +90,8 @@ impl Default for RideScreen {
             text_event: None,
             full_screen_mode: false,
             dashboard_layout: DashboardLayout::default(),
+            world_3d_enabled: false,
+            last_frame_time: None,
         }
     }
 }
@@ -115,6 +126,31 @@ impl RideScreen {
         self.workout = Some(workout);
         self.workout_status = WorkoutStatus::InProgress;
         self.power_offset = 0;
+    }
+
+    /// Start a 3D world ride.
+    pub fn start_world_ride(&mut self) {
+        self.mode = RideMode::World3D;
+        self.recording_status = RecordingStatus::Recording;
+        self.is_paused = false;
+        self.elapsed_seconds = 0;
+        self.metrics = AggregatedMetrics::default();
+        self.workout = None;
+        self.workout_status = WorkoutStatus::NotStarted;
+        self.power_offset = 0;
+        self.world_3d_enabled = true;
+        self.last_frame_time = Some(Instant::now());
+    }
+
+    /// Get the delta time since the last frame for 3D updates.
+    pub fn get_delta_time(&mut self) -> f32 {
+        let now = Instant::now();
+        let delta = self
+            .last_frame_time
+            .map(|t| now.duration_since(t).as_secs_f32())
+            .unwrap_or(0.0);
+        self.last_frame_time = Some(now);
+        delta.min(0.1) // Cap at 100ms to avoid large jumps
     }
 
     /// Update workout progress from engine.
@@ -218,6 +254,7 @@ impl RideScreen {
             let mode_text = match self.mode {
                 RideMode::FreeRide => "Free Ride",
                 RideMode::Workout => "Workout",
+                RideMode::World3D => "3D World",
             };
             ui.label(RichText::new(mode_text).size(18.0).strong());
 
