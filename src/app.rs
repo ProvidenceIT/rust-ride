@@ -490,6 +490,56 @@ impl eframe::App for RustRideApp {
                         self.navigate(Screen::Home);
                     }
                 }
+                Screen::GroupRide => {
+                    ui.heading("Group Ride");
+                    ui.label("LAN Group Rides - coming soon");
+                    ui.label("Discover and join other riders on your local network.");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::Leaderboard => {
+                    ui.heading("Leaderboards");
+                    ui.label("Segment leaderboards - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::Challenges => {
+                    ui.heading("Challenges");
+                    ui.label("Training challenges - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::ActivityFeed => {
+                    ui.heading("Activity Feed");
+                    ui.label("Activity feed from LAN peers - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::Clubs => {
+                    ui.heading("Clubs");
+                    ui.label("Club management - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::RaceLobby => {
+                    ui.heading("Virtual Racing");
+                    ui.label("Virtual race events - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::RiderProfile => {
+                    ui.heading("My Profile");
+                    ui.label("Rider profile - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
             }
         });
 

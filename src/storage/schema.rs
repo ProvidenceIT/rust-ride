@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 4;
+pub const CURRENT_VERSION: i32 = 5;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -594,4 +594,203 @@ CREATE TABLE IF NOT EXISTS rider_profiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rider_profiles_user_id ON rider_profiles(user_id);
+"#;
+
+/// SQL for migration from v4 to v5 (Social & Multiplayer tables)
+pub const MIGRATION_V4_TO_V5: &str = r#"
+-- Rider profile (extends user concept for social features)
+CREATE TABLE IF NOT EXISTS riders (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    avatar_id TEXT,
+    bio TEXT,
+    ftp INTEGER,
+    total_distance_km REAL DEFAULT 0,
+    total_time_hours REAL DEFAULT 0,
+    sharing_enabled INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Clubs
+CREATE TABLE IF NOT EXISTS clubs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    join_code TEXT UNIQUE NOT NULL,
+    admin_rider_id TEXT NOT NULL REFERENCES riders(id),
+    total_distance_km REAL DEFAULT 0,
+    total_time_hours REAL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+-- Club memberships
+CREATE TABLE IF NOT EXISTS club_memberships (
+    id TEXT PRIMARY KEY,
+    club_id TEXT NOT NULL REFERENCES clubs(id),
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    joined_at TEXT NOT NULL,
+    left_at TEXT
+);
+
+-- Badges (seeded on first run)
+CREATE TABLE IF NOT EXISTS badges (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    icon TEXT NOT NULL,
+    category TEXT NOT NULL,
+    criteria_type TEXT NOT NULL,
+    criteria_value REAL NOT NULL
+);
+
+-- Earned badges
+CREATE TABLE IF NOT EXISTS rider_badges (
+    id TEXT PRIMARY KEY,
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    badge_id TEXT NOT NULL REFERENCES badges(id),
+    unlocked_at TEXT NOT NULL,
+    UNIQUE(rider_id, badge_id)
+);
+
+-- Social segments (distinct from route segments in v4)
+CREATE TABLE IF NOT EXISTS social_segments (
+    id TEXT PRIMARY KEY,
+    world_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_distance_m REAL NOT NULL,
+    end_distance_m REAL NOT NULL,
+    category TEXT NOT NULL,
+    elevation_gain_m REAL DEFAULT 0
+);
+
+-- Social segment efforts
+CREATE TABLE IF NOT EXISTS social_segment_efforts (
+    id TEXT PRIMARY KEY,
+    segment_id TEXT NOT NULL REFERENCES social_segments(id),
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    ride_id TEXT,
+    elapsed_time_ms INTEGER NOT NULL,
+    avg_power_watts INTEGER,
+    avg_hr_bpm INTEGER,
+    recorded_at TEXT NOT NULL,
+    imported INTEGER DEFAULT 0,
+    import_source_name TEXT
+);
+
+-- Challenges
+CREATE TABLE IF NOT EXISTS challenges (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    goal_type TEXT NOT NULL,
+    goal_value REAL NOT NULL,
+    duration_days INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    created_by_rider_id TEXT REFERENCES riders(id),
+    created_at TEXT NOT NULL
+);
+
+-- Challenge progress
+CREATE TABLE IF NOT EXISTS challenge_progress (
+    id TEXT PRIMARY KEY,
+    challenge_id TEXT NOT NULL REFERENCES challenges(id),
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    current_value REAL DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    completed_at TEXT,
+    last_updated TEXT NOT NULL,
+    UNIQUE(challenge_id, rider_id)
+);
+
+-- Workout ratings
+CREATE TABLE IF NOT EXISTS workout_ratings (
+    id TEXT PRIMARY KEY,
+    workout_id TEXT NOT NULL,
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+    review_text TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(workout_id, rider_id)
+);
+
+-- Race events
+CREATE TABLE IF NOT EXISTS race_events (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    world_id TEXT NOT NULL,
+    route_id TEXT NOT NULL,
+    distance_km REAL NOT NULL,
+    scheduled_start TEXT NOT NULL,
+    status TEXT NOT NULL,
+    organizer_rider_id TEXT NOT NULL REFERENCES riders(id),
+    created_at TEXT NOT NULL
+);
+
+-- Race participants
+CREATE TABLE IF NOT EXISTS race_participants (
+    id TEXT PRIMARY KEY,
+    race_id TEXT NOT NULL REFERENCES race_events(id),
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    status TEXT NOT NULL,
+    finish_time_ms INTEGER,
+    finish_position INTEGER,
+    joined_at TEXT NOT NULL,
+    disconnected_at TEXT
+);
+
+-- Group rides
+CREATE TABLE IF NOT EXISTS group_rides (
+    id TEXT PRIMARY KEY,
+    host_rider_id TEXT NOT NULL REFERENCES riders(id),
+    name TEXT,
+    world_id TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    max_participants INTEGER DEFAULT 10
+);
+
+-- Group ride participants
+CREATE TABLE IF NOT EXISTS group_ride_participants (
+    id TEXT PRIMARY KEY,
+    group_ride_id TEXT NOT NULL REFERENCES group_rides(id),
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    joined_at TEXT NOT NULL,
+    left_at TEXT
+);
+
+-- Chat messages
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    group_ride_id TEXT NOT NULL REFERENCES group_rides(id),
+    sender_rider_id TEXT NOT NULL REFERENCES riders(id),
+    message_text TEXT NOT NULL,
+    sent_at TEXT NOT NULL
+);
+
+-- Activity summaries
+CREATE TABLE IF NOT EXISTS activity_summaries (
+    id TEXT PRIMARY KEY,
+    ride_id TEXT,
+    rider_id TEXT NOT NULL REFERENCES riders(id),
+    rider_name TEXT NOT NULL,
+    distance_km REAL NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    avg_power_watts INTEGER,
+    elevation_gain_m REAL DEFAULT 0,
+    world_id TEXT,
+    recorded_at TEXT NOT NULL,
+    shared INTEGER DEFAULT 1
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_social_segment_efforts_segment ON social_segment_efforts(segment_id);
+CREATE INDEX IF NOT EXISTS idx_social_segment_efforts_rider ON social_segment_efforts(rider_id);
+CREATE INDEX IF NOT EXISTS idx_challenge_progress_challenge ON challenge_progress(challenge_id);
+CREATE INDEX IF NOT EXISTS idx_workout_ratings_workout ON workout_ratings(workout_id);
+CREATE INDEX IF NOT EXISTS idx_activity_summaries_rider ON activity_summaries(rider_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_group_ride ON chat_messages(group_ride_id);
+CREATE INDEX IF NOT EXISTS idx_group_ride_participants_ride ON group_ride_participants(group_ride_id);
+CREATE INDEX IF NOT EXISTS idx_race_participants_race ON race_participants(race_id);
 "#;

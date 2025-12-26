@@ -49,6 +49,18 @@ impl HomeScreen {
                 next_screen = Some(Screen::WorkoutLibrary);
             }
 
+            ui.add_space(16.0);
+
+            if ui
+                .add_sized(
+                    button_size,
+                    egui::Button::new(RichText::new("Group Ride").size(20.0)),
+                )
+                .clicked()
+            {
+                next_screen = Some(Screen::GroupRide);
+            }
+
             ui.add_space(40.0);
 
             // Secondary buttons in a row

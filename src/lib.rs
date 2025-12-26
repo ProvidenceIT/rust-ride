@@ -5,10 +5,14 @@
 //! real-time metrics display, and ride recording with export capabilities.
 
 pub mod goals;
+pub mod leaderboards;
 pub mod metrics;
 pub mod ml;
+pub mod networking;
+pub mod racing;
 pub mod recording;
 pub mod sensors;
+pub mod social;
 pub mod storage;
 pub mod ui;
 pub mod workouts;

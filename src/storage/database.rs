@@ -160,6 +160,23 @@ impl Database {
             tracing::info!("Database migrated to version 4 (3D World & Content tables)");
         }
 
+        // Migration v4 -> v5: Add Social & Multiplayer tables
+        if from_version < 5 {
+            self.conn
+                .execute_batch(crate::storage::schema::MIGRATION_V4_TO_V5)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 5
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (5, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 5 (Social & Multiplayer tables)");
+        }
+
         Ok(())
     }
 
