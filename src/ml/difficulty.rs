@@ -144,7 +144,8 @@ impl DifficultyEstimator {
     ) -> DifficultyEstimate {
         let factors = self.calculate_factors(workout, current_ftp, recent_completion_rate);
         let generic_score = self.calculate_generic_score(&factors);
-        let personalized_score = self.calculate_personalized_score(&factors, recent_completion_rate);
+        let personalized_score =
+            self.calculate_personalized_score(&factors, recent_completion_rate);
 
         let recommendation = self.classify_difficulty(personalized_score);
         let completion_probability = self.estimate_completion_probability(personalized_score);
@@ -170,7 +171,8 @@ impl DifficultyEstimator {
     ) -> DifficultyEstimate {
         let factors = self.calculate_builtin_factors(builtin, current_ftp, recent_completion_rate);
         let generic_score = self.calculate_generic_score(&factors);
-        let personalized_score = self.calculate_personalized_score(&factors, recent_completion_rate);
+        let personalized_score =
+            self.calculate_personalized_score(&factors, recent_completion_rate);
 
         let recommendation = self.classify_difficulty(personalized_score);
         let completion_probability = self.estimate_completion_probability(personalized_score);
@@ -269,18 +271,30 @@ impl DifficultyEstimator {
 
         for segment in &workout.segments {
             let intensity = match &segment.power_target {
-                crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32 / 100.0,
-                crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0).min(1.5), // Assume 250W FTP
+                crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                    *percent as f32 / 100.0
+                }
+                crate::workouts::types::PowerTarget::Absolute { watts } => {
+                    (*watts as f32 / 250.0).min(1.5)
+                } // Assume 250W FTP
                 crate::workouts::types::PowerTarget::Range { start, end } => {
                     // Average of start and end for ramps
                     let start_pct = match start.as_ref() {
-                        crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32,
-                        crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0) * 100.0,
+                        crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                            *percent as f32
+                        }
+                        crate::workouts::types::PowerTarget::Absolute { watts } => {
+                            (*watts as f32 / 250.0) * 100.0
+                        }
                         _ => 75.0,
                     };
                     let end_pct = match end.as_ref() {
-                        crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32,
-                        crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0) * 100.0,
+                        crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                            *percent as f32
+                        }
+                        crate::workouts::types::PowerTarget::Absolute { watts } => {
+                            (*watts as f32 / 250.0) * 100.0
+                        }
                         _ => 75.0,
                     };
                     (start_pct + end_pct) / 2.0 / 100.0
@@ -313,16 +327,26 @@ impl DifficultyEstimator {
         for segment in &workout.segments {
             let intensity = match &segment.power_target {
                 crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32,
-                crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0) * 100.0,
+                crate::workouts::types::PowerTarget::Absolute { watts } => {
+                    (*watts as f32 / 250.0) * 100.0
+                }
                 crate::workouts::types::PowerTarget::Range { start, end } => {
                     let start_pct = match start.as_ref() {
-                        crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32,
-                        crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0) * 100.0,
+                        crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                            *percent as f32
+                        }
+                        crate::workouts::types::PowerTarget::Absolute { watts } => {
+                            (*watts as f32 / 250.0) * 100.0
+                        }
                         _ => 75.0,
                     };
                     let end_pct = match end.as_ref() {
-                        crate::workouts::types::PowerTarget::PercentFtp { percent } => *percent as f32,
-                        crate::workouts::types::PowerTarget::Absolute { watts } => (*watts as f32 / 250.0) * 100.0,
+                        crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                            *percent as f32
+                        }
+                        crate::workouts::types::PowerTarget::Absolute { watts } => {
+                            (*watts as f32 / 250.0) * 100.0
+                        }
                         _ => 75.0,
                     };
                     (start_pct + end_pct) / 2.0
@@ -356,7 +380,11 @@ impl DifficultyEstimator {
         (score / 0.9).clamp(1.0, 10.0)
     }
 
-    fn calculate_personalized_score(&self, factors: &DifficultyFactors, completion_rate: f32) -> f32 {
+    fn calculate_personalized_score(
+        &self,
+        factors: &DifficultyFactors,
+        completion_rate: f32,
+    ) -> f32 {
         let generic = self.calculate_generic_score(factors);
 
         // Adjust based on athlete's history
@@ -447,7 +475,10 @@ mod tests {
 
         let estimate = estimator.estimate_builtin(&builtin, 250, 0.7);
 
-        assert!(estimate.personalized_score > 5.0, "VO2max workout should be rated as hard");
+        assert!(
+            estimate.personalized_score > 5.0,
+            "VO2max workout should be rated as hard"
+        );
         assert!(matches!(
             estimate.recommendation,
             DifficultyRecommendation::Challenging | DifficultyRecommendation::TooHard
@@ -468,7 +499,10 @@ mod tests {
 
         let estimate = estimator.estimate_builtin(&builtin, 250, 0.95);
 
-        assert!(estimate.personalized_score < 5.0, "Recovery workout should be rated as easy");
+        assert!(
+            estimate.personalized_score < 5.0,
+            "Recovery workout should be rated as easy"
+        );
     }
 
     #[test]

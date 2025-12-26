@@ -79,10 +79,10 @@ impl PredictionType {
     /// Get the cache expiry duration for this prediction type.
     pub fn cache_expiry_hours(&self) -> u64 {
         match self {
-            PredictionType::FtpPrediction => 24 * 7, // 7 days
-            PredictionType::FatigueState => 24,       // 24 hours
+            PredictionType::FtpPrediction => 24 * 7,   // 7 days
+            PredictionType::FatigueState => 24,        // 24 hours
             PredictionType::PerformanceForecast => 24, // 24 hours
-            PredictionType::DifficultyEstimate => 1,  // 1 hour
+            PredictionType::DifficultyEstimate => 1,   // 1 hour
             PredictionType::CadenceAnalysis => 24 * 7, // 7 days
             PredictionType::AdaptationModel => 24 * 7, // 7 days
         }
@@ -121,7 +121,10 @@ pub enum PredictionSource {
 impl PredictionSource {
     /// Whether this prediction may be stale.
     pub fn may_be_stale(&self) -> bool {
-        matches!(self, PredictionSource::Cached | PredictionSource::LocalFallback)
+        matches!(
+            self,
+            PredictionSource::Cached | PredictionSource::LocalFallback
+        )
     }
 
     /// Get display description.

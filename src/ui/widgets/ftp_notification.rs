@@ -104,9 +104,12 @@ impl FtpNotification {
                     // Header with confidence indicator
                     let confidence_color = confidence_color(estimate.confidence);
                     ui.label(
-                        RichText::new(format!("{} Confidence", confidence_label(estimate.confidence)))
-                            .color(confidence_color)
-                            .strong(),
+                        RichText::new(format!(
+                            "{} Confidence",
+                            confidence_label(estimate.confidence)
+                        ))
+                        .color(confidence_color)
+                        .strong(),
                     );
 
                     ui.add_space(16.0);
@@ -221,9 +224,9 @@ impl FtpNotification {
 /// Get color for confidence level.
 fn confidence_color(confidence: FtpConfidence) -> Color32 {
     match confidence {
-        FtpConfidence::High => Color32::from_rgb(50, 205, 50),   // Green
+        FtpConfidence::High => Color32::from_rgb(50, 205, 50), // Green
         FtpConfidence::Medium => Color32::from_rgb(255, 165, 0), // Orange
-        FtpConfidence::Low => Color32::from_rgb(220, 20, 60),    // Red
+        FtpConfidence::Low => Color32::from_rgb(220, 20, 60),  // Red
     }
 }
 

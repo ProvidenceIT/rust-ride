@@ -216,11 +216,11 @@ impl<'a> WorkoutLibrary<'a> {
 
     /// Seed the library with initial workouts if empty.
     pub fn seed_if_empty(&self) -> Result<usize, LibraryError> {
-        let count: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM builtin_workouts",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i32 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM builtin_workouts", [], |row| {
+                    row.get(0)
+                })?;
 
         if count > 0 {
             return Ok(0);
@@ -322,7 +322,10 @@ impl<'a> WorkoutLibrary<'a> {
     }
 
     /// Get workouts by category.
-    pub fn get_by_category(&self, category: WorkoutCategory) -> Result<Vec<BuiltInWorkout>, LibraryError> {
+    pub fn get_by_category(
+        &self,
+        category: WorkoutCategory,
+    ) -> Result<Vec<BuiltInWorkout>, LibraryError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, description, category, energy_systems, goal_alignment,
                     difficulty_tier, duration_minutes, base_tss, segments, created_at
@@ -337,11 +340,11 @@ impl<'a> WorkoutLibrary<'a> {
 
     /// Get workout count.
     pub fn count(&self) -> Result<usize, LibraryError> {
-        let count: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM builtin_workouts",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i32 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM builtin_workouts", [], |row| {
+                    row.get(0)
+                })?;
         Ok(count as usize)
     }
 }
@@ -427,271 +430,751 @@ fn generate_seed_workouts() -> Vec<BuiltInWorkout> {
 
 fn generate_recovery_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("Easy Spin 30min".into(), "Light recovery spin".into(), WorkoutCategory::Recovery, 30, 20.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Recovery 45min".into(), "Easy recovery ride".into(), WorkoutCategory::Recovery, 45, 30.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Active Recovery 60min".into(), "Long easy spin".into(), WorkoutCategory::Recovery, 60, 40.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Legs Opener".into(), "Pre-race openers".into(), WorkoutCategory::Recovery, 45, 35.0)
-            .with_energy_systems(vec![EnergySystem::Recovery, EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Coffee Ride".into(), "Social pace easy ride".into(), WorkoutCategory::Recovery, 60, 35.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Cool Down 20min".into(), "Post-race cooldown".into(), WorkoutCategory::Recovery, 20, 12.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Recovery Intervals".into(), "Easy spin with form focus".into(), WorkoutCategory::Recovery, 40, 25.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Rest Day Spin".into(), "Very easy 20 min".into(), WorkoutCategory::Recovery, 20, 10.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Flush Ride".into(), "Clear legs after hard day".into(), WorkoutCategory::Recovery, 30, 18.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Light Spin".into(), "Minimal effort recovery".into(), WorkoutCategory::Recovery, 25, 15.0)
-            .with_energy_systems(vec![EnergySystem::Recovery])
-            .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Easy Spin 30min".into(),
+            "Light recovery spin".into(),
+            WorkoutCategory::Recovery,
+            30,
+            20.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Recovery 45min".into(),
+            "Easy recovery ride".into(),
+            WorkoutCategory::Recovery,
+            45,
+            30.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Active Recovery 60min".into(),
+            "Long easy spin".into(),
+            WorkoutCategory::Recovery,
+            60,
+            40.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Legs Opener".into(),
+            "Pre-race openers".into(),
+            WorkoutCategory::Recovery,
+            45,
+            35.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery, EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Coffee Ride".into(),
+            "Social pace easy ride".into(),
+            WorkoutCategory::Recovery,
+            60,
+            35.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Cool Down 20min".into(),
+            "Post-race cooldown".into(),
+            WorkoutCategory::Recovery,
+            20,
+            12.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Recovery Intervals".into(),
+            "Easy spin with form focus".into(),
+            WorkoutCategory::Recovery,
+            40,
+            25.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Rest Day Spin".into(),
+            "Very easy 20 min".into(),
+            WorkoutCategory::Recovery,
+            20,
+            10.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Flush Ride".into(),
+            "Clear legs after hard day".into(),
+            WorkoutCategory::Recovery,
+            30,
+            18.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Light Spin".into(),
+            "Minimal effort recovery".into(),
+            WorkoutCategory::Recovery,
+            25,
+            15.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Recovery])
+        .with_difficulty(DifficultyTier::Easy),
     ]
 }
 
 fn generate_endurance_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("Endurance 60min Z2".into(), "Steady endurance".into(), WorkoutCategory::Endurance, 60, 50.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Endurance 90min Z2".into(), "Long endurance".into(), WorkoutCategory::Endurance, 90, 75.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Endurance 120min".into(), "Extended endurance".into(), WorkoutCategory::Endurance, 120, 100.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Tempo 45min".into(), "Tempo ride at 76-90% FTP".into(), WorkoutCategory::Endurance, 45, 45.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Base Miles 75min".into(), "Aerobic base building".into(), WorkoutCategory::Endurance, 75, 60.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Progression Ride".into(), "Build from Z2 to Z3".into(), WorkoutCategory::Endurance, 60, 55.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Aerobic Efficiency".into(), "Focus on fat burning".into(), WorkoutCategory::Endurance, 90, 70.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Long Slow Distance".into(), "Classic LSD training".into(), WorkoutCategory::Endurance, 150, 120.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Tempo Intervals".into(), "3x15min tempo".into(), WorkoutCategory::Endurance, 75, 65.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Zone 2 Foundation".into(), "Pure Z2 work".into(), WorkoutCategory::Endurance, 60, 45.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Endurance Builder".into(), "Progressive Z2 ride".into(), WorkoutCategory::Endurance, 80, 65.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Steady State 70min".into(), "Consistent effort".into(), WorkoutCategory::Endurance, 70, 55.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Weekend Warrior".into(), "Long weekend ride".into(), WorkoutCategory::Endurance, 180, 150.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Base Building".into(), "Early season base".into(), WorkoutCategory::Endurance, 75, 55.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
-        BuiltInWorkout::new("Fatburner".into(), "Low intensity high duration".into(), WorkoutCategory::Endurance, 90, 65.0)
-            .with_energy_systems(vec![EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Endurance 60min Z2".into(),
+            "Steady endurance".into(),
+            WorkoutCategory::Endurance,
+            60,
+            50.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Endurance 90min Z2".into(),
+            "Long endurance".into(),
+            WorkoutCategory::Endurance,
+            90,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Endurance 120min".into(),
+            "Extended endurance".into(),
+            WorkoutCategory::Endurance,
+            120,
+            100.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Tempo 45min".into(),
+            "Tempo ride at 76-90% FTP".into(),
+            WorkoutCategory::Endurance,
+            45,
+            45.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Base Miles 75min".into(),
+            "Aerobic base building".into(),
+            WorkoutCategory::Endurance,
+            75,
+            60.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Progression Ride".into(),
+            "Build from Z2 to Z3".into(),
+            WorkoutCategory::Endurance,
+            60,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Aerobic Efficiency".into(),
+            "Focus on fat burning".into(),
+            WorkoutCategory::Endurance,
+            90,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Long Slow Distance".into(),
+            "Classic LSD training".into(),
+            WorkoutCategory::Endurance,
+            150,
+            120.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Tempo Intervals".into(),
+            "3x15min tempo".into(),
+            WorkoutCategory::Endurance,
+            75,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Zone 2 Foundation".into(),
+            "Pure Z2 work".into(),
+            WorkoutCategory::Endurance,
+            60,
+            45.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Endurance Builder".into(),
+            "Progressive Z2 ride".into(),
+            WorkoutCategory::Endurance,
+            80,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Steady State 70min".into(),
+            "Consistent effort".into(),
+            WorkoutCategory::Endurance,
+            70,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Weekend Warrior".into(),
+            "Long weekend ride".into(),
+            WorkoutCategory::Endurance,
+            180,
+            150.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Base Building".into(),
+            "Early season base".into(),
+            WorkoutCategory::Endurance,
+            75,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
+        BuiltInWorkout::new(
+            "Fatburner".into(),
+            "Low intensity high duration".into(),
+            WorkoutCategory::Endurance,
+            90,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Easy),
     ]
 }
 
 fn generate_sweet_spot_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("Sweet Spot 2x20min".into(), "Classic SS intervals".into(), WorkoutCategory::SweetSpot, 60, 70.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Sweet Spot 3x15min".into(), "SS intervals".into(), WorkoutCategory::SweetSpot, 65, 72.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Sweet Spot 4x10min".into(), "Shorter SS efforts".into(), WorkoutCategory::SweetSpot, 60, 65.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Under/Overs SS".into(), "88-92% oscillations".into(), WorkoutCategory::SweetSpot, 60, 68.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Sweet Spot 45min".into(), "Continuous SS".into(), WorkoutCategory::SweetSpot, 60, 65.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("SS Progressions".into(), "Build through SS zone".into(), WorkoutCategory::SweetSpot, 75, 78.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Sweet Spot 1x30min".into(), "Extended SS effort".into(), WorkoutCategory::SweetSpot, 50, 55.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("SS Base Builder".into(), "High volume SS".into(), WorkoutCategory::SweetSpot, 90, 90.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Over-Unders Light".into(), "SS with surges".into(), WorkoutCategory::SweetSpot, 60, 70.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Sweet Spot Tempo".into(), "Extended SS tempo".into(), WorkoutCategory::SweetSpot, 70, 72.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("FTP Builder".into(), "SS to raise FTP".into(), WorkoutCategory::SweetSpot, 75, 80.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("SS Endurance Mix".into(), "SS with Z2 recovery".into(), WorkoutCategory::SweetSpot, 90, 85.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Endurance])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Threshold Prep".into(), "SS approach to FTP".into(), WorkoutCategory::SweetSpot, 60, 68.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("Sweet Spot 5x8min".into(), "High rep SS".into(), WorkoutCategory::SweetSpot, 65, 68.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Moderate),
-        BuiltInWorkout::new("SS Power Builder".into(), "Focus on power".into(), WorkoutCategory::SweetSpot, 70, 75.0)
-            .with_energy_systems(vec![EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Sweet Spot 2x20min".into(),
+            "Classic SS intervals".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Sweet Spot 3x15min".into(),
+            "SS intervals".into(),
+            WorkoutCategory::SweetSpot,
+            65,
+            72.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Sweet Spot 4x10min".into(),
+            "Shorter SS efforts".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Under/Overs SS".into(),
+            "88-92% oscillations".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Sweet Spot 45min".into(),
+            "Continuous SS".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "SS Progressions".into(),
+            "Build through SS zone".into(),
+            WorkoutCategory::SweetSpot,
+            75,
+            78.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Sweet Spot 1x30min".into(),
+            "Extended SS effort".into(),
+            WorkoutCategory::SweetSpot,
+            50,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "SS Base Builder".into(),
+            "High volume SS".into(),
+            WorkoutCategory::SweetSpot,
+            90,
+            90.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Over-Unders Light".into(),
+            "SS with surges".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Sweet Spot Tempo".into(),
+            "Extended SS tempo".into(),
+            WorkoutCategory::SweetSpot,
+            70,
+            72.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "FTP Builder".into(),
+            "SS to raise FTP".into(),
+            WorkoutCategory::SweetSpot,
+            75,
+            80.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "SS Endurance Mix".into(),
+            "SS with Z2 recovery".into(),
+            WorkoutCategory::SweetSpot,
+            90,
+            85.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot, EnergySystem::Endurance])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Threshold Prep".into(),
+            "SS approach to FTP".into(),
+            WorkoutCategory::SweetSpot,
+            60,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "Sweet Spot 5x8min".into(),
+            "High rep SS".into(),
+            WorkoutCategory::SweetSpot,
+            65,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Moderate),
+        BuiltInWorkout::new(
+            "SS Power Builder".into(),
+            "Focus on power".into(),
+            WorkoutCategory::SweetSpot,
+            70,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Hard),
     ]
 }
 
 fn generate_threshold_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("Threshold 3x10min".into(), "Classic FTP intervals".into(), WorkoutCategory::Threshold, 55, 70.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Threshold 2x20min".into(), "Long FTP intervals".into(), WorkoutCategory::Threshold, 60, 80.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Threshold 4x8min".into(), "Medium FTP reps".into(), WorkoutCategory::Threshold, 55, 68.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Over-Unders 3x12min".into(), "FTP oscillations".into(), WorkoutCategory::Threshold, 60, 75.0)
-            .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("FTP 1x30min".into(), "Continuous threshold".into(), WorkoutCategory::Threshold, 50, 70.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Threshold Ladder".into(), "Progressive FTP".into(), WorkoutCategory::Threshold, 60, 72.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Criss-Cross".into(), "FTP with spikes".into(), WorkoutCategory::Threshold, 55, 70.0)
-            .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("FTP Test Prep".into(), "Pre-test threshold".into(), WorkoutCategory::Threshold, 45, 55.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Threshold 5x6min".into(), "High rep FTP".into(), WorkoutCategory::Threshold, 50, 62.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Race Simulation".into(), "TT race effort".into(), WorkoutCategory::Threshold, 60, 75.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Threshold Extension".into(), "Build FTP duration".into(), WorkoutCategory::Threshold, 70, 85.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("FTP Maintenance".into(), "Maintain threshold".into(), WorkoutCategory::Threshold, 50, 60.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Threshold Bursts".into(), "Short FTP surges".into(), WorkoutCategory::Threshold, 55, 65.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("20min Test".into(), "FTP test protocol".into(), WorkoutCategory::Threshold, 45, 65.0)
-            .with_energy_systems(vec![EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Tempo to FTP".into(), "Progressive build".into(), WorkoutCategory::Threshold, 60, 68.0)
-            .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::SweetSpot])
-            .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Threshold 3x10min".into(),
+            "Classic FTP intervals".into(),
+            WorkoutCategory::Threshold,
+            55,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Threshold 2x20min".into(),
+            "Long FTP intervals".into(),
+            WorkoutCategory::Threshold,
+            60,
+            80.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Threshold 4x8min".into(),
+            "Medium FTP reps".into(),
+            WorkoutCategory::Threshold,
+            55,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Over-Unders 3x12min".into(),
+            "FTP oscillations".into(),
+            WorkoutCategory::Threshold,
+            60,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "FTP 1x30min".into(),
+            "Continuous threshold".into(),
+            WorkoutCategory::Threshold,
+            50,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Threshold Ladder".into(),
+            "Progressive FTP".into(),
+            WorkoutCategory::Threshold,
+            60,
+            72.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Criss-Cross".into(),
+            "FTP with spikes".into(),
+            WorkoutCategory::Threshold,
+            55,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "FTP Test Prep".into(),
+            "Pre-test threshold".into(),
+            WorkoutCategory::Threshold,
+            45,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Threshold 5x6min".into(),
+            "High rep FTP".into(),
+            WorkoutCategory::Threshold,
+            50,
+            62.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Race Simulation".into(),
+            "TT race effort".into(),
+            WorkoutCategory::Threshold,
+            60,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Threshold Extension".into(),
+            "Build FTP duration".into(),
+            WorkoutCategory::Threshold,
+            70,
+            85.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "FTP Maintenance".into(),
+            "Maintain threshold".into(),
+            WorkoutCategory::Threshold,
+            50,
+            60.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Threshold Bursts".into(),
+            "Short FTP surges".into(),
+            WorkoutCategory::Threshold,
+            55,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "20min Test".into(),
+            "FTP test protocol".into(),
+            WorkoutCategory::Threshold,
+            45,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Tempo to FTP".into(),
+            "Progressive build".into(),
+            WorkoutCategory::Threshold,
+            60,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Threshold, EnergySystem::SweetSpot])
+        .with_difficulty(DifficultyTier::Hard),
     ]
 }
 
 fn generate_vo2max_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("VO2max 5x4min".into(), "Classic VO2 intervals".into(), WorkoutCategory::Vo2max, 55, 75.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max 3x5min".into(), "Longer VO2 efforts".into(), WorkoutCategory::Vo2max, 50, 68.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max 6x3min".into(), "High rep VO2".into(), WorkoutCategory::Vo2max, 50, 72.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Billats".into(), "30/30 intervals".into(), WorkoutCategory::Vo2max, 45, 65.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("VO2max Pyramid".into(), "2-3-4-3-2 min".into(), WorkoutCategory::Vo2max, 55, 70.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max 4x4min".into(), "Norwegian style".into(), WorkoutCategory::Vo2max, 50, 68.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("40/20s".into(), "Microbursts VO2".into(), WorkoutCategory::Vo2max, 45, 62.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("VO2max Builder".into(), "Progressive VO2".into(), WorkoutCategory::Vo2max, 55, 72.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max 8x2min".into(), "Short sharp VO2".into(), WorkoutCategory::Vo2max, 50, 65.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Race Pace VO2".into(), "Race simulation".into(), WorkoutCategory::Vo2max, 55, 75.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max 2x8min".into(), "Extended VO2".into(), WorkoutCategory::Vo2max, 45, 62.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Tabata Style".into(), "20/10 intervals".into(), WorkoutCategory::Vo2max, 40, 55.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max Attack".into(), "High intensity".into(), WorkoutCategory::Vo2max, 50, 70.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Climbing Intervals".into(), "Simulate climbs".into(), WorkoutCategory::Vo2max, 60, 78.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Threshold])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("VO2max Intro".into(), "Beginner VO2".into(), WorkoutCategory::Vo2max, 45, 55.0)
-            .with_energy_systems(vec![EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "VO2max 5x4min".into(),
+            "Classic VO2 intervals".into(),
+            WorkoutCategory::Vo2max,
+            55,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max 3x5min".into(),
+            "Longer VO2 efforts".into(),
+            WorkoutCategory::Vo2max,
+            50,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max 6x3min".into(),
+            "High rep VO2".into(),
+            WorkoutCategory::Vo2max,
+            50,
+            72.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Billats".into(),
+            "30/30 intervals".into(),
+            WorkoutCategory::Vo2max,
+            45,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "VO2max Pyramid".into(),
+            "2-3-4-3-2 min".into(),
+            WorkoutCategory::Vo2max,
+            55,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max 4x4min".into(),
+            "Norwegian style".into(),
+            WorkoutCategory::Vo2max,
+            50,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "40/20s".into(),
+            "Microbursts VO2".into(),
+            WorkoutCategory::Vo2max,
+            45,
+            62.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "VO2max Builder".into(),
+            "Progressive VO2".into(),
+            WorkoutCategory::Vo2max,
+            55,
+            72.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max 8x2min".into(),
+            "Short sharp VO2".into(),
+            WorkoutCategory::Vo2max,
+            50,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Race Pace VO2".into(),
+            "Race simulation".into(),
+            WorkoutCategory::Vo2max,
+            55,
+            75.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max 2x8min".into(),
+            "Extended VO2".into(),
+            WorkoutCategory::Vo2max,
+            45,
+            62.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Tabata Style".into(),
+            "20/10 intervals".into(),
+            WorkoutCategory::Vo2max,
+            40,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max Attack".into(),
+            "High intensity".into(),
+            WorkoutCategory::Vo2max,
+            50,
+            70.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Climbing Intervals".into(),
+            "Simulate climbs".into(),
+            WorkoutCategory::Vo2max,
+            60,
+            78.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max, EnergySystem::Threshold])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "VO2max Intro".into(),
+            "Beginner VO2".into(),
+            WorkoutCategory::Vo2max,
+            45,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::Hard),
     ]
 }
 
 fn generate_sprint_workouts() -> Vec<BuiltInWorkout> {
     vec![
-        BuiltInWorkout::new("Sprint 6x30s".into(), "Classic sprints".into(), WorkoutCategory::Sprint, 45, 55.0)
-            .with_energy_systems(vec![EnergySystem::Anaerobic, EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Sprint 8x15s".into(), "Short sprints".into(), WorkoutCategory::Sprint, 40, 48.0)
-            .with_energy_systems(vec![EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Anaerobic 4x1min".into(), "AC intervals".into(), WorkoutCategory::Sprint, 45, 58.0)
-            .with_energy_systems(vec![EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Standing Starts".into(), "Power from zero".into(), WorkoutCategory::Sprint, 35, 40.0)
-            .with_energy_systems(vec![EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Sprint Practice".into(), "Race sprints".into(), WorkoutCategory::Sprint, 50, 55.0)
-            .with_energy_systems(vec![EnergySystem::Neuromuscular, EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Anaerobic 3x2min".into(), "Extended AC".into(), WorkoutCategory::Sprint, 50, 65.0)
-            .with_energy_systems(vec![EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Sprint Ladder".into(), "10-20-30-20-10s".into(), WorkoutCategory::Sprint, 40, 45.0)
-            .with_energy_systems(vec![EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Max Power".into(), "Peak power focus".into(), WorkoutCategory::Sprint, 35, 38.0)
-            .with_energy_systems(vec![EnergySystem::Neuromuscular])
-            .with_difficulty(DifficultyTier::Hard),
-        BuiltInWorkout::new("Crit Simulation".into(), "Race attacks".into(), WorkoutCategory::Sprint, 55, 68.0)
-            .with_energy_systems(vec![EnergySystem::Anaerobic, EnergySystem::Vo2max])
-            .with_difficulty(DifficultyTier::VeryHard),
-        BuiltInWorkout::new("Sprint Endurance".into(), "Repeat sprints".into(), WorkoutCategory::Sprint, 50, 60.0)
-            .with_energy_systems(vec![EnergySystem::Anaerobic])
-            .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Sprint 6x30s".into(),
+            "Classic sprints".into(),
+            WorkoutCategory::Sprint,
+            45,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Anaerobic, EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Sprint 8x15s".into(),
+            "Short sprints".into(),
+            WorkoutCategory::Sprint,
+            40,
+            48.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Anaerobic 4x1min".into(),
+            "AC intervals".into(),
+            WorkoutCategory::Sprint,
+            45,
+            58.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Standing Starts".into(),
+            "Power from zero".into(),
+            WorkoutCategory::Sprint,
+            35,
+            40.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Sprint Practice".into(),
+            "Race sprints".into(),
+            WorkoutCategory::Sprint,
+            50,
+            55.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Neuromuscular, EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Anaerobic 3x2min".into(),
+            "Extended AC".into(),
+            WorkoutCategory::Sprint,
+            50,
+            65.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Sprint Ladder".into(),
+            "10-20-30-20-10s".into(),
+            WorkoutCategory::Sprint,
+            40,
+            45.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Max Power".into(),
+            "Peak power focus".into(),
+            WorkoutCategory::Sprint,
+            35,
+            38.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Neuromuscular])
+        .with_difficulty(DifficultyTier::Hard),
+        BuiltInWorkout::new(
+            "Crit Simulation".into(),
+            "Race attacks".into(),
+            WorkoutCategory::Sprint,
+            55,
+            68.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Anaerobic, EnergySystem::Vo2max])
+        .with_difficulty(DifficultyTier::VeryHard),
+        BuiltInWorkout::new(
+            "Sprint Endurance".into(),
+            "Repeat sprints".into(),
+            WorkoutCategory::Sprint,
+            50,
+            60.0,
+        )
+        .with_energy_systems(vec![EnergySystem::Anaerobic])
+        .with_difficulty(DifficultyTier::VeryHard),
     ]
 }
 

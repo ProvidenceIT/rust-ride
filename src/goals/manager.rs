@@ -45,7 +45,9 @@ impl<'a> GoalManager<'a> {
                 goal.title,
                 goal.description,
                 goal.target_date.map(|d| d.to_string()),
-                goal.target_metric.as_ref().map(|m| format!("{:?}", m.metric_type)),
+                goal.target_metric
+                    .as_ref()
+                    .map(|m| format!("{:?}", m.metric_type)),
                 goal.target_metric.as_ref().map(|m| m.target_value),
                 goal.target_metric.as_ref().and_then(|m| m.current_value),
                 goal.priority,
@@ -86,8 +88,7 @@ impl<'a> GoalManager<'a> {
 
         let rows = stmt.query_map(params![user_id.to_string()], parse_goal_row)?;
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(GoalError::from)
+        rows.collect::<Result<Vec<_>, _>>().map_err(GoalError::from)
     }
 
     /// Get active goals for a user.
@@ -103,8 +104,7 @@ impl<'a> GoalManager<'a> {
 
         let rows = stmt.query_map(params![user_id.to_string()], parse_goal_row)?;
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(GoalError::from)
+        rows.collect::<Result<Vec<_>, _>>().map_err(GoalError::from)
     }
 
     /// Update a goal.
@@ -122,7 +122,9 @@ impl<'a> GoalManager<'a> {
                 goal.title,
                 goal.description,
                 goal.target_date.map(|d| d.to_string()),
-                goal.target_metric.as_ref().map(|m| format!("{:?}", m.metric_type)),
+                goal.target_metric
+                    .as_ref()
+                    .map(|m| format!("{:?}", m.metric_type)),
                 goal.target_metric.as_ref().map(|m| m.target_value),
                 goal.target_metric.as_ref().and_then(|m| m.current_value),
                 goal.priority,
@@ -171,15 +173,9 @@ impl<'a> GoalManager<'a> {
     /// Change goal priority.
     ///
     /// This also adjusts other goals' priorities to maintain uniqueness.
-    pub fn change_priority(
-        &self,
-        id: Uuid,
-        new_priority: u8,
-    ) -> Result<(), GoalError> {
+    pub fn change_priority(&self, id: Uuid, new_priority: u8) -> Result<(), GoalError> {
         // Get the goal to find user_id and current priority
-        let goal = self.get(id)?.ok_or_else(|| {
-            GoalError::NotFound(id)
-        })?;
+        let goal = self.get(id)?.ok_or_else(|| GoalError::NotFound(id))?;
 
         if goal.priority == new_priority {
             return Ok(());
@@ -262,16 +258,11 @@ impl<'a> GoalManager<'a> {
         )?;
 
         let rows = stmt.query_map(
-            params![
-                user_id.to_string(),
-                today.to_string(),
-                cutoff.to_string()
-            ],
+            params![user_id.to_string(), today.to_string(), cutoff.to_string()],
             parse_goal_row,
         )?;
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(GoalError::from)
+        rows.collect::<Result<Vec<_>, _>>().map_err(GoalError::from)
     }
 }
 
@@ -288,12 +279,9 @@ fn parse_goal_row(row: &rusqlite::Row) -> rusqlite::Result<TrainingGoal> {
     let created_at_str: String = row.get(11)?;
     let updated_at_str: String = row.get(12)?;
 
-    let goal_type: GoalType = serde_json::from_str(&goal_type_json)
-        .unwrap_or(GoalType::GetFaster);
+    let goal_type: GoalType = serde_json::from_str(&goal_type_json).unwrap_or(GoalType::GetFaster);
 
-    let target_date = target_date_str.and_then(|s| {
-        NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()
-    });
+    let target_date = target_date_str.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
     let target_metric = match (metric_type_str, metric_value) {
         (Some(type_str), Some(value)) => {
@@ -395,11 +383,7 @@ mod tests {
         let manager = GoalManager::new(&conn);
         let user_id = Uuid::new_v4();
 
-        let goal = TrainingGoal::new(
-            user_id,
-            GoalType::ImproveVo2max,
-            "Boost VO2max".to_string(),
-        );
+        let goal = TrainingGoal::new(user_id, GoalType::ImproveVo2max, "Boost VO2max".to_string());
 
         manager.create(&goal).unwrap();
 
@@ -421,7 +405,8 @@ mod tests {
         goal1.priority = 1;
         manager.create(&goal1).unwrap();
 
-        let mut goal2 = TrainingGoal::new(user_id, GoalType::ImproveEndurance, "Goal 2".to_string());
+        let mut goal2 =
+            TrainingGoal::new(user_id, GoalType::ImproveEndurance, "Goal 2".to_string());
         goal2.priority = 2;
         manager.create(&goal2).unwrap();
 
@@ -448,7 +433,9 @@ mod tests {
 
         assert!(manager.get(goal.id).unwrap().unwrap().status.is_active());
 
-        manager.update_status(goal.id, GoalStatus::Completed).unwrap();
+        manager
+            .update_status(goal.id, GoalStatus::Completed)
+            .unwrap();
 
         let updated = manager.get(goal.id).unwrap().unwrap();
         assert_eq!(updated.status, GoalStatus::Completed);

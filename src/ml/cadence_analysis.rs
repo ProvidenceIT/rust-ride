@@ -185,7 +185,8 @@ impl CadenceAnalyzer {
         let time_in_optimal = self.calculate_time_in_optimal(&valid_samples);
         let efficiency = self.calculate_efficiency(&valid_samples);
         let degradation = self.detect_degradation(&valid_samples);
-        let recommendations = self.generate_recommendations(avg_cadence, time_in_optimal, &efficiency, &degradation);
+        let recommendations =
+            self.generate_recommendations(avg_cadence, time_in_optimal, &efficiency, &degradation);
 
         CadenceAnalysis {
             ride_id,
@@ -231,7 +232,8 @@ impl CadenceAnalyzer {
         // Consistency: standard deviation relative to mean
         let cadences: Vec<f32> = samples.iter().map(|s| s.cadence as f32).collect();
         let mean = cadences.iter().sum::<f32>() / cadences.len() as f32;
-        let variance = cadences.iter().map(|c| (c - mean).powi(2)).sum::<f32>() / cadences.len() as f32;
+        let variance =
+            cadences.iter().map(|c| (c - mean).powi(2)).sum::<f32>() / cadences.len() as f32;
         let std_dev = variance.sqrt();
         let cv = if mean > 0.0 { std_dev / mean } else { 1.0 };
         let consistency = (1.0 - cv).clamp(0.0, 1.0);
@@ -276,7 +278,10 @@ impl CadenceAnalyzer {
         // Split into thirds
         let third = samples.len() / 3;
         let first_third: Vec<f32> = samples[..third].iter().map(|s| s.cadence as f32).collect();
-        let last_third: Vec<f32> = samples[2 * third..].iter().map(|s| s.cadence as f32).collect();
+        let last_third: Vec<f32> = samples[2 * third..]
+            .iter()
+            .map(|s| s.cadence as f32)
+            .collect();
 
         let first_avg = first_third.iter().sum::<f32>() / first_third.len() as f32;
         let last_avg = last_third.iter().sum::<f32>() / last_third.len() as f32;
@@ -301,7 +306,10 @@ impl CadenceAnalyzer {
                 .map(|c| (c - first_avg).powi(2))
                 .sum::<f32>()
                 / first_third.len() as f32;
-            let last_variance = last_third.iter().map(|c| (c - last_avg).powi(2)).sum::<f32>()
+            let last_variance = last_third
+                .iter()
+                .map(|c| (c - last_avg).powi(2))
+                .sum::<f32>()
                 / last_third.len() as f32;
 
             if last_variance > first_variance * 1.5 {
@@ -354,7 +362,8 @@ impl CadenceAnalyzer {
 
         // Consistency issues
         if efficiency.consistency < 0.5 {
-            recommendations.push("Work on maintaining more consistent cadence throughout intervals".into());
+            recommendations
+                .push("Work on maintaining more consistent cadence throughout intervals".into());
         }
 
         // Smoothness issues
@@ -366,10 +375,14 @@ impl CadenceAnalyzer {
         if let Some(pattern) = degradation {
             match pattern.pattern_type {
                 DegradationType::GradualDecline => {
-                    recommendations.push("Cadence dropped late in ride - build cadence-specific endurance".into());
+                    recommendations.push(
+                        "Cadence dropped late in ride - build cadence-specific endurance".into(),
+                    );
                 }
                 DegradationType::IncreasingVariability => {
-                    recommendations.push("Cadence became erratic - practice maintaining rhythm under fatigue".into());
+                    recommendations.push(
+                        "Cadence became erratic - practice maintaining rhythm under fatigue".into(),
+                    );
                 }
                 _ => {}
             }

@@ -158,7 +158,13 @@ impl WorkoutRecommender {
         }
 
         // Local recommendation logic
-        Ok(self.recommend_local(goals, current_load, available_minutes, recently_completed, workouts))
+        Ok(self.recommend_local(
+            goals,
+            current_load,
+            available_minutes,
+            recently_completed,
+            workouts,
+        ))
     }
 
     /// Generate recommendations using local logic.
@@ -236,7 +242,11 @@ impl WorkoutRecommender {
 
         // ACWR adjustment - prioritize recovery if overreaching
         if acwr > 1.3 {
-            if workout.energy_systems.iter().any(|e| matches!(e, crate::workouts::library::EnergySystem::Recovery)) {
+            if workout
+                .energy_systems
+                .iter()
+                .any(|e| matches!(e, crate::workouts::library::EnergySystem::Recovery))
+            {
                 score += 0.3;
                 reasons.push("Recovery prioritized due to high training load".to_string());
             } else {
@@ -390,7 +400,11 @@ mod tests {
             tsb: 0.0,
         };
 
-        let goal = TrainingGoal::new(Uuid::new_v4(), GoalType::ImproveVo2max, "VO2max goal".into());
+        let goal = TrainingGoal::new(
+            Uuid::new_v4(),
+            GoalType::ImproveVo2max,
+            "VO2max goal".into(),
+        );
 
         let recs = recommender.recommend_for_goal(&goal, &load, &workouts);
 

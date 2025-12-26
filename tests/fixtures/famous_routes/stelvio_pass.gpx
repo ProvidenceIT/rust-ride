@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Stelvio Pass</name>
+    <desc>Passo dello Stelvio from Prato - 48 hairpins, 24.3km, 1808m elevation gain</desc>
+    <time>2024-01-03T07:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Stelvio Pass - Prato</name>
+    <type>cycling</type>
+    <trkseg>
+      <!-- Start at Prato allo Stelvio (915m) -->
+      <trkpt lat="46.6167" lon="10.5833">
+        <ele>915.0</ele>
+        <time>2024-01-03T07:00:00Z</time>
+      </trkpt>
+      <!-- Gomagoi -->
+      <trkpt lat="46.5900" lon="10.5500">
+        <ele>1100.0</ele>
+        <time>2024-01-03T07:20:00Z</time>
+      </trkpt>
+      <!-- Trafoi (1570m) -->
+      <trkpt lat="46.5500" lon="10.5200">
+        <ele>1570.0</ele>
+        <time>2024-01-03T07:50:00Z</time>
+      </trkpt>
+      <!-- Start of 48 hairpins -->
+      <trkpt lat="46.5400" lon="10.5100">
+        <ele>1800.0</ele>
+        <time>2024-01-03T08:10:00Z</time>
+      </trkpt>
+      <!-- Hairpin section -->
+      <trkpt lat="46.5300" lon="10.4900">
+        <ele>2100.0</ele>
+        <time>2024-01-03T08:35:00Z</time>
+      </trkpt>
+      <!-- Final hairpins -->
+      <trkpt lat="46.5200" lon="10.4600">
+        <ele>2400.0</ele>
+        <time>2024-01-03T09:00:00Z</time>
+      </trkpt>
+      <!-- Summit (2758m) - Second highest paved pass in Alps -->
+      <trkpt lat="46.5283" lon="10.4531">
+        <ele>2758.0</ele>
+        <time>2024-01-03T09:30:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Short Loop</name>
+    <desc>A short loop route for testing circular routes</desc>
+    <time>2024-01-20T14:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Short Loop</name>
+    <type>cycling</type>
+    <trkseg>
+      <trkpt lat="48.8566" lon="2.3522">
+        <ele>35.0</ele>
+        <time>2024-01-20T14:00:00Z</time>
+      </trkpt>
+      <trkpt lat="48.8576" lon="2.3532">
+        <ele>36.0</ele>
+        <time>2024-01-20T14:01:00Z</time>
+      </trkpt>
+      <trkpt lat="48.8586" lon="2.3522">
+        <ele>37.0</ele>
+        <time>2024-01-20T14:02:00Z</time>
+      </trkpt>
+      <trkpt lat="48.8576" lon="2.3512">
+        <ele>36.0</ele>
+        <time>2024-01-20T14:03:00Z</time>
+      </trkpt>
+      <trkpt lat="48.8566" lon="2.3522">
+        <ele>35.0</ele>
+        <time>2024-01-20T14:04:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

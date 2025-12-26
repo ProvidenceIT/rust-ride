@@ -247,14 +247,14 @@ impl TargetMetric {
 
     /// Get progress percentage (0-100).
     pub fn progress_percent(&self) -> Option<f32> {
-        self.current_value.map(|current| {
-            (current / self.target_value * 100.0).min(100.0)
-        })
+        self.current_value
+            .map(|current| (current / self.target_value * 100.0).min(100.0))
     }
 
     /// Get gap to target (positive = still need to improve).
     pub fn gap(&self) -> Option<f32> {
-        self.current_value.map(|current| self.target_value - current)
+        self.current_value
+            .map(|current| self.target_value - current)
     }
 }
 
@@ -386,20 +386,14 @@ mod tests {
             GoalType::ImproveEndurance,
             "Endurance goal".to_string(),
         );
-        assert_eq!(
-            endurance_goal.primary_energy_system(),
-            Some("endurance")
-        );
+        assert_eq!(endurance_goal.primary_energy_system(), Some("endurance"));
 
         let sprint_goal = TrainingGoal::new(
             Uuid::new_v4(),
             GoalType::DevelopSprint,
             "Sprint goal".to_string(),
         );
-        assert_eq!(
-            sprint_goal.primary_energy_system(),
-            Some("sprint")
-        );
+        assert_eq!(sprint_goal.primary_energy_system(), Some("sprint"));
 
         let weight_goal = TrainingGoal::new(
             Uuid::new_v4(),

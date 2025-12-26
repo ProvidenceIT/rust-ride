@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Sample Test Route</name>
+    <desc>A simple test route for unit testing</desc>
+    <time>2024-01-15T10:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Sample Test Route</name>
+    <type>cycling</type>
+    <trkseg>
+      <trkpt lat="52.5200" lon="13.4050">
+        <ele>35.0</ele>
+        <time>2024-01-15T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="52.5205" lon="13.4060">
+        <ele>36.5</ele>
+        <time>2024-01-15T10:00:30Z</time>
+      </trkpt>
+      <trkpt lat="52.5210" lon="13.4070">
+        <ele>38.0</ele>
+        <time>2024-01-15T10:01:00Z</time>
+      </trkpt>
+      <trkpt lat="52.5215" lon="13.4080">
+        <ele>40.0</ele>
+        <time>2024-01-15T10:01:30Z</time>
+      </trkpt>
+      <trkpt lat="52.5220" lon="13.4090">
+        <ele>42.5</ele>
+        <time>2024-01-15T10:02:00Z</time>
+      </trkpt>
+      <trkpt lat="52.5225" lon="13.4100">
+        <ele>45.0</ele>
+        <time>2024-01-15T10:02:30Z</time>
+      </trkpt>
+      <trkpt lat="52.5230" lon="13.4110">
+        <ele>48.0</ele>
+        <time>2024-01-15T10:03:00Z</time>
+      </trkpt>
+      <trkpt lat="52.5235" lon="13.4120">
+        <ele>51.5</ele>
+        <time>2024-01-15T10:03:30Z</time>
+      </trkpt>
+      <trkpt lat="52.5240" lon="13.4130">
+        <ele>55.0</ele>
+        <time>2024-01-15T10:04:00Z</time>
+      </trkpt>
+      <trkpt lat="52.5245" lon="13.4140">
+        <ele>58.0</ele>
+        <time>2024-01-15T10:04:30Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

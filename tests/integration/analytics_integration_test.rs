@@ -123,9 +123,8 @@ fn test_full_analytics_pipeline() {
 
     // Step 5: Verify Sweet Spot calculation
     let recommender = SweetSpotRecommender::new(ftp);
-    let (min, max) = recommender.zone_power_range(
-        rustride::metrics::analytics::sweet_spot::IntensityZone::SweetSpot,
-    );
+    let (min, max) = recommender
+        .zone_power_range(rustride::metrics::analytics::sweet_spot::IntensityZone::SweetSpot);
     assert!(min > 0 && max > min, "Sweet spot zone should be valid");
     assert!(min >= (ftp as f32 * 0.88) as u16);
     assert!(max <= (ftp as f32 * 0.94) as u16 + 1);
@@ -249,7 +248,10 @@ fn test_cp_model_from_pdc() {
     let cp_model = fitter.fit(&pdc).expect("Should fit CP model");
 
     // Validate CP model
-    assert!(cp_model.cp > 200 && cp_model.cp < 300, "CP should be reasonable");
+    assert!(
+        cp_model.cp > 200 && cp_model.cp < 300,
+        "CP should be reasonable"
+    );
     assert!(
         cp_model.w_prime > 10000 && cp_model.w_prime < 30000,
         "W' should be reasonable"
@@ -270,12 +272,14 @@ fn test_training_load_accumulation() {
     // Simulate 7 days of training
     let daily_tss = [60.0, 80.0, 45.0, 90.0, 0.0, 70.0, 85.0];
     let dates: Vec<_> = (0..7)
-        .map(|i| {
-            chrono::Utc::now().date_naive() - chrono::Duration::days(6 - i)
-        })
+        .map(|i| chrono::Utc::now().date_naive() - chrono::Duration::days(6 - i))
         .collect();
 
-    let daily_data: Vec<_> = dates.iter().zip(daily_tss.iter()).map(|(d, t)| (*d, *t)).collect();
+    let daily_data: Vec<_> = dates
+        .iter()
+        .zip(daily_tss.iter())
+        .map(|(d, t)| (*d, *t))
+        .collect();
 
     let history = calculator.calculate_history(&daily_data);
 

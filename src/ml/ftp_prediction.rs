@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use super::client::MlClient;
 use super::types::{MlError, PredictionSource};
-use crate::metrics::analytics::{FtpConfidence, FtpDetector, FtpMethod, PdcPoint as AnalyticsPdcPoint, PowerDurationCurve};
+use crate::metrics::analytics::{
+    FtpConfidence, FtpDetector, FtpMethod, PdcPoint as AnalyticsPdcPoint, PowerDurationCurve,
+};
 
 /// FTP prediction result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,37 +105,44 @@ impl FtpPredictor {
         // Collect PDC points from rides
         let pdc_points: Vec<AnalyticsPdcPoint> = rides
             .iter()
-            .flat_map(|r| r.pdc_points.iter().map(|p| AnalyticsPdcPoint {
-                duration_secs: p.duration_secs,
-                power_watts: p.power_watts,
-            }))
+            .flat_map(|r| {
+                r.pdc_points.iter().map(|p| AnalyticsPdcPoint {
+                    duration_secs: p.duration_secs,
+                    power_watts: p.power_watts,
+                })
+            })
             .collect();
 
         if pdc_points.is_empty() {
             return Err(MlError::InsufficientData {
                 message: "No power duration curve data available".into(),
-                guidance: "Record rides with consistent power efforts to build your power curve.".into(),
+                guidance: "Record rides with consistent power efforts to build your power curve."
+                    .into(),
             });
         }
 
         // Build PDC and use existing FTP detector
         let pdc = PowerDurationCurve::from_points(pdc_points);
-        let estimate = self.local_detector.detect(&pdc).ok_or_else(|| MlError::InsufficientData {
-            message: "Could not estimate FTP from available data".into(),
-            guidance: "Record longer efforts (20+ minutes) at high intensity.".into(),
-        })?;
+        let estimate =
+            self.local_detector
+                .detect(&pdc)
+                .ok_or_else(|| MlError::InsufficientData {
+                    message: "Could not estimate FTP from available data".into(),
+                    guidance: "Record longer efforts (20+ minutes) at high intensity.".into(),
+                })?;
 
         let supporting_efforts: Vec<SupportingEffort> = rides
             .iter()
             .filter_map(|r| {
-                r.pdc_points.iter().find(|p| p.duration_secs >= 1200).map(|p| {
-                    SupportingEffort {
+                r.pdc_points
+                    .iter()
+                    .find(|p| p.duration_secs >= 1200)
+                    .map(|p| SupportingEffort {
                         ride_id: r.ride_id,
                         duration_secs: p.duration_secs,
                         power_watts: p.power_watts,
                         ride_date: r.date,
-                    }
-                })
+                    })
             })
             .take(5)
             .collect();
@@ -199,11 +208,26 @@ mod tests {
                 max_power: Some(450),
                 tss: Some(75.0),
                 pdc_points: vec![
-                    PdcPoint { duration_secs: 5, power_watts: 450 },
-                    PdcPoint { duration_secs: 60, power_watts: 350 },
-                    PdcPoint { duration_secs: 300, power_watts: 280 },
-                    PdcPoint { duration_secs: 1200, power_watts: 260 },
-                    PdcPoint { duration_secs: 2700, power_watts: 250 },
+                    PdcPoint {
+                        duration_secs: 5,
+                        power_watts: 450,
+                    },
+                    PdcPoint {
+                        duration_secs: 60,
+                        power_watts: 350,
+                    },
+                    PdcPoint {
+                        duration_secs: 300,
+                        power_watts: 280,
+                    },
+                    PdcPoint {
+                        duration_secs: 1200,
+                        power_watts: 260,
+                    },
+                    PdcPoint {
+                        duration_secs: 2700,
+                        power_watts: 250,
+                    },
                 ],
             })
             .collect()

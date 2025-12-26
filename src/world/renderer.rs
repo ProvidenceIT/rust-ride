@@ -2,6 +2,9 @@
 //!
 //! This module provides the 3D rendering pipeline for the virtual world.
 //! It integrates with eframe's wgpu backend to share the GPU context.
+//!
+//! T142: Effort-based vignette effect
+//! T143: Effort-based color grading
 
 use std::sync::Arc;
 
@@ -12,6 +15,8 @@ use wgpu::util::DeviceExt;
 use super::camera::Camera;
 use super::scene::{Lighting, Scene, Sky};
 use super::terrain::{Road, Terrain};
+use super::weather::skybox::{ambient_light, sun_position, SkyColors};
+use super::weather::WeatherState;
 use super::WorldError;
 
 /// Vertex format for 3D rendering
@@ -92,6 +97,149 @@ pub struct Mesh {
     pub num_indices: u32,
 }
 
+// ========== T142-T143: Immersion Effects ==========
+
+/// Post-processing immersion effects based on effort level
+#[derive(Debug, Clone, Default)]
+pub struct ImmersionEffects {
+    /// Current effort level (0.0-1.0, where 1.0 = FTP)
+    pub effort_level: f32,
+    /// Vignette intensity (0.0-1.0)
+    pub vignette_intensity: f32,
+    /// Vignette radius (0.0-1.0)
+    pub vignette_radius: f32,
+    /// Color grading: red shift for high effort
+    pub color_shift_red: f32,
+    /// Color grading: desaturation for extreme effort
+    pub desaturation: f32,
+    /// Pulse effect phase (0..2π)
+    pub pulse_phase: f32,
+    /// Whether effects are enabled
+    pub enabled: bool,
+}
+
+impl ImmersionEffects {
+    /// Create immersion effects (enabled by default)
+    pub fn new() -> Self {
+        Self {
+            effort_level: 0.0,
+            vignette_intensity: 0.0,
+            vignette_radius: 0.8,
+            color_shift_red: 0.0,
+            desaturation: 0.0,
+            pulse_phase: 0.0,
+            enabled: true,
+        }
+    }
+
+    /// Update effects based on current power and FTP
+    pub fn update(&mut self, power_watts: u16, ftp: u16, delta_time: f32) {
+        if !self.enabled || ftp == 0 {
+            self.reset_effects();
+            return;
+        }
+
+        // Calculate effort level (normalized to FTP)
+        self.effort_level = (power_watts as f32 / ftp as f32).clamp(0.0, 2.0);
+
+        // T142: Vignette effect - increases with effort
+        // Starts at 75% FTP, maxes out at 120% FTP
+        if self.effort_level > 0.75 {
+            let vignette_factor = ((self.effort_level - 0.75) / 0.45).clamp(0.0, 1.0);
+            self.vignette_intensity = vignette_factor * 0.5; // Max 50% vignette
+            self.vignette_radius = 0.8 - vignette_factor * 0.3; // Shrink from 0.8 to 0.5
+        } else {
+            self.vignette_intensity = 0.0;
+            self.vignette_radius = 0.8;
+        }
+
+        // T143: Color grading - red shift at high effort
+        // Starts at 85% FTP
+        if self.effort_level > 0.85 {
+            let color_factor = ((self.effort_level - 0.85) / 0.35).clamp(0.0, 1.0);
+            self.color_shift_red = color_factor * 0.15; // Max 15% red shift
+            self.desaturation = color_factor * 0.2; // Max 20% desaturation
+        } else {
+            self.color_shift_red = 0.0;
+            self.desaturation = 0.0;
+        }
+
+        // Pulse effect at very high effort (>FTP)
+        if self.effort_level > 1.0 {
+            self.pulse_phase += delta_time * 2.0 * std::f32::consts::PI;
+            if self.pulse_phase > std::f32::consts::TAU {
+                self.pulse_phase -= std::f32::consts::TAU;
+            }
+        } else {
+            self.pulse_phase = 0.0;
+        }
+    }
+
+    /// Reset all effects to zero
+    fn reset_effects(&mut self) {
+        self.effort_level = 0.0;
+        self.vignette_intensity = 0.0;
+        self.vignette_radius = 0.8;
+        self.color_shift_red = 0.0;
+        self.desaturation = 0.0;
+        self.pulse_phase = 0.0;
+    }
+
+    /// Get intensity label for HUD
+    pub fn intensity_label(&self) -> &'static str {
+        if self.effort_level >= 1.2 {
+            "Maximum Effort!"
+        } else if self.effort_level >= 1.0 {
+            "Threshold"
+        } else if self.effort_level >= 0.85 {
+            "Hard"
+        } else if self.effort_level >= 0.75 {
+            "Tempo"
+        } else if self.effort_level >= 0.55 {
+            "Endurance"
+        } else {
+            "Easy"
+        }
+    }
+
+    /// Get RGB color adjustment for post-processing
+    pub fn color_adjustment(&self) -> [f32; 3] {
+        let pulse = if self.effort_level > 1.0 {
+            (self.pulse_phase.sin() + 1.0) * 0.5 * 0.05 // 0-5% pulse
+        } else {
+            0.0
+        };
+
+        [
+            1.0 + self.color_shift_red + pulse, // R: boost
+            1.0 - self.desaturation * 0.3,      // G: reduce
+            1.0 - self.desaturation * 0.3,      // B: reduce
+        ]
+    }
+
+    /// Calculate vignette factor for a pixel at given UV (0-1)
+    pub fn vignette_factor(&self, u: f32, v: f32) -> f32 {
+        if self.vignette_intensity == 0.0 {
+            return 1.0;
+        }
+
+        // Distance from center (0.5, 0.5)
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let dist = (dx * dx + dy * dy).sqrt() * 2.0; // Normalize to 0-1 at corners
+
+        // Smooth vignette falloff
+        let vignette = if dist < self.vignette_radius {
+            1.0
+        } else {
+            let falloff = (dist - self.vignette_radius) / (1.0 - self.vignette_radius);
+            1.0 - falloff.powf(2.0) * self.vignette_intensity
+        };
+
+        vignette.clamp(0.0, 1.0)
+    }
+}
+
 /// GPU renderer for the 3D world
 pub struct Renderer {
     device: Arc<wgpu::Device>,
@@ -111,6 +259,8 @@ pub struct Renderer {
     road_mesh: Option<Mesh>,
     sky_mesh: Option<Mesh>,
     avatar_mesh: Option<Mesh>,
+    /// T093: Landmark visual markers
+    landmark_markers: Vec<Mesh>,
     initialized: bool,
 }
 
@@ -251,6 +401,7 @@ impl Renderer {
             road_mesh: None,
             sky_mesh: None,
             avatar_mesh: None,
+            landmark_markers: Vec::new(),
             initialized: true,
         })
     }
@@ -754,6 +905,140 @@ impl Renderer {
         self.road_mesh = None;
         self.sky_mesh = None;
         self.avatar_mesh = None;
+        self.landmark_markers.clear();
+    }
+
+    /// T093: Create a landmark marker mesh at the given position
+    ///
+    /// Creates a simple vertical pin/marker for landmarks visible in the 3D world.
+    fn create_landmark_marker(&self, position: Vec3, color: [f32; 3]) -> Mesh {
+        // Simple vertical pin marker
+        let height = 3.0_f32;
+        let radius = 0.5_f32;
+
+        // Create a simple octagonal prism as the marker
+        let segments = 8;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Create vertices for the base and top
+        for i in 0..segments {
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let x = angle.cos() * radius;
+            let z = angle.sin() * radius;
+
+            // Base vertex
+            vertices.push(Vertex {
+                position: [position.x + x, position.y, position.z + z],
+                normal: [x, 0.0, z],
+                color,
+            });
+
+            // Top vertex (pointed)
+            let top_radius = radius * 0.3;
+            let top_x = angle.cos() * top_radius;
+            let top_z = angle.sin() * top_radius;
+            vertices.push(Vertex {
+                position: [position.x + top_x, position.y + height, position.z + top_z],
+                normal: [x, 0.5, z],
+                color,
+            });
+        }
+
+        // Create indices for the sides
+        for i in 0..segments {
+            let base = (i * 2) as u32;
+            let next_base = ((i + 1) % segments * 2) as u32;
+
+            // Two triangles per side
+            indices.push(base);
+            indices.push(base + 1);
+            indices.push(next_base);
+
+            indices.push(next_base);
+            indices.push(base + 1);
+            indices.push(next_base + 1);
+        }
+
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Landmark Marker Vertex Buffer"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Landmark Marker Index Buffer"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+        Mesh {
+            vertex_buffer,
+            index_buffer,
+            num_indices: indices.len() as u32,
+        }
+    }
+
+    /// T093: Update landmark markers for visible landmarks
+    ///
+    /// Call this with the list of visible landmark positions and their colors.
+    pub fn update_landmark_markers(&mut self, landmarks: &[(Vec3, [f32; 3])]) {
+        self.landmark_markers.clear();
+        for (position, color) in landmarks {
+            let marker = self.create_landmark_marker(*position, *color);
+            self.landmark_markers.push(marker);
+        }
+    }
+
+    /// Update scene from weather state (T052: Integrate weather controller with renderer)
+    ///
+    /// This method updates the scene's lighting, sky colors, and fog settings
+    /// based on the current weather state.
+    pub fn apply_weather_to_scene(&self, scene: &mut Scene, weather: &WeatherState) {
+        // Get sky colors for current conditions
+        let sky_colors = SkyColors::for_conditions(weather.time_hours, weather.weather);
+
+        // Update sky colors
+        scene.sky.top_color = sky_colors.zenith;
+        scene.sky.horizon_color = sky_colors.horizon;
+
+        // Update sun direction and lighting
+        let sun_dir = sun_position(weather.time_hours);
+        scene.lighting.sun_direction = sun_dir;
+        scene.lighting.sun_color = sky_colors.sun;
+
+        // Update ambient lighting based on time and weather
+        let (ambient_color, ambient_intensity) = ambient_light(weather.time_hours, weather.weather);
+        scene.lighting.ambient_color = ambient_color * ambient_intensity;
+    }
+
+    /// Get fog color and density for current weather
+    pub fn get_fog_parameters(&self, weather: &WeatherState) -> (Vec3, f32) {
+        let sky_colors = SkyColors::for_conditions(weather.time_hours, weather.weather);
+        let fog_color = sky_colors.fog;
+
+        // Calculate fog density based on visibility
+        // Lower visibility = higher fog density
+        let max_visibility = 10000.0;
+        let fog_density = 1.0 - (weather.visibility_meters / max_visibility).clamp(0.0, 1.0);
+
+        (fog_color, fog_density)
+    }
+
+    /// Get clear color for render pass based on weather
+    pub fn get_clear_color(&self, weather: &WeatherState) -> wgpu::Color {
+        let sky_colors = SkyColors::for_conditions(weather.time_hours, weather.weather);
+
+        wgpu::Color {
+            r: sky_colors.horizon.x as f64,
+            g: sky_colors.horizon.y as f64,
+            b: sky_colors.horizon.z as f64,
+            a: 1.0,
+        }
     }
 
     /// Render the scene to the output texture
@@ -861,6 +1146,14 @@ impl Renderer {
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            }
+
+            // T093: Draw landmark markers
+            for marker in &self.landmark_markers {
+                render_pass.set_vertex_buffer(0, marker.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(marker.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..marker.num_indices, 0, 0..1);
             }
         }
 

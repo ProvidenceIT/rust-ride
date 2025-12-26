@@ -14,6 +14,16 @@ pub mod scene;
 pub mod terrain;
 pub mod worlds;
 
+// 3D World & Content feature modules
+pub mod achievements;
+pub mod creator;
+pub mod import;
+pub mod landmarks;
+pub mod npc;
+pub mod procedural;
+pub mod segments;
+pub mod weather;
+
 use std::sync::Arc;
 
 use glam::Vec3;
@@ -24,10 +34,10 @@ use camera::Camera;
 use hud::Hud;
 use physics::PhysicsEngine;
 use renderer::Renderer;
-use route::Route;
+use route::{Route, StoredRoute, StoredWaypoint, Waypoint};
 use scene::Scene;
-use terrain::{Road, Terrain};
-use worlds::{RouteDefinition, WorldDefinition};
+use terrain::{ImportedRouteTerrain, Road, Terrain, TerrainStyle};
+use worlds::{RouteDefinition, TimeOfDay, WorldDefinition, WorldTheme};
 
 /// Errors that can occur in the 3D world module
 #[derive(Debug, Error)]
@@ -338,5 +348,216 @@ impl World3D {
     /// Get the output texture for reading pixels (for integration tests)
     pub fn output_texture(&self) -> Option<&wgpu::Texture> {
         self.renderer.as_ref().map(|r| r.output_texture())
+    }
+
+    /// Create a World3D from an imported route (T042)
+    ///
+    /// This creates a 3D world using the route data from database storage,
+    /// automatically generating appropriate terrain based on the route's
+    /// elevation profile.
+    pub fn from_imported_route(
+        stored_route: &StoredRoute,
+        waypoints: &[StoredWaypoint],
+        avatar_config: AvatarConfig,
+        rider_mass_kg: f32,
+    ) -> Result<Self, WorldError> {
+        if waypoints.is_empty() {
+            return Err(WorldError::RouteNotFound(
+                "Route has no waypoints".to_string(),
+            ));
+        }
+
+        // Convert stored waypoints to route waypoints with 3D positions
+        let route_waypoints = Self::convert_waypoints_to_3d(waypoints);
+
+        // Create the Route
+        let route = Route {
+            id: stored_route.id.to_string(),
+            name: stored_route.name.clone(),
+            total_distance: stored_route.distance_meters as f32,
+            waypoints: route_waypoints,
+            elevation_profile: Self::extract_elevation_profile(waypoints),
+        };
+
+        // Determine terrain style from route characteristics
+        let terrain_style = TerrainStyle::from_elevation_profile(
+            stored_route.elevation_gain_meters,
+            stored_route.max_elevation_meters,
+            stored_route.avg_gradient_percent,
+        );
+
+        // Create world definition based on terrain style
+        let world_def = Self::create_world_def_from_terrain(
+            &stored_route.name,
+            terrain_style,
+            stored_route.distance_meters,
+        );
+
+        // Create terrain with appropriate style colors
+        let terrain = Terrain {
+            size: (stored_route.distance_meters as f32 * 1.5).max(2000.0),
+            base_color: terrain_style.base_color(),
+        };
+
+        // Create avatar
+        let avatar = Avatar::new(avatar_config);
+
+        // Create physics engine
+        let physics = PhysicsEngine::new(rider_mass_kg);
+
+        // Create scene with terrain style lighting
+        let mut scene = Scene::new();
+        scene.lighting.ambient_color = terrain_style.sky_tint() * terrain_style.ambient_intensity();
+        scene.sky.top_color = terrain_style.sky_tint();
+        scene.sky.horizon_color = terrain_style.sky_tint() * 1.2;
+
+        // Create camera
+        let camera = Camera::default();
+
+        // Create road
+        let road = Road::default();
+
+        // Create HUD
+        let hud = Hud::new();
+
+        Ok(Self {
+            renderer: None,
+            scene,
+            camera,
+            avatar,
+            physics,
+            route,
+            terrain,
+            road,
+            hud,
+            stats: WorldStats::default(),
+            world_def,
+            active: false,
+            width: 800,
+            height: 600,
+        })
+    }
+
+    /// Convert stored waypoints to 3D route waypoints using GPS to world coordinate conversion
+    fn convert_waypoints_to_3d(waypoints: &[StoredWaypoint]) -> Vec<Waypoint> {
+        if waypoints.is_empty() {
+            return Vec::new();
+        }
+
+        // Use first waypoint as origin
+        let origin_lat = waypoints[0].latitude;
+        let origin_lon = waypoints[0].longitude;
+
+        waypoints
+            .iter()
+            .map(|wp| {
+                // Convert GPS to local 3D coordinates
+                let (x, z) =
+                    import::gps_to_world_coords(wp.latitude, wp.longitude, origin_lat, origin_lon);
+
+                Waypoint {
+                    position: Vec3::new(x, wp.elevation_meters, z),
+                    distance_from_start: wp.distance_from_start,
+                    gradient_percent: wp.gradient_percent,
+                    surface_type: wp.surface_type,
+                }
+            })
+            .collect()
+    }
+
+    /// Extract elevation profile from waypoints
+    fn extract_elevation_profile(waypoints: &[StoredWaypoint]) -> Vec<f32> {
+        waypoints.iter().map(|wp| wp.elevation_meters).collect()
+    }
+
+    /// Create a world definition based on terrain style
+    fn create_world_def_from_terrain(
+        route_name: &str,
+        terrain_style: TerrainStyle,
+        distance_meters: f64,
+    ) -> WorldDefinition {
+        let theme = match terrain_style {
+            TerrainStyle::Flat => WorldTheme::Countryside,
+            TerrainStyle::RollingHills => WorldTheme::Countryside,
+            TerrainStyle::Mountain => WorldTheme::Mountains,
+            TerrainStyle::Coastal => WorldTheme::Coastal,
+            TerrainStyle::Forest => WorldTheme::Countryside,
+            TerrainStyle::Urban => WorldTheme::Urban,
+        };
+
+        let time_of_day = match terrain_style {
+            TerrainStyle::Coastal => TimeOfDay::Morning,
+            TerrainStyle::Mountain => TimeOfDay::Noon,
+            TerrainStyle::Forest => TimeOfDay::Afternoon,
+            _ => TimeOfDay::Morning,
+        };
+
+        WorldDefinition {
+            id: format!("imported_{}", route_name.to_lowercase().replace(' ', "_")),
+            name: format!("{} World", route_name),
+            description: format!("Generated world for imported route: {}", route_name),
+            theme,
+            time_of_day,
+            preview_image: String::new(), // No preview for imported routes
+            assets_path: String::new(),   // No external assets
+            default_route: "imported_route".to_string(),
+            routes: vec![RouteDefinition {
+                id: "imported_route".to_string(),
+                name: route_name.to_string(),
+                distance_meters: distance_meters as f32,
+                elevation_gain_meters: 0.0, // Will be set from stored route
+                difficulty: worlds::RouteDifficulty::Moderate,
+                is_loop: false,
+                waypoints_file: None,
+            }],
+        }
+    }
+
+    /// Get the imported route terrain data (for advanced rendering)
+    pub fn get_imported_terrain(&self) -> Option<ImportedRouteTerrain> {
+        // Build terrain data from current route waypoints
+        if self.route.waypoints.is_empty() {
+            return None;
+        }
+
+        let waypoint_data: Vec<(Vec3, f32)> = self
+            .route
+            .waypoints
+            .iter()
+            .map(|wp| (wp.position, wp.gradient_percent))
+            .collect();
+
+        let elevations: Vec<f32> = self
+            .route
+            .waypoints
+            .iter()
+            .map(|wp| wp.position.y)
+            .collect();
+        let elevation_gain = elevations
+            .windows(2)
+            .filter_map(|w| {
+                let diff = w[1] - w[0];
+                if diff > 0.0 {
+                    Some(diff)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        let max_elevation = elevations.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let avg_gradient = self
+            .route
+            .waypoints
+            .iter()
+            .map(|wp| wp.gradient_percent.abs())
+            .sum::<f32>()
+            / self.route.waypoints.len() as f32;
+
+        Some(ImportedRouteTerrain::from_waypoints(
+            &waypoint_data,
+            elevation_gain,
+            max_elevation,
+            avg_gradient,
+        ))
     }
 }

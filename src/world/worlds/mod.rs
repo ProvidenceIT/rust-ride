@@ -7,6 +7,7 @@ use super::WorldError;
 
 pub mod coastal;
 pub mod countryside;
+pub mod famous_routes;
 pub mod mountains;
 
 /// Difficulty rating for routes

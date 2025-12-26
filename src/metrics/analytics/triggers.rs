@@ -76,7 +76,10 @@ impl AnalyticsTriggers {
         let mut improved_points = Vec::new();
         for point in ride_points {
             let existing_power = existing_pdc.power_at(point.duration_secs);
-            if existing_power.map(|p| point.power_watts > p).unwrap_or(true) {
+            if existing_power
+                .map(|p| point.power_watts > p)
+                .unwrap_or(true)
+            {
                 improved_points.push(point);
             }
         }

@@ -177,7 +177,7 @@ impl FatigueDetector {
         Self {
             client: Some(client),
             baseline,
-            decoupling_threshold: 0.10, // 10% HR drift
+            decoupling_threshold: 0.10,  // 10% HR drift
             variability_threshold: 1.40, // 40% above baseline
         }
     }
@@ -227,7 +227,11 @@ impl FatigueDetector {
     }
 
     /// Analyze fatigue using local algorithms only.
-    pub fn analyze_local(&self, samples: &[RideSample], target_power: Option<u16>) -> FatigueAnalysis {
+    pub fn analyze_local(
+        &self,
+        samples: &[RideSample],
+        target_power: Option<u16>,
+    ) -> FatigueAnalysis {
         if samples.len() < 300 {
             return FatigueAnalysis::default();
         }
@@ -303,7 +307,11 @@ impl FatigueDetector {
     }
 
     /// Calculate power variability index.
-    pub fn power_variability_index(&self, samples: &[RideSample], target_power: Option<u16>) -> f32 {
+    pub fn power_variability_index(
+        &self,
+        samples: &[RideSample],
+        target_power: Option<u16>,
+    ) -> f32 {
         let powers: Vec<f32> = samples
             .iter()
             .filter_map(|s| s.power_watts)
@@ -398,7 +406,10 @@ impl FatigueDetector {
 
         let sample_factor = (samples.len() as f32 / 600.0).min(1.0); // Max at 10 min
 
-        let hr_count = samples.iter().filter(|s| s.heart_rate_bpm.is_some()).count();
+        let hr_count = samples
+            .iter()
+            .filter(|s| s.heart_rate_bpm.is_some())
+            .count();
         let hr_factor = hr_count as f32 / samples.len() as f32;
 
         let power_count = samples.iter().filter(|s| s.power_watts.is_some()).count();
@@ -462,7 +473,10 @@ mod tests {
         let samples = create_test_samples(600, false);
 
         let decoupling = detector.aerobic_decoupling(&samples);
-        assert!(decoupling.abs() < 0.05, "No drift should have low decoupling");
+        assert!(
+            decoupling.abs() < 0.05,
+            "No drift should have low decoupling"
+        );
     }
 
     #[test]

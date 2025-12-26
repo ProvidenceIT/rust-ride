@@ -1,0 +1,81 @@
+{
+  "famous_routes": [
+    {
+      "id": "alpe_dhuez",
+      "name": "Alpe d'Huez",
+      "country": "France",
+      "region": "French Alps",
+      "file": "alpe_dhuez.gpx",
+      "distance_km": 13.8,
+      "elevation_gain_m": 1071,
+      "avg_gradient_percent": 7.9,
+      "max_gradient_percent": 13.0,
+      "category": "HC",
+      "description": "Legendary Tour de France finish with 21 famous hairpin bends",
+      "landmarks": [
+        { "name": "Le Bourg-d'Oisans", "km": 0.0, "type": "town" },
+        { "name": "Hairpin 21", "km": 0.5, "type": "poi" },
+        { "name": "La Garde", "km": 5.2, "type": "town" },
+        { "name": "Alpe d'Huez", "km": 13.8, "type": "summit" }
+      ]
+    },
+    {
+      "id": "mont_ventoux",
+      "name": "Mont Ventoux",
+      "country": "France",
+      "region": "Provence",
+      "file": "mont_ventoux.gpx",
+      "distance_km": 21.5,
+      "elevation_gain_m": 1617,
+      "avg_gradient_percent": 7.5,
+      "max_gradient_percent": 12.0,
+      "category": "HC",
+      "description": "The Beast of Provence - iconic moonscape summit",
+      "landmarks": [
+        { "name": "Bedoin", "km": 0.0, "type": "town" },
+        { "name": "Saint-Esteve", "km": 2.8, "type": "town" },
+        { "name": "Chalet Reynard", "km": 15.0, "type": "poi" },
+        { "name": "Tom Simpson Memorial", "km": 19.0, "type": "memorial" },
+        { "name": "Mont Ventoux Summit", "km": 21.5, "type": "summit" }
+      ]
+    },
+    {
+      "id": "stelvio_pass",
+      "name": "Stelvio Pass",
+      "country": "Italy",
+      "region": "Italian Alps",
+      "file": "stelvio_pass.gpx",
+      "distance_km": 24.3,
+      "elevation_gain_m": 1808,
+      "avg_gradient_percent": 7.4,
+      "max_gradient_percent": 12.0,
+      "category": "HC",
+      "description": "Second highest paved pass in the Alps with 48 hairpins",
+      "landmarks": [
+        { "name": "Prato allo Stelvio", "km": 0.0, "type": "town" },
+        { "name": "Gomagoi", "km": 4.5, "type": "town" },
+        { "name": "Trafoi", "km": 10.0, "type": "town" },
+        { "name": "First Hairpin", "km": 12.0, "type": "poi" },
+        { "name": "Stelvio Summit", "km": 24.3, "type": "summit" }
+      ]
+    },
+    {
+      "id": "sa_calobra",
+      "name": "Sa Calobra",
+      "country": "Spain",
+      "region": "Mallorca",
+      "file": "sa_calobra.gpx",
+      "distance_km": 9.4,
+      "elevation_gain_m": 682,
+      "avg_gradient_percent": 7.3,
+      "max_gradient_percent": 12.0,
+      "category": "Cat1",
+      "description": "The Snake - famous Mallorca climb with 26 hairpins and 'The Knot'",
+      "landmarks": [
+        { "name": "Sa Calobra Bay", "km": 0.0, "type": "viewpoint" },
+        { "name": "Es Nus (The Knot)", "km": 3.5, "type": "poi" },
+        { "name": "MA-10 Junction", "km": 9.4, "type": "summit" }
+      ]
+    }
+  ]
+}

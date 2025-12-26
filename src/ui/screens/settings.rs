@@ -8,6 +8,7 @@
 //! T125: Implement theme toggle (dark/light)
 //! T076: Display current FTP with confidence on profile screen
 //! T124: Add rider type display to profile screen
+//! T146: Add immersion effect toggles to settings
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
@@ -43,6 +44,47 @@ pub struct SettingsScreen {
     pub rider_type: Option<RiderType>,
     /// Power profile for radar display
     pub power_profile: Option<PowerProfile>,
+    /// T146: Immersion effect settings
+    pub immersion_settings: ImmersionSettings,
+}
+
+/// T146: Immersion effect settings
+#[derive(Debug, Clone)]
+pub struct ImmersionSettings {
+    /// Enable visual immersion effects (vignette, color grading)
+    pub visual_effects_enabled: bool,
+    /// Enable audio effects (breathing, heartbeat, environment)
+    pub audio_effects_enabled: bool,
+    /// Enable effort-based vignette
+    pub vignette_enabled: bool,
+    /// Enable effort-based color grading
+    pub color_grading_enabled: bool,
+    /// Enable breathing sounds at high effort
+    pub breathing_sounds_enabled: bool,
+    /// Enable heartbeat sounds at very high effort
+    pub heartbeat_sounds_enabled: bool,
+    /// Enable environmental audio (wind, rain, birds)
+    pub environment_audio_enabled: bool,
+    /// Enable cyclist audio (tire roll, drivetrain)
+    pub cyclist_audio_enabled: bool,
+    /// Master audio volume (0.0-1.0)
+    pub audio_volume: f32,
+}
+
+impl Default for ImmersionSettings {
+    fn default() -> Self {
+        Self {
+            visual_effects_enabled: true,
+            audio_effects_enabled: true,
+            vignette_enabled: true,
+            color_grading_enabled: true,
+            breathing_sounds_enabled: true,
+            heartbeat_sounds_enabled: true,
+            environment_audio_enabled: true,
+            cyclist_audio_enabled: true,
+            audio_volume: 0.8,
+        }
+    }
 }
 
 /// Actions that can result from the settings screen.
@@ -87,6 +129,7 @@ impl SettingsScreen {
             ftp_confidence: None,
             rider_type: None,
             power_profile: None,
+            immersion_settings: ImmersionSettings::default(),
         }
     }
 
@@ -197,6 +240,11 @@ impl SettingsScreen {
             // Preferences section
             self.render_preferences_section(ui);
 
+            ui.add_space(16.0);
+
+            // T146: Immersion effects section
+            self.render_immersion_section(ui);
+
             ui.add_space(32.0);
         });
 
@@ -251,9 +299,7 @@ impl SettingsScreen {
                         if let Some(confidence) = &self.ftp_confidence {
                             let (color, label) = match confidence {
                                 FtpConfidence::High => (Color32::from_rgb(50, 205, 50), "High"),
-                                FtpConfidence::Medium => {
-                                    (Color32::from_rgb(255, 165, 0), "Medium")
-                                }
+                                FtpConfidence::Medium => (Color32::from_rgb(255, 165, 0), "Medium"),
                                 FtpConfidence::Low => (Color32::from_rgb(220, 20, 60), "Low"),
                             };
                             ui.add_space(8.0);
@@ -577,6 +623,147 @@ impl SettingsScreen {
         });
     }
 
+    /// Render the immersion effects section.
+    /// T146: Add immersion effect toggles to settings.
+    fn render_immersion_section(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.label(RichText::new("Immersion Effects").size(18.0).strong());
+            ui.add_space(8.0);
+
+            // Visual effects group
+            ui.label(RichText::new("Visual Effects").strong());
+            ui.add_space(4.0);
+
+            // Master visual toggle
+            if ui
+                .checkbox(
+                    &mut self.immersion_settings.visual_effects_enabled,
+                    "Enable visual effects",
+                )
+                .on_hover_text("Effort-based visual feedback during riding")
+                .changed()
+            {
+                self.has_changes = true;
+            }
+
+            // Sub-options (indented, disabled if master is off)
+            ui.add_enabled_ui(self.immersion_settings.visual_effects_enabled, |ui| {
+                ui.indent("visual_sub", |ui| {
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.vignette_enabled,
+                            "Vignette effect",
+                        )
+                        .on_hover_text("Darkening around screen edges at high effort")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.color_grading_enabled,
+                            "Color grading",
+                        )
+                        .on_hover_text("Color shifts and desaturation at extreme effort")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // Audio effects group
+            ui.label(RichText::new("Audio Effects").strong());
+            ui.add_space(4.0);
+
+            // Master audio toggle
+            if ui
+                .checkbox(
+                    &mut self.immersion_settings.audio_effects_enabled,
+                    "Enable audio effects",
+                )
+                .on_hover_text("Contextual audio feedback during riding")
+                .changed()
+            {
+                self.has_changes = true;
+            }
+
+            // Audio volume slider
+            ui.add_enabled_ui(self.immersion_settings.audio_effects_enabled, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Volume:");
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut self.immersion_settings.audio_volume, 0.0..=1.0)
+                                .show_value(true)
+                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+                        )
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+                });
+
+                ui.indent("audio_sub", |ui| {
+                    // Effort sounds
+                    ui.label(RichText::new("Effort Sounds").small().weak());
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.breathing_sounds_enabled,
+                            "Breathing sounds",
+                        )
+                        .on_hover_text("Heavy breathing at high effort (>75% FTP)")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.heartbeat_sounds_enabled,
+                            "Heartbeat sounds",
+                        )
+                        .on_hover_text("Heartbeat at very high effort (>95% FTP)")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    ui.add_space(4.0);
+
+                    // Environment sounds
+                    ui.label(RichText::new("Environment").small().weak());
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.environment_audio_enabled,
+                            "Environmental sounds",
+                        )
+                        .on_hover_text("Wind, rain, birds, and other ambient sounds")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    if ui
+                        .checkbox(
+                            &mut self.immersion_settings.cyclist_audio_enabled,
+                            "Cycling sounds",
+                        )
+                        .on_hover_text("Tire roll and drivetrain sounds based on speed")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+                });
+            });
+        });
+    }
+
     /// Validate the current profile.
     fn validate(&mut self) -> bool {
         // Validate FTP
@@ -688,11 +875,7 @@ impl SettingsScreen {
                 ui.add_space(4.0);
 
                 // Description
-                ui.label(
-                    RichText::new(rider_type.description())
-                        .weak()
-                        .italics(),
-                );
+                ui.label(RichText::new(rider_type.description()).weak().italics());
 
                 ui.add_space(8.0);
 
@@ -752,16 +935,10 @@ impl SettingsScreen {
         let height = 12.0;
 
         // Background
-        let (rect, _response) = ui.allocate_exact_size(
-            egui::Vec2::new(width, height),
-            egui::Sense::hover(),
-        );
+        let (rect, _response) =
+            ui.allocate_exact_size(egui::Vec2::new(width, height), egui::Sense::hover());
 
-        ui.painter().rect_filled(
-            rect,
-            2.0,
-            Color32::from_gray(60),
-        );
+        ui.painter().rect_filled(rect, 2.0, Color32::from_gray(60));
 
         // Fill based on value (0.0-1.5 typical range, 1.0 = average)
         let fill_width = (value.min(1.5) / 1.5 * width).max(0.0);
@@ -773,10 +950,7 @@ impl SettingsScreen {
             Color32::from_rgb(234, 67, 53) // Red for weakness
         };
 
-        let fill_rect = egui::Rect::from_min_size(
-            rect.min,
-            egui::Vec2::new(fill_width, height),
-        );
+        let fill_rect = egui::Rect::from_min_size(rect.min, egui::Vec2::new(fill_width, height));
         ui.painter().rect_filled(fill_rect, 2.0, fill_color);
 
         // Value label

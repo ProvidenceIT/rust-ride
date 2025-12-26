@@ -23,7 +23,9 @@ pub mod workout_recommend;
 // Re-exports for convenience
 pub use adaptation::{AdaptationEngine, AdaptationModel, LoadRecommendation, ModelConfidence};
 pub use cache::{CachedPrediction, MlCache};
-pub use cadence_analysis::{CadenceAnalysis, CadenceAnalyzer, CadenceEfficiency, DegradationPattern};
+pub use cadence_analysis::{
+    CadenceAnalysis, CadenceAnalyzer, CadenceEfficiency, DegradationPattern,
+};
 pub use client::MlClient;
 pub use difficulty::{DifficultyEstimate, DifficultyEstimator, DifficultyFactors};
 pub use fatigue_detection::{

@@ -167,10 +167,7 @@ impl MlClient {
             self.set_online(false);
             Err(MlError::Offline)
         } else {
-            Err(MlError::ApiError(format!(
-                "API returned status {}",
-                status
-            )))
+            Err(MlError::ApiError(format!("API returned status {}", status)))
         }
     }
 
@@ -241,7 +238,10 @@ impl MlClient {
                 }
                 Ok(_) => {
                     // Other error - discard request
-                    tracing::warn!("Discarding queued request to {}: API error", request.endpoint);
+                    tracing::warn!(
+                        "Discarding queued request to {}: API error",
+                        request.endpoint
+                    );
                 }
                 Err(e) => {
                     // Network error - put back in queue

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Mont Ventoux</name>
+    <desc>The Beast of Provence - Bedoin route, 21.5km, 1617m elevation gain</desc>
+    <time>2024-01-02T08:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Mont Ventoux - Bedoin</name>
+    <type>cycling</type>
+    <trkseg>
+      <!-- Start at Bedoin (310m) -->
+      <trkpt lat="44.1256" lon="5.1800">
+        <ele>310.0</ele>
+        <time>2024-01-02T08:00:00Z</time>
+      </trkpt>
+      <!-- Saint-Esteve -->
+      <trkpt lat="44.1350" lon="5.1850">
+        <ele>450.0</ele>
+        <time>2024-01-02T08:10:00Z</time>
+      </trkpt>
+      <!-- Forest section begins -->
+      <trkpt lat="44.1450" lon="5.1900">
+        <ele>650.0</ele>
+        <time>2024-01-02T08:25:00Z</time>
+      </trkpt>
+      <!-- Deep forest -->
+      <trkpt lat="44.1550" lon="5.1920">
+        <ele>900.0</ele>
+        <time>2024-01-02T08:45:00Z</time>
+      </trkpt>
+      <!-- Chalet Reynard (1440m) -->
+      <trkpt lat="44.1650" lon="5.1940">
+        <ele>1440.0</ele>
+        <time>2024-01-02T09:15:00Z</time>
+      </trkpt>
+      <!-- Moonscape begins -->
+      <trkpt lat="44.1720" lon="5.1950">
+        <ele>1600.0</ele>
+        <time>2024-01-02T09:30:00Z</time>
+      </trkpt>
+      <!-- Tom Simpson Memorial -->
+      <trkpt lat="44.1780" lon="5.1940">
+        <ele>1829.0</ele>
+        <time>2024-01-02T09:45:00Z</time>
+      </trkpt>
+      <!-- Summit (1912m) -->
+      <trkpt lat="44.1739" lon="5.2786">
+        <ele>1912.0</ele>
+        <time>2024-01-02T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

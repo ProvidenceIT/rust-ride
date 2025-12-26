@@ -69,7 +69,15 @@ impl<'a> MlStore<'a> {
                  WHERE user_id = ?1 AND prediction_type = ?2
                  ORDER BY created_at DESC LIMIT 1",
                 params![user_id.to_string(), format!("{:?}", prediction_type)],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
 
@@ -237,11 +245,7 @@ impl<'a> MlStore<'a> {
     ) -> Result<(), MlError> {
         self.conn.execute(
             "UPDATE workout_recommendations SET status = ?1, completed_at = ?2 WHERE id = ?3",
-            params![
-                status,
-                completed_at.map(|t| t.to_rfc3339()),
-                id.to_string()
-            ],
+            params![status, completed_at.map(|t| t.to_rfc3339()), id.to_string()],
         )?;
         Ok(())
     }

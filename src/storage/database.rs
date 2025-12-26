@@ -13,9 +13,12 @@ use crate::metrics::zones::{HRZones, PowerZones};
 use crate::recording::types::{Ride, RideSample};
 use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
-use crate::storage::schema::{CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, SCHEMA, SCHEMA_VERSION_TABLE};
+use crate::storage::schema::{
+    CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, SCHEMA, SCHEMA_VERSION_TABLE,
+};
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
+use crate::world::route::{RouteSource, StoredRoute, StoredWaypoint, SurfaceType};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result as SqliteResult};
 use std::path::PathBuf;
@@ -138,6 +141,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 3 (ML coaching tables)");
+        }
+
+        // Migration v3 -> v4: Add 3D World & Content tables
+        if from_version < 4 {
+            self.conn
+                .execute_batch(crate::storage::schema::MIGRATION_V3_TO_V4)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 4
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (4, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 4 (3D World & Content tables)");
         }
 
         Ok(())
@@ -1243,6 +1263,717 @@ impl Database {
 
         Ok(())
     }
+
+    // ============= Route CRUD Operations (T019-T020) =============
+
+    /// Insert a new stored route into the database.
+    pub fn insert_route(&self, route: &StoredRoute) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "INSERT INTO imported_routes (id, name, description, source, distance_meters,
+                 elevation_gain_meters, max_elevation_meters, min_elevation_meters,
+                 avg_gradient_percent, max_gradient_percent, source_file, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    route.id.to_string(),
+                    route.name,
+                    route.description,
+                    route.source.to_string(),
+                    route.distance_meters,
+                    route.elevation_gain_meters,
+                    route.max_elevation_meters,
+                    route.min_elevation_meters,
+                    route.avg_gradient_percent,
+                    route.max_gradient_percent,
+                    route.source_file,
+                    route.created_at.to_rfc3339(),
+                    route.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get a stored route by ID.
+    pub fn get_route(&self, id: &Uuid) -> Result<Option<StoredRoute>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, description, source, distance_meters, elevation_gain_meters,
+                 max_elevation_meters, min_elevation_meters, avg_gradient_percent,
+                 max_gradient_percent, source_file, created_at, updated_at
+                 FROM imported_routes WHERE id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![id.to_string()], |row| {
+            Ok(RouteRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                source: row.get(3)?,
+                distance_meters: row.get(4)?,
+                elevation_gain_meters: row.get(5)?,
+                max_elevation_meters: row.get(6)?,
+                min_elevation_meters: row.get(7)?,
+                avg_gradient_percent: row.get(8)?,
+                max_gradient_percent: row.get(9)?,
+                source_file: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        });
+
+        match result {
+            Ok(row) => Ok(Some(row.into_stored_route()?)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get all stored routes, optionally filtered by source.
+    pub fn list_routes(
+        &self,
+        source: Option<RouteSource>,
+    ) -> Result<Vec<StoredRoute>, DatabaseError> {
+        let sql = match source {
+            Some(_) => {
+                "SELECT id, name, description, source, distance_meters, elevation_gain_meters,
+                 max_elevation_meters, min_elevation_meters, avg_gradient_percent,
+                 max_gradient_percent, source_file, created_at, updated_at
+                 FROM imported_routes WHERE source = ?1 ORDER BY created_at DESC"
+            }
+            None => {
+                "SELECT id, name, description, source, distance_meters, elevation_gain_meters,
+                 max_elevation_meters, min_elevation_meters, avg_gradient_percent,
+                 max_gradient_percent, source_file, created_at, updated_at
+                 FROM imported_routes ORDER BY created_at DESC"
+            }
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(sql)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<RouteRow> {
+            Ok(RouteRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                source: row.get(3)?,
+                distance_meters: row.get(4)?,
+                elevation_gain_meters: row.get(5)?,
+                max_elevation_meters: row.get(6)?,
+                min_elevation_meters: row.get(7)?,
+                avg_gradient_percent: row.get(8)?,
+                max_gradient_percent: row.get(9)?,
+                source_file: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        };
+
+        let mut routes = Vec::new();
+
+        if let Some(src) = source {
+            let rows = stmt
+                .query_map(params![src.to_string()], map_row)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            for row in rows {
+                let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                routes.push(row.into_stored_route()?);
+            }
+        } else {
+            let rows = stmt
+                .query_map([], map_row)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            for row in rows {
+                let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                routes.push(row.into_stored_route()?);
+            }
+        }
+
+        Ok(routes)
+    }
+
+    /// Update an existing stored route.
+    pub fn update_route(&self, route: &StoredRoute) -> Result<(), DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE imported_routes SET name = ?2, description = ?3, source = ?4,
+                 distance_meters = ?5, elevation_gain_meters = ?6, max_elevation_meters = ?7,
+                 min_elevation_meters = ?8, avg_gradient_percent = ?9, max_gradient_percent = ?10,
+                 source_file = ?11, updated_at = ?12 WHERE id = ?1",
+                params![
+                    route.id.to_string(),
+                    route.name,
+                    route.description,
+                    route.source.to_string(),
+                    route.distance_meters,
+                    route.elevation_gain_meters,
+                    route.max_elevation_meters,
+                    route.min_elevation_meters,
+                    route.avg_gradient_percent,
+                    route.max_gradient_percent,
+                    route.source_file,
+                    route.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Route {}", route.id)));
+        }
+
+        Ok(())
+    }
+
+    /// Delete a stored route by ID (cascades to waypoints).
+    pub fn delete_route(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        // First delete waypoints (foreign key cascade may not be enabled)
+        self.conn
+            .execute(
+                "DELETE FROM route_waypoints WHERE route_id = ?1",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM imported_routes WHERE id = ?1",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Route {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Count routes in the database.
+    pub fn count_routes(&self) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM imported_routes", [], |row| row.get(0))
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    // ============= Route Waypoints CRUD Operations (T020) =============
+
+    /// Insert waypoints for a route in bulk.
+    pub fn insert_route_waypoints(
+        &mut self,
+        waypoints: &[StoredWaypoint],
+    ) -> Result<(), DatabaseError> {
+        if waypoints.is_empty() {
+            return Ok(());
+        }
+
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO route_waypoints (id, route_id, sequence, latitude, longitude,
+                     elevation_meters, distance_from_start, gradient_percent, surface_type)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                )
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            for wp in waypoints {
+                let surface_str = match wp.surface_type {
+                    SurfaceType::Asphalt => "asphalt",
+                    SurfaceType::Concrete => "concrete",
+                    SurfaceType::Cobblestone => "cobblestone",
+                    SurfaceType::Gravel => "gravel",
+                    SurfaceType::Dirt => "dirt",
+                };
+
+                stmt.execute(params![
+                    wp.id.to_string(),
+                    wp.route_id.to_string(),
+                    wp.sequence,
+                    wp.latitude,
+                    wp.longitude,
+                    wp.elevation_meters,
+                    wp.distance_from_start,
+                    wp.gradient_percent,
+                    surface_str,
+                ])
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get all waypoints for a route, ordered by sequence.
+    pub fn get_route_waypoints(
+        &self,
+        route_id: &Uuid,
+    ) -> Result<Vec<StoredWaypoint>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, route_id, sequence, latitude, longitude, elevation_meters,
+                 distance_from_start, gradient_percent, surface_type
+                 FROM route_waypoints WHERE route_id = ?1 ORDER BY sequence",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![route_id.to_string()], |row| {
+                Ok(WaypointRow {
+                    id: row.get(0)?,
+                    route_id: row.get(1)?,
+                    sequence: row.get(2)?,
+                    latitude: row.get(3)?,
+                    longitude: row.get(4)?,
+                    elevation_meters: row.get(5)?,
+                    distance_from_start: row.get(6)?,
+                    gradient_percent: row.get(7)?,
+                    surface_type: row.get(8)?,
+                })
+            })
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut waypoints = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+            waypoints.push(row.into_stored_waypoint()?);
+        }
+
+        Ok(waypoints)
+    }
+
+    /// Get a route with all its waypoints.
+    pub fn get_route_with_waypoints(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<(StoredRoute, Vec<StoredWaypoint>)>, DatabaseError> {
+        let route = self.get_route(id)?;
+        match route {
+            Some(route) => {
+                let waypoints = self.get_route_waypoints(id)?;
+                Ok(Some((route, waypoints)))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Delete all waypoints for a route.
+    pub fn delete_route_waypoints(&self, route_id: &Uuid) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "DELETE FROM route_waypoints WHERE route_id = ?1",
+                params![route_id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Count waypoints for a route.
+    pub fn count_route_waypoints(&self, route_id: &Uuid) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM route_waypoints WHERE route_id = ?1",
+                params![route_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    // ========== Landmark CRUD Operations (T089) ==========
+
+    /// Insert a new landmark into the database.
+    pub fn insert_landmark(
+        &self,
+        landmark: &crate::world::landmarks::Landmark,
+    ) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "INSERT INTO landmarks (id, route_id, landmark_type, name, description,
+                 latitude, longitude, elevation_meters, distance_meters, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    landmark.id.to_string(),
+                    landmark.route_id.map(|id| id.to_string()),
+                    format!("{:?}", landmark.landmark_type).to_lowercase(),
+                    landmark.name,
+                    landmark.description,
+                    landmark.latitude,
+                    landmark.longitude,
+                    landmark.elevation_meters,
+                    landmark.distance_meters,
+                    landmark.created_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get a landmark by ID.
+    pub fn get_landmark(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<crate::world::landmarks::Landmark>, DatabaseError> {
+        use crate::world::landmarks::{Landmark, LandmarkType};
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, route_id, landmark_type, name, description,
+                 latitude, longitude, elevation_meters, distance_meters, created_at
+                 FROM landmarks WHERE id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![id.to_string()], |row| {
+            let id_str: String = row.get(0)?;
+            let route_id_str: Option<String> = row.get(1)?;
+            let type_str: String = row.get(2)?;
+            let name: String = row.get(3)?;
+            let description: Option<String> = row.get(4)?;
+            let latitude: f64 = row.get(5)?;
+            let longitude: f64 = row.get(6)?;
+            let elevation: f32 = row.get(7)?;
+            let distance: Option<f64> = row.get(8)?;
+            let created_str: String = row.get(9)?;
+
+            Ok((
+                id_str,
+                route_id_str,
+                type_str,
+                name,
+                description,
+                latitude,
+                longitude,
+                elevation,
+                distance,
+                created_str,
+            ))
+        });
+
+        match result {
+            Ok((
+                id_str,
+                route_id_str,
+                type_str,
+                name,
+                description,
+                latitude,
+                longitude,
+                elevation,
+                distance,
+                created_str,
+            )) => {
+                let id = Uuid::parse_str(&id_str)
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+                let route_id = route_id_str
+                    .map(|s| Uuid::parse_str(&s))
+                    .transpose()
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+                let landmark_type = match type_str.as_str() {
+                    "summit" => LandmarkType::Summit,
+                    "viewpoint" => LandmarkType::Viewpoint,
+                    "town" => LandmarkType::Town,
+                    "historic" => LandmarkType::Historic,
+                    "sprint" => LandmarkType::Sprint,
+                    "feedzone" => LandmarkType::FeedZone,
+                    "waterfountain" => LandmarkType::WaterFountain,
+                    "restarea" => LandmarkType::RestArea,
+                    _ => LandmarkType::Custom,
+                };
+                let created_at = DateTime::parse_from_rfc3339(&created_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+                Ok(Some(Landmark {
+                    id,
+                    route_id,
+                    landmark_type,
+                    name,
+                    description,
+                    latitude,
+                    longitude,
+                    elevation_meters: elevation,
+                    distance_meters: distance,
+                    created_at,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get all landmarks for a route.
+    pub fn get_route_landmarks(
+        &self,
+        route_id: &Uuid,
+    ) -> Result<Vec<crate::world::landmarks::Landmark>, DatabaseError> {
+        use crate::world::landmarks::{Landmark, LandmarkType};
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, route_id, landmark_type, name, description,
+                 latitude, longitude, elevation_meters, distance_meters, created_at
+                 FROM landmarks WHERE route_id = ?1 ORDER BY distance_meters",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![route_id.to_string()], |row| {
+                let id_str: String = row.get(0)?;
+                let route_id_str: Option<String> = row.get(1)?;
+                let type_str: String = row.get(2)?;
+                let name: String = row.get(3)?;
+                let description: Option<String> = row.get(4)?;
+                let latitude: f64 = row.get(5)?;
+                let longitude: f64 = row.get(6)?;
+                let elevation: f32 = row.get(7)?;
+                let distance: Option<f64> = row.get(8)?;
+                let created_str: String = row.get(9)?;
+
+                Ok((
+                    id_str,
+                    route_id_str,
+                    type_str,
+                    name,
+                    description,
+                    latitude,
+                    longitude,
+                    elevation,
+                    distance,
+                    created_str,
+                ))
+            })
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut landmarks = Vec::new();
+        for row in rows {
+            let (
+                id_str,
+                route_id_str,
+                type_str,
+                name,
+                description,
+                latitude,
+                longitude,
+                elevation,
+                distance,
+                created_str,
+            ) = row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            let id = Uuid::parse_str(&id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let route_id = route_id_str
+                .map(|s| Uuid::parse_str(&s))
+                .transpose()
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let landmark_type = match type_str.as_str() {
+                "summit" => LandmarkType::Summit,
+                "viewpoint" => LandmarkType::Viewpoint,
+                "town" => LandmarkType::Town,
+                "historic" => LandmarkType::Historic,
+                "sprint" => LandmarkType::Sprint,
+                "feedzone" => LandmarkType::FeedZone,
+                "waterfountain" => LandmarkType::WaterFountain,
+                "restarea" => LandmarkType::RestArea,
+                _ => LandmarkType::Custom,
+            };
+            let created_at = DateTime::parse_from_rfc3339(&created_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+            landmarks.push(Landmark {
+                id,
+                route_id,
+                landmark_type,
+                name,
+                description,
+                latitude,
+                longitude,
+                elevation_meters: elevation,
+                distance_meters: distance,
+                created_at,
+            });
+        }
+
+        Ok(landmarks)
+    }
+
+    /// Delete a landmark by ID.
+    pub fn delete_landmark(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM landmarks WHERE id = ?1",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Landmark {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Count landmarks for a route.
+    pub fn count_route_landmarks(&self, route_id: &Uuid) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM landmarks WHERE route_id = ?1",
+                params![route_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    // ========== Landmark Discovery CRUD Operations (T090) ==========
+
+    /// Insert a new landmark discovery.
+    pub fn insert_landmark_discovery(
+        &self,
+        discovery: &crate::world::landmarks::discovery::LandmarkDiscovery,
+    ) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "INSERT INTO landmark_discoveries (id, user_id, landmark_id, ride_id, discovered_at, screenshot_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    discovery.id.to_string(),
+                    discovery.user_id.to_string(),
+                    discovery.landmark_id.to_string(),
+                    discovery.ride_id.to_string(),
+                    discovery.discovered_at.to_rfc3339(),
+                    discovery.screenshot_path,
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get all discoveries for a user.
+    pub fn get_user_discoveries(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<crate::world::landmarks::discovery::LandmarkDiscovery>, DatabaseError> {
+        use crate::world::landmarks::discovery::LandmarkDiscovery;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, user_id, landmark_id, ride_id, discovered_at, screenshot_path
+                 FROM landmark_discoveries WHERE user_id = ?1 ORDER BY discovered_at DESC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![user_id.to_string()], |row| {
+                let id_str: String = row.get(0)?;
+                let user_id_str: String = row.get(1)?;
+                let landmark_id_str: String = row.get(2)?;
+                let ride_id_str: String = row.get(3)?;
+                let discovered_str: String = row.get(4)?;
+                let screenshot: Option<String> = row.get(5)?;
+
+                Ok((
+                    id_str,
+                    user_id_str,
+                    landmark_id_str,
+                    ride_id_str,
+                    discovered_str,
+                    screenshot,
+                ))
+            })
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut discoveries = Vec::new();
+        for row in rows {
+            let (id_str, user_id_str, landmark_id_str, ride_id_str, discovered_str, screenshot) =
+                row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            let id = Uuid::parse_str(&id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let user_id = Uuid::parse_str(&user_id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let landmark_id = Uuid::parse_str(&landmark_id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let ride_id = Uuid::parse_str(&ride_id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let discovered_at = DateTime::parse_from_rfc3339(&discovered_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+            discoveries.push(LandmarkDiscovery {
+                id,
+                user_id,
+                landmark_id,
+                ride_id,
+                discovered_at,
+                screenshot_path: screenshot,
+            });
+        }
+
+        Ok(discoveries)
+    }
+
+    /// Check if a user has discovered a specific landmark.
+    pub fn has_discovered_landmark(
+        &self,
+        user_id: &Uuid,
+        landmark_id: &Uuid,
+    ) -> Result<bool, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM landmark_discoveries WHERE user_id = ?1 AND landmark_id = ?2",
+                params![user_id.to_string(), landmark_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count > 0)
+    }
+
+    /// Count total discoveries for a user.
+    pub fn count_user_discoveries(&self, user_id: &Uuid) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM landmark_discoveries WHERE user_id = ?1",
+                params![user_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
 }
 
 /// Parse a hex color string (e.g., "#FF0000") to RGB array.
@@ -1552,6 +2283,107 @@ impl SensorRow {
             last_seen_at,
             is_primary: self.is_primary != 0,
             created_at,
+        })
+    }
+}
+
+/// Intermediate struct for reading route rows from database.
+struct RouteRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    source: String,
+    distance_meters: f64,
+    elevation_gain_meters: f32,
+    max_elevation_meters: f32,
+    min_elevation_meters: f32,
+    avg_gradient_percent: f32,
+    max_gradient_percent: f32,
+    source_file: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl RouteRow {
+    fn into_stored_route(self) -> Result<StoredRoute, DatabaseError> {
+        let id = Uuid::parse_str(&self.id)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
+
+        let source: RouteSource = self.source.parse().map_err(|e: String| {
+            DatabaseError::DeserializationError(format!("Invalid route source: {}", e))
+        })?;
+
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid created date: {}", e))
+            })?;
+
+        let updated_at = DateTime::parse_from_rfc3339(&self.updated_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| {
+                DatabaseError::DeserializationError(format!("Invalid updated date: {}", e))
+            })?;
+
+        Ok(StoredRoute {
+            id,
+            name: self.name,
+            description: self.description,
+            source,
+            distance_meters: self.distance_meters,
+            elevation_gain_meters: self.elevation_gain_meters,
+            max_elevation_meters: self.max_elevation_meters,
+            min_elevation_meters: self.min_elevation_meters,
+            avg_gradient_percent: self.avg_gradient_percent,
+            max_gradient_percent: self.max_gradient_percent,
+            source_file: self.source_file,
+            created_at,
+            updated_at,
+        })
+    }
+}
+
+/// Intermediate struct for reading waypoint rows from database.
+struct WaypointRow {
+    id: String,
+    route_id: String,
+    sequence: u32,
+    latitude: f64,
+    longitude: f64,
+    elevation_meters: f32,
+    distance_from_start: f32,
+    gradient_percent: f32,
+    surface_type: String,
+}
+
+impl WaypointRow {
+    fn into_stored_waypoint(self) -> Result<StoredWaypoint, DatabaseError> {
+        let id = Uuid::parse_str(&self.id)
+            .map_err(|e| DatabaseError::DeserializationError(format!("Invalid UUID: {}", e)))?;
+
+        let route_id = Uuid::parse_str(&self.route_id).map_err(|e| {
+            DatabaseError::DeserializationError(format!("Invalid route UUID: {}", e))
+        })?;
+
+        let surface_type = match self.surface_type.to_lowercase().as_str() {
+            "asphalt" => SurfaceType::Asphalt,
+            "concrete" => SurfaceType::Concrete,
+            "cobblestone" => SurfaceType::Cobblestone,
+            "gravel" => SurfaceType::Gravel,
+            "dirt" => SurfaceType::Dirt,
+            _ => SurfaceType::Asphalt, // Default to asphalt
+        };
+
+        Ok(StoredWaypoint {
+            id,
+            route_id,
+            sequence: self.sequence,
+            latitude: self.latitude,
+            longitude: self.longitude,
+            elevation_meters: self.elevation_meters,
+            distance_from_start: self.distance_from_start,
+            gradient_percent: self.gradient_percent,
+            surface_type,
         })
     }
 }
@@ -2295,5 +3127,239 @@ mod tests {
         // Verify HR zones are preserved
         let hr_zones = retrieved.hr_zones.expect("HR zones should be present");
         assert_eq!(hr_zones.z1_recovery.name, "Recovery");
+    }
+
+    // ========== Route CRUD Tests (T019-T020) ==========
+
+    fn create_test_stored_route(name: &str) -> StoredRoute {
+        let mut route = StoredRoute::new(name.to_string(), RouteSource::Gpx);
+        route.description = Some("Test route description".to_string());
+        route.distance_meters = 25000.0;
+        route.elevation_gain_meters = 500.0;
+        route.max_elevation_meters = 800.0;
+        route.min_elevation_meters = 300.0;
+        route.avg_gradient_percent = 2.0;
+        route.max_gradient_percent = 12.0;
+        route.source_file = Some("/test/route.gpx".to_string());
+        route
+    }
+
+    fn create_test_waypoints(route_id: Uuid, count: u32) -> Vec<StoredWaypoint> {
+        (0..count)
+            .map(|i| {
+                StoredWaypoint::new(
+                    route_id,
+                    i,
+                    45.0 + (i as f64 * 0.001),
+                    -122.0 + (i as f64 * 0.001),
+                    100.0 + (i as f32 * 10.0),
+                    i as f32 * 100.0,
+                )
+                .with_gradient(if i % 3 == 0 { 5.0 } else { 0.0 })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_route_insert_and_get() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("Test GPX Route");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+
+        let retrieved = db
+            .get_route(&route_id)
+            .expect("Failed to get route")
+            .expect("Route not found");
+
+        assert_eq!(retrieved.id, route.id);
+        assert_eq!(retrieved.name, "Test GPX Route");
+        assert_eq!(retrieved.source, RouteSource::Gpx);
+        assert_eq!(retrieved.distance_meters, 25000.0);
+        assert_eq!(retrieved.elevation_gain_meters, 500.0);
+    }
+
+    #[test]
+    fn test_route_list_all() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+
+        db.insert_route(&create_test_stored_route("Route One"))
+            .unwrap();
+
+        let mut route2 = create_test_stored_route("Route Two");
+        route2.source = RouteSource::Fit;
+        db.insert_route(&route2).unwrap();
+
+        let mut route3 = create_test_stored_route("Route Three");
+        route3.source = RouteSource::Tcx;
+        db.insert_route(&route3).unwrap();
+
+        // List all
+        let routes = db.list_routes(None).expect("Failed to list routes");
+        assert_eq!(routes.len(), 3);
+    }
+
+    #[test]
+    fn test_route_list_by_source() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+
+        db.insert_route(&create_test_stored_route("GPX Route 1"))
+            .unwrap();
+        db.insert_route(&create_test_stored_route("GPX Route 2"))
+            .unwrap();
+
+        let mut fit_route = create_test_stored_route("FIT Route");
+        fit_route.source = RouteSource::Fit;
+        db.insert_route(&fit_route).unwrap();
+
+        // List only GPX routes
+        let gpx_routes = db
+            .list_routes(Some(RouteSource::Gpx))
+            .expect("Failed to list routes");
+        assert_eq!(gpx_routes.len(), 2);
+
+        // List only FIT routes
+        let fit_routes = db
+            .list_routes(Some(RouteSource::Fit))
+            .expect("Failed to list routes");
+        assert_eq!(fit_routes.len(), 1);
+    }
+
+    #[test]
+    fn test_route_update() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let mut route = create_test_stored_route("Original Name");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+
+        // Update the route
+        route.name = "Updated Name".to_string();
+        route.description = Some("Updated description".to_string());
+        route.distance_meters = 30000.0;
+
+        db.update_route(&route).expect("Failed to update route");
+
+        // Verify update
+        let retrieved = db
+            .get_route(&route_id)
+            .expect("Failed to get route")
+            .expect("Route not found");
+
+        assert_eq!(retrieved.name, "Updated Name");
+        assert_eq!(
+            retrieved.description,
+            Some("Updated description".to_string())
+        );
+        assert_eq!(retrieved.distance_meters, 30000.0);
+    }
+
+    #[test]
+    fn test_route_delete() {
+        let db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("To Delete");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+        assert_eq!(db.count_routes().unwrap(), 1);
+
+        db.delete_route(&route_id).expect("Failed to delete route");
+        assert_eq!(db.count_routes().unwrap(), 0);
+
+        let result = db.get_route(&route_id).expect("Failed to query");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_waypoints_insert_and_get() {
+        let mut db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("Route with Waypoints");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+
+        let waypoints = create_test_waypoints(route_id, 10);
+        db.insert_route_waypoints(&waypoints)
+            .expect("Failed to insert waypoints");
+
+        let retrieved = db
+            .get_route_waypoints(&route_id)
+            .expect("Failed to get waypoints");
+
+        assert_eq!(retrieved.len(), 10);
+        assert_eq!(retrieved[0].sequence, 0);
+        assert_eq!(retrieved[9].sequence, 9);
+    }
+
+    #[test]
+    fn test_route_with_waypoints() {
+        let mut db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("Full Route");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+
+        let waypoints = create_test_waypoints(route_id, 5);
+        db.insert_route_waypoints(&waypoints)
+            .expect("Failed to insert waypoints");
+
+        let result = db
+            .get_route_with_waypoints(&route_id)
+            .expect("Failed to get route");
+        assert!(result.is_some());
+
+        let (retrieved_route, retrieved_waypoints) = result.unwrap();
+        assert_eq!(retrieved_route.id, route_id);
+        assert_eq!(retrieved_waypoints.len(), 5);
+    }
+
+    #[test]
+    fn test_route_delete_cascades_waypoints() {
+        let mut db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("Route to Delete");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+        db.insert_route_waypoints(&create_test_waypoints(route_id, 20))
+            .expect("Failed to insert waypoints");
+
+        // Verify waypoints exist
+        assert_eq!(db.count_route_waypoints(&route_id).unwrap(), 20);
+
+        // Delete route
+        db.delete_route(&route_id).expect("Failed to delete route");
+
+        // Waypoints should be gone
+        assert_eq!(db.count_route_waypoints(&route_id).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_waypoint_surface_types() {
+        let mut db = Database::open_in_memory().expect("Failed to create database");
+        let route = create_test_stored_route("Surface Test Route");
+        let route_id = route.id;
+
+        db.insert_route(&route).expect("Failed to insert route");
+
+        let waypoints = vec![
+            StoredWaypoint::new(route_id, 0, 45.0, -122.0, 100.0, 0.0)
+                .with_surface(SurfaceType::Asphalt),
+            StoredWaypoint::new(route_id, 1, 45.001, -122.001, 110.0, 100.0)
+                .with_surface(SurfaceType::Gravel),
+            StoredWaypoint::new(route_id, 2, 45.002, -122.002, 120.0, 200.0)
+                .with_surface(SurfaceType::Cobblestone),
+        ];
+
+        db.insert_route_waypoints(&waypoints)
+            .expect("Failed to insert waypoints");
+
+        let retrieved = db
+            .get_route_waypoints(&route_id)
+            .expect("Failed to get waypoints");
+
+        assert_eq!(retrieved[0].surface_type, SurfaceType::Asphalt);
+        assert_eq!(retrieved[1].surface_type, SurfaceType::Gravel);
+        assert_eq!(retrieved[2].surface_type, SurfaceType::Cobblestone);
     }
 }

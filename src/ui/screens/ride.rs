@@ -1003,8 +1003,8 @@ impl RideScreen {
     pub fn is_in_sweet_spot(&self) -> bool {
         if let Some(power) = self.metrics.power_instant {
             let recommender = SweetSpotRecommender::new(self.ftp);
-            let (min, max) =
-                recommender.zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot);
+            let (min, max) = recommender
+                .zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot);
             power >= min && power <= max
         } else {
             false
@@ -1014,7 +1014,8 @@ impl RideScreen {
     /// Get Sweet Spot zone power range.
     pub fn sweet_spot_range(&self) -> (u16, u16) {
         let recommender = SweetSpotRecommender::new(self.ftp);
-        recommender.zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot)
+        recommender
+            .zone_power_range(crate::metrics::analytics::sweet_spot::IntensityZone::SweetSpot)
     }
 
     /// Render the Sweet Spot zone indicator.
@@ -1033,11 +1034,7 @@ impl RideScreen {
                     "●",
                 )
             } else {
-                (
-                    ui.visuals().faint_bg_color,
-                    Color32::GRAY,
-                    "○",
-                )
+                (ui.visuals().faint_bg_color, Color32::GRAY, "○")
             };
 
             let frame = egui::Frame::new()
@@ -1048,11 +1045,7 @@ impl RideScreen {
             frame.show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(icon).color(text_color));
-                    ui.label(
-                        RichText::new("Sweet Spot")
-                            .color(text_color)
-                            .strong(),
-                    );
+                    ui.label(RichText::new("Sweet Spot").color(text_color).strong());
                     ui.label(
                         RichText::new(format!("{}-{}W", min, max))
                             .color(text_color)

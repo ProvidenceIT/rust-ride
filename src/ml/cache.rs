@@ -31,7 +31,14 @@ impl<'a> MlCache<'a> {
         source: PredictionSource,
     ) -> Result<Uuid, MlError> {
         let expires_in = Duration::hours(prediction_type.cache_expiry_hours() as i64);
-        self.store_with_expiry(user_id, prediction_type, payload, confidence, source, expires_in)
+        self.store_with_expiry(
+            user_id,
+            prediction_type,
+            payload,
+            confidence,
+            source,
+            expires_in,
+        )
     }
 
     /// Store a prediction with custom expiry duration.
@@ -96,7 +103,15 @@ impl<'a> MlCache<'a> {
                  WHERE user_id = ?1 AND prediction_type = ?2
                  ORDER BY created_at DESC LIMIT 1",
                 rusqlite::params![user_id.to_string(), format!("{:?}", prediction_type)],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
 
@@ -133,7 +148,11 @@ impl<'a> MlCache<'a> {
     }
 
     /// Check if a valid (non-expired) cache entry exists.
-    pub fn has_valid(&self, user_id: Uuid, prediction_type: PredictionType) -> Result<bool, MlError> {
+    pub fn has_valid(
+        &self,
+        user_id: Uuid,
+        prediction_type: PredictionType,
+    ) -> Result<bool, MlError> {
         let now = Utc::now().to_rfc3339();
 
         let count: i32 = self.conn.query_row(
@@ -349,9 +368,8 @@ mod tests {
             )
             .unwrap();
 
-        let cached: Option<CachedPrediction<TestPayload>> = cache
-            .get(user_id, PredictionType::FtpPrediction)
-            .unwrap();
+        let cached: Option<CachedPrediction<TestPayload>> =
+            cache.get(user_id, PredictionType::FtpPrediction).unwrap();
 
         assert!(cached.is_some());
         let cached = cached.unwrap();
@@ -381,9 +399,8 @@ mod tests {
             .unwrap();
 
         // Should not return expired cache by default
-        let cached: Option<CachedPrediction<TestPayload>> = cache
-            .get(user_id, PredictionType::FtpPrediction)
-            .unwrap();
+        let cached: Option<CachedPrediction<TestPayload>> =
+            cache.get(user_id, PredictionType::FtpPrediction).unwrap();
         assert!(cached.is_none());
 
         // Should return if we ask for stale data
@@ -400,7 +417,9 @@ mod tests {
         let cache = MlCache::new(&conn);
         let user_id = Uuid::new_v4();
 
-        assert!(!cache.has_valid(user_id, PredictionType::FtpPrediction).unwrap());
+        assert!(!cache
+            .has_valid(user_id, PredictionType::FtpPrediction)
+            .unwrap());
 
         cache
             .store(
@@ -412,7 +431,9 @@ mod tests {
             )
             .unwrap();
 
-        assert!(cache.has_valid(user_id, PredictionType::FtpPrediction).unwrap());
+        assert!(cache
+            .has_valid(user_id, PredictionType::FtpPrediction)
+            .unwrap());
     }
 
     #[test]
@@ -431,11 +452,17 @@ mod tests {
             )
             .unwrap();
 
-        assert!(cache.has_valid(user_id, PredictionType::FtpPrediction).unwrap());
+        assert!(cache
+            .has_valid(user_id, PredictionType::FtpPrediction)
+            .unwrap());
 
-        cache.invalidate(user_id, PredictionType::FtpPrediction).unwrap();
+        cache
+            .invalidate(user_id, PredictionType::FtpPrediction)
+            .unwrap();
 
-        assert!(!cache.has_valid(user_id, PredictionType::FtpPrediction).unwrap());
+        assert!(!cache
+            .has_valid(user_id, PredictionType::FtpPrediction)
+            .unwrap());
     }
 
     #[test]

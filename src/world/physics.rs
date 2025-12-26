@@ -2,6 +2,11 @@
 //!
 //! Implements a simplified cycling physics model to convert power output
 //! to virtual speed based on rider weight and virtual gradient.
+//!
+//! T043: Add trainer resistance control based on route gradient
+//! T100: Integrate difficulty modifier with trainer resistance control
+
+use super::route::GradientScaler;
 
 /// Physics constants
 const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level
@@ -131,6 +136,183 @@ impl PhysicsEngine {
     }
 }
 
+/// Trainer resistance controller for gradient-based simulation (T043)
+///
+/// This controller manages sending gradient/simulation commands to
+/// smart trainers that support FTMS simulation mode.
+#[derive(Debug, Clone)]
+pub struct GradientController {
+    /// Current gradient being sent to trainer
+    current_gradient: f32,
+    /// Minimum gradient change before sending update (to reduce noise)
+    gradient_threshold: f32,
+    /// Maximum gradient to send to trainer (trainer safety limit)
+    max_gradient: f32,
+    /// Minimum gradient to send to trainer
+    min_gradient: f32,
+    /// Smoothing factor for gradient changes (0.0-1.0)
+    smoothing: f32,
+    /// Whether the controller is enabled
+    enabled: bool,
+    /// Time since last update
+    last_update_time: f32,
+    /// Minimum time between updates (seconds)
+    update_interval: f32,
+    /// T100: Optional gradient scaler for difficulty adjustment
+    gradient_scaler: Option<GradientScaler>,
+}
+
+impl Default for GradientController {
+    fn default() -> Self {
+        Self {
+            current_gradient: 0.0,
+            gradient_threshold: 0.3, // Only update if change > 0.3%
+            max_gradient: 20.0,      // Cap at 20% (trainer limit)
+            min_gradient: -10.0,     // Cap at -10% (trainer limit)
+            smoothing: 0.3,          // Moderate smoothing
+            enabled: true,
+            last_update_time: 0.0,
+            update_interval: 0.5, // Update at most every 500ms
+            gradient_scaler: None,
+        }
+    }
+}
+
+impl GradientController {
+    /// Create a new gradient controller
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create with custom settings
+    pub fn with_settings(
+        max_gradient: f32,
+        min_gradient: f32,
+        smoothing: f32,
+        update_interval: f32,
+    ) -> Self {
+        Self {
+            max_gradient: max_gradient.clamp(0.0, 25.0),
+            min_gradient: min_gradient.clamp(-15.0, 0.0),
+            smoothing: smoothing.clamp(0.0, 1.0),
+            update_interval,
+            ..Default::default()
+        }
+    }
+
+    /// Enable or disable the controller
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// Check if controller is enabled
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Get the current gradient being sent to trainer
+    pub fn current_gradient(&self) -> f32 {
+        self.current_gradient
+    }
+
+    /// T100: Set the gradient scaler for difficulty adjustment
+    ///
+    /// When set, route gradients will be scaled according to the scaler's
+    /// settings before being sent to the trainer.
+    pub fn set_gradient_scaler(&mut self, scaler: Option<GradientScaler>) {
+        self.gradient_scaler = scaler;
+    }
+
+    /// T100: Get the current gradient scaler
+    pub fn gradient_scaler(&self) -> Option<&GradientScaler> {
+        self.gradient_scaler.as_ref()
+    }
+
+    /// T100: Apply difficulty scaling to a gradient
+    fn apply_difficulty_scaling(&self, gradient: f32) -> f32 {
+        if let Some(ref scaler) = self.gradient_scaler {
+            scaler.scale_gradient(gradient)
+        } else {
+            gradient
+        }
+    }
+
+    /// Update with new route gradient and return command if needed
+    ///
+    /// Returns Some(gradient) if an update should be sent to the trainer,
+    /// None if no update is needed.
+    ///
+    /// Note: If a gradient scaler is set, the route gradient will be scaled
+    /// according to the difficulty settings before being sent to the trainer.
+    pub fn update(&mut self, route_gradient: f32, delta_time: f32) -> Option<f32> {
+        if !self.enabled {
+            return None;
+        }
+
+        self.last_update_time += delta_time;
+
+        // Rate limit updates
+        if self.last_update_time < self.update_interval {
+            return None;
+        }
+
+        // T100: Apply difficulty scaling if configured
+        let scaled_gradient = self.apply_difficulty_scaling(route_gradient);
+
+        // Clamp the route gradient to trainer limits
+        let clamped_gradient = scaled_gradient.clamp(self.min_gradient, self.max_gradient);
+
+        // Apply smoothing
+        let smoothed_gradient =
+            self.current_gradient * self.smoothing + clamped_gradient * (1.0 - self.smoothing);
+
+        // Check if change exceeds threshold
+        let gradient_change = (smoothed_gradient - self.current_gradient).abs();
+        if gradient_change < self.gradient_threshold {
+            return None;
+        }
+
+        // Update and return new gradient
+        self.current_gradient = smoothed_gradient;
+        self.last_update_time = 0.0;
+
+        Some(self.current_gradient)
+    }
+
+    /// Force an immediate update with the given gradient
+    pub fn force_update(&mut self, gradient: f32) -> f32 {
+        let clamped = gradient.clamp(self.min_gradient, self.max_gradient);
+        self.current_gradient = clamped;
+        self.last_update_time = 0.0;
+        clamped
+    }
+
+    /// Reset the controller to zero gradient
+    pub fn reset(&mut self) {
+        self.current_gradient = 0.0;
+        self.last_update_time = 0.0;
+    }
+
+    /// Build FTMS simulation command for current gradient
+    pub fn build_ftms_command(&self) -> Vec<u8> {
+        crate::sensors::ftms::build_set_simulation_grade(self.current_gradient)
+    }
+}
+
+/// Simulation mode for trainer control
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TrainerSimulationMode {
+    /// ERG mode - trainer maintains target power
+    Erg,
+    /// Simulation mode - trainer simulates gradient
+    #[default]
+    Simulation,
+    /// Resistance mode - manual resistance level
+    Resistance,
+    /// Free ride - no resistance control
+    FreeRide,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +346,85 @@ mod tests {
         let flat_speed = engine.calculate_speed(200, 0.0);
         let downhill_speed = engine.calculate_speed(200, -5.0);
         assert!(downhill_speed > flat_speed);
+    }
+
+    #[test]
+    fn test_gradient_controller_default() {
+        let controller = GradientController::new();
+        assert!(controller.is_enabled());
+        assert_eq!(controller.current_gradient(), 0.0);
+    }
+
+    #[test]
+    fn test_gradient_controller_update_below_threshold() {
+        let mut controller = GradientController::new();
+        // Small change should not trigger update
+        let result = controller.update(0.2, 1.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_gradient_controller_update_above_threshold() {
+        let mut controller = GradientController::new();
+        // Large change should trigger update after interval
+        let result = controller.update(5.0, 1.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn test_gradient_controller_rate_limiting() {
+        let mut controller = GradientController::new();
+        // First update after interval should work
+        let _ = controller.update(5.0, 1.0);
+        // Immediate second update should be blocked (too soon)
+        let result = controller.update(10.0, 0.1);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_gradient_controller_clamping() {
+        let mut controller = GradientController::new();
+        // Extreme gradient should be clamped
+        let result = controller.force_update(50.0);
+        assert!(result <= 20.0);
+
+        let result = controller.force_update(-30.0);
+        assert!(result >= -10.0);
+    }
+
+    #[test]
+    fn test_gradient_controller_disabled() {
+        let mut controller = GradientController::new();
+        controller.set_enabled(false);
+        let result = controller.update(10.0, 1.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_gradient_controller_reset() {
+        let mut controller = GradientController::new();
+        controller.force_update(5.0);
+        assert!(controller.current_gradient() > 0.0);
+
+        controller.reset();
+        assert_eq!(controller.current_gradient(), 0.0);
+    }
+
+    #[test]
+    fn test_gradient_controller_custom_settings() {
+        let controller = GradientController::with_settings(
+            15.0, // max gradient
+            -5.0, // min gradient
+            0.5,  // smoothing
+            0.25, // update interval
+        );
+        assert!(controller.is_enabled());
+    }
+
+    #[test]
+    fn test_trainer_simulation_mode_default() {
+        let mode = TrainerSimulationMode::default();
+        assert_eq!(mode, TrainerSimulationMode::Simulation);
     }
 }

@@ -316,6 +316,179 @@ CREATE TABLE IF NOT EXISTS fatigue_states (
 CREATE INDEX IF NOT EXISTS idx_fatigue_states_ride ON fatigue_states(ride_id);
 "#;
 
+/// SQL for migration from v3 to v4 (3D World & Content tables)
+pub const MIGRATION_V3_TO_V4: &str = r#"
+-- Imported routes table
+CREATE TABLE IF NOT EXISTS imported_routes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    source TEXT NOT NULL,
+    distance_meters REAL NOT NULL DEFAULT 0,
+    elevation_gain_meters REAL NOT NULL DEFAULT 0,
+    max_elevation_meters REAL NOT NULL DEFAULT 0,
+    min_elevation_meters REAL NOT NULL DEFAULT 0,
+    avg_gradient_percent REAL NOT NULL DEFAULT 0,
+    max_gradient_percent REAL NOT NULL DEFAULT 0,
+    source_file TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_imported_routes_name ON imported_routes(name);
+CREATE INDEX IF NOT EXISTS idx_imported_routes_source ON imported_routes(source);
+
+-- Route waypoints table
+CREATE TABLE IF NOT EXISTS route_waypoints (
+    id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL REFERENCES imported_routes(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    elevation_meters REAL NOT NULL,
+    distance_from_start REAL NOT NULL,
+    gradient_percent REAL NOT NULL,
+    surface_type TEXT NOT NULL DEFAULT 'asphalt'
+);
+
+CREATE INDEX IF NOT EXISTS idx_route_waypoints_route ON route_waypoints(route_id);
+CREATE INDEX IF NOT EXISTS idx_route_waypoints_sequence ON route_waypoints(route_id, sequence);
+
+-- Segments table (timed portions of routes)
+CREATE TABLE IF NOT EXISTS segments (
+    id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL REFERENCES imported_routes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    start_distance_meters REAL NOT NULL,
+    end_distance_meters REAL NOT NULL,
+    length_meters REAL NOT NULL,
+    elevation_gain_meters REAL NOT NULL,
+    avg_gradient_percent REAL NOT NULL,
+    category TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_segments_route ON segments(route_id);
+
+-- Segment times (leaderboard entries)
+CREATE TABLE IF NOT EXISTS segment_times (
+    id TEXT PRIMARY KEY,
+    segment_id TEXT NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    time_seconds REAL NOT NULL,
+    avg_power_watts INTEGER,
+    avg_heart_rate INTEGER,
+    ftp_at_effort INTEGER NOT NULL,
+    is_personal_best INTEGER NOT NULL DEFAULT 0,
+    recorded_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_segment_times_segment ON segment_times(segment_id);
+CREATE INDEX IF NOT EXISTS idx_segment_times_user ON segment_times(user_id);
+CREATE INDEX IF NOT EXISTS idx_segment_times_leaderboard ON segment_times(segment_id, time_seconds);
+
+-- Landmarks table
+CREATE TABLE IF NOT EXISTS landmarks (
+    id TEXT PRIMARY KEY,
+    route_id TEXT REFERENCES imported_routes(id) ON DELETE CASCADE,
+    landmark_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    elevation_meters REAL NOT NULL,
+    distance_meters REAL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_landmarks_route ON landmarks(route_id);
+
+-- Landmark discoveries (user progress)
+CREATE TABLE IF NOT EXISTS landmark_discoveries (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    landmark_id TEXT NOT NULL REFERENCES landmarks(id) ON DELETE CASCADE,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    discovered_at TEXT NOT NULL,
+    screenshot_path TEXT,
+    UNIQUE(user_id, landmark_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_landmark_discoveries_user ON landmark_discoveries(user_id);
+
+-- Achievements table
+CREATE TABLE IF NOT EXISTS achievements (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    icon TEXT NOT NULL,
+    is_secret INTEGER NOT NULL DEFAULT 0,
+    target_value REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_achievements_category ON achievements(category);
+
+-- Achievement progress table
+CREATE TABLE IF NOT EXISTS achievement_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    achievement_id TEXT NOT NULL REFERENCES achievements(id) ON DELETE CASCADE,
+    current_value REAL NOT NULL DEFAULT 0,
+    is_unlocked INTEGER NOT NULL DEFAULT 0,
+    unlocked_at TEXT,
+    UNIQUE(user_id, achievement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_achievement_progress_user ON achievement_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_achievement_progress_unlocked ON achievement_progress(user_id, is_unlocked);
+
+-- Collectibles table
+CREATE TABLE IF NOT EXISTS collectibles (
+    id TEXT PRIMARY KEY,
+    route_id TEXT REFERENCES imported_routes(id) ON DELETE CASCADE,
+    collectible_type TEXT NOT NULL,
+    distance_meters REAL NOT NULL,
+    position_x REAL NOT NULL,
+    position_y REAL NOT NULL,
+    position_z REAL NOT NULL,
+    respawns INTEGER NOT NULL DEFAULT 1,
+    respawn_time_seconds INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_collectibles_route ON collectibles(route_id);
+
+-- Collected items (user collections)
+CREATE TABLE IF NOT EXISTS collected_items (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    collectible_id TEXT NOT NULL REFERENCES collectibles(id) ON DELETE CASCADE,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    points INTEGER NOT NULL,
+    collected_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_collected_items_user ON collected_items(user_id);
+
+-- Custom routes (user-created)
+CREATE TABLE IF NOT EXISTS custom_routes (
+    id TEXT PRIMARY KEY,
+    author_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_loop INTEGER NOT NULL DEFAULT 0,
+    points_json TEXT NOT NULL,
+    objects_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_routes_author ON custom_routes(author_id);
+"#;
+
 /// SQL for schema version tracking (migrations)
 pub const SCHEMA_VERSION_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -325,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 3;
+pub const CURRENT_VERSION: i32 = 4;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"

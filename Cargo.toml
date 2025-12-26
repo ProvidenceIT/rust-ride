@@ -66,6 +66,13 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Native File Dialogs
 rfd = "0.14"
 
+# GPS File Parsing
+gpx = "0.9"
+fitparser = "0.5"
+
+# Procedural Generation
+noise = "0.8"
+
 # Platform-specific disk space checking
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem"] }

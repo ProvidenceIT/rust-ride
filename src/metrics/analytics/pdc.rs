@@ -208,19 +208,18 @@ pub fn interpolate_sensor_gaps(power_samples: &[u16]) -> Vec<u16> {
                     }
                 };
 
-                let after_value = if gap_end < n { result[gap_end] } else { before_value };
+                let after_value = if gap_end < n {
+                    result[gap_end]
+                } else {
+                    before_value
+                };
 
                 // Linear interpolation
                 if before_value > 0 || after_value > 0 {
-                    for (idx, sample) in result
-                        .iter_mut()
-                        .enumerate()
-                        .take(gap_end)
-                        .skip(gap_start)
+                    for (idx, sample) in result.iter_mut().enumerate().take(gap_end).skip(gap_start)
                     {
                         let t = (idx - gap_start + 1) as f32 / (gap_length + 1) as f32;
-                        let interpolated =
-                            before_value as f32 * (1.0 - t) + after_value as f32 * t;
+                        let interpolated = before_value as f32 * (1.0 - t) + after_value as f32 * t;
                         *sample = interpolated.round() as u16;
                     }
                 }

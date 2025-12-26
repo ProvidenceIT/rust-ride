@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Alpe d'Huez</name>
+    <desc>Famous Tour de France climb - 21 hairpin bends, 13.8km, 1071m elevation gain</desc>
+    <time>2024-01-01T09:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Alpe d'Huez</name>
+    <type>cycling</type>
+    <trkseg>
+      <!-- Start at Le Bourg-d'Oisans (720m) -->
+      <trkpt lat="45.0536" lon="6.0306">
+        <ele>720.0</ele>
+        <time>2024-01-01T09:00:00Z</time>
+      </trkpt>
+      <!-- Hairpin 21 - Start of climb -->
+      <trkpt lat="45.0550" lon="6.0340">
+        <ele>750.0</ele>
+        <time>2024-01-01T09:05:00Z</time>
+      </trkpt>
+      <!-- Hairpin 18 -->
+      <trkpt lat="45.0600" lon="6.0420">
+        <ele>900.0</ele>
+        <time>2024-01-01T09:15:00Z</time>
+      </trkpt>
+      <!-- Hairpin 15 - La Garde -->
+      <trkpt lat="45.0650" lon="6.0500">
+        <ele>1050.0</ele>
+        <time>2024-01-01T09:25:00Z</time>
+      </trkpt>
+      <!-- Hairpin 12 -->
+      <trkpt lat="45.0700" lon="6.0580">
+        <ele>1200.0</ele>
+        <time>2024-01-01T09:35:00Z</time>
+      </trkpt>
+      <!-- Hairpin 9 - Ribot -->
+      <trkpt lat="45.0750" lon="6.0650">
+        <ele>1350.0</ele>
+        <time>2024-01-01T09:45:00Z</time>
+      </trkpt>
+      <!-- Hairpin 6 -->
+      <trkpt lat="45.0800" lon="6.0720">
+        <ele>1500.0</ele>
+        <time>2024-01-01T09:55:00Z</time>
+      </trkpt>
+      <!-- Hairpin 3 -->
+      <trkpt lat="45.0850" lon="6.0780">
+        <ele>1650.0</ele>
+        <time>2024-01-01T10:05:00Z</time>
+      </trkpt>
+      <!-- Summit at Alpe d'Huez (1791m) -->
+      <trkpt lat="45.0914" lon="6.0710">
+        <ele>1791.0</ele>
+        <time>2024-01-01T10:15:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

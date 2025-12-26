@@ -236,7 +236,9 @@ impl PerformanceForecaster {
                     let weekly_increase_needed = -gap / (days_to_event as f32 / 7.0);
                     format!(
                         "Increase weekly TSS by {:.0}% to reach your target",
-                        (weekly_increase_needed / current_ctl * 100.0).abs().min(30.0)
+                        (weekly_increase_needed / current_ctl * 100.0)
+                            .abs()
+                            .min(30.0)
                     )
                 };
 
@@ -275,11 +277,8 @@ impl PerformanceForecaster {
         let slope = self.calculate_slope(recent_history);
 
         // Plateau if slope is very low and we have consistent training
-        let has_consistent_training = recent_history
-            .iter()
-            .filter(|(_, l)| l.tss > 20.0)
-            .count()
-            >= recent_history.len() / 2;
+        let has_consistent_training =
+            recent_history.iter().filter(|(_, l)| l.tss > 20.0).count() >= recent_history.len() / 2;
 
         slope.abs() < 0.5 && has_consistent_training
     }
@@ -297,13 +296,8 @@ impl PerformanceForecaster {
             .collect();
 
         let training_days = recent_week.iter().filter(|(_, l)| l.tss > 30.0).count();
-        let recent_trend = self.calculate_slope(
-            &ctl_history
-                .iter()
-                .rev()
-                .take(14)
-                .collect::<Vec<_>>(),
-        );
+        let recent_trend =
+            self.calculate_slope(&ctl_history.iter().rev().take(14).collect::<Vec<_>>());
 
         if training_days == 0 || recent_trend < -1.0 {
             DetrainingRisk::High
@@ -447,7 +441,10 @@ mod tests {
             let first_range = first.confidence_high - first.confidence_low;
             let last_range = last.confidence_high - last.confidence_low;
 
-            assert!(last_range > first_range, "Uncertainty should increase over time");
+            assert!(
+                last_range > first_range,
+                "Uncertainty should increase over time"
+            );
         }
     }
 }

@@ -476,7 +476,11 @@ impl AdaptationEngine {
         model.preferred_distribution.clone()
     }
 
-    fn determine_weekly_structure(&self, acwr: f32, adjustment: &LoadAdjustment) -> WeeklyStructure {
+    fn determine_weekly_structure(
+        &self,
+        acwr: f32,
+        adjustment: &LoadAdjustment,
+    ) -> WeeklyStructure {
         let pattern = if acwr > 1.3 {
             WeeklyPattern::Recovery
         } else if adjustment.direction == AdjustmentDirection::Increase {
@@ -528,7 +532,12 @@ impl AdaptationEngine {
         (training_days as f32 / 20.0).min(1.0) // Expect ~20 training days in 4 weeks
     }
 
-    fn generate_rationale(&self, adjustment: &LoadAdjustment, acwr: f32, goals: &[TrainingGoal]) -> String {
+    fn generate_rationale(
+        &self,
+        adjustment: &LoadAdjustment,
+        acwr: f32,
+        goals: &[TrainingGoal],
+    ) -> String {
         let mut parts = Vec::new();
 
         parts.push(format!(
@@ -673,7 +682,11 @@ mod tests {
         let engine = AdaptationEngine::local_only();
 
         // High ACWR should trigger recovery week
-        let adjustment = engine.calculate_adjustment(1.5, 400.0, &AdaptationModel::default_for_user(Uuid::new_v4()));
+        let adjustment = engine.calculate_adjustment(
+            1.5,
+            400.0,
+            &AdaptationModel::default_for_user(Uuid::new_v4()),
+        );
         let structure = engine.determine_weekly_structure(1.5, &adjustment);
 
         assert_eq!(structure.pattern, WeeklyPattern::Recovery);

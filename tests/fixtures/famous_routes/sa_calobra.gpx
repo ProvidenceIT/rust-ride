@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RustRide Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Sa Calobra</name>
+    <desc>The Snake - Mallorca's famous climb with 26 hairpins, 9.4km, 682m elevation gain</desc>
+    <time>2024-01-04T08:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Sa Calobra</name>
+    <type>cycling</type>
+    <trkseg>
+      <!-- Start at Sa Calobra bay (0m) -->
+      <trkpt lat="39.8517" lon="2.8050">
+        <ele>0.0</ele>
+        <time>2024-01-04T08:00:00Z</time>
+      </trkpt>
+      <!-- First switchbacks -->
+      <trkpt lat="39.8480" lon="2.8100">
+        <ele>100.0</ele>
+        <time>2024-01-04T08:08:00Z</time>
+      </trkpt>
+      <!-- The Knot (Es Nus) - road passes under itself -->
+      <trkpt lat="39.8400" lon="2.8150">
+        <ele>250.0</ele>
+        <time>2024-01-04T08:20:00Z</time>
+      </trkpt>
+      <!-- Mid-section hairpins -->
+      <trkpt lat="39.8320" lon="2.8200">
+        <ele>400.0</ele>
+        <time>2024-01-04T08:32:00Z</time>
+      </trkpt>
+      <!-- Upper hairpins -->
+      <trkpt lat="39.8250" lon="2.8250">
+        <ele>550.0</ele>
+        <time>2024-01-04T08:44:00Z</time>
+      </trkpt>
+      <!-- Summit - junction with MA-10 (682m) -->
+      <trkpt lat="39.8167" lon="2.8267">
+        <ele>682.0</ele>
+        <time>2024-01-04T08:55:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

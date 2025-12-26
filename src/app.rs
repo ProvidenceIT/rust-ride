@@ -475,6 +475,21 @@ impl eframe::App for RustRideApp {
                         self.navigate(Screen::Home);
                     }
                 }
+                Screen::RouteImport => {
+                    ui.heading("Import Route");
+                    ui.label("Route import - coming soon");
+                    ui.label("Supported formats: GPX, FIT, TCX");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::RouteBrowser => {
+                    ui.heading("Route Library");
+                    ui.label("Route browser - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
             }
         });
 
