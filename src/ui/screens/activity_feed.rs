@@ -84,7 +84,11 @@ impl ActivityFeedScreen {
                 .max_height(500.0)
                 .show(ui, |ui| {
                     for activity in filtered {
-                        if self.show_activity_card(ui, activity, activity.rider_id == local_rider_id) {
+                        if self.show_activity_card(
+                            ui,
+                            activity,
+                            activity.rider_id == local_rider_id,
+                        ) {
                             action = Some(ActivityFeedAction::ViewActivity(activity.id));
                         }
                     }
@@ -120,12 +124,10 @@ impl ActivityFeedScreen {
 
                 ui.horizontal(|ui| {
                     // Avatar placeholder
-                    let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(40.0), egui::Sense::hover());
-                    ui.painter().circle_filled(
-                        rect.center(),
-                        20.0,
-                        Color32::from_rgb(80, 80, 100),
-                    );
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::Vec2::splat(40.0), egui::Sense::hover());
+                    ui.painter()
+                        .circle_filled(rect.center(), 20.0, Color32::from_rgb(80, 80, 100));
 
                     ui.add_space(12.0);
 
@@ -139,13 +141,18 @@ impl ActivityFeedScreen {
                             };
                             ui.label(name_text);
 
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(
-                                    RichText::new(activity.recorded_at.format("%b %d, %H:%M").to_string())
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        RichText::new(
+                                            activity.recorded_at.format("%b %d, %H:%M").to_string(),
+                                        )
                                         .small()
-                                        .weak()
-                                );
-                            });
+                                        .weak(),
+                                    );
+                                },
+                            );
                         });
 
                         ui.add_space(5.0);

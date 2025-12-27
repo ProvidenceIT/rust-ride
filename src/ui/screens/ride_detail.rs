@@ -5,11 +5,13 @@
 //! T135: Display HR data
 //! T136: Show lap/segment breakdown (if workout)
 //! T137: Implement export and delete actions
+//! T142: Add motion visualization to post-ride analysis
 
 use chrono::Local;
-use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{Align, Color32, Layout, Painter, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
 
 use crate::recording::types::{Ride, RideSample};
+use crate::sensors::MotionSample;
 use crate::storage::config::Units;
 use crate::ui::theme::zone_colors;
 
@@ -41,6 +43,8 @@ pub struct RideDetailScreen {
     pub ride: Option<Ride>,
     /// Ride samples (for charts)
     pub samples: Vec<RideSample>,
+    /// T142: Motion samples (for motion visualization)
+    pub motion_samples: Vec<MotionSample>,
     /// Show delete confirmation
     pub show_delete_dialog: bool,
     /// Show export dialog
@@ -58,6 +62,7 @@ impl Default for RideDetailScreen {
         Self {
             ride: None,
             samples: Vec::new(),
+            motion_samples: Vec::new(),
             show_delete_dialog: false,
             show_export_dialog: false,
             export_format: ExportFormat::Tcx,
@@ -78,8 +83,19 @@ impl RideDetailScreen {
         self.ftp = ride.ftp_at_ride;
         self.ride = Some(ride);
         self.samples = samples;
+        self.motion_samples.clear();
         self.show_delete_dialog = false;
         self.show_export_dialog = false;
+    }
+
+    /// T142: Set motion samples for visualization.
+    pub fn set_motion_samples(&mut self, samples: Vec<MotionSample>) {
+        self.motion_samples = samples;
+    }
+
+    /// T142: Check if motion data is available.
+    pub fn has_motion_data(&self) -> bool {
+        !self.motion_samples.is_empty()
     }
 
     /// Render the ride detail screen.
@@ -141,6 +157,12 @@ impl RideDetailScreen {
             self.render_power_distribution(ui);
 
             ui.add_space(16.0);
+
+            // T142: Motion data visualization
+            if self.has_motion_data() {
+                self.render_motion_section(ui);
+                ui.add_space(16.0);
+            }
 
             // Notes
             if let Some(ref notes) = ride.notes {
@@ -529,4 +551,188 @@ impl RideDetailScreen {
             format!("{}:{:02}", minutes, secs)
         }
     }
+
+    /// T142: Render motion data visualization section.
+    fn render_motion_section(&self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.label(RichText::new("Motion Data").size(18.0).strong());
+            ui.add_space(8.0);
+
+            // Calculate motion statistics
+            let stats = self.calculate_motion_stats();
+
+            // Summary metrics
+            ui.horizontal(|ui| {
+                // Max tilt
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(format!("{:.1}°", stats.max_tilt))
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.label(RichText::new("Max Tilt").weak());
+                    });
+                });
+
+                // Average tilt
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(format!("{:.1}°", stats.avg_tilt))
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.label(RichText::new("Avg Tilt").weak());
+                    });
+                });
+
+                // Total motion samples
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}", self.motion_samples.len()))
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.label(RichText::new("Samples").weak());
+                    });
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // Tilt over time chart
+            self.render_tilt_chart(ui);
+        });
+    }
+
+    /// T142: Calculate motion statistics.
+    fn calculate_motion_stats(&self) -> MotionStats {
+        if self.motion_samples.is_empty() {
+            return MotionStats::default();
+        }
+
+        let mut max_tilt = 0.0f32;
+        let mut total_tilt = 0.0f32;
+        let mut max_roll = 0.0f32;
+        let mut max_pitch = 0.0f32;
+
+        for sample in &self.motion_samples {
+            let roll_abs = sample.tilt_degrees.0.abs();
+            let pitch_abs = sample.tilt_degrees.1.abs();
+            let combined_tilt = (roll_abs * roll_abs + pitch_abs * pitch_abs).sqrt();
+
+            max_tilt = max_tilt.max(combined_tilt);
+            total_tilt += combined_tilt;
+            max_roll = max_roll.max(roll_abs);
+            max_pitch = max_pitch.max(pitch_abs);
+        }
+
+        let avg_tilt = total_tilt / self.motion_samples.len() as f32;
+
+        MotionStats {
+            max_tilt,
+            avg_tilt,
+            max_roll,
+            max_pitch,
+        }
+    }
+
+    /// T142: Render tilt over time chart.
+    fn render_tilt_chart(&self, ui: &mut Ui) {
+        let chart_height = 100.0;
+        let chart_width = ui.available_width() - 16.0;
+
+        let (response, painter) =
+            ui.allocate_painter(Vec2::new(chart_width, chart_height), egui::Sense::hover());
+        let rect = response.rect;
+
+        // Background
+        painter.rect_filled(rect, 4.0, Color32::from_rgb(30, 30, 35));
+
+        // Draw grid lines
+        let mid_y = rect.center().y;
+        painter.line_segment(
+            [
+                Pos2::new(rect.left(), mid_y),
+                Pos2::new(rect.right(), mid_y),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(60, 60, 65)),
+        );
+
+        if self.motion_samples.is_empty() {
+            return;
+        }
+
+        // Find max tilt for scaling
+        let max_tilt = self
+            .motion_samples
+            .iter()
+            .map(|s| s.tilt_degrees.0.abs().max(s.tilt_degrees.1.abs()))
+            .fold(0.0f32, f32::max)
+            .max(5.0); // At least 5 degrees
+
+        let sample_count = self.motion_samples.len();
+        let x_step = chart_width / sample_count as f32;
+
+        // Draw roll line (orange)
+        let mut roll_points: Vec<Pos2> = Vec::with_capacity(sample_count);
+        for (i, sample) in self.motion_samples.iter().enumerate() {
+            let x = rect.left() + i as f32 * x_step;
+            let normalized_roll = sample.tilt_degrees.0 / max_tilt;
+            let y = mid_y - normalized_roll * (chart_height / 2.0 - 5.0);
+            roll_points.push(Pos2::new(x, y));
+        }
+
+        if roll_points.len() >= 2 {
+            // Downsample for performance
+            let step = (roll_points.len() / 500).max(1);
+            let downsampled: Vec<Pos2> = roll_points.iter().step_by(step).copied().collect();
+            for window in downsampled.windows(2) {
+                painter.line_segment(
+                    [window[0], window[1]],
+                    Stroke::new(1.5, Color32::from_rgb(255, 165, 0)),
+                );
+            }
+        }
+
+        // Draw pitch line (cyan)
+        let mut pitch_points: Vec<Pos2> = Vec::with_capacity(sample_count);
+        for (i, sample) in self.motion_samples.iter().enumerate() {
+            let x = rect.left() + i as f32 * x_step;
+            let normalized_pitch = sample.tilt_degrees.1 / max_tilt;
+            let y = mid_y - normalized_pitch * (chart_height / 2.0 - 5.0);
+            pitch_points.push(Pos2::new(x, y));
+        }
+
+        if pitch_points.len() >= 2 {
+            let step = (pitch_points.len() / 500).max(1);
+            let downsampled: Vec<Pos2> = pitch_points.iter().step_by(step).copied().collect();
+            for window in downsampled.windows(2) {
+                painter.line_segment(
+                    [window[0], window[1]],
+                    Stroke::new(1.5, Color32::from_rgb(0, 200, 200)),
+                );
+            }
+        }
+
+        // Legend
+        ui.horizontal(|ui| {
+            ui.colored_label(Color32::from_rgb(255, 165, 0), "● Roll");
+            ui.colored_label(Color32::from_rgb(0, 200, 200), "● Pitch");
+            ui.label(RichText::new(format!("(±{:.1}°)", max_tilt)).weak());
+        });
+    }
+}
+
+/// T142: Motion statistics.
+#[derive(Default)]
+struct MotionStats {
+    max_tilt: f32,
+    avg_tilt: f32,
+    max_roll: f32,
+    max_pitch: f32,
 }

@@ -48,6 +48,28 @@ pub struct RideSample {
     pub target_power: Option<u16>,
     /// Simulated gradient percentage
     pub trainer_grade: Option<f32>,
+    /// T049: Left/right power balance (left percentage)
+    pub left_right_balance: Option<f32>,
+    /// T049: Left pedal torque effectiveness percentage
+    pub left_torque_effectiveness: Option<f32>,
+    /// T049: Right pedal torque effectiveness percentage
+    pub right_torque_effectiveness: Option<f32>,
+    /// T049: Left pedal smoothness percentage
+    pub left_pedal_smoothness: Option<f32>,
+    /// T049: Right pedal smoothness percentage
+    pub right_pedal_smoothness: Option<f32>,
+    /// T130: Left power phase start angle (degrees)
+    pub left_power_phase_start: Option<f32>,
+    /// T130: Left power phase end angle (degrees)
+    pub left_power_phase_end: Option<f32>,
+    /// T130: Left power phase peak angle (degrees)
+    pub left_power_phase_peak: Option<f32>,
+    /// T130: Right power phase start angle (degrees)
+    pub right_power_phase_start: Option<f32>,
+    /// T130: Right power phase end angle (degrees)
+    pub right_power_phase_end: Option<f32>,
+    /// T130: Right power phase peak angle (degrees)
+    pub right_power_phase_peak: Option<f32>,
 }
 
 impl RideSample {
@@ -64,7 +86,44 @@ impl RideSample {
             resistance_level: None,
             target_power: None,
             trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
         }
+    }
+
+    /// Apply cycling dynamics data to this sample.
+    pub fn with_dynamics(mut self, dynamics: &crate::sensors::CyclingDynamicsData) -> Self {
+        self.left_right_balance = Some(dynamics.balance.left_percent);
+        self.left_torque_effectiveness = Some(dynamics.torque_effectiveness.left_percent);
+        self.right_torque_effectiveness = Some(dynamics.torque_effectiveness.right_percent);
+        self.left_pedal_smoothness = Some(dynamics.smoothness.left_percent);
+        self.right_pedal_smoothness = Some(dynamics.smoothness.right_percent);
+        // T130: Include power phase data
+        if let Some(ref phase) = dynamics.left_power_phase {
+            self.left_power_phase_start = Some(phase.start_angle);
+            self.left_power_phase_end = Some(phase.end_angle);
+            self.left_power_phase_peak = phase.peak_angle;
+        }
+        if let Some(ref phase) = dynamics.right_power_phase {
+            self.right_power_phase_start = Some(phase.start_angle);
+            self.right_power_phase_end = Some(phase.end_angle);
+            self.right_power_phase_peak = phase.peak_angle;
+        }
+        self
+    }
+
+    /// Check if this sample has cycling dynamics data.
+    pub fn has_dynamics(&self) -> bool {
+        self.left_right_balance.is_some()
     }
 }
 
@@ -109,6 +168,16 @@ pub struct Ride {
     pub notes: Option<String>,
     /// Record creation timestamp
     pub created_at: DateTime<Utc>,
+    /// T049: Average left/right balance (left percentage)
+    pub avg_left_balance: Option<f32>,
+    /// T049: Average left torque effectiveness
+    pub avg_left_torque_eff: Option<f32>,
+    /// T049: Average right torque effectiveness
+    pub avg_right_torque_eff: Option<f32>,
+    /// T049: Average left pedal smoothness
+    pub avg_left_smoothness: Option<f32>,
+    /// T049: Average right pedal smoothness
+    pub avg_right_smoothness: Option<f32>,
 }
 
 impl Ride {
@@ -135,7 +204,24 @@ impl Ride {
             ftp_at_ride: ftp,
             notes: None,
             created_at: now,
+            avg_left_balance: None,
+            avg_left_torque_eff: None,
+            avg_right_torque_eff: None,
+            avg_left_smoothness: None,
+            avg_right_smoothness: None,
         }
+    }
+
+    /// Apply dynamics averages to this ride.
+    pub fn with_dynamics_averages(mut self, averages: &crate::sensors::DynamicsAverages) -> Self {
+        if averages.sample_count > 0 {
+            self.avg_left_balance = Some(averages.avg_left_balance);
+            self.avg_left_torque_eff = Some(averages.avg_left_torque_eff);
+            self.avg_right_torque_eff = Some(averages.avg_right_torque_eff);
+            self.avg_left_smoothness = Some(averages.avg_left_smoothness);
+            self.avg_right_smoothness = Some(averages.avg_right_smoothness);
+        }
+        self
     }
 }
 
@@ -206,6 +292,18 @@ pub struct LiveRideSummary {
     pub power_zone: Option<u8>,
     /// Current HR zone (1-5)
     pub hr_zone: Option<u8>,
+    /// T049: Current left/right balance (left percentage)
+    pub current_left_balance: Option<f32>,
+    /// T049: Average left balance for the ride
+    pub avg_left_balance: Option<f32>,
+    /// T049: Current left pedal smoothness
+    pub current_left_smoothness: Option<f32>,
+    /// T049: Current right pedal smoothness
+    pub current_right_smoothness: Option<f32>,
+    /// T049: Current left torque effectiveness
+    pub current_left_torque_eff: Option<f32>,
+    /// T049: Current right torque effectiveness
+    pub current_right_torque_eff: Option<f32>,
 }
 
 /// Export format options.

@@ -226,8 +226,8 @@ impl ChallengesScreen {
 
                         ui.add_space(5.0);
 
-                        let progress_bar = egui::ProgressBar::new(progress_clamped as f32)
-                            .text(format!(
+                        let progress_bar =
+                            egui::ProgressBar::new(progress_clamped as f32).text(format!(
                                 "{:.1}% ({:.1} / {:.1})",
                                 progress * 100.0,
                                 challenge.current_value,
@@ -237,14 +237,22 @@ impl ChallengesScreen {
 
                         // Dates
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!(
-                                "Started: {}",
-                                challenge.start_date.format("%Y-%m-%d")
-                            )).small().weak());
-                            ui.label(RichText::new(format!(
-                                "Ends: {}",
-                                challenge.end_date.format("%Y-%m-%d")
-                            )).small().weak());
+                            ui.label(
+                                RichText::new(format!(
+                                    "Started: {}",
+                                    challenge.start_date.format("%Y-%m-%d")
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            ui.label(
+                                RichText::new(format!(
+                                    "Ends: {}",
+                                    challenge.end_date.format("%Y-%m-%d")
+                                ))
+                                .small()
+                                .weak(),
+                            );
                         });
                     });
 
@@ -342,7 +350,13 @@ impl ChallengesScreen {
         } else {
             Some(self.new_description.clone())
         };
-        Some((self.new_name.clone(), description, self.new_goal_type, target, duration))
+        Some((
+            self.new_name.clone(),
+            description,
+            self.new_goal_type,
+            target,
+            duration,
+        ))
     }
 }
 

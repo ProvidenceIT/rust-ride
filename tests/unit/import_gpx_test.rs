@@ -152,10 +152,12 @@ fn test_parse_famous_routes() {
     assert!(!points.is_empty());
 
     // Verify elevation range (720m to 1791m)
-    let min_elev = points.iter()
+    let min_elev = points
+        .iter()
         .filter_map(|p| p.elevation)
         .fold(f32::INFINITY, f32::min);
-    let max_elev = points.iter()
+    let max_elev = points
+        .iter()
         .filter_map(|p| p.elevation)
         .fold(f32::NEG_INFINITY, f32::max);
 

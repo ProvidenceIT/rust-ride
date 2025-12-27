@@ -19,8 +19,53 @@ fn create_steady_power_samples(power: u16, count: usize) -> Vec<RideSample> {
             resistance_level: None,
             target_power: None,
             trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
         })
         .collect()
+}
+
+/// Create a single sample with specified values.
+fn create_sample(
+    elapsed: u32,
+    power: u16,
+    cadence: u8,
+    hr: u8,
+    speed: f32,
+    distance: f64,
+) -> RideSample {
+    RideSample {
+        elapsed_seconds: elapsed,
+        power_watts: Some(power),
+        cadence_rpm: Some(cadence),
+        heart_rate_bpm: Some(hr),
+        speed_kmh: Some(speed),
+        distance_meters: distance,
+        calories: elapsed,
+        resistance_level: None,
+        target_power: None,
+        trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
+    }
 }
 
 /// Create samples with varying power for realistic NP testing.
@@ -29,50 +74,17 @@ fn create_variable_power_samples() -> Vec<RideSample> {
 
     // 30 seconds at 200W
     for i in 0..30 {
-        samples.push(RideSample {
-            elapsed_seconds: i,
-            power_watts: Some(200),
-            cadence_rpm: Some(90),
-            heart_rate_bpm: Some(140),
-            speed_kmh: Some(30.0),
-            distance_meters: i as f64 * 8.33,
-            calories: i,
-            resistance_level: None,
-            target_power: None,
-            trainer_grade: None,
-        });
+        samples.push(create_sample(i, 200, 90, 140, 30.0, i as f64 * 8.33));
     }
 
     // 30 seconds at 300W (interval)
     for i in 30..60 {
-        samples.push(RideSample {
-            elapsed_seconds: i,
-            power_watts: Some(300),
-            cadence_rpm: Some(100),
-            heart_rate_bpm: Some(165),
-            speed_kmh: Some(35.0),
-            distance_meters: i as f64 * 9.72,
-            calories: i,
-            resistance_level: None,
-            target_power: None,
-            trainer_grade: None,
-        });
+        samples.push(create_sample(i, 300, 100, 165, 35.0, i as f64 * 9.72));
     }
 
     // 30 seconds at 150W (recovery)
     for i in 60..90 {
-        samples.push(RideSample {
-            elapsed_seconds: i,
-            power_watts: Some(150),
-            cadence_rpm: Some(75),
-            heart_rate_bpm: Some(130),
-            speed_kmh: Some(25.0),
-            distance_meters: i as f64 * 6.94,
-            calories: i,
-            resistance_level: None,
-            target_power: None,
-            trainer_grade: None,
-        });
+        samples.push(create_sample(i, 150, 75, 130, 25.0, i as f64 * 6.94));
     }
 
     samples
@@ -97,11 +109,7 @@ fn test_average_power_calculation() {
 fn test_max_power_calculation() {
     let samples = create_variable_power_samples();
 
-    let max_power = samples
-        .iter()
-        .filter_map(|s| s.power_watts)
-        .max()
-        .unwrap();
+    let max_power = samples.iter().filter_map(|s| s.power_watts).max().unwrap();
 
     assert_eq!(max_power, 300);
 }
@@ -134,7 +142,11 @@ fn test_normalized_power_calculation_steady_state() {
     let np = fourth_power_avg.powf(0.25) as u16;
 
     // For steady state, NP should be very close to average
-    assert!((np as i32 - 200).abs() < 2, "NP {} should be close to 200", np);
+    assert!(
+        (np as i32 - 200).abs() < 2,
+        "NP {} should be close to 200",
+        np
+    );
 }
 
 #[test]
@@ -224,7 +236,10 @@ fn test_average_heart_rate() {
         .filter_map(|s| s.heart_rate_bpm)
         .map(|hr| hr as u32)
         .sum();
-    let hr_count = samples.iter().filter(|s| s.heart_rate_bpm.is_some()).count();
+    let hr_count = samples
+        .iter()
+        .filter(|s| s.heart_rate_bpm.is_some())
+        .count();
     let avg_hr = (hr_sum / hr_count as u32) as u8;
 
     // (140*30 + 165*30 + 130*30) / 90 = 145
@@ -235,7 +250,11 @@ fn test_average_heart_rate() {
 fn test_max_heart_rate() {
     let samples = create_variable_power_samples();
 
-    let max_hr = samples.iter().filter_map(|s| s.heart_rate_bpm).max().unwrap();
+    let max_hr = samples
+        .iter()
+        .filter_map(|s| s.heart_rate_bpm)
+        .max()
+        .unwrap();
 
     assert_eq!(max_hr, 165);
 }
@@ -289,10 +308,7 @@ fn test_handles_zero_power() {
     samples[26].power_watts = Some(0);
     samples[27].power_watts = Some(0);
 
-    let zero_count = samples
-        .iter()
-        .filter(|s| s.power_watts == Some(0))
-        .count();
+    let zero_count = samples.iter().filter(|s| s.power_watts == Some(0)).count();
 
     assert_eq!(zero_count, 3);
 

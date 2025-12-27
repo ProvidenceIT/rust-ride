@@ -350,6 +350,218 @@ pub const HR_ZONE_COLORS: [Color; 5] = [
     Color::new(255, 50, 50),   // Z5: Red (Maximum)
 ];
 
+/// Events emitted when zones change.
+#[derive(Debug, Clone)]
+pub enum ZoneEvent {
+    /// Power zone changed
+    PowerZoneChange {
+        /// Previous zone (0 if first reading)
+        previous_zone: u8,
+        /// New zone number (1-7)
+        new_zone: u8,
+        /// Zone name
+        zone_name: String,
+    },
+    /// Heart rate zone changed
+    HeartRateZoneChange {
+        /// Previous zone (0 if first reading)
+        previous_zone: u8,
+        /// New zone number (1-5)
+        new_zone: u8,
+        /// Zone name
+        zone_name: String,
+    },
+}
+
+/// Tracks power and HR zones and detects zone changes.
+///
+/// T063: Zone change detection for audio alerts.
+pub struct ZoneTracker {
+    /// Current power zone (1-7, or 0 if not yet set)
+    current_power_zone: u8,
+    /// Current HR zone (1-5, or 0 if not yet set)
+    current_hr_zone: u8,
+    /// Power zones configuration
+    power_zones: PowerZones,
+    /// HR zones configuration
+    hr_zones: Option<HRZones>,
+    /// Pending events to be consumed
+    pending_events: Vec<ZoneEvent>,
+    /// Minimum time between zone change alerts (debounce)
+    zone_change_debounce_secs: u32,
+    /// Last power zone change time
+    last_power_zone_change: Option<std::time::Instant>,
+    /// Last HR zone change time
+    last_hr_zone_change: Option<std::time::Instant>,
+}
+
+impl ZoneTracker {
+    /// Create a new zone tracker with the given power zones.
+    pub fn new(power_zones: PowerZones) -> Self {
+        Self {
+            current_power_zone: 0,
+            current_hr_zone: 0,
+            power_zones,
+            hr_zones: None,
+            pending_events: Vec::new(),
+            zone_change_debounce_secs: 5,
+            last_power_zone_change: None,
+            last_hr_zone_change: None,
+        }
+    }
+
+    /// Set HR zones for heart rate zone tracking.
+    pub fn set_hr_zones(&mut self, hr_zones: HRZones) {
+        self.hr_zones = Some(hr_zones);
+    }
+
+    /// Update power zones (e.g., when FTP changes).
+    pub fn set_power_zones(&mut self, power_zones: PowerZones) {
+        self.power_zones = power_zones;
+    }
+
+    /// Set the debounce time for zone change alerts.
+    pub fn set_debounce_secs(&mut self, secs: u32) {
+        self.zone_change_debounce_secs = secs;
+    }
+
+    /// Update with current power reading and check for zone change.
+    pub fn update_power(&mut self, power: u16) {
+        let new_zone = self.power_zones.get_zone(power);
+
+        if new_zone != self.current_power_zone {
+            // Check debounce
+            let should_emit = self
+                .last_power_zone_change
+                .map(|t| t.elapsed().as_secs() >= self.zone_change_debounce_secs as u64)
+                .unwrap_or(true);
+
+            if should_emit || self.current_power_zone == 0 {
+                let previous_zone = self.current_power_zone;
+                self.current_power_zone = new_zone;
+                self.last_power_zone_change = Some(std::time::Instant::now());
+
+                // Get zone name
+                let zone_name = self
+                    .power_zones
+                    .get_zone_range(new_zone)
+                    .map(|z| z.name.clone())
+                    .unwrap_or_else(|| format!("Zone {}", new_zone));
+
+                // Only emit event if not initial (previous zone was set)
+                if previous_zone > 0 {
+                    self.pending_events.push(ZoneEvent::PowerZoneChange {
+                        previous_zone,
+                        new_zone,
+                        zone_name,
+                    });
+                    tracing::debug!(
+                        "Power zone changed: {} -> {} ({})",
+                        previous_zone,
+                        new_zone,
+                        self.power_zones
+                            .get_zone_range(new_zone)
+                            .map(|z| z.name.as_str())
+                            .unwrap_or("Unknown")
+                    );
+                }
+            }
+        }
+    }
+
+    /// Update with current heart rate and check for zone change.
+    pub fn update_heart_rate(&mut self, hr: u8) {
+        let hr_zones = match &self.hr_zones {
+            Some(zones) => zones,
+            None => return,
+        };
+
+        let new_zone = hr_zones.get_zone(hr);
+
+        if new_zone != self.current_hr_zone && new_zone > 0 {
+            // Check debounce
+            let should_emit = self
+                .last_hr_zone_change
+                .map(|t| t.elapsed().as_secs() >= self.zone_change_debounce_secs as u64)
+                .unwrap_or(true);
+
+            if should_emit || self.current_hr_zone == 0 {
+                let previous_zone = self.current_hr_zone;
+                self.current_hr_zone = new_zone;
+                self.last_hr_zone_change = Some(std::time::Instant::now());
+
+                // Get zone name
+                let zone_name = hr_zones
+                    .get_zone_range(new_zone)
+                    .map(|z| z.name.clone())
+                    .unwrap_or_else(|| format!("Zone {}", new_zone));
+
+                // Only emit event if not initial
+                if previous_zone > 0 {
+                    self.pending_events.push(ZoneEvent::HeartRateZoneChange {
+                        previous_zone,
+                        new_zone,
+                        zone_name,
+                    });
+                    tracing::debug!(
+                        "HR zone changed: {} -> {} ({})",
+                        previous_zone,
+                        new_zone,
+                        hr_zones
+                            .get_zone_range(new_zone)
+                            .map(|z| z.name.as_str())
+                            .unwrap_or("Unknown")
+                    );
+                }
+            }
+        }
+    }
+
+    /// Take all pending events, clearing the queue.
+    pub fn take_events(&mut self) -> Vec<ZoneEvent> {
+        std::mem::take(&mut self.pending_events)
+    }
+
+    /// Check if there are pending events.
+    pub fn has_pending_events(&self) -> bool {
+        !self.pending_events.is_empty()
+    }
+
+    /// Get the current power zone.
+    pub fn current_power_zone(&self) -> u8 {
+        self.current_power_zone
+    }
+
+    /// Get the current HR zone.
+    pub fn current_hr_zone(&self) -> u8 {
+        self.current_hr_zone
+    }
+
+    /// Get the name of the current power zone.
+    pub fn current_power_zone_name(&self) -> Option<String> {
+        self.power_zones
+            .get_zone_range(self.current_power_zone)
+            .map(|z| z.name.clone())
+    }
+
+    /// Get the name of the current HR zone.
+    pub fn current_hr_zone_name(&self) -> Option<String> {
+        self.hr_zones
+            .as_ref()
+            .and_then(|zones| zones.get_zone_range(self.current_hr_zone))
+            .map(|z| z.name.clone())
+    }
+
+    /// Reset tracking state.
+    pub fn reset(&mut self) {
+        self.current_power_zone = 0;
+        self.current_hr_zone = 0;
+        self.pending_events.clear();
+        self.last_power_zone_change = None;
+        self.last_hr_zone_change = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +638,105 @@ mod tests {
         assert_eq!(zones.get_zone(150), 3); // Tempo
         assert_eq!(zones.get_zone(165), 4); // Threshold
         assert_eq!(zones.get_zone(175), 5); // Maximum
+    }
+
+    #[test]
+    fn test_zone_tracker_power_zone_change() {
+        let power_zones = PowerZones::from_ftp(200);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_debounce_secs(0); // Disable debounce for testing
+
+        // First update sets initial zone (no event emitted)
+        tracker.update_power(100); // Zone 1
+        assert_eq!(tracker.current_power_zone(), 1);
+        assert!(!tracker.has_pending_events());
+
+        // Zone change should emit event
+        tracker.update_power(200); // Zone 4 (Threshold)
+        assert_eq!(tracker.current_power_zone(), 4);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::PowerZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 1);
+                assert_eq!(*new_zone, 4);
+                assert_eq!(zone_name, "Threshold");
+            }
+            _ => panic!("Expected PowerZoneChange event"),
+        }
+    }
+
+    #[test]
+    fn test_zone_tracker_hr_zone_change() {
+        let power_zones = PowerZones::from_ftp(200);
+        let hr_zones = HRZones::from_hr(180, 60);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_hr_zones(hr_zones);
+        tracker.set_debounce_secs(0);
+
+        // Initial HR reading
+        tracker.update_heart_rate(125); // Zone 1
+        assert_eq!(tracker.current_hr_zone(), 1);
+        assert!(!tracker.has_pending_events());
+
+        // Zone change
+        tracker.update_heart_rate(170); // Zone 5
+        assert_eq!(tracker.current_hr_zone(), 5);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::HeartRateZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 1);
+                assert_eq!(*new_zone, 5);
+                assert_eq!(zone_name, "Maximum");
+            }
+            _ => panic!("Expected HeartRateZoneChange event"),
+        }
+    }
+
+    #[test]
+    fn test_zone_tracker_no_event_for_same_zone() {
+        let power_zones = PowerZones::from_ftp(200);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_debounce_secs(0);
+
+        tracker.update_power(100); // Zone 1
+        tracker.update_power(80); // Still Zone 1
+        tracker.update_power(90); // Still Zone 1
+
+        // No events should be emitted for staying in the same zone
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_power_zone(), 1);
+    }
+
+    #[test]
+    fn test_zone_tracker_reset() {
+        let power_zones = PowerZones::from_ftp(200);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_debounce_secs(0);
+
+        tracker.update_power(200);
+        tracker.update_power(300); // Zone change
+
+        assert!(tracker.has_pending_events());
+        assert!(tracker.current_power_zone() > 0);
+
+        tracker.reset();
+
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_power_zone(), 0);
+        assert_eq!(tracker.current_hr_zone(), 0);
     }
 }

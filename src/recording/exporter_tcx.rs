@@ -373,6 +373,17 @@ mod tests {
                 resistance_level: None,
                 target_power: None,
                 trainer_grade: None,
+                left_right_balance: None,
+                left_torque_effectiveness: None,
+                right_torque_effectiveness: None,
+                left_pedal_smoothness: None,
+                right_pedal_smoothness: None,
+                left_power_phase_start: None,
+                left_power_phase_end: None,
+                left_power_phase_peak: None,
+                right_power_phase_start: None,
+                right_power_phase_end: None,
+                right_power_phase_peak: None,
             })
             .collect()
     }

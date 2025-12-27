@@ -16,12 +16,19 @@ use std::time::Instant;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
+use crate::integrations::weather::{WeatherData, WeatherUnits};
 use crate::metrics::analytics::sweet_spot::SweetSpotRecommender;
 use crate::metrics::calculator::AggregatedMetrics;
 use crate::recording::types::RecordingStatus;
+use crate::sensors::smo2::SmO2Reading;
+use crate::sensors::{CyclingDynamicsData, DynamicsAverages};
 use crate::storage::config::{DashboardLayout, MetricType};
 use crate::ui::theme::zone_colors;
-use crate::ui::widgets::{MetricDisplay, MetricSize};
+use crate::ui::widgets::{
+    BalanceBar, MetricDisplay, MetricSize, SmO2Display, SmO2Placeholder, SmO2WidgetSize,
+    WeatherPlaceholder, WeatherWidget, WeatherWidgetSize,
+};
+use crate::video::{VideoFrame, VideoTextureManager};
 use crate::workouts::types::{SegmentProgress, SegmentType, Workout, WorkoutStatus};
 
 use super::Screen;
@@ -73,6 +80,38 @@ pub struct RideScreen {
     pub last_frame_time: Option<Instant>,
     /// Athlete's FTP for Sweet Spot calculation
     pub ftp: u16,
+    /// T043: Current route gradient (for incline controller)
+    pub current_gradient: f32,
+    /// T052: Current cycling dynamics data
+    pub dynamics_data: Option<CyclingDynamicsData>,
+    /// T052: Session dynamics averages
+    pub dynamics_averages: DynamicsAverages,
+    /// T052: Whether to show dynamics panel
+    pub show_dynamics_panel: bool,
+    /// T099: Current weather data (if available)
+    pub weather_data: Option<WeatherData>,
+    /// T099: Weather display units
+    pub weather_units: WeatherUnits,
+    /// T099: Whether weather is enabled
+    pub weather_enabled: bool,
+    /// T117: Current SmO2 reading (if sensor connected)
+    pub smo2_reading: Option<SmO2Reading>,
+    /// T117: SmO2 reading history for trend display
+    pub smo2_history: Vec<SmO2Reading>,
+    /// T117: Whether SmO2 display is enabled
+    pub smo2_enabled: bool,
+    /// T125: Whether video panel is enabled
+    pub video_enabled: bool,
+    /// T125: Whether video panel is visible (togglable during ride)
+    pub video_panel_visible: bool,
+    /// T125: Current video frame for display
+    pub video_frame: Option<VideoFrame>,
+    /// T125: Video texture manager for egui rendering
+    pub video_texture_manager: VideoTextureManager,
+    /// T125: Current video playback speed
+    pub video_playback_speed: f32,
+    /// T125: Whether video is paused
+    pub video_paused: bool,
 }
 
 impl Default for RideScreen {
@@ -96,7 +135,91 @@ impl Default for RideScreen {
             world_3d_enabled: false,
             last_frame_time: None,
             ftp: 200, // Default FTP
+            current_gradient: 0.0,
+            dynamics_data: None,
+            dynamics_averages: DynamicsAverages::default(),
+            show_dynamics_panel: true,
+            weather_data: None,
+            weather_units: WeatherUnits::Metric,
+            weather_enabled: false,
+            smo2_reading: None,
+            smo2_history: Vec::new(),
+            smo2_enabled: false,
+            video_enabled: false,
+            video_panel_visible: true,
+            video_frame: None,
+            video_texture_manager: VideoTextureManager::new(),
+            video_playback_speed: 1.0,
+            video_paused: false,
         }
+    }
+}
+
+impl RideScreen {
+    /// T117: Update current SmO2 reading.
+    pub fn update_smo2(&mut self, reading: Option<SmO2Reading>) {
+        if let Some(ref r) = reading {
+            // Add to history, keeping last 60 readings (~1 minute at 1Hz)
+            self.smo2_history.push(r.clone());
+            if self.smo2_history.len() > 60 {
+                self.smo2_history.remove(0);
+            }
+        }
+        self.smo2_reading = reading;
+    }
+
+    /// T117: Enable or disable SmO2 display.
+    pub fn set_smo2_enabled(&mut self, enabled: bool) {
+        self.smo2_enabled = enabled;
+    }
+
+    /// T117: Clear SmO2 history.
+    pub fn clear_smo2_history(&mut self) {
+        self.smo2_history.clear();
+    }
+
+    /// T099: Update current weather data.
+    pub fn update_weather(&mut self, data: Option<WeatherData>) {
+        self.weather_data = data;
+    }
+
+    /// T099: Set weather display units.
+    pub fn set_weather_units(&mut self, units: WeatherUnits) {
+        self.weather_units = units;
+    }
+
+    /// T099: Enable or disable weather display.
+    pub fn set_weather_enabled(&mut self, enabled: bool) {
+        self.weather_enabled = enabled;
+    }
+
+    /// T125: Update current video frame.
+    pub fn update_video_frame(&mut self, frame: Option<VideoFrame>) {
+        self.video_frame = frame;
+    }
+
+    /// T125: Set video enabled state.
+    pub fn set_video_enabled(&mut self, enabled: bool) {
+        self.video_enabled = enabled;
+        if !enabled {
+            self.video_frame = None;
+            self.video_texture_manager.clear();
+        }
+    }
+
+    /// T125: Toggle video panel visibility.
+    pub fn toggle_video_panel(&mut self) {
+        self.video_panel_visible = !self.video_panel_visible;
+    }
+
+    /// T125: Update video playback speed.
+    pub fn set_video_playback_speed(&mut self, speed: f32) {
+        self.video_playback_speed = speed;
+    }
+
+    /// T125: Set video paused state.
+    pub fn set_video_paused(&mut self, paused: bool) {
+        self.video_paused = paused;
     }
 }
 
@@ -231,6 +354,37 @@ impl RideScreen {
                 // Secondary metrics
                 self.render_secondary_metrics(ui);
 
+                // Cycling dynamics panel (T052)
+                if self.show_dynamics_panel {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space((ui.available_width() - 220.0) / 2.0);
+                        self.render_dynamics_panel(ui);
+                    });
+                }
+
+                // T117: SmO2 display panel
+                if self.smo2_enabled {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space((ui.available_width() - 140.0) / 2.0);
+                        if let Some(ref reading) = self.smo2_reading {
+                            SmO2Display::new(reading)
+                                .with_size(SmO2WidgetSize::Standard)
+                                .with_history(&self.smo2_history)
+                                .show(ui);
+                        } else {
+                            SmO2Placeholder::not_connected().show(ui);
+                        }
+                    });
+                }
+
+                // T125: Video panel (togglable scenic video display)
+                if self.video_enabled && self.video_panel_visible {
+                    ui.add_space(8.0);
+                    self.render_video_panel(ui);
+                }
+
                 // Spacer
                 ui.add_space(ui.available_height() - 60.0);
 
@@ -274,6 +428,21 @@ impl RideScreen {
                 _ => ("○", Color32::GRAY),
             };
             ui.label(RichText::new(status_icon).color(status_color));
+
+            // T099: Weather widget (compact, in top bar)
+            if self.weather_enabled {
+                ui.add_space(8.0);
+                if let Some(ref weather) = self.weather_data {
+                    WeatherWidget::new(weather, self.weather_units)
+                        .with_size(WeatherWidgetSize::Compact)
+                        .with_feels_like(false)
+                        .show(ui);
+                } else {
+                    WeatherPlaceholder::loading()
+                        .with_size(WeatherWidgetSize::Compact)
+                        .show(ui);
+                }
+            }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // Full-screen button
@@ -1059,5 +1228,213 @@ impl RideScreen {
     /// Set the athlete's FTP for Sweet Spot calculations.
     pub fn set_ftp(&mut self, ftp: u16) {
         self.ftp = ftp;
+    }
+
+    /// T043: Set the current route gradient for incline controller.
+    ///
+    /// This is typically called from World3D updates with the route gradient.
+    pub fn set_gradient(&mut self, gradient: f32) {
+        self.current_gradient = gradient;
+    }
+
+    /// T043: Get the current route gradient.
+    pub fn get_gradient(&self) -> f32 {
+        self.current_gradient
+    }
+
+    /// T052: Update cycling dynamics data.
+    pub fn update_dynamics(&mut self, data: Option<CyclingDynamicsData>) {
+        self.dynamics_data = data;
+    }
+
+    /// T052: Update cycling dynamics session averages.
+    pub fn update_dynamics_averages(&mut self, averages: DynamicsAverages) {
+        self.dynamics_averages = averages;
+    }
+
+    /// T052: Toggle dynamics panel visibility.
+    pub fn toggle_dynamics_panel(&mut self) {
+        self.show_dynamics_panel = !self.show_dynamics_panel;
+    }
+
+    /// T052: Render cycling dynamics panel.
+    ///
+    /// Shows L/R power balance visualization and extended metrics
+    /// when dynamics data is available from the power meter.
+    fn render_dynamics_panel(&self, ui: &mut Ui) {
+        // Only show if we have dynamics data or user wants to see the panel
+        if !self.show_dynamics_panel {
+            return;
+        }
+
+        // Check if we have meaningful dynamics data
+        let has_dynamics = self.dynamics_data.as_ref().map_or(false, |d| {
+            d.balance.left_percent != 50.0 || d.balance.right_percent != 50.0
+        });
+
+        if !has_dynamics && self.dynamics_data.is_none() {
+            return;
+        }
+
+        let frame = egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .inner_margin(8.0)
+            .corner_radius(4.0);
+
+        frame.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Power Balance").size(14.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // Show session average if available
+                    let avg = &self.dynamics_averages;
+                    if avg.avg_left_balance != 50.0 || avg.avg_right_balance != 50.0 {
+                        ui.label(
+                            RichText::new(format!(
+                                "Avg: {:.0}/{:.0}",
+                                avg.avg_left_balance, avg.avg_right_balance
+                            ))
+                            .size(11.0)
+                            .weak(),
+                        );
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+
+            // Compact balance bar for inline display
+            if let Some(ref data) = self.dynamics_data {
+                BalanceBar::new(data.balance.left_percent, data.balance.right_percent)
+                    .with_size(ui.available_width().min(200.0), 20.0)
+                    .show(ui);
+
+                // Show extended metrics if available
+                let smoothness = &data.smoothness;
+                let torque = &data.torque_effectiveness;
+
+                if smoothness.combined_percent > 0.0 || torque.combined_percent > 0.0 {
+                    ui.add_space(8.0);
+
+                    ui.horizontal(|ui| {
+                        // Pedal smoothness
+                        if smoothness.combined_percent > 0.0 {
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new("Smoothness").size(10.0).weak());
+                                ui.label(format!(
+                                    "L:{:.0}% R:{:.0}%",
+                                    smoothness.left_percent, smoothness.right_percent
+                                ));
+                            });
+
+                            ui.add_space(16.0);
+                        }
+
+                        // Torque effectiveness
+                        if torque.combined_percent > 0.0 {
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new("Torque Eff.").size(10.0).weak());
+                                ui.label(format!(
+                                    "L:{:.0}% R:{:.0}%",
+                                    torque.left_percent, torque.right_percent
+                                ));
+                            });
+                        }
+                    });
+                }
+            } else {
+                // Show placeholder when no data
+                ui.label(
+                    RichText::new("Waiting for dynamics data...")
+                        .weak()
+                        .italics(),
+                );
+            }
+        });
+    }
+
+    /// T125: Render video panel for scenic ride video display.
+    ///
+    /// Shows the video frame synchronized to ride speed, with playback controls
+    /// and status information. The video panel can be toggled on/off during a ride.
+    fn render_video_panel(&mut self, ui: &mut Ui) {
+        let available_width = ui.available_width();
+        let panel_width = (available_width * 0.6).min(800.0).max(400.0);
+        let panel_height = panel_width * 9.0 / 16.0; // 16:9 aspect ratio
+
+        ui.horizontal(|ui| {
+            ui.add_space((available_width - panel_width) / 2.0);
+
+            let frame = egui::Frame::new()
+                .fill(Color32::BLACK)
+                .inner_margin(0.0)
+                .corner_radius(8.0)
+                .stroke(egui::Stroke::new(1.0, Color32::from_gray(60)));
+
+            frame.show(ui, |ui| {
+                ui.set_min_size(Vec2::new(panel_width, panel_height));
+
+                // Update texture if we have a new frame
+                if let Some(ref video_frame) = self.video_frame {
+                    self.video_texture_manager
+                        .update_frame(ui.ctx(), video_frame);
+                }
+
+                // Render video frame or placeholder
+                if let Some(handle) = self.video_texture_manager.get_handle() {
+                    // Render the video texture
+                    let image_size = egui::vec2(panel_width, panel_height);
+                    let image = egui::Image::new((handle.texture_id(), image_size))
+                        .fit_to_exact_size(image_size);
+                    ui.add(image);
+                } else {
+                    // No video frame available - show placeholder
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(panel_height / 2.0 - 30.0);
+                        ui.label(RichText::new("🎬").size(48.0).color(Color32::from_gray(80)));
+                        ui.label(
+                            RichText::new("No video loaded")
+                                .size(14.0)
+                                .color(Color32::from_gray(100)),
+                        );
+                    });
+                }
+
+                // Overlay with playback info
+                let overlay_rect = ui.min_rect();
+                let painter = ui.painter();
+
+                // Speed indicator (bottom-left)
+                let speed_text = if self.video_paused {
+                    "⏸ Paused".to_string()
+                } else {
+                    format!("▶ {:.1}x", self.video_playback_speed)
+                };
+                let speed_pos = overlay_rect.left_bottom() + egui::vec2(8.0, -8.0);
+                painter.text(
+                    speed_pos,
+                    egui::Align2::LEFT_BOTTOM,
+                    speed_text,
+                    egui::FontId::proportional(12.0),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 200),
+                );
+
+                // Toggle button indicator (bottom-right)
+                let toggle_text = "V: toggle video";
+                let toggle_pos = overlay_rect.right_bottom() + egui::vec2(-8.0, -8.0);
+                painter.text(
+                    toggle_pos,
+                    egui::Align2::RIGHT_BOTTOM,
+                    toggle_text,
+                    egui::FontId::proportional(10.0),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 120),
+                );
+            });
+        });
+
+        // Handle keyboard shortcut to toggle video panel
+        if ui.input(|i| i.key_pressed(egui::Key::V)) {
+            self.video_panel_visible = !self.video_panel_visible;
+        }
     }
 }

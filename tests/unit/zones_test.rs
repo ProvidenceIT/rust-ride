@@ -4,7 +4,7 @@
 //! T113: Unit test for zone calculation from FTP
 //! T114: Unit test for HR zone calculation
 
-use rustride::metrics::zones::{PowerZones, HRZones, POWER_ZONE_COLORS, HR_ZONE_COLORS};
+use rustride::metrics::zones::{HRZones, PowerZones, HR_ZONE_COLORS, POWER_ZONE_COLORS};
 
 #[test]
 fn test_power_zones_from_ftp_200() {

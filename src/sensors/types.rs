@@ -16,6 +16,8 @@ use uuid::Uuid;
 pub enum SensorType {
     /// Smart trainer with FTMS support
     Trainer,
+    /// Smart trainer (alias for compatibility)
+    SmartTrainer,
     /// Standalone power meter
     PowerMeter,
     /// Heart rate monitor
@@ -26,17 +28,46 @@ pub enum SensorType {
     Speed,
     /// Combined speed/cadence sensor
     SpeedCadence,
+    /// Cadence sensor (alias)
+    CadenceSensor,
+    /// Muscle oxygen sensor (SmO2)
+    SmO2,
+    /// Inertial measurement unit (motion tracking)
+    Imu,
 }
 
 impl std::fmt::Display for SensorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SensorType::Trainer => write!(f, "Smart Trainer"),
+            SensorType::SmartTrainer => write!(f, "Smart Trainer"),
             SensorType::PowerMeter => write!(f, "Power Meter"),
             SensorType::HeartRate => write!(f, "Heart Rate"),
             SensorType::Cadence => write!(f, "Cadence"),
+            SensorType::CadenceSensor => write!(f, "Cadence Sensor"),
             SensorType::Speed => write!(f, "Speed"),
             SensorType::SpeedCadence => write!(f, "Speed/Cadence"),
+            SensorType::SmO2 => write!(f, "Muscle Oxygen"),
+            SensorType::Imu => write!(f, "Motion Sensor"),
+        }
+    }
+}
+
+/// High-level sensor protocol (BLE vs ANT+)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SensorProtocol {
+    /// Bluetooth Low Energy
+    Ble,
+    /// ANT+ wireless protocol
+    AntPlus,
+}
+
+impl std::fmt::Display for SensorProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SensorProtocol::Ble => write!(f, "BLE"),
+            SensorProtocol::AntPlus => write!(f, "ANT+"),
         }
     }
 }
@@ -53,6 +84,14 @@ pub enum Protocol {
     BleHeartRate,
     /// BLE Cycling Speed and Cadence (0x1816)
     BleCsc,
+    /// ANT+ Heart Rate profile
+    AntHeartRate,
+    /// ANT+ Cycling Power profile
+    AntPower,
+    /// ANT+ FE-C (Fitness Equipment Control)
+    AntFec,
+    /// ANT+ Speed/Cadence profile
+    AntSpeedCadence,
 }
 
 impl std::fmt::Display for Protocol {
@@ -62,6 +101,26 @@ impl std::fmt::Display for Protocol {
             Protocol::BleCyclingPower => write!(f, "Cycling Power"),
             Protocol::BleHeartRate => write!(f, "Heart Rate"),
             Protocol::BleCsc => write!(f, "Cycling Speed/Cadence"),
+            Protocol::AntHeartRate => write!(f, "ANT+ HR"),
+            Protocol::AntPower => write!(f, "ANT+ Power"),
+            Protocol::AntFec => write!(f, "ANT+ FE-C"),
+            Protocol::AntSpeedCadence => write!(f, "ANT+ S/C"),
+        }
+    }
+}
+
+impl Protocol {
+    /// Get the high-level sensor protocol
+    pub fn sensor_protocol(&self) -> SensorProtocol {
+        match self {
+            Protocol::BleFtms
+            | Protocol::BleCyclingPower
+            | Protocol::BleHeartRate
+            | Protocol::BleCsc => SensorProtocol::Ble,
+            Protocol::AntHeartRate
+            | Protocol::AntPower
+            | Protocol::AntFec
+            | Protocol::AntSpeedCadence => SensorProtocol::AntPlus,
         }
     }
 }
@@ -337,4 +396,20 @@ pub enum SensorError {
     /// Generic BLE error
     #[error("BLE error: {0}")]
     BleError(String),
+
+    /// Data parsing error
+    #[error("Parse error: {0}")]
+    ParseError(String),
+
+    /// ANT+ dongle not found
+    #[error("ANT+ dongle not found")]
+    DongleNotFound,
+
+    /// No ANT+ channels available
+    #[error("No ANT+ channels available")]
+    NoChannelsAvailable,
+
+    /// Protocol error
+    #[error("Protocol error: {0}")]
+    ProtocolError(String),
 }

@@ -3,10 +3,13 @@
 //! T087: Implement RideRecorder struct
 //! T156: Implement storage-full warning
 //! T031-T038: Autosave and crash recovery
+//! T140: Integrate motion data recording
+//! T115: Integrate SmO2 data recording
 
 use crate::recording::types::{
     LiveRideSummary, RecorderConfig, RecorderError, RecordingStatus, Ride, RideSample,
 };
+use crate::sensors::{MotionSample, MuscleLocation, SmO2Reading};
 use crate::storage::database::Database;
 #[cfg(target_os = "windows")]
 use std::path::Path;
@@ -52,6 +55,10 @@ pub struct RideRecorder {
     current_ride: Option<Ride>,
     /// Recorded samples
     samples: Vec<RideSample>,
+    /// T140: Recorded motion samples (IMU data)
+    motion_samples: Vec<MotionSample>,
+    /// T115: Recorded SmO2 samples (muscle oxygen data)
+    smo2_samples: Vec<SmO2Sample>,
     /// Live summary statistics
     live_summary: LiveRideSummary,
     /// Database for persistence (optional)
@@ -62,6 +69,25 @@ pub struct RideRecorder {
     autosave_running: Arc<TokioMutex<bool>>,
 }
 
+/// T115: SmO2 sample for recording.
+#[derive(Debug, Clone)]
+pub struct SmO2Sample {
+    /// Elapsed time in seconds
+    pub elapsed_seconds: u32,
+    /// Sensor ID
+    pub sensor_id: uuid::Uuid,
+    /// Muscle location
+    pub location: MuscleLocation,
+    /// SmO2 percentage (0-100)
+    pub smo2_percent: f32,
+    /// Total hemoglobin (optional, g/dL)
+    pub thb: Option<f32>,
+    /// Temperature (optional, Celsius)
+    pub temperature: Option<f32>,
+    /// Signal quality (0-100)
+    pub quality: u8,
+}
+
 impl RideRecorder {
     /// Create a new ride recorder.
     pub fn new(config: RecorderConfig) -> Self {
@@ -70,6 +96,8 @@ impl RideRecorder {
             status: RecordingStatus::Idle,
             current_ride: None,
             samples: Vec::new(),
+            motion_samples: Vec::new(),
+            smo2_samples: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: None,
             autosave_handle: None,
@@ -89,6 +117,8 @@ impl RideRecorder {
             status: RecordingStatus::Idle,
             current_ride: None,
             samples: Vec::new(),
+            motion_samples: Vec::new(),
+            smo2_samples: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: Some(database),
             autosave_handle: None,
@@ -109,6 +139,8 @@ impl RideRecorder {
 
         self.current_ride = Some(Ride::new(user_id, ftp));
         self.samples.clear();
+        self.motion_samples.clear();
+        self.smo2_samples.clear();
         self.live_summary = LiveRideSummary::default();
         self.status = RecordingStatus::Recording;
 
@@ -140,6 +172,81 @@ impl RideRecorder {
         self.update_live_summary();
 
         Ok(())
+    }
+
+    /// T140: Record a motion sample from IMU/rocker plate.
+    pub fn record_motion_sample(&mut self, sample: MotionSample) -> Result<(), RecorderError> {
+        if self.status != RecordingStatus::Recording {
+            return Err(RecorderError::NotRecording);
+        }
+
+        self.motion_samples.push(sample);
+        Ok(())
+    }
+
+    /// T140: Get recorded motion samples.
+    pub fn get_motion_samples(&self) -> &[MotionSample] {
+        &self.motion_samples
+    }
+
+    /// T140: Check if motion data is being recorded.
+    pub fn has_motion_data(&self) -> bool {
+        !self.motion_samples.is_empty()
+    }
+
+    /// T115: Record a SmO2 reading from a muscle oxygen sensor.
+    pub fn record_smo2_reading(
+        &mut self,
+        reading: &SmO2Reading,
+        elapsed_seconds: u32,
+    ) -> Result<(), RecorderError> {
+        if self.status != RecordingStatus::Recording {
+            return Err(RecorderError::NotRecording);
+        }
+
+        // Only record valid readings
+        if !reading.is_valid() {
+            return Ok(());
+        }
+
+        let sample = SmO2Sample {
+            elapsed_seconds,
+            sensor_id: reading.sensor_id,
+            location: reading.location,
+            smo2_percent: reading.smo2_percent,
+            thb: reading.thb,
+            temperature: None, // SmO2Reading doesn't have temp, could be added
+            quality: reading.signal_quality.unwrap_or(100),
+        };
+
+        self.smo2_samples.push(sample);
+        Ok(())
+    }
+
+    /// T115: Get recorded SmO2 samples.
+    pub fn get_smo2_samples(&self) -> &[SmO2Sample] {
+        &self.smo2_samples
+    }
+
+    /// T115: Check if SmO2 data is being recorded.
+    pub fn has_smo2_data(&self) -> bool {
+        !self.smo2_samples.is_empty()
+    }
+
+    /// T115: Get SmO2 samples by sensor ID.
+    pub fn get_smo2_samples_for_sensor(&self, sensor_id: &uuid::Uuid) -> Vec<&SmO2Sample> {
+        self.smo2_samples
+            .iter()
+            .filter(|s| &s.sensor_id == sensor_id)
+            .collect()
+    }
+
+    /// T115: Get SmO2 samples by muscle location.
+    pub fn get_smo2_samples_for_location(&self, location: MuscleLocation) -> Vec<&SmO2Sample> {
+        self.smo2_samples
+            .iter()
+            .filter(|s| s.location == location)
+            .collect()
     }
 
     /// Pause recording.

@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 5;
+pub const CURRENT_VERSION: i32 = 6;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -793,4 +793,265 @@ CREATE INDEX IF NOT EXISTS idx_activity_summaries_rider ON activity_summaries(ri
 CREATE INDEX IF NOT EXISTS idx_chat_messages_group_ride ON chat_messages(group_ride_id);
 CREATE INDEX IF NOT EXISTS idx_group_ride_participants_ride ON group_ride_participants(group_ride_id);
 CREATE INDEX IF NOT EXISTS idx_race_participants_race ON race_participants(race_id);
+"#;
+
+/// SQL for migration from v5 to v6 (Hardware Integration tables)
+pub const MIGRATION_V5_TO_V6: &str = r#"
+-- ANT+ dongles table
+CREATE TABLE IF NOT EXISTS ant_dongles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vendor_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    serial_number TEXT,
+    name TEXT NOT NULL,
+    firmware_version TEXT,
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    last_connected_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, vendor_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ant_dongles_user ON ant_dongles(user_id);
+
+-- Extend sensors table with protocol columns (T010)
+ALTER TABLE sensors ADD COLUMN high_level_protocol TEXT DEFAULT 'ble';
+ALTER TABLE sensors ADD COLUMN serial_number TEXT;
+ALTER TABLE sensors ADD COLUMN preferred_protocol TEXT;
+
+-- Dual protocol bindings table
+CREATE TABLE IF NOT EXISTS dual_protocol_bindings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ble_device_id TEXT NOT NULL,
+    ant_device_id TEXT NOT NULL,
+    sensor_type TEXT NOT NULL,
+    manufacturer TEXT,
+    serial_number TEXT,
+    preferred_protocol TEXT NOT NULL DEFAULT 'ble',
+    auto_detected INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, ble_device_id, ant_device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dual_protocol_bindings_user ON dual_protocol_bindings(user_id);
+
+-- Fan profiles table (MQTT smart fan control)
+CREATE TABLE IF NOT EXISTS fan_profiles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    zone_settings_json TEXT NOT NULL,
+    hr_thresholds_json TEXT,
+    min_speed_pct INTEGER NOT NULL DEFAULT 0,
+    max_speed_pct INTEGER NOT NULL DEFAULT 100,
+    ramp_up_seconds INTEGER NOT NULL DEFAULT 5,
+    ramp_down_seconds INTEGER NOT NULL DEFAULT 10,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fan_profiles_user ON fan_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_fan_profiles_active ON fan_profiles(user_id, is_active);
+
+-- HID devices table (Stream Deck, button boxes)
+CREATE TABLE IF NOT EXISTS hid_devices (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vendor_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    serial_number TEXT,
+    device_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    button_count INTEGER NOT NULL DEFAULT 0,
+    has_display INTEGER NOT NULL DEFAULT 0,
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, vendor_id, product_id, serial_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hid_devices_user ON hid_devices(user_id);
+
+-- Button mappings table
+CREATE TABLE IF NOT EXISTS button_mappings (
+    id TEXT PRIMARY KEY,
+    hid_device_id TEXT NOT NULL REFERENCES hid_devices(id) ON DELETE CASCADE,
+    button_index INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    action_params_json TEXT,
+    hold_action_type TEXT,
+    hold_action_params_json TEXT,
+    hold_threshold_ms INTEGER NOT NULL DEFAULT 500,
+    icon_path TEXT,
+    label TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(hid_device_id, button_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_button_mappings_device ON button_mappings(hid_device_id);
+
+-- Streaming sessions table (WebSocket dashboard)
+CREATE TABLE IF NOT EXISTS streaming_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pin_hash TEXT NOT NULL,
+    client_ip TEXT,
+    user_agent TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    last_ping_at TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_streaming_sessions_user ON streaming_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_streaming_sessions_active ON streaming_sessions(user_id, is_active);
+
+-- Platform syncs table (Strava, TrainingPeaks, etc.)
+CREATE TABLE IF NOT EXISTS platform_syncs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL,
+    is_enabled INTEGER NOT NULL DEFAULT 0,
+    auto_upload INTEGER NOT NULL DEFAULT 0,
+    access_token_encrypted TEXT,
+    refresh_token_encrypted TEXT,
+    token_expires_at TEXT,
+    scopes_json TEXT,
+    athlete_id TEXT,
+    last_sync_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id, platform)
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_syncs_user ON platform_syncs(user_id);
+CREATE INDEX IF NOT EXISTS idx_platform_syncs_enabled ON platform_syncs(user_id, is_enabled);
+
+-- Sync records table (upload history)
+CREATE TABLE IF NOT EXISTS sync_records (
+    id TEXT PRIMARY KEY,
+    platform_sync_id TEXT NOT NULL REFERENCES platform_syncs(id) ON DELETE CASCADE,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    external_activity_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    uploaded_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(platform_sync_id, ride_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_records_platform ON sync_records(platform_sync_id);
+CREATE INDEX IF NOT EXISTS idx_sync_records_ride ON sync_records(ride_id);
+CREATE INDEX IF NOT EXISTS idx_sync_records_status ON sync_records(status);
+
+-- Video syncs table (route video playback)
+CREATE TABLE IF NOT EXISTS video_syncs (
+    id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL,
+    video_path TEXT NOT NULL,
+    total_route_distance_m REAL NOT NULL,
+    duration_seconds REAL NOT NULL,
+    recording_speed_kmh REAL NOT NULL DEFAULT 25.0,
+    min_playback_speed REAL NOT NULL DEFAULT 0.5,
+    max_playback_speed REAL NOT NULL DEFAULT 2.0,
+    sync_points_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_syncs_route ON video_syncs(route_id);
+
+-- Audio settings table
+CREATE TABLE IF NOT EXISTS audio_settings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    master_volume INTEGER NOT NULL DEFAULT 80,
+    voice_enabled INTEGER NOT NULL DEFAULT 1,
+    voice_volume INTEGER NOT NULL DEFAULT 80,
+    voice_rate REAL NOT NULL DEFAULT 1.0,
+    sound_effects_enabled INTEGER NOT NULL DEFAULT 1,
+    effects_volume INTEGER NOT NULL DEFAULT 70,
+    interval_alerts INTEGER NOT NULL DEFAULT 1,
+    zone_change_alerts INTEGER NOT NULL DEFAULT 1,
+    milestone_alerts INTEGER NOT NULL DEFAULT 1,
+    cadence_alerts INTEGER NOT NULL DEFAULT 0,
+    hr_alerts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audio_settings_user ON audio_settings(user_id);
+
+-- Cycling dynamics samples table (L/R balance, pedal smoothness)
+CREATE TABLE IF NOT EXISTS cycling_dynamics_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    elapsed_seconds INTEGER NOT NULL,
+    left_right_balance REAL,
+    left_torque_effectiveness REAL,
+    right_torque_effectiveness REAL,
+    left_pedal_smoothness REAL,
+    right_pedal_smoothness REAL,
+    platform_center_offset INTEGER,
+    power_phase_start_left REAL,
+    power_phase_end_left REAL,
+    power_phase_start_right REAL,
+    power_phase_end_right REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cycling_dynamics_ride ON cycling_dynamics_samples(ride_id);
+
+-- Weather cache table
+CREATE TABLE IF NOT EXISTS weather_cache (
+    id TEXT PRIMARY KEY,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    data_json TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_weather_cache_location ON weather_cache(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_weather_cache_expires ON weather_cache(expires_at);
+
+-- Motion samples table (IMU/rocker plate data) T139
+CREATE TABLE IF NOT EXISTS motion_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    elapsed_seconds INTEGER NOT NULL,
+    accel_x REAL NOT NULL,
+    accel_y REAL NOT NULL,
+    accel_z REAL NOT NULL,
+    gyro_x REAL NOT NULL,
+    gyro_y REAL NOT NULL,
+    gyro_z REAL NOT NULL,
+    quat_w REAL NOT NULL,
+    quat_x REAL NOT NULL,
+    quat_y REAL NOT NULL,
+    quat_z REAL NOT NULL,
+    tilt_roll_deg REAL NOT NULL,
+    tilt_pitch_deg REAL NOT NULL,
+    temperature REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_motion_samples_ride ON motion_samples(ride_id);
+
+-- SmO2 samples table (muscle oxygen data) T114
+CREATE TABLE IF NOT EXISTS smo2_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    elapsed_seconds INTEGER NOT NULL,
+    sensor_id TEXT NOT NULL,
+    muscle_location TEXT NOT NULL,
+    smo2_percent REAL NOT NULL,
+    thb_grams_per_dl REAL,
+    temperature_c REAL,
+    quality INTEGER NOT NULL DEFAULT 100
+);
+
+CREATE INDEX IF NOT EXISTS idx_smo2_samples_ride ON smo2_samples(ride_id);
+CREATE INDEX IF NOT EXISTS idx_smo2_samples_sensor ON smo2_samples(ride_id, sensor_id);
 "#;

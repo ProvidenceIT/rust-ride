@@ -2,10 +2,10 @@
 //!
 //! T056: Unit test for NPC spawner in tests/unit/npc_spawner_test.rs
 
-use rustride::world::npc::NpcDifficulty;
 use rustride::world::npc::spawner::{
-    NpcAppearance, NpcSpawner, SpawnStrategy, generate_spawn_positions,
+    generate_spawn_positions, NpcAppearance, NpcSpawner, SpawnStrategy,
 };
+use rustride::world::npc::NpcDifficulty;
 
 /// Test NPC appearance from index
 #[test]
@@ -22,7 +22,11 @@ fn test_appearance_from_index() {
 fn test_all_appearance_variants() {
     for i in 0..8 {
         let appearance = NpcAppearance::from_index(i);
-        assert!(!appearance.name.is_empty(), "Appearance {} should have name", i);
+        assert!(
+            !appearance.name.is_empty(),
+            "Appearance {} should have name",
+            i
+        );
         // All appearances should have valid colors
         assert!(appearance.jersey_color[0] <= 255);
         assert!(appearance.jersey_color[1] <= 255);
@@ -100,8 +104,11 @@ fn test_spawned_npcs_varied_positions() {
 
     // Check NPCs are spread out
     for i in 0..npcs.len() - 1 {
-        assert_ne!(npcs[i].distance_meters, npcs[i + 1].distance_meters,
-            "NPCs should have different positions");
+        assert_ne!(
+            npcs[i].distance_meters,
+            npcs[i + 1].distance_meters,
+            "NPCs should have different positions"
+        );
     }
 }
 
@@ -113,11 +120,15 @@ fn test_spawned_npcs_in_first_half() {
     let npcs = spawner.spawn(10);
 
     for npc in &npcs {
-        assert!(npc.distance_meters >= 0.0,
-            "NPC position should be positive");
-        assert!(npc.distance_meters <= route_length * 0.7,
+        assert!(
+            npc.distance_meters >= 0.0,
+            "NPC position should be positive"
+        );
+        assert!(
+            npc.distance_meters <= route_length * 0.7,
             "NPC position {} should be in first ~50% of route (with variation)",
-            npc.distance_meters);
+            npc.distance_meters
+        );
     }
 }
 
@@ -142,8 +153,10 @@ fn test_spawn_strategy_even() {
 
     // Should be roughly evenly spaced in first 50%
     for i in 0..positions.len() - 1 {
-        assert!(positions[i] < positions[i + 1],
-            "Positions should be in order");
+        assert!(
+            positions[i] < positions[i + 1],
+            "Positions should be in order"
+        );
     }
 
     // All should be within first 50%
@@ -163,8 +176,12 @@ fn test_spawn_strategy_near_user() {
     // All should be near user start
     for pos in &positions {
         let distance_from_user = (pos - user_start).abs();
-        assert!(distance_from_user <= 150.0,
-            "Position {} should be within 150m of user {}", pos, user_start);
+        assert!(
+            distance_from_user <= 150.0,
+            "Position {} should be within 150m of user {}",
+            pos,
+            user_start
+        );
     }
 }
 
@@ -194,8 +211,10 @@ fn test_spawn_strategy_peloton() {
     let min_pos = positions.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_pos = positions.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    assert!(max_pos - min_pos < 30.0,
-        "Peloton should be clustered within 30m");
+    assert!(
+        max_pos - min_pos < 30.0,
+        "Peloton should be clustered within 30m"
+    );
 }
 
 /// Test NPC power varies from target
@@ -218,7 +237,10 @@ fn test_spawned_npc_power_variation() {
 
     // There should be some variation (not all exactly target)
     // Note: This may occasionally fail due to randomness, but unlikely
-    assert!(saw_variation, "NPC power should have some variation from target");
+    assert!(
+        saw_variation,
+        "NPC power should have some variation from target"
+    );
 }
 
 /// Test spawner with zero count

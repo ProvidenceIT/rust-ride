@@ -2,12 +2,12 @@
 //!
 //! T066: Unit test for leaderboard queries in tests/unit/leaderboard_test.rs
 
-use rustride::world::segments::SegmentTime;
-use rustride::world::segments::leaderboard::{
-    LeaderboardEntry, LeaderboardFilter, LeaderboardManager, PersonalRecords,
-    SegmentLeaderboard, format_time, format_delta,
-};
 use chrono::Utc;
+use rustride::world::segments::leaderboard::{
+    format_delta, format_time, LeaderboardEntry, LeaderboardFilter, LeaderboardManager,
+    PersonalRecords, SegmentLeaderboard,
+};
+use rustride::world::segments::SegmentTime;
 use uuid::Uuid;
 
 /// Test time formatting
@@ -435,9 +435,17 @@ fn test_is_current_user_flag() {
 
     let leaderboard = manager.get(segment_id).unwrap();
 
-    let other_entry = leaderboard.entries.iter().find(|e| e.user_name == "Other").unwrap();
+    let other_entry = leaderboard
+        .entries
+        .iter()
+        .find(|e| e.user_name == "Other")
+        .unwrap();
     assert!(!other_entry.is_current_user);
 
-    let current_entry = leaderboard.entries.iter().find(|e| e.user_name == "Current").unwrap();
+    let current_entry = leaderboard
+        .entries
+        .iter()
+        .find(|e| e.user_name == "Current")
+        .unwrap();
     assert!(current_entry.is_current_user);
 }

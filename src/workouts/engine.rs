@@ -5,13 +5,17 @@
 //! T065: Implement skip_segment() and extend_segment()
 //! T066: Implement power ramp calculation for smooth transitions
 //! T067: Implement adjust_power() for manual +/- offset
+//! T062: Integrate audio alerts with workout engine interval transitions
 
 use crate::workouts::types::{
-    SegmentProgress, SegmentType, Workout, WorkoutError, WorkoutState, WorkoutStatus,
+    SegmentProgress, SegmentType, Workout, WorkoutError, WorkoutEvent, WorkoutState, WorkoutStatus,
 };
 
 /// Default ramp transition time in seconds.
 const DEFAULT_RAMP_SECONDS: u32 = 3;
+
+/// Countdown thresholds for interval countdown alerts (seconds).
+const COUNTDOWN_THRESHOLDS: &[u32] = &[10, 5, 3, 2, 1];
 
 /// Workout execution engine.
 ///
@@ -20,6 +24,7 @@ const DEFAULT_RAMP_SECONDS: u32 = 3;
 /// - Time progression and segment transitions
 /// - Power target calculations with ramp smoothing
 /// - Manual power adjustments
+/// - Event emission for audio alerts
 pub struct WorkoutEngine {
     /// Current workout state
     state: Option<WorkoutState>,
@@ -31,6 +36,10 @@ pub struct WorkoutEngine {
     ramp_elapsed: u32,
     /// Previous segment's ending power (for smooth transitions)
     previous_power: Option<u16>,
+    /// Pending events to be consumed by the audio system
+    pending_events: Vec<WorkoutEvent>,
+    /// Last countdown value announced (to avoid duplicate announcements)
+    last_countdown: Option<u32>,
 }
 
 impl WorkoutEngine {
@@ -42,7 +51,25 @@ impl WorkoutEngine {
             ramp_duration: DEFAULT_RAMP_SECONDS,
             ramp_elapsed: 0,
             previous_power: None,
+            pending_events: Vec::new(),
+            last_countdown: None,
         }
+    }
+
+    /// Take all pending events, clearing the queue.
+    pub fn take_events(&mut self) -> Vec<WorkoutEvent> {
+        std::mem::take(&mut self.pending_events)
+    }
+
+    /// Check if there are pending events.
+    pub fn has_pending_events(&self) -> bool {
+        !self.pending_events.is_empty()
+    }
+
+    /// Emit an event.
+    fn emit_event(&mut self, event: WorkoutEvent) {
+        tracing::debug!("Workout event: {:?}", event);
+        self.pending_events.push(event);
     }
 
     /// Load a workout for execution.
@@ -72,18 +99,24 @@ impl WorkoutEngine {
 
     /// Start the loaded workout.
     pub fn start(&mut self) -> Result<(), WorkoutError> {
-        let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
+        let workout_name = {
+            let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
 
-        if state.status != WorkoutStatus::NotStarted {
-            return Err(WorkoutError::EngineError(
-                "Workout already started".to_string(),
-            ));
-        }
+            if state.status != WorkoutStatus::NotStarted {
+                return Err(WorkoutError::EngineError(
+                    "Workout already started".to_string(),
+                ));
+            }
 
-        state.status = WorkoutStatus::InProgress;
-        state.total_elapsed_seconds = 0;
+            state.status = WorkoutStatus::InProgress;
+            state.total_elapsed_seconds = 0;
+            state.workout.name.clone()
+        };
 
-        // Initialize first segment
+        // Emit start event
+        self.emit_event(WorkoutEvent::Started { workout_name });
+
+        // Initialize first segment (this will also emit an IntervalChange event)
         self.update_segment_progress();
 
         tracing::info!("Workout started");
@@ -101,6 +134,7 @@ impl WorkoutEngine {
         }
 
         state.status = WorkoutStatus::Paused;
+        self.emit_event(WorkoutEvent::Paused);
         tracing::info!("Workout paused");
         Ok(())
     }
@@ -114,6 +148,7 @@ impl WorkoutEngine {
         }
 
         state.status = WorkoutStatus::InProgress;
+        self.emit_event(WorkoutEvent::Resumed);
         tracing::info!("Workout resumed");
         Ok(())
     }
@@ -123,6 +158,7 @@ impl WorkoutEngine {
         let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
 
         state.status = WorkoutStatus::Stopped;
+        self.emit_event(WorkoutEvent::Stopped);
         tracing::info!("Workout stopped");
         Ok(())
     }
@@ -154,96 +190,199 @@ impl WorkoutEngine {
 
     /// Update segment progress based on elapsed time.
     fn update_segment_progress(&mut self) {
-        let state = match self.state.as_mut() {
-            Some(s) => s,
-            None => return,
-        };
-
-        let mut elapsed_in_workout = 0u32;
-        let mut current_segment_idx = 0usize;
-        let mut elapsed_in_segment = 0u32;
-
-        // Find current segment
-        for (i, segment) in state.workout.segments.iter().enumerate() {
-            let segment_duration = if i
-                == state
-                    .segment_progress
-                    .as_ref()
-                    .map(|p| p.segment_index)
-                    .unwrap_or(0)
-            {
-                segment.duration_seconds + self.segment_extension
-            } else {
-                segment.duration_seconds
+        // First pass: gather data we need without mutable borrow
+        let update_result = {
+            let state = match self.state.as_ref() {
+                Some(s) => s,
+                None => return,
             };
 
-            if elapsed_in_workout + segment_duration > state.total_elapsed_seconds {
-                current_segment_idx = i;
-                elapsed_in_segment = state.total_elapsed_seconds - elapsed_in_workout;
-                break;
+            let mut elapsed_in_workout = 0u32;
+            let mut current_segment_idx = 0usize;
+            let mut elapsed_in_segment = 0u32;
+
+            // Find current segment
+            for (i, segment) in state.workout.segments.iter().enumerate() {
+                let segment_duration = if i
+                    == state
+                        .segment_progress
+                        .as_ref()
+                        .map(|p| p.segment_index)
+                        .unwrap_or(0)
+                {
+                    segment.duration_seconds + self.segment_extension
+                } else {
+                    segment.duration_seconds
+                };
+
+                if elapsed_in_workout + segment_duration > state.total_elapsed_seconds {
+                    current_segment_idx = i;
+                    elapsed_in_segment = state.total_elapsed_seconds - elapsed_in_workout;
+                    break;
+                }
+
+                elapsed_in_workout += segment_duration;
+                current_segment_idx = i + 1;
             }
 
-            elapsed_in_workout += segment_duration;
-            current_segment_idx = i + 1;
-        }
-
-        // Check if workout is complete
-        if current_segment_idx >= state.workout.segments.len() {
-            state.status = WorkoutStatus::Completed;
-            state.segment_progress = None;
-            tracing::info!("Workout completed");
-            return;
-        }
-
-        // Check for segment transition
-        let previous_idx = state.segment_progress.as_ref().map(|p| p.segment_index);
-        if previous_idx != Some(current_segment_idx) {
-            // Store previous power for smooth transition
-            if let Some(progress) = &state.segment_progress {
-                self.previous_power = Some(progress.target_power);
-            }
-            self.ramp_elapsed = 0;
-            self.segment_extension = 0;
-            tracing::debug!("Transitioned to segment {}", current_segment_idx);
-        }
-
-        let segment = &state.workout.segments[current_segment_idx];
-        let total_segment_duration = segment.duration_seconds + self.segment_extension;
-        let remaining = total_segment_duration.saturating_sub(elapsed_in_segment);
-        let progress = if total_segment_duration > 0 {
-            elapsed_in_segment as f32 / total_segment_duration as f32
-        } else {
-            0.0
-        };
-
-        // Calculate target power
-        let base_power = segment.power_target.to_watts_at(state.user_ftp, progress);
-
-        // Apply ramp smoothing for segment transitions
-        let smoothed_power = if let Some(prev) = self.previous_power {
-            if self.ramp_elapsed < self.ramp_duration {
-                let ramp_progress = self.ramp_elapsed as f32 / self.ramp_duration as f32;
-                let diff = base_power as i32 - prev as i32;
-                (prev as i32 + (diff as f32 * ramp_progress) as i32) as u16
+            // Check if workout is complete
+            if current_segment_idx >= state.workout.segments.len() {
+                Some(UpdateResult::Completed {
+                    total_duration_secs: state.total_elapsed_seconds,
+                })
             } else {
-                base_power
+                let previous_idx = state.segment_progress.as_ref().map(|p| p.segment_index);
+                let previous_target = state.segment_progress.as_ref().map(|p| p.target_power);
+                let segment = &state.workout.segments[current_segment_idx];
+                let total_segment_duration = segment.duration_seconds + self.segment_extension;
+                let remaining = total_segment_duration.saturating_sub(elapsed_in_segment);
+                let progress_ratio = if total_segment_duration > 0 {
+                    elapsed_in_segment as f32 / total_segment_duration as f32
+                } else {
+                    0.0
+                };
+
+                let base_power = segment
+                    .power_target
+                    .to_watts_at(state.user_ftp, progress_ratio);
+                let is_transition = previous_idx != Some(current_segment_idx);
+                let is_recovery = segment.segment_type == SegmentType::Cooldown
+                    || (segment
+                        .text_event
+                        .as_ref()
+                        .map(|t| t.to_lowercase().contains("recovery"))
+                        .unwrap_or(false));
+                let interval_name = segment
+                    .text_event
+                    .clone()
+                    .unwrap_or_else(|| segment.segment_type.to_string());
+
+                Some(UpdateResult::Progress {
+                    current_segment_idx,
+                    elapsed_in_segment,
+                    remaining,
+                    progress_ratio,
+                    base_power,
+                    previous_target,
+                    is_transition,
+                    total_segment_duration,
+                    interval_name,
+                    is_recovery,
+                    power_offset: state.power_offset,
+                })
             }
-        } else {
-            base_power
         };
 
-        // Apply power offset
-        let target_power = (smoothed_power as i32 + state.power_offset as i32).max(0) as u16;
+        // Apply update
+        match update_result {
+            Some(UpdateResult::Completed {
+                total_duration_secs,
+            }) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.status = WorkoutStatus::Completed;
+                    state.segment_progress = None;
+                }
+                self.emit_event(WorkoutEvent::Completed {
+                    total_duration_secs,
+                });
+                tracing::info!("Workout completed");
+            }
+            Some(UpdateResult::Progress {
+                current_segment_idx,
+                elapsed_in_segment,
+                remaining,
+                progress_ratio,
+                base_power,
+                previous_target,
+                is_transition,
+                total_segment_duration,
+                interval_name,
+                is_recovery,
+                power_offset,
+            }) => {
+                // Handle segment transition
+                if is_transition {
+                    if let Some(prev) = previous_target {
+                        self.previous_power = Some(prev);
+                    }
+                    self.ramp_elapsed = 0;
+                    self.segment_extension = 0;
+                    self.last_countdown = None;
 
-        state.segment_progress = Some(SegmentProgress {
-            segment_index: current_segment_idx,
-            elapsed_seconds: elapsed_in_segment,
-            remaining_seconds: remaining,
-            progress,
-            target_power,
-        });
+                    // Emit interval change event
+                    self.emit_event(WorkoutEvent::IntervalChange {
+                        interval_name,
+                        target_power: Some(base_power),
+                        duration_secs: total_segment_duration,
+                        is_recovery,
+                    });
+
+                    tracing::debug!("Transitioned to segment {}", current_segment_idx);
+                }
+
+                // Check for countdown alerts
+                for &threshold in COUNTDOWN_THRESHOLDS {
+                    if remaining == threshold && self.last_countdown != Some(threshold) {
+                        self.last_countdown = Some(threshold);
+                        self.emit_event(WorkoutEvent::IntervalCountdown {
+                            seconds_remaining: threshold,
+                        });
+                        break;
+                    }
+                }
+
+                // Apply ramp smoothing for segment transitions
+                let smoothed_power = if let Some(prev) = self.previous_power {
+                    if self.ramp_elapsed < self.ramp_duration {
+                        let ramp_progress = self.ramp_elapsed as f32 / self.ramp_duration as f32;
+                        let diff = base_power as i32 - prev as i32;
+                        (prev as i32 + (diff as f32 * ramp_progress) as i32) as u16
+                    } else {
+                        base_power
+                    }
+                } else {
+                    base_power
+                };
+
+                // Apply power offset
+                let target_power = (smoothed_power as i32 + power_offset as i32).max(0) as u16;
+
+                if let Some(state) = self.state.as_mut() {
+                    state.segment_progress = Some(SegmentProgress {
+                        segment_index: current_segment_idx,
+                        elapsed_seconds: elapsed_in_segment,
+                        remaining_seconds: remaining,
+                        progress: progress_ratio,
+                        target_power,
+                    });
+                }
+            }
+            None => {}
+        }
     }
+}
 
+/// Internal struct for segment update results
+enum UpdateResult {
+    Completed {
+        total_duration_secs: u32,
+    },
+    Progress {
+        current_segment_idx: usize,
+        elapsed_in_segment: u32,
+        remaining: u32,
+        progress_ratio: f32,
+        base_power: u16,
+        previous_target: Option<u16>,
+        is_transition: bool,
+        total_segment_duration: u32,
+        interval_name: String,
+        is_recovery: bool,
+        power_offset: i16,
+    },
+}
+
+impl WorkoutEngine {
     /// Skip to the next segment.
     pub fn skip_segment(&mut self) -> Result<(), WorkoutError> {
         let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
@@ -389,6 +528,8 @@ impl WorkoutEngine {
         self.segment_extension = 0;
         self.ramp_elapsed = 0;
         self.previous_power = None;
+        self.pending_events.clear();
+        self.last_countdown = None;
     }
 
     /// Handle trainer disconnection during workout.
@@ -403,6 +544,7 @@ impl WorkoutEngine {
         match state.status {
             WorkoutStatus::InProgress => {
                 state.status = WorkoutStatus::TrainerDisconnected;
+                self.emit_event(WorkoutEvent::TrainerDisconnected);
                 tracing::warn!("Trainer disconnected during workout - workout paused");
                 Ok(())
             }
@@ -427,6 +569,7 @@ impl WorkoutEngine {
 
         if state.status == WorkoutStatus::TrainerDisconnected {
             state.status = WorkoutStatus::InProgress;
+            self.emit_event(WorkoutEvent::TrainerReconnected);
             tracing::info!("Trainer reconnected - workout resumed");
         }
 

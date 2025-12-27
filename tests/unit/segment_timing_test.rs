@@ -2,8 +2,8 @@
 //!
 //! T065: Unit test for segment timing in tests/unit/segment_timing_test.rs
 
-use rustride::world::segments::{Segment, SegmentCategory, SegmentTime};
 use rustride::world::segments::timing::{ActiveTiming, SegmentTimer, TimingState};
+use rustride::world::segments::{Segment, SegmentCategory, SegmentTime};
 use uuid::Uuid;
 
 /// Test segment creation with gradient
@@ -101,13 +101,8 @@ fn test_segment_time_creation() {
 /// Test segment time with metrics
 #[test]
 fn test_segment_time_with_metrics() {
-    let time = SegmentTime::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        100.0,
-        250,
-    ).with_metrics(Some(280), Some(175));
+    let time = SegmentTime::new(Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), 100.0, 250)
+        .with_metrics(Some(280), Some(175));
 
     assert_eq!(time.avg_power_watts, Some(280));
     assert_eq!(time.avg_heart_rate, Some(175));
@@ -161,19 +156,19 @@ fn test_active_timing_delta_vs_target() {
 /// Test segment timer inactive state
 #[test]
 fn test_segment_timer_inactive() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     // Before segment
     timer.update(
-        500.0, 0.0, Some(200), Some(150),
-        Uuid::new_v4(), Uuid::new_v4(), 250, None,
+        500.0,
+        0.0,
+        Some(200),
+        Some(150),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        250,
+        None,
     );
     assert_eq!(timer.state(), TimingState::Inactive);
     assert!(timer.active().is_none());
@@ -182,19 +177,19 @@ fn test_segment_timer_inactive() {
 /// Test segment timer approaching state
 #[test]
 fn test_segment_timer_approaching() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     // Within 200m of start
     timer.update(
-        850.0, 5.0, Some(200), Some(150),
-        Uuid::new_v4(), Uuid::new_v4(), 250, None,
+        850.0,
+        5.0,
+        Some(200),
+        Some(150),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        250,
+        None,
     );
     assert_eq!(timer.state(), TimingState::Approaching);
     assert!(timer.distance_to_next().is_some());
@@ -204,19 +199,19 @@ fn test_segment_timer_approaching() {
 /// Test segment timer active state
 #[test]
 fn test_segment_timer_active() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     // Enter segment
     timer.update(
-        1500.0, 10.0, Some(200), Some(150),
-        Uuid::new_v4(), Uuid::new_v4(), 250, None,
+        1500.0,
+        10.0,
+        Some(200),
+        Some(150),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        250,
+        None,
     );
     assert_eq!(timer.state(), TimingState::Active);
     assert!(timer.active().is_some());
@@ -225,13 +220,7 @@ fn test_segment_timer_active() {
 /// Test segment timer completed state
 #[test]
 fn test_segment_timer_completion() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     let user_id = Uuid::new_v4();
@@ -239,15 +228,27 @@ fn test_segment_timer_completion() {
 
     // Enter segment
     timer.update(
-        1500.0, 10.0, Some(200), Some(150),
-        user_id, ride_id, 250, None,
+        1500.0,
+        10.0,
+        Some(200),
+        Some(150),
+        user_id,
+        ride_id,
+        250,
+        None,
     );
     assert_eq!(timer.state(), TimingState::Active);
 
     // Exit segment
     let completed = timer.update(
-        2100.0, 70.0, Some(200), Some(150),
-        user_id, ride_id, 250, None,
+        2100.0,
+        70.0,
+        Some(200),
+        Some(150),
+        user_id,
+        ride_id,
+        250,
+        None,
     );
 
     assert_eq!(timer.state(), TimingState::Completed);
@@ -262,13 +263,7 @@ fn test_segment_timer_completion() {
 /// Test personal best detection
 #[test]
 fn test_personal_best_detection() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     let user_id = Uuid::new_v4();
@@ -342,13 +337,7 @@ fn test_completed_times_tracking() {
 /// Test timer reset
 #[test]
 fn test_timer_reset() {
-    let segment = Segment::new(
-        Uuid::new_v4(),
-        "Test".to_string(),
-        1000.0,
-        2000.0,
-        50.0,
-    );
+    let segment = Segment::new(Uuid::new_v4(), "Test".to_string(), 1000.0, 2000.0, 50.0);
     let mut timer = SegmentTimer::new(vec![segment]);
 
     let user_id = Uuid::new_v4();

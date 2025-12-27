@@ -2,7 +2,7 @@
 //!
 //! T044: Unit test for weather state transitions in tests/unit/weather_test.rs
 
-use rustride::world::weather::{WeatherController, WeatherState, WeatherType, TimeOfDay};
+use rustride::world::weather::{TimeOfDay, WeatherController, WeatherState, WeatherType};
 
 #[test]
 fn test_weather_state_default() {

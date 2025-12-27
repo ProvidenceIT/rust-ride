@@ -183,7 +183,9 @@ impl LeaderboardScreen {
                 };
 
                 let matches_search = self.search_text.is_empty()
-                    || s.name.to_lowercase().contains(&self.search_text.to_lowercase());
+                    || s.name
+                        .to_lowercase()
+                        .contains(&self.search_text.to_lowercase());
 
                 matches_filter && matches_search
             })

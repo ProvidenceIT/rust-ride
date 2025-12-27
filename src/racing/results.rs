@@ -162,9 +162,15 @@ impl RaceResults {
             .prepare("SELECT id, name, world_id, distance_km, scheduled_start FROM race_events WHERE id = ?1")
             .map_err(|e| ResultsError::DatabaseError(e.to_string()))?;
 
-        let (id_str, name, world_id, distance_km, date_str): (String, String, String, f64, String) = stmt
-            .query_row([race_id.to_string()], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        let (id_str, name, world_id, distance_km, date_str): (String, String, String, f64, String) =
+            stmt.query_row([race_id.to_string()], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })
             .map_err(|_| ResultsError::RaceNotFound(race_id))?;
 

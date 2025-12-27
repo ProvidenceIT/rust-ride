@@ -76,7 +76,8 @@ impl LeaderboardExporter {
     /// Export leaderboard to JSON.
     pub fn export_json(&self, segment_id: Uuid) -> Result<String, ExportError> {
         let export = self.build_export(segment_id)?;
-        serde_json::to_string_pretty(&export).map_err(|e| ExportError::SerializationFailed(e.to_string()))
+        serde_json::to_string_pretty(&export)
+            .map_err(|e| ExportError::SerializationFailed(e.to_string()))
     }
 
     /// Export leaderboard to CSV.
@@ -92,7 +93,9 @@ impl LeaderboardExporter {
                 effort.rank,
                 escape_csv(&effort.rider_name),
                 effort.elapsed_time_ms,
-                effort.avg_power_watts.map_or(String::new(), |p| p.to_string()),
+                effort
+                    .avg_power_watts
+                    .map_or(String::new(), |p| p.to_string()),
                 effort.recorded_at.to_rfc3339(),
             ));
         }
@@ -272,10 +275,9 @@ impl LeaderboardExporter {
             .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
 
         let existing: Option<String> = stmt
-            .query_row(
-                rusqlite::params![segment.world_id, segment.name],
-                |row| row.get(0),
-            )
+            .query_row(rusqlite::params![segment.world_id, segment.name], |row| {
+                row.get(0)
+            })
             .ok();
 
         if let Some(id_str) = existing {

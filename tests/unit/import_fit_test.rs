@@ -38,7 +38,12 @@ fn test_parse_fit_truncated() {
 fn test_fit_parser_exists() {
     // Just verify the parser function exists and is callable
     // This is a compile-time check more than a runtime test
-    let _parser_fn: fn(&[u8]) -> Result<Vec<rustride::world::import::GpsPoint>, rustride::world::import::ImportError> = parse_fit;
+    let _parser_fn: fn(
+        &[u8],
+    ) -> Result<
+        Vec<rustride::world::import::GpsPoint>,
+        rustride::world::import::ImportError,
+    > = parse_fit;
 }
 
 // The FIT format is binary and complex, so we primarily test:

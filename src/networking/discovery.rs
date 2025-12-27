@@ -66,7 +66,8 @@ impl DiscoveryService {
     /// Start the discovery service.
     pub fn start(&mut self, port: u16) -> Result<(), DiscoveryError> {
         // Create mDNS daemon
-        let daemon = ServiceDaemon::new().map_err(|e| DiscoveryError::StartFailed(e.to_string()))?;
+        let daemon =
+            ServiceDaemon::new().map_err(|e| DiscoveryError::StartFailed(e.to_string()))?;
 
         // Register our service
         let service_name = format!("rustride-{}", &self.local_rider_id.to_string()[..8]);
@@ -167,7 +168,11 @@ impl DiscoveryService {
     }
 
     /// Update local service properties.
-    pub fn update_properties(&self, _world_id: Option<&str>, _session_id: Option<Uuid>) -> Result<(), DiscoveryError> {
+    pub fn update_properties(
+        &self,
+        _world_id: Option<&str>,
+        _session_id: Option<Uuid>,
+    ) -> Result<(), DiscoveryError> {
         let _daemon = self
             .daemon
             .as_ref()

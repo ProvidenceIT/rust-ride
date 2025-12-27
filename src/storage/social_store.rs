@@ -154,7 +154,10 @@ impl<'a> SocialStore<'a> {
             .query(params![rider_id.to_string()])
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| DatabaseError::QueryFailed(e.to_string()))? {
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+        {
             Ok(Some(self.row_to_rider(row)?))
         } else {
             Ok(None)
@@ -210,21 +213,39 @@ impl<'a> SocialStore<'a> {
     }
 
     fn row_to_rider(&self, row: &rusqlite::Row<'_>) -> Result<Rider, DatabaseError> {
-        let id_str: String = row.get(0).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-        let created_str: String =
-            row.get(8).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-        let updated_str: String =
-            row.get(9).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let id_str: String = row
+            .get(0)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let created_str: String = row
+            .get(8)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let updated_str: String = row
+            .get(9)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         Ok(Rider {
             id: Uuid::parse_str(&id_str).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            display_name: row.get(1).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            avatar_id: row.get(2).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            bio: row.get(3).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            ftp: row.get(4).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            total_distance_km: row.get(5).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            total_time_hours: row.get(6).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            sharing_enabled: row.get(7).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            display_name: row
+                .get(1)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            avatar_id: row
+                .get(2)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            bio: row
+                .get(3)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            ftp: row
+                .get(4)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            total_distance_km: row
+                .get(5)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            total_time_hours: row
+                .get(6)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            sharing_enabled: row
+                .get(7)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
             created_at: DateTime::parse_from_rfc3339(&created_str)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
                 .with_timezone(&Utc),
@@ -285,7 +306,10 @@ impl<'a> SocialStore<'a> {
             .query(params![ride_id.to_string()])
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| DatabaseError::QueryFailed(e.to_string()))? {
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+        {
             Ok(Some(self.row_to_group_ride(row)?))
         } else {
             Ok(None)
@@ -293,19 +317,29 @@ impl<'a> SocialStore<'a> {
     }
 
     fn row_to_group_ride(&self, row: &rusqlite::Row<'_>) -> Result<GroupRideRecord, DatabaseError> {
-        let id_str: String = row.get(0).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-        let host_str: String = row.get(1).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-        let started_str: String =
-            row.get(4).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-        let ended_str: Option<String> =
-            row.get(5).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let id_str: String = row
+            .get(0)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let host_str: String = row
+            .get(1)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let started_str: String = row
+            .get(4)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let ended_str: Option<String> = row
+            .get(5)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         Ok(GroupRideRecord {
             id: Uuid::parse_str(&id_str).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
             host_rider_id: Uuid::parse_str(&host_str)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            name: row.get(2).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
-            world_id: row.get(3).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            name: row
+                .get(2)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            world_id: row
+                .get(3)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
             started_at: DateTime::parse_from_rfc3339(&started_str)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
                 .with_timezone(&Utc),
@@ -316,7 +350,9 @@ impl<'a> SocialStore<'a> {
                         .ok()
                 })
                 .flatten(),
-            max_participants: row.get(6).map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
+            max_participants: row
+                .get(6)
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
         })
     }
 

@@ -375,6 +375,38 @@ pub fn build_set_simulation_grade(grade_percent: f32) -> Vec<u8> {
     build_set_simulation(wind_speed, grade, crr, cw)
 }
 
+/// Build a control point command to set simulation with custom parameters.
+///
+/// Designed for integration with InclineController.
+///
+/// `grade_percent` - Grade in percent (-100.0 to +100.0)
+/// `rolling_resistance` - Rolling resistance coefficient (typically 0.003-0.005)
+pub fn build_set_simulation_with_crr(grade_percent: f32, rolling_resistance: f32) -> Vec<u8> {
+    // Grade is in 0.01% resolution
+    let grade = (grade_percent * 100.0).round() as i16;
+    // Wind speed: 0 m/s
+    let wind_speed: i16 = 0;
+    // CRR in 0.0001 resolution
+    let crr = ((rolling_resistance / 0.0001).round() as u16).min(255) as u8;
+    // CW (wind resistance coefficient): 0.51 default
+    let cw: u8 = 51;
+
+    build_set_simulation(wind_speed, grade, crr, cw)
+}
+
+/// Build a control point command to set target inclination directly.
+///
+/// Some trainers support this simpler command instead of full simulation.
+///
+/// `inclination_percent` - Target inclination (-100.0 to +100.0)
+pub fn build_set_target_inclination(inclination_percent: f32) -> Vec<u8> {
+    // Inclination is in 0.1% resolution
+    let inclination = (inclination_percent * 10.0).round() as i16;
+    let mut cmd = vec![FtmsControlOpcode::SetTargetInclination as u8];
+    cmd.extend_from_slice(&inclination.to_le_bytes());
+    cmd
+}
+
 /// Parse Cycling Power Measurement data.
 #[derive(Debug, Clone, Default)]
 pub struct CyclingPowerData {

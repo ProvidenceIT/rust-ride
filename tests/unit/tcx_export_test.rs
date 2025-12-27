@@ -39,6 +39,17 @@ fn create_test_ride() -> (Ride, Vec<RideSample>) {
             resistance_level: None,
             target_power: Some(180),
             trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
         };
         samples.push(sample);
     }
@@ -80,7 +91,10 @@ fn test_tcx_trackpoint_has_power_extension() {
 
     // All our test samples should have power data
     for sample in &samples {
-        assert!(sample.power_watts.is_some(), "Sample should have power data");
+        assert!(
+            sample.power_watts.is_some(),
+            "Sample should have power data"
+        );
     }
 }
 
@@ -124,6 +138,17 @@ fn test_tcx_handles_missing_hr_data() {
         resistance_level: None,
         target_power: None,
         trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
     };
 
     assert!(sample.heart_rate_bpm.is_none());
@@ -143,6 +168,17 @@ fn test_tcx_handles_missing_cadence_data() {
         resistance_level: None,
         target_power: None,
         trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
     };
 
     assert!(sample.cadence_rpm.is_none());

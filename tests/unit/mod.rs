@@ -1,7 +1,11 @@
 //! Unit test modules.
 
+mod ant_profiles_test;
+mod audio_test;
+mod dynamics_test;
 mod elevation_test;
 mod ftms_parser_test;
+mod fusion_test;
 mod import_fit_test;
 mod import_gpx_test;
 mod import_tcx_test;

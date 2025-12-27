@@ -95,8 +95,9 @@ impl EffortTracker {
             active.record_sample(state.power_watts, state.heart_rate_bpm);
 
             // Check if exited
-            if let Some(completion) =
-                self.segment_manager.check_segment_exit(active, state.distance_m)
+            if let Some(completion) = self
+                .segment_manager
+                .check_segment_exit(active, state.distance_m)
             {
                 self.active_segment = None;
                 self.previous_distance_m = state.distance_m;
@@ -182,7 +183,11 @@ impl EffortTracker {
     }
 
     /// Check if this is a personal best.
-    fn is_personal_best(&self, segment_id: &Uuid, elapsed_time_ms: u32) -> Result<bool, EffortError> {
+    fn is_personal_best(
+        &self,
+        segment_id: &Uuid,
+        elapsed_time_ms: u32,
+    ) -> Result<bool, EffortError> {
         let conn = self.db.connection();
         let mut stmt = conn
             .prepare(

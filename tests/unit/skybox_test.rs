@@ -2,8 +2,8 @@
 //!
 //! T045: Unit test for skybox rendering in tests/unit/skybox_test.rs
 
-use rustride::world::weather::{WeatherType, TimeOfDay};
-use rustride::world::weather::skybox::{SkyColors, Skybox, sun_position, ambient_light};
+use rustride::world::weather::skybox::{ambient_light, sun_position, SkyColors, Skybox};
+use rustride::world::weather::{TimeOfDay, WeatherType};
 
 #[test]
 fn test_sky_colors_for_clear_day() {
@@ -125,7 +125,11 @@ fn test_sun_position_normalized() {
     for hour in [6.0, 9.0, 12.0, 15.0, 18.0] {
         let pos = sun_position(hour);
         let length = (pos.x * pos.x + pos.y * pos.y + pos.z * pos.z).sqrt();
-        assert!((length - 1.0).abs() < 0.01, "Sun position should be normalized at hour {}", hour);
+        assert!(
+            (length - 1.0).abs() < 0.01,
+            "Sun position should be normalized at hour {}",
+            hour
+        );
     }
 }
 

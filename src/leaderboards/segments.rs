@@ -163,22 +163,39 @@ impl SegmentManager {
             .query_map([world_id], |row| {
                 let id_str: String = row.get(0)?;
                 let category_str: String = row.get(5)?;
-                Ok((id_str, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, category_str, row.get(6)?))
+                Ok((
+                    id_str,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    category_str,
+                    row.get(6)?,
+                ))
             })
             .map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
 
         let mut segments = Vec::new();
         for row in rows {
-            let (id_str, world_id, name, start, end, category_str, elevation): (String, String, String, f64, f64, String, f64) =
-                row.map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
+            let (id_str, world_id, name, start, end, category_str, elevation): (
+                String,
+                String,
+                String,
+                f64,
+                f64,
+                String,
+                f64,
+            ) = row.map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
 
             segments.push(Segment {
-                id: Uuid::parse_str(&id_str).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                id: Uuid::parse_str(&id_str)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
                 world_id,
                 name,
                 start_distance_m: start,
                 end_distance_m: end,
-                category: SegmentCategory::from_str(&category_str).unwrap_or(SegmentCategory::Mixed),
+                category: SegmentCategory::from_str(&category_str)
+                    .unwrap_or(SegmentCategory::Mixed),
                 elevation_gain_m: elevation,
             });
         }
@@ -200,18 +217,37 @@ impl SegmentManager {
             .query([segment_id.to_string()])
             .map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| SegmentError::DatabaseError(e.to_string()))? {
-            let id_str: String = row.get(0).map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
-            let category_str: String = row.get(5).map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| SegmentError::DatabaseError(e.to_string()))?
+        {
+            let id_str: String = row
+                .get(0)
+                .map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
+            let category_str: String = row
+                .get(5)
+                .map_err(|e| SegmentError::DatabaseError(e.to_string()))?;
 
             Ok(Segment {
-                id: Uuid::parse_str(&id_str).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
-                world_id: row.get(1).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
-                name: row.get(2).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
-                start_distance_m: row.get(3).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
-                end_distance_m: row.get(4).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
-                category: SegmentCategory::from_str(&category_str).unwrap_or(SegmentCategory::Mixed),
-                elevation_gain_m: row.get(6).map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                id: Uuid::parse_str(&id_str)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                world_id: row
+                    .get(1)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                name: row
+                    .get(2)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                start_distance_m: row
+                    .get(3)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                end_distance_m: row
+                    .get(4)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
+                category: SegmentCategory::from_str(&category_str)
+                    .unwrap_or(SegmentCategory::Mixed),
+                elevation_gain_m: row
+                    .get(6)
+                    .map_err(|e| SegmentError::DatabaseError(e.to_string()))?,
             })
         } else {
             Err(SegmentError::SegmentNotFound(segment_id))

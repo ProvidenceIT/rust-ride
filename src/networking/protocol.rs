@@ -48,15 +48,10 @@ pub enum ProtocolMessage {
     },
 
     /// Leave notification
-    LeaveSession {
-        session_id: Uuid,
-        rider_id: Uuid,
-    },
+    LeaveSession { session_id: Uuid, rider_id: Uuid },
 
     /// Session ended by host
-    SessionEnded {
-        session_id: Uuid,
-    },
+    SessionEnded { session_id: Uuid },
 
     /// Real-time metric update
     MetricUpdate {
@@ -104,10 +99,7 @@ pub enum ProtocolMessage {
     },
 
     /// Participant left notification
-    ParticipantLeft {
-        session_id: Uuid,
-        rider_id: Uuid,
-    },
+    ParticipantLeft { session_id: Uuid, rider_id: Uuid },
 
     /// Race countdown started
     RaceCountdown {

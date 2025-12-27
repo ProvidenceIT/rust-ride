@@ -124,8 +124,16 @@ impl BadgeManager {
 
         let mut earned = Vec::new();
         for row in rows {
-            let (id, name, description, icon, category_str, criteria_str, criteria_value, unlocked_str) =
-                row.map_err(|e| BadgeError::DatabaseError(e.to_string()))?;
+            let (
+                id,
+                name,
+                description,
+                icon,
+                category_str,
+                criteria_str,
+                criteria_value,
+                unlocked_str,
+            ) = row.map_err(|e| BadgeError::DatabaseError(e.to_string()))?;
 
             earned.push(EarnedBadge {
                 badge: Badge {
@@ -133,7 +141,8 @@ impl BadgeManager {
                     name,
                     description,
                     icon,
-                    category: BadgeCategory::from_str(&category_str).unwrap_or(BadgeCategory::Special),
+                    category: BadgeCategory::from_str(&category_str)
+                        .unwrap_or(BadgeCategory::Special),
                     criteria_type: CriteriaType::from_str(&criteria_str)
                         .unwrap_or(CriteriaType::WorkoutsCompleted),
                     criteria_value,

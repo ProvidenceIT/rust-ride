@@ -18,6 +18,7 @@ pub mod route_browser;
 pub mod route_import;
 pub mod sensor_setup;
 pub mod settings;
+pub mod streaming;
 pub mod workout_library;
 pub mod world_select;
 
@@ -40,6 +41,7 @@ pub use route_browser::{RouteBrowserAction, RouteBrowserScreen, RouteSortOrder};
 pub use route_import::{RouteImportAction, RouteImportScreen};
 pub use sensor_setup::SensorSetupScreen;
 pub use settings::{SettingsAction, SettingsScreen};
+pub use streaming::{StreamingAction, StreamingScreen};
 pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};
 pub use world_select::{WorldRouteSelection, WorldSelectScreen};
 
@@ -87,4 +89,6 @@ pub enum Screen {
     RaceLobby,
     /// Rider profile screen
     RiderProfile,
+    /// Streaming screen (external displays)
+    Streaming,
 }

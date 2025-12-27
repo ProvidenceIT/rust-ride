@@ -8,6 +8,7 @@
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
 
 use crate::storage::config::Units;
+use crate::video::VideoSync;
 use crate::world::route::{
     GradientScaler, GradientScalingMode, RecommendationCriteria, RouteRecommendation,
     RouteRecommender, RouteSource, StoredRoute, TrainingGoalType,
@@ -48,6 +49,14 @@ pub struct RouteBrowserScreen {
     pub recommendation_criteria: RecommendationCriteria,
     /// T105: Cached recommendations
     pub cached_recommendations: Vec<RouteRecommendation>,
+    /// T126: Show video sync settings panel
+    pub show_video_settings: bool,
+    /// T126: Video sync configuration for selected route
+    pub video_sync: Option<VideoSync>,
+    /// T126: Video file path input
+    pub video_path_input: String,
+    /// T126: Recording speed input
+    pub video_recording_speed: f32,
 }
 
 /// Sort order for routes.
@@ -69,8 +78,8 @@ pub enum RouteSortOrder {
 pub enum RouteBrowserAction {
     /// Navigate to a screen
     Navigate(Screen),
-    /// Start a ride on selected route with difficulty settings
-    StartRide(StoredRoute, GradientScaler),
+    /// Start a ride on selected route with difficulty settings and optional video sync
+    StartRide(StoredRoute, GradientScaler, Option<VideoSync>),
     /// Delete a route
     DeleteRoute(uuid::Uuid),
     /// Navigate to import screen
@@ -245,6 +254,16 @@ impl RouteBrowserScreen {
                     if self.show_recommendations {
                         self.update_recommendations();
                     }
+                }
+
+                // T126: Video sync button
+                let video_button_text = if self.show_video_settings {
+                    "🎬 Video Sync ▼"
+                } else {
+                    "🎬 Video Sync"
+                };
+                if ui.button(video_button_text).clicked() {
+                    self.show_video_settings = !self.show_video_settings;
                 }
 
                 ui.separator();
@@ -438,6 +457,12 @@ impl RouteBrowserScreen {
                 if let Some(rec_action) = self.render_recommendations_panel(ui) {
                     action = Some(rec_action);
                 }
+                ui.add_space(8.0);
+            }
+
+            // T126: Video sync settings panel (collapsible)
+            if self.show_video_settings {
+                self.render_video_settings_panel(ui);
                 ui.add_space(8.0);
             }
 
@@ -721,6 +746,7 @@ impl RouteBrowserScreen {
                     action = Some(RouteBrowserAction::StartRide(
                         route.clone(),
                         self.gradient_scaler.clone(),
+                        self.video_sync.clone(),
                     ));
                 }
 
@@ -962,6 +988,7 @@ impl RouteBrowserScreen {
                                 action = Some(RouteBrowserAction::StartRide(
                                     rec.route.clone(),
                                     self.gradient_scaler.clone(),
+                                    None, // No video sync for quick-start from recommendations
                                 ));
                             }
                         }
@@ -1069,6 +1096,103 @@ impl RouteBrowserScreen {
         }
 
         clicked
+    }
+
+    /// T126: Render video sync settings panel.
+    ///
+    /// Allows configuring a video file to synchronize with the route during riding.
+    fn render_video_settings_panel(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.heading("Video Sync Settings");
+            ui.add_space(4.0);
+
+            ui.label(RichText::new("Synchronize scenic video playback with your ride speed").weak());
+            ui.add_space(8.0);
+
+            // Video file path
+            ui.horizontal(|ui| {
+                ui.label("Video file:");
+                ui.add_sized(
+                    egui::vec2(300.0, 20.0),
+                    egui::TextEdit::singleline(&mut self.video_path_input)
+                        .hint_text("Path to video file (e.g., ride.mp4)"),
+                );
+                if ui.button("Browse...").clicked() {
+                    // TODO: Open file dialog (requires rfd crate or similar)
+                }
+            });
+
+            // Recording speed (the speed the video was recorded at)
+            ui.horizontal(|ui| {
+                ui.label("Recording speed:");
+                let mut speed = self.video_recording_speed as i32;
+                ui.add(egui::Slider::new(&mut speed, 10..=60).suffix(" km/h"));
+                self.video_recording_speed = speed as f32;
+            });
+            ui.label(
+                RichText::new("The average speed the video was recorded at. Video plays faster when you ride faster.")
+                    .size(11.0)
+                    .weak(),
+            );
+
+            ui.add_space(8.0);
+
+            // Playback speed limits
+            ui.horizontal(|ui| {
+                ui.label("Playback speed range:");
+                let (min, max) = self.video_sync
+                    .as_ref()
+                    .map(|s| s.playback_speed_range())
+                    .unwrap_or((0.5, 2.0));
+                ui.label(format!("{:.1}x - {:.1}x", min, max));
+            });
+
+            ui.add_space(8.0);
+
+            // Enable/disable buttons
+            ui.horizontal(|ui| {
+                let selected_route = self.selected_index.and_then(|i| self.routes.get(i));
+
+                if self.video_sync.is_some() {
+                    if ui.button("🗑 Clear Video").clicked() {
+                        self.video_sync = None;
+                        self.video_path_input.clear();
+                        self.video_recording_speed = 25.0;
+                    }
+                } else if let Some(route) = selected_route {
+                    if !self.video_path_input.is_empty() {
+                        if ui.button("✓ Configure Video").clicked() {
+                            // Create video sync configuration for selected route
+                            let mut sync = VideoSync::default();
+                            sync.route_id = route.id;
+                            sync.video_path = self.video_path_input.clone();
+                            sync.total_route_distance = route.distance_meters as f32;
+                            sync.recording_speed_kmh = self.video_recording_speed;
+                            self.video_sync = Some(sync);
+                        }
+                    }
+                } else {
+                    ui.label(RichText::new("Select a route first").weak());
+                }
+            });
+
+            // Status
+            if let Some(ref sync) = self.video_sync {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("✓").color(Color32::from_rgb(52, 168, 83)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Video configured: {} ({:.1} km @ {:.0} km/h)",
+                            sync.video_path.split('/').last().unwrap_or(&sync.video_path),
+                            sync.total_route_distance / 1000.0,
+                            sync.recording_speed_kmh
+                        ))
+                        .size(11.0),
+                    );
+                });
+            }
+        });
     }
 }
 

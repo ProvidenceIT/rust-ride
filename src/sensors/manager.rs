@@ -1,4 +1,4 @@
-//! Sensor manager for BLE device discovery and connection.
+//! Sensor manager for BLE and ANT+ device discovery and connection.
 //!
 //! T030: Implement SensorManager struct with btleplug adapter initialization
 //! T031: Implement start_discovery() with FTMS/CPS/HRS service UUID filtering
@@ -7,6 +7,10 @@
 //! T034: Implement disconnect()
 //! T035: Implement event channel for SensorEvent streaming
 
+use crate::sensors::ant::dongle::{
+    AntDongle, AntDongleManager, DefaultDongleManager, DongleStatus,
+};
+use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
     CYCLING_POWER_MEASUREMENT_UUID, CYCLING_POWER_SERVICE_UUID, FTMS_SERVICE_UUID,
@@ -37,12 +41,18 @@ struct NotificationContext {
     auto_reconnect: bool,
 }
 
-/// Manages BLE sensor discovery, connection, and data streaming.
+/// Manages BLE and ANT+ sensor discovery, connection, and data streaming.
 pub struct SensorManager {
     /// Configuration
     config: SensorConfig,
     /// BLE adapter
     adapter: Option<Adapter>,
+    /// ANT+ dongle manager
+    ant_manager: Option<Arc<DefaultDongleManager>>,
+    /// Whether ANT+ scanning is enabled
+    ant_enabled: Arc<Mutex<bool>>,
+    /// Detected ANT+ dongles
+    ant_dongles: Arc<Mutex<Vec<AntDongle>>>,
     /// Channel for sending sensor events
     event_tx: Option<Sender<SensorEvent>>,
     /// Discovered sensors (device_id -> DiscoveredSensor)
@@ -65,6 +75,9 @@ impl SensorManager {
         Self {
             config,
             adapter: None,
+            ant_manager: None,
+            ant_enabled: Arc::new(Mutex::new(false)),
+            ant_dongles: Arc::new(Mutex::new(Vec::new())),
             event_tx: None,
             discovered: Arc::new(Mutex::new(HashMap::new())),
             connected: Arc::new(Mutex::new(HashMap::new())),
@@ -106,6 +119,63 @@ impl SensorManager {
         Ok(())
     }
 
+    /// Initialize ANT+ dongle support.
+    ///
+    /// This scans for available ANT+ USB dongles and initializes the manager.
+    pub async fn initialize_ant(&mut self) -> Result<(), SensorError> {
+        tracing::info!("Initializing ANT+ support");
+
+        let ant_config = AntConfig::default();
+        let manager = DefaultDongleManager::new(ant_config);
+
+        // Scan for available dongles (synchronous operation)
+        let dongles = manager.scan_dongles();
+
+        if dongles.is_empty() {
+            tracing::info!("No ANT+ dongles found");
+        } else {
+            tracing::info!("Found {} ANT+ dongle(s)", dongles.len());
+            for dongle in &dongles {
+                tracing::debug!(
+                    "ANT+ dongle: {} (serial: {:?})",
+                    dongle.name,
+                    dongle.serial_number
+                );
+            }
+        }
+
+        *self.ant_dongles.lock().await = dongles;
+        self.ant_manager = Some(Arc::new(manager));
+
+        Ok(())
+    }
+
+    /// Get the list of detected ANT+ dongles.
+    pub async fn get_ant_dongles(&self) -> Vec<AntDongle> {
+        self.ant_dongles.lock().await.clone()
+    }
+
+    /// Check if ANT+ is available (at least one dongle detected).
+    pub async fn is_ant_available(&self) -> bool {
+        !self.ant_dongles.lock().await.is_empty()
+    }
+
+    /// Enable or disable ANT+ scanning.
+    ///
+    /// When enabled, discovery will also scan for ANT+ sensors alongside BLE.
+    pub async fn set_ant_enabled(&self, enabled: bool) {
+        *self.ant_enabled.lock().await = enabled;
+        tracing::info!(
+            "ANT+ scanning {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
+    }
+
+    /// Check if ANT+ scanning is enabled.
+    pub async fn is_ant_enabled(&self) -> bool {
+        *self.ant_enabled.lock().await
+    }
+
     /// Get an event receiver for sensor events.
     pub fn event_receiver(&mut self) -> Receiver<SensorEvent> {
         let (tx, rx) = crossbeam::channel::unbounded();
@@ -120,7 +190,7 @@ impl SensorManager {
         }
     }
 
-    /// Start scanning for BLE sensors.
+    /// Start scanning for BLE and ANT+ sensors.
     pub async fn start_discovery(&mut self) -> Result<(), SensorError> {
         let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
 
@@ -136,6 +206,11 @@ impl SensorManager {
 
         // Clear previous discoveries
         self.discovered.lock().await.clear();
+
+        // Start ANT+ discovery if enabled
+        if *self.ant_enabled.lock().await {
+            self.start_ant_discovery().await?;
+        }
 
         // Create scan filter for fitness services
         let scan_filter = ScanFilter {
@@ -284,7 +359,257 @@ impl SensorManager {
         })
     }
 
-    /// Stop scanning for BLE sensors.
+    /// Start ANT+ sensor discovery.
+    async fn start_ant_discovery(&self) -> Result<(), SensorError> {
+        let manager = match &self.ant_manager {
+            Some(m) => m.clone(),
+            None => {
+                tracing::warn!("ANT+ not initialized, skipping ANT+ discovery");
+                return Ok(());
+            }
+        };
+
+        let dongles = self.ant_dongles.lock().await;
+        if dongles.is_empty() {
+            tracing::info!("No ANT+ dongles available for discovery");
+            return Ok(());
+        }
+
+        // Use the first available dongle
+        let dongle = &dongles[0];
+        tracing::info!("Starting ANT+ discovery using dongle: {}", dongle.name);
+
+        // Open the dongle for scanning
+        let dongle_clone = dongle.clone();
+        let discovered = self.discovered.clone();
+        let event_tx = self.event_tx.clone();
+        let is_scanning = self.is_scanning.clone();
+
+        tokio::spawn(async move {
+            Self::process_ant_discovery(dongle_clone, discovered, event_tx, is_scanning).await;
+        });
+
+        Ok(())
+    }
+
+    /// Process ANT+ device discovery.
+    #[allow(unused_variables)]
+    async fn process_ant_discovery(
+        dongle: AntDongle,
+        discovered: Arc<Mutex<HashMap<String, DiscoveredSensor>>>,
+        event_tx: Option<Sender<SensorEvent>>,
+        is_scanning: Arc<Mutex<bool>>,
+    ) {
+        // Device types to search for
+        let device_types = vec![
+            AntDeviceType::HeartRate,
+            AntDeviceType::Power,
+            AntDeviceType::SpeedCadence,
+            AntDeviceType::FitnessEquipment,
+        ];
+
+        // Simulate ANT+ discovery - in real implementation this would
+        // use the ANT+ channel manager to open search channels
+        for device_type in device_types {
+            // Check if still scanning
+            if !*is_scanning.lock().await {
+                break;
+            }
+
+            // For now, log that we're searching for this type
+            // Real implementation would open ANT+ channels and wait for broadcasts
+            tracing::debug!(
+                "Searching for ANT+ device type: {:?} (type {})",
+                device_type,
+                device_type.device_type_number()
+            );
+
+            // Small delay between channel openings
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Convert ANT+ device type to SensorType.
+    fn ant_device_type_to_sensor_type(device_type: AntDeviceType) -> SensorType {
+        match device_type {
+            AntDeviceType::HeartRate => SensorType::HeartRate,
+            AntDeviceType::Power => SensorType::PowerMeter,
+            AntDeviceType::SpeedCadence => SensorType::SpeedCadence,
+            AntDeviceType::FitnessEquipment => SensorType::SmartTrainer,
+            AntDeviceType::Unknown(_) => SensorType::Trainer,
+        }
+    }
+
+    /// Create an ANT+ device ID from device number and type.
+    fn create_ant_device_id(device_number: u16, device_type: AntDeviceType) -> String {
+        format!(
+            "ant+:{}:{}",
+            device_type.device_type_number(),
+            device_number
+        )
+    }
+
+    /// Get the protocol for an ANT+ device type.
+    fn ant_device_type_to_protocol(device_type: AntDeviceType) -> Protocol {
+        match device_type {
+            AntDeviceType::HeartRate => Protocol::AntHeartRate,
+            AntDeviceType::Power => Protocol::AntPower,
+            AntDeviceType::SpeedCadence => Protocol::AntSpeedCadence,
+            AntDeviceType::FitnessEquipment => Protocol::AntFec,
+            AntDeviceType::Unknown(_) => Protocol::AntFec,
+        }
+    }
+
+    /// Handle an ANT+ device discovery event.
+    /// Called when an ANT+ device broadcast is received.
+    #[allow(dead_code)]
+    async fn handle_ant_device_found(
+        &self,
+        device_number: u16,
+        device_type: AntDeviceType,
+        name: Option<String>,
+    ) {
+        let device_id = Self::create_ant_device_id(device_number, device_type);
+        let sensor_type = Self::ant_device_type_to_sensor_type(device_type);
+        let protocol = Self::ant_device_type_to_protocol(device_type);
+
+        let sensor = DiscoveredSensor {
+            device_id: device_id.clone(),
+            name: name.unwrap_or_else(|| format!("ANT+ {:?} {}", device_type, device_number)),
+            sensor_type,
+            protocol,
+            signal_strength: None, // ANT+ doesn't typically provide RSSI
+            last_seen: Instant::now(),
+        };
+
+        // Store discovered sensor
+        self.discovered
+            .lock()
+            .await
+            .insert(device_id, sensor.clone());
+
+        // Send discovery event
+        self.send_event(SensorEvent::Discovered(sensor));
+    }
+
+    /// Handle ANT+ heart rate data.
+    /// Called when heart rate data page is received from an ANT+ HR sensor.
+    #[allow(dead_code)]
+    fn handle_ant_heart_rate_data(&self, device_number: u16, heart_rate_bpm: u8) {
+        let device_id = Self::create_ant_device_id(device_number, AntDeviceType::HeartRate);
+
+        let reading = SensorReading {
+            sensor_id: Uuid::nil(),
+            timestamp: Instant::now(),
+            power_watts: None,
+            cadence_rpm: None,
+            heart_rate_bpm: Some(heart_rate_bpm),
+            speed_kmh: None,
+            distance_delta_m: None,
+        };
+
+        self.send_event(SensorEvent::Data(reading));
+
+        tracing::trace!("ANT+ HR data from {}: {} bpm", device_id, heart_rate_bpm);
+    }
+
+    /// Handle ANT+ power meter data.
+    /// Called when power data page is received from an ANT+ power meter.
+    #[allow(dead_code)]
+    fn handle_ant_power_data(&self, device_number: u16, power_watts: u16, cadence_rpm: Option<u8>) {
+        let device_id = Self::create_ant_device_id(device_number, AntDeviceType::Power);
+
+        let reading = SensorReading {
+            sensor_id: Uuid::nil(),
+            timestamp: Instant::now(),
+            power_watts: Some(power_watts),
+            cadence_rpm,
+            heart_rate_bpm: None,
+            speed_kmh: None,
+            distance_delta_m: None,
+        };
+
+        self.send_event(SensorEvent::Data(reading));
+
+        tracing::trace!(
+            "ANT+ Power data from {}: {}W, {:?}rpm",
+            device_id,
+            power_watts,
+            cadence_rpm
+        );
+    }
+
+    /// Handle ANT+ FE-C (Fitness Equipment) data.
+    /// Called when general FE data page is received from a smart trainer.
+    #[allow(dead_code)]
+    fn handle_ant_fec_data(
+        &self,
+        device_number: u16,
+        power_watts: Option<u16>,
+        cadence_rpm: Option<u8>,
+        speed_kmh: Option<f32>,
+    ) {
+        let device_id = Self::create_ant_device_id(device_number, AntDeviceType::FitnessEquipment);
+
+        let reading = SensorReading {
+            sensor_id: Uuid::nil(),
+            timestamp: Instant::now(),
+            power_watts,
+            cadence_rpm,
+            heart_rate_bpm: None,
+            speed_kmh,
+            distance_delta_m: None,
+        };
+
+        self.send_event(SensorEvent::Data(reading));
+
+        tracing::trace!(
+            "ANT+ FE-C data from {}: {:?}W, {:?}rpm, {:?}km/h",
+            device_id,
+            power_watts,
+            cadence_rpm,
+            speed_kmh
+        );
+    }
+
+    /// Handle ANT+ speed/cadence sensor data.
+    #[allow(dead_code)]
+    fn handle_ant_speed_cadence_data(
+        &self,
+        device_number: u16,
+        speed_kmh: Option<f32>,
+        cadence_rpm: Option<u8>,
+    ) {
+        let device_id = Self::create_ant_device_id(device_number, AntDeviceType::SpeedCadence);
+
+        let reading = SensorReading {
+            sensor_id: Uuid::nil(),
+            timestamp: Instant::now(),
+            power_watts: None,
+            cadence_rpm,
+            heart_rate_bpm: None,
+            speed_kmh,
+            distance_delta_m: None,
+        };
+
+        self.send_event(SensorEvent::Data(reading));
+
+        tracing::trace!(
+            "ANT+ S/C data from {}: {:?}km/h, {:?}rpm",
+            device_id,
+            speed_kmh,
+            cadence_rpm
+        );
+    }
+
+    /// Subscribe to ANT+ events from the dongle manager.
+    /// Returns a receiver for ANT+ events.
+    #[allow(dead_code)]
+    pub fn subscribe_ant_events(&self) -> Option<tokio::sync::broadcast::Receiver<AntEvent>> {
+        self.ant_manager.as_ref().map(|m| m.subscribe_events())
+    }
+
+    /// Stop scanning for BLE and ANT+ sensors.
     pub async fn stop_discovery(&mut self) -> Result<(), SensorError> {
         let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
 

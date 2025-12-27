@@ -5,8 +5,8 @@
 use egui::{Color32, RichText, Ui};
 use uuid::Uuid;
 
-use crate::racing::events::{RaceEvent, RaceStatus, RacerInfo};
 use crate::networking::protocol::RiderMetrics;
+use crate::racing::events::{RaceEvent, RaceStatus, RacerInfo};
 
 /// Race lobby screen actions.
 #[derive(Debug, Clone)]
@@ -119,17 +119,20 @@ impl RaceLobbyScreen {
                 action = self.show_create_form(ui);
             }
             RaceLobbyView::Lobby => {
-                let race = self.selected_race_id
+                let race = self
+                    .selected_race_id
                     .and_then(|id| races.iter().find(|r| r.id == id));
                 action = self.show_lobby(ui, race, current_race_participants, local_rider_id);
             }
             RaceLobbyView::Racing => {
-                let race = self.selected_race_id
+                let race = self
+                    .selected_race_id
                     .and_then(|id| races.iter().find(|r| r.id == id));
                 action = self.show_racing(ui, race, current_race_participants, peer_metrics);
             }
             RaceLobbyView::Results => {
-                let race = self.selected_race_id
+                let race = self
+                    .selected_race_id
                     .and_then(|id| races.iter().find(|r| r.id == id));
                 action = self.show_results_view(ui, race, current_race_participants);
             }
@@ -158,11 +161,7 @@ impl RaceLobbyScreen {
     }
 
     /// Show race list.
-    fn show_race_list(
-        &mut self,
-        ui: &mut Ui,
-        races: &[RaceEvent],
-    ) -> Option<RaceLobbyAction> {
+    fn show_race_list(&mut self, ui: &mut Ui, races: &[RaceEvent]) -> Option<RaceLobbyAction> {
         let mut action = None;
 
         if ui.button("Create Race").clicked() {
@@ -219,7 +218,11 @@ impl RaceLobbyScreen {
                             ui.label("|");
                             ui.label(format!("{} participants", race.participant_count));
                         });
-                        ui.label(RichText::new(format!("Host: {}", race.organizer.rider_name)).small().weak());
+                        ui.label(
+                            RichText::new(format!("Host: {}", race.organizer.rider_name))
+                                .small()
+                                .weak(),
+                        );
                     });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -252,10 +255,26 @@ impl RaceLobbyScreen {
                 egui::ComboBox::from_id_salt("route_select")
                     .selected_text(&self.new_route_id)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.new_route_id, "watopia_flat".to_string(), "Watopia Flat");
-                        ui.selectable_value(&mut self.new_route_id, "watopia_hilly".to_string(), "Watopia Hilly");
-                        ui.selectable_value(&mut self.new_route_id, "london_loop".to_string(), "London Loop");
-                        ui.selectable_value(&mut self.new_route_id, "richmond_flat".to_string(), "Richmond Flat");
+                        ui.selectable_value(
+                            &mut self.new_route_id,
+                            "watopia_flat".to_string(),
+                            "Watopia Flat",
+                        );
+                        ui.selectable_value(
+                            &mut self.new_route_id,
+                            "watopia_hilly".to_string(),
+                            "Watopia Hilly",
+                        );
+                        ui.selectable_value(
+                            &mut self.new_route_id,
+                            "london_loop".to_string(),
+                            "London Loop",
+                        );
+                        ui.selectable_value(
+                            &mut self.new_route_id,
+                            "richmond_flat".to_string(),
+                            "Richmond Flat",
+                        );
                     });
                 ui.end_row();
 
@@ -309,7 +328,12 @@ impl RaceLobbyScreen {
             if self.countdown_seconds > 0 {
                 ui.vertical_centered(|ui| {
                     ui.label(RichText::new("Race starting in").size(18.0));
-                    ui.label(RichText::new(format!("{}", self.countdown_seconds)).size(72.0).strong().color(Color32::YELLOW));
+                    ui.label(
+                        RichText::new(format!("{}", self.countdown_seconds))
+                            .size(72.0)
+                            .strong()
+                            .color(Color32::YELLOW),
+                    );
                 });
             } else {
                 ui.label("Waiting for host to start race...");
@@ -360,7 +384,12 @@ impl RaceLobbyScreen {
     ) -> Option<RaceLobbyAction> {
         if let Some(race) = race {
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("RACE IN PROGRESS").size(24.0).strong().color(Color32::GREEN));
+                ui.label(
+                    RichText::new("RACE IN PROGRESS")
+                        .size(24.0)
+                        .strong()
+                        .color(Color32::GREEN),
+                );
             });
 
             ui.add_space(10.0);
@@ -377,9 +406,17 @@ impl RaceLobbyScreen {
                 // Sort by distance (would need actual distance data)
                 let mut sorted: Vec<_> = participants.iter().collect();
                 sorted.sort_by(|a, b| {
-                    let dist_a = metrics.get(&a.rider_id).map(|m| m.distance_m).unwrap_or(0.0);
-                    let dist_b = metrics.get(&b.rider_id).map(|m| m.distance_m).unwrap_or(0.0);
-                    dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
+                    let dist_a = metrics
+                        .get(&a.rider_id)
+                        .map(|m| m.distance_m)
+                        .unwrap_or(0.0);
+                    let dist_b = metrics
+                        .get(&b.rider_id)
+                        .map(|m| m.distance_m)
+                        .unwrap_or(0.0);
+                    dist_b
+                        .partial_cmp(&dist_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 for (pos, racer) in sorted.iter().enumerate() {
@@ -397,20 +434,27 @@ impl RaceLobbyScreen {
                                     2 => Color32::from_rgb(205, 127, 50),
                                     _ => Color32::WHITE,
                                 };
-                                ui.label(RichText::new(format!("#{}", pos + 1)).strong().color(pos_color));
+                                ui.label(
+                                    RichText::new(format!("#{}", pos + 1))
+                                        .strong()
+                                        .color(pos_color),
+                                );
 
                                 ui.add_space(10.0);
                                 ui.label(&racer.rider_name);
 
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if let Some(m) = metrics.get(&racer.rider_id) {
-                                        ui.label(format!("{:.2} km", m.distance_m / 1000.0));
-                                        ui.label("|");
-                                        ui.label(format!("{}W", m.power_watts));
-                                        ui.label("|");
-                                        ui.label(format!("{:.1} km/h", m.speed_kmh));
-                                    }
-                                });
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if let Some(m) = metrics.get(&racer.rider_id) {
+                                            ui.label(format!("{:.2} km", m.distance_m / 1000.0));
+                                            ui.label("|");
+                                            ui.label(format!("{}W", m.power_watts));
+                                            ui.label("|");
+                                            ui.label(format!("{:.1} km/h", m.speed_kmh));
+                                        }
+                                    },
+                                );
                             });
                         });
                 }
@@ -429,7 +473,12 @@ impl RaceLobbyScreen {
     ) -> Option<RaceLobbyAction> {
         if let Some(race) = race {
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("RACE COMPLETE").size(24.0).strong().color(Color32::GREEN));
+                ui.label(
+                    RichText::new("RACE COMPLETE")
+                        .size(24.0)
+                        .strong()
+                        .color(Color32::GREEN),
+                );
             });
 
             ui.add_space(10.0);
@@ -464,7 +513,12 @@ impl RaceLobbyScreen {
                                     _ => "",
                                 };
 
-                                ui.label(RichText::new(format!("#{}", pos + 1)).strong().color(pos_color).size(18.0));
+                                ui.label(
+                                    RichText::new(format!("#{}", pos + 1))
+                                        .strong()
+                                        .color(pos_color)
+                                        .size(18.0),
+                                );
                                 ui.add_space(5.0);
                                 ui.label(medal);
                                 ui.add_space(10.0);

@@ -68,10 +68,7 @@ pub enum SessionEvent {
     /// Participant left.
     ParticipantLeft { rider_id: Uuid },
     /// Join request received (host only).
-    JoinRequest {
-        rider_id: Uuid,
-        rider_name: String,
-    },
+    JoinRequest { rider_id: Uuid, rider_name: String },
     /// Join was rejected.
     JoinRejected { reason: JoinRejectReason },
 }
@@ -113,7 +110,12 @@ impl SessionManager {
 
     /// Get all participants in current session.
     pub fn participants(&self) -> Vec<Participant> {
-        self.participants.read().unwrap().values().cloned().collect()
+        self.participants
+            .read()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Host a new session.
@@ -156,7 +158,9 @@ impl SessionManager {
         *self.current_session.write().unwrap() = Some(session.clone());
         *state = SessionState::Hosting;
 
-        let _ = self.event_tx.send(SessionEvent::SessionCreated(session.clone()));
+        let _ = self
+            .event_tx
+            .send(SessionEvent::SessionCreated(session.clone()));
 
         Ok(session)
     }
@@ -211,19 +215,16 @@ impl SessionManager {
             return Err(SessionError::NotInSession);
         }
 
-        let session_id = self
-            .current_session
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|s| s.id);
+        let session_id = self.current_session.read().unwrap().as_ref().map(|s| s.id);
 
         self.participants.write().unwrap().clear();
         *self.current_session.write().unwrap() = None;
         *state = SessionState::Idle;
 
         if let Some(id) = session_id {
-            let _ = self.event_tx.send(SessionEvent::SessionEnded { session_id: id });
+            let _ = self
+                .event_tx
+                .send(SessionEvent::SessionEnded { session_id: id });
         }
 
         Ok(())
@@ -323,8 +324,16 @@ impl SessionManager {
 
     /// Handle participant left notification.
     pub fn handle_participant_left(&self, rider_id: Uuid) {
-        if self.participants.write().unwrap().remove(&rider_id).is_some() {
-            let _ = self.event_tx.send(SessionEvent::ParticipantLeft { rider_id });
+        if self
+            .participants
+            .write()
+            .unwrap()
+            .remove(&rider_id)
+            .is_some()
+        {
+            let _ = self
+                .event_tx
+                .send(SessionEvent::ParticipantLeft { rider_id });
         }
     }
 
@@ -345,9 +354,7 @@ impl SessionManager {
             .read()
             .unwrap()
             .iter()
-            .filter(|(id, p)| {
-                **id != self.local_rider_id && (now - p.last_seen) > timeout
-            })
+            .filter(|(id, p)| **id != self.local_rider_id && (now - p.last_seen) > timeout)
             .map(|(id, _)| *id)
             .collect();
 

@@ -121,10 +121,7 @@ impl ClubManager {
             .map_err(|e| ClubError::DatabaseError(e.to_string()))?;
 
         if check_stmt
-            .exists(rusqlite::params![
-                club_id.to_string(),
-                rider_id.to_string()
-            ])
+            .exists(rusqlite::params![club_id.to_string(), rider_id.to_string()])
             .map_err(|e| ClubError::DatabaseError(e.to_string()))?
         {
             return Err(ClubError::AlreadyMember);

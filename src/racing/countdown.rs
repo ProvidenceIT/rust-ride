@@ -135,7 +135,9 @@ impl CountdownSync {
     /// Tick the countdown (call every second).
     pub fn tick(&self) {
         if let Some(seconds) = self.current_countdown() {
-            let _ = self.event_tx.send(CountdownEvent::CountdownTick { seconds });
+            let _ = self
+                .event_tx
+                .send(CountdownEvent::CountdownTick { seconds });
         }
 
         if self.should_start() && !self.started.load(Ordering::SeqCst) {

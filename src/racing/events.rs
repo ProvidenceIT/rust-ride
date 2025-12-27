@@ -296,11 +296,23 @@ impl RaceManager {
 
         let mut events = Vec::new();
         for row in rows {
-            let (id_str, name, world_id, route_id, distance_km, scheduled_str, status_str, organizer_id_str, created_str, count, organizer_name) =
-                row.map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let (
+                id_str,
+                name,
+                world_id,
+                route_id,
+                distance_km,
+                scheduled_str,
+                status_str,
+                organizer_id_str,
+                created_str,
+                count,
+                organizer_name,
+            ) = row.map_err(|e| RacingError::DatabaseError(e.to_string()))?;
 
             events.push(RaceEvent {
-                id: Uuid::parse_str(&id_str).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                id: Uuid::parse_str(&id_str)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
                 name,
                 world_id,
                 route_id,
@@ -325,7 +337,11 @@ impl RaceManager {
     }
 
     /// Join a race.
-    pub fn join_race(&self, race_id: Uuid, rider_id: Uuid) -> Result<RaceParticipation, RacingError> {
+    pub fn join_race(
+        &self,
+        race_id: Uuid,
+        rider_id: Uuid,
+    ) -> Result<RaceParticipation, RacingError> {
         let conn = self.db.connection();
 
         // Check if race exists and is joinable
@@ -422,20 +438,44 @@ impl RaceManager {
             .query([race_id.to_string()])
             .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| RacingError::DatabaseError(e.to_string()))? {
-            let id_str: String = row.get(0).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
-            let status_str: String = row.get(6).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
-            let organizer_id_str: String = row.get(7).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
-            let created_str: String = row.get(8).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
-            let scheduled_str: String = row.get(5).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
-            let organizer_name: Option<String> = row.get(10).map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| RacingError::DatabaseError(e.to_string()))?
+        {
+            let id_str: String = row
+                .get(0)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let status_str: String = row
+                .get(6)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let organizer_id_str: String = row
+                .get(7)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let created_str: String = row
+                .get(8)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let scheduled_str: String = row
+                .get(5)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
+            let organizer_name: Option<String> = row
+                .get(10)
+                .map_err(|e| RacingError::DatabaseError(e.to_string()))?;
 
             Ok(RaceEvent {
-                id: Uuid::parse_str(&id_str).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
-                name: row.get(1).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
-                world_id: row.get(2).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
-                route_id: row.get(3).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
-                distance_km: row.get(4).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                id: Uuid::parse_str(&id_str)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                name: row
+                    .get(1)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                world_id: row
+                    .get(2)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                route_id: row
+                    .get(3)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                distance_km: row
+                    .get(4)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
                 scheduled_start: DateTime::parse_from_rfc3339(&scheduled_str)
                     .map_err(|e| RacingError::DatabaseError(e.to_string()))?
                     .with_timezone(&Utc),
@@ -445,7 +485,9 @@ impl RaceManager {
                         .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
                     rider_name: organizer_name.unwrap_or_else(|| "Unknown".to_string()),
                 },
-                participant_count: row.get(9).map_err(|e| RacingError::DatabaseError(e.to_string()))?,
+                participant_count: row
+                    .get(9)
+                    .map_err(|e| RacingError::DatabaseError(e.to_string()))?,
                 created_at: DateTime::parse_from_rfc3339(&created_str)
                     .map_err(|e| RacingError::DatabaseError(e.to_string()))?
                     .with_timezone(&Utc),

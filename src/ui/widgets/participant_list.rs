@@ -75,7 +75,12 @@ impl ParticipantList {
 
         for participant in participants {
             let is_local = participant.rider_id == local_rider_id;
-            self.show_participant(ui, participant, metrics.get(&participant.rider_id), is_local);
+            self.show_participant(
+                ui,
+                participant,
+                metrics.get(&participant.rider_id),
+                is_local,
+            );
             ui.add_space(spacing);
         }
     }
@@ -105,7 +110,8 @@ impl ParticipantList {
                 ui.horizontal(|ui| {
                     // Avatar placeholder
                     let avatar_size = if self.config.compact { 24.0 } else { 32.0 };
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(avatar_size), egui::Sense::hover());
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::splat(avatar_size), egui::Sense::hover());
                     ui.painter().circle_filled(
                         rect.center(),
                         avatar_size / 2.0,
@@ -167,7 +173,9 @@ impl ParticipantList {
 
         if self.config.show_heart_rate {
             if let Some(hr) = metrics.heart_rate_bpm {
-                ui.label(RichText::new(format!("{}bpm", hr)).color(Color32::from_rgb(255, 100, 100)));
+                ui.label(
+                    RichText::new(format!("{}bpm", hr)).color(Color32::from_rgb(255, 100, 100)),
+                );
             } else {
                 ui.label(RichText::new("--bpm").color(Color32::GRAY));
             }
@@ -176,7 +184,11 @@ impl ParticipantList {
 
         if self.config.show_power {
             let power_color = power_zone_color(metrics.power_watts);
-            ui.label(RichText::new(format!("{}W", metrics.power_watts)).color(power_color).strong());
+            ui.label(
+                RichText::new(format!("{}W", metrics.power_watts))
+                    .color(power_color)
+                    .strong(),
+            );
         }
     }
 }
@@ -184,12 +196,12 @@ impl ParticipantList {
 /// Get color based on power zone (rough estimate without FTP).
 fn power_zone_color(watts: u16) -> Color32 {
     match watts {
-        0..=100 => Color32::from_rgb(128, 128, 128),    // Recovery
-        101..=150 => Color32::from_rgb(100, 149, 237),  // Endurance
-        151..=200 => Color32::from_rgb(50, 205, 50),    // Tempo
-        201..=250 => Color32::from_rgb(255, 215, 0),    // Threshold
-        251..=300 => Color32::from_rgb(255, 140, 0),    // VO2max
-        _ => Color32::from_rgb(255, 69, 0),             // Anaerobic
+        0..=100 => Color32::from_rgb(128, 128, 128), // Recovery
+        101..=150 => Color32::from_rgb(100, 149, 237), // Endurance
+        151..=200 => Color32::from_rgb(50, 205, 50), // Tempo
+        201..=250 => Color32::from_rgb(255, 215, 0), // Threshold
+        251..=300 => Color32::from_rgb(255, 140, 0), // VO2max
+        _ => Color32::from_rgb(255, 69, 0),          // Anaerobic
     }
 }
 

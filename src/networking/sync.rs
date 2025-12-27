@@ -76,7 +76,8 @@ impl MetricSync {
 
         let socket = Arc::new(socket);
         self.socket = Some(Arc::clone(&socket));
-        self.running.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
         // Start receive loop
         let peer_metrics = Arc::clone(&self.peer_metrics);
@@ -101,7 +102,9 @@ impl MetricSync {
                                     sequence,
                                 } => {
                                     // Ignore our own messages and wrong sessions
-                                    if rider_id == local_rider_id || session_id != expected_session_id {
+                                    if rider_id == local_rider_id
+                                        || session_id != expected_session_id
+                                    {
                                         continue;
                                     }
 
@@ -112,7 +115,10 @@ impl MetricSync {
                                         sequence,
                                     };
 
-                                    peer_metrics.write().unwrap().insert(rider_id, event.clone());
+                                    peer_metrics
+                                        .write()
+                                        .unwrap()
+                                        .insert(rider_id, event.clone());
                                     let _ = event_tx.send(event);
                                 }
 
@@ -123,7 +129,9 @@ impl MetricSync {
                                     position,
                                     sequence,
                                 } => {
-                                    if rider_id == local_rider_id || session_id != expected_session_id {
+                                    if rider_id == local_rider_id
+                                        || session_id != expected_session_id
+                                    {
                                         continue;
                                     }
 
@@ -154,7 +162,8 @@ impl MetricSync {
 
     /// Stop the metric sync service.
     pub fn stop(&mut self) {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.socket = None;
         self.session_id = None;
         self.peer_metrics.write().unwrap().clear();
@@ -162,10 +171,7 @@ impl MetricSync {
 
     /// Broadcast local metrics.
     pub async fn broadcast_metrics(&self, metrics: RiderMetrics) -> Result<(), SyncError> {
-        let socket = self
-            .socket
-            .as_ref()
-            .ok_or(SyncError::NotRunning)?;
+        let socket = self.socket.as_ref().ok_or(SyncError::NotRunning)?;
 
         let session_id = self.session_id.ok_or(SyncError::NotRunning)?;
 
@@ -180,7 +186,9 @@ impl MetricSync {
             sequence,
         };
 
-        let bytes = msg.to_bytes().map_err(|e| SyncError::SerializeFailed(e.to_string()))?;
+        let bytes = msg
+            .to_bytes()
+            .map_err(|e| SyncError::SerializeFailed(e.to_string()))?;
 
         let multicast_addr = format!("{}:{}", MULTICAST_ADDR, SYNC_PORT);
         socket
@@ -193,10 +201,7 @@ impl MetricSync {
 
     /// Broadcast local position.
     pub async fn broadcast_position(&self, position: RiderPosition) -> Result<(), SyncError> {
-        let socket = self
-            .socket
-            .as_ref()
-            .ok_or(SyncError::NotRunning)?;
+        let socket = self.socket.as_ref().ok_or(SyncError::NotRunning)?;
 
         let session_id = self.session_id.ok_or(SyncError::NotRunning)?;
 
@@ -211,7 +216,9 @@ impl MetricSync {
             sequence,
         };
 
-        let bytes = msg.to_bytes().map_err(|e| SyncError::SerializeFailed(e.to_string()))?;
+        let bytes = msg
+            .to_bytes()
+            .map_err(|e| SyncError::SerializeFailed(e.to_string()))?;
 
         let multicast_addr = format!("{}:{}", MULTICAST_ADDR, SYNC_PORT);
         socket

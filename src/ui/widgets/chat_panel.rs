@@ -98,13 +98,21 @@ impl ChatPanel {
             .show(ui, |ui| {
                 // Header
                 ui.horizontal(|ui| {
-                    let header_text = if self.expanded { "Chat ▼" } else { "Chat ▶" };
+                    let header_text = if self.expanded {
+                        "Chat ▼"
+                    } else {
+                        "Chat ▶"
+                    };
                     if ui.button(header_text).clicked() {
                         self.expanded = !self.expanded;
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(format!("{} messages", messages.len())).small().weak());
+                        ui.label(
+                            RichText::new(format!("{} messages", messages.len()))
+                                .small()
+                                .weak(),
+                        );
                     });
                 });
 
@@ -143,11 +151,12 @@ impl ChatPanel {
                         let response = ui.add(
                             egui::TextEdit::singleline(&mut self.input)
                                 .desired_width(ui.available_width() - 60.0)
-                                .hint_text("Type a message...")
+                                .hint_text("Type a message..."),
                         );
 
                         let send_clicked = ui.button("Send").clicked();
-                        let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let enter_pressed =
+                            response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                         if (send_clicked || enter_pressed) && !self.input.trim().is_empty() {
                             let message = self.input.trim().to_string();
@@ -184,7 +193,12 @@ impl ChatPanel {
                     } else {
                         Color32::from_rgb(200, 200, 200)
                     };
-                    ui.label(RichText::new(&msg.sender_name).color(name_color).strong().small());
+                    ui.label(
+                        RichText::new(&msg.sender_name)
+                            .color(name_color)
+                            .strong()
+                            .small(),
+                    );
 
                     // Timestamp
                     if self.config.show_timestamps {
@@ -291,7 +305,7 @@ impl ChatOverlay {
                             let response = ui.add(
                                 egui::TextEdit::singleline(&mut self.input)
                                     .desired_width(180.0)
-                                    .hint_text("Chat...")
+                                    .hint_text("Chat..."),
                             );
 
                             self.input_focused = response.has_focus();
@@ -300,7 +314,9 @@ impl ChatOverlay {
                             }
 
                             if ui.button("Send").clicked() && !self.input.trim().is_empty() {
-                                action = Some(ChatPanelAction::SendMessage(self.input.trim().to_string()));
+                                action = Some(ChatPanelAction::SendMessage(
+                                    self.input.trim().to_string(),
+                                ));
                                 self.input.clear();
                                 self.mark_activity();
                             }

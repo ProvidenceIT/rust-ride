@@ -69,7 +69,11 @@ impl ChallengeManager {
     }
 
     /// Join a challenge.
-    pub fn join_challenge(&self, challenge_id: Uuid, rider_id: Uuid) -> Result<ChallengeProgress, ChallengeError> {
+    pub fn join_challenge(
+        &self,
+        challenge_id: Uuid,
+        rider_id: Uuid,
+    ) -> Result<ChallengeProgress, ChallengeError> {
         let conn = self.db.connection();
 
         // Check if already joined
@@ -78,7 +82,10 @@ impl ChallengeManager {
             .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
         if check_stmt
-            .exists(rusqlite::params![challenge_id.to_string(), rider_id.to_string()])
+            .exists(rusqlite::params![
+                challenge_id.to_string(),
+                rider_id.to_string()
+            ])
             .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
         {
             return Err(ChallengeError::AlreadyJoined);
@@ -158,7 +165,11 @@ impl ChallengeManager {
     }
 
     /// Get challenge progress for a rider.
-    pub fn get_progress(&self, challenge_id: Uuid, rider_id: Uuid) -> Result<ChallengeProgress, ChallengeError> {
+    pub fn get_progress(
+        &self,
+        challenge_id: Uuid,
+        rider_id: Uuid,
+    ) -> Result<ChallengeProgress, ChallengeError> {
         let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
@@ -168,18 +179,32 @@ impl ChallengeManager {
             .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
         let mut rows = stmt
-            .query(rusqlite::params![challenge_id.to_string(), rider_id.to_string()])
+            .query(rusqlite::params![
+                challenge_id.to_string(),
+                rider_id.to_string()
+            ])
             .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| ChallengeError::DatabaseError(e.to_string()))? {
-            let completed_str: Option<String> = row.get(2).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let last_updated_str: String = row.get(3).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
+        {
+            let completed_str: Option<String> = row
+                .get(2)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let last_updated_str: String = row
+                .get(3)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
             Ok(ChallengeProgress {
                 challenge_id,
                 rider_id,
-                current_value: row.get(0).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                completed: row.get(1).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                current_value: row
+                    .get(0)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                completed: row
+                    .get(1)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 completed_at: completed_str
                     .map(|s| DateTime::parse_from_rfc3339(&s).ok())
                     .flatten()
@@ -207,28 +232,50 @@ impl ChallengeManager {
             .query([challenge_id.to_string()])
             .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
-        if let Some(row) = rows.next().map_err(|e| ChallengeError::DatabaseError(e.to_string()))? {
-            let id_str: String = row.get(0).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let goal_type_str: String = row.get(3).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let start_str: String = row.get(6).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let end_str: String = row.get(7).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let created_by_str: Option<String> = row.get(8).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let created_str: String = row.get(9).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
+        {
+            let id_str: String = row
+                .get(0)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let goal_type_str: String = row
+                .get(3)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let start_str: String = row
+                .get(6)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let end_str: String = row
+                .get(7)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let created_by_str: Option<String> = row
+                .get(8)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let created_str: String = row
+                .get(9)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
 
             Ok(Challenge {
-                id: Uuid::parse_str(&id_str).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                name: row.get(1).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                description: row.get(2).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                id: Uuid::parse_str(&id_str)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                name: row
+                    .get(1)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                description: row
+                    .get(2)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 goal_type: GoalType::from_str(&goal_type_str).unwrap_or(GoalType::TotalDistanceKm),
-                goal_value: row.get(4).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                duration_days: row.get(5).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                goal_value: row
+                    .get(4)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
+                duration_days: row
+                    .get(5)
+                    .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 start_date: NaiveDate::parse_from_str(&start_str, "%Y-%m-%d")
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 end_date: NaiveDate::parse_from_str(&end_str, "%Y-%m-%d")
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                created_by_rider_id: created_by_str
-                    .map(|s| Uuid::parse_str(&s).ok())
-                    .flatten(),
+                created_by_rider_id: created_by_str.map(|s| Uuid::parse_str(&s).ok()).flatten(),
                 created_at: DateTime::parse_from_rfc3339(&created_str)
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
                     .with_timezone(&Utc),
@@ -239,7 +286,10 @@ impl ChallengeManager {
     }
 
     /// Get active challenges for a rider.
-    pub fn get_active_challenges(&self, rider_id: Uuid) -> Result<Vec<(Challenge, ChallengeProgress)>, ChallengeError> {
+    pub fn get_active_challenges(
+        &self,
+        rider_id: Uuid,
+    ) -> Result<Vec<(Challenge, ChallengeProgress)>, ChallengeError> {
         let conn = self.db.connection();
         let today = Utc::now().date_naive().to_string();
 
@@ -261,7 +311,8 @@ impl ChallengeManager {
         let mut results = Vec::new();
         for row in rows {
             let id_str = row.map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
-            let challenge_id = Uuid::parse_str(&id_str).map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
+            let challenge_id = Uuid::parse_str(&id_str)
+                .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?;
             let challenge = self.get_challenge(challenge_id)?;
             let progress = self.get_progress(challenge_id, rider_id)?;
             results.push((challenge, progress));

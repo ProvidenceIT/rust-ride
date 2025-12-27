@@ -2,8 +2,8 @@
 //!
 //! T055: Unit test for NPC AI behavior in tests/unit/npc_ai_test.rs
 
+use rustride::world::npc::ai::{calculate_speed, calculate_speed_physics, AiBehavior};
 use rustride::world::npc::{NpcCyclist, NpcDifficulty, NpcManager, NpcSettings};
-use rustride::world::npc::ai::{AiBehavior, calculate_speed, calculate_speed_physics};
 
 /// Test AI behavior creation
 #[test]
@@ -47,8 +47,12 @@ fn test_calculate_speed_uphill() {
     let flat_speed = calculate_speed(200, 0.0, 75.0);
     let uphill_speed = calculate_speed(200, 8.0, 75.0);
 
-    assert!(uphill_speed < flat_speed,
-        "Uphill speed {} should be less than flat speed {}", uphill_speed, flat_speed);
+    assert!(
+        uphill_speed < flat_speed,
+        "Uphill speed {} should be less than flat speed {}",
+        uphill_speed,
+        flat_speed
+    );
 }
 
 /// Test calculate_speed on downhill
@@ -57,8 +61,12 @@ fn test_calculate_speed_downhill() {
     let flat_speed = calculate_speed(200, 0.0, 75.0);
     let downhill_speed = calculate_speed(200, -8.0, 75.0);
 
-    assert!(downhill_speed > flat_speed,
-        "Downhill speed {} should be greater than flat speed {}", downhill_speed, flat_speed);
+    assert!(
+        downhill_speed > flat_speed,
+        "Downhill speed {} should be greater than flat speed {}",
+        downhill_speed,
+        flat_speed
+    );
 }
 
 /// Test speed increases with power
@@ -67,9 +75,12 @@ fn test_calculate_speed_power_increase() {
     let low_power_speed = calculate_speed(150, 0.0, 75.0);
     let high_power_speed = calculate_speed(300, 0.0, 75.0);
 
-    assert!(high_power_speed > low_power_speed,
+    assert!(
+        high_power_speed > low_power_speed,
         "Higher power {} should give faster speed than lower power {}",
-        high_power_speed, low_power_speed);
+        high_power_speed,
+        low_power_speed
+    );
 }
 
 /// Test physics-based speed calculation
@@ -95,9 +106,12 @@ fn test_calculate_speed_physics_steep_climb() {
     let flat_speed = calculate_speed_physics(200.0, 0.0, 75.0, cda, crr);
     let climb_speed = calculate_speed_physics(200.0, 10.0, 75.0, cda, crr);
 
-    assert!(climb_speed < flat_speed / 2.0,
+    assert!(
+        climb_speed < flat_speed / 2.0,
         "10% climb speed {} should be less than half of flat speed {}",
-        climb_speed, flat_speed);
+        climb_speed,
+        flat_speed
+    );
 }
 
 /// Test physics calculation with higher power on climb
@@ -109,9 +123,12 @@ fn test_calculate_speed_physics_power_on_climb() {
     let low_power = calculate_speed_physics(200.0, 8.0, 75.0, cda, crr);
     let high_power = calculate_speed_physics(300.0, 8.0, 75.0, cda, crr);
 
-    assert!(high_power > low_power,
+    assert!(
+        high_power > low_power,
         "Higher power {} should be faster than lower power {} on climb",
-        high_power, low_power);
+        high_power,
+        low_power
+    );
 }
 
 /// Test speed limits are enforced
@@ -162,8 +179,10 @@ fn test_npc_update_moves_position() {
     // Update for 1 second on flat
     npc.update(1.0, 0.0);
 
-    assert!(npc.distance_meters > initial_distance,
-        "NPC should have moved forward");
+    assert!(
+        npc.distance_meters > initial_distance,
+        "NPC should have moved forward"
+    );
     assert!(npc.speed_mps > 0.0, "NPC should have positive speed");
 }
 
@@ -177,9 +196,12 @@ fn test_npc_slower_on_climb() {
     npc_flat.update(5.0, 0.0);
     npc_climb.update(5.0, 10.0);
 
-    assert!(npc_flat.distance_meters > npc_climb.distance_meters,
+    assert!(
+        npc_flat.distance_meters > npc_climb.distance_meters,
         "Flat NPC {} should travel further than climbing NPC {}",
-        npc_flat.distance_meters, npc_climb.distance_meters);
+        npc_flat.distance_meters,
+        npc_climb.distance_meters
+    );
 }
 
 /// Test difficulty multiplier values
@@ -231,5 +253,8 @@ fn test_npc_manager_disabled() {
     let mut manager = NpcManager::new(settings, 250);
     manager.spawn_for_route(10000.0);
 
-    assert!(manager.npcs().is_empty(), "No NPCs should spawn when disabled");
+    assert!(
+        manager.npcs().is_empty(),
+        "No NPCs should spawn when disabled"
+    );
 }

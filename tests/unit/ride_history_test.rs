@@ -30,18 +30,12 @@ fn test_filter_rides_by_date_range() {
 
     // Filter last 7 days
     let week_ago = Utc::now() - Duration::days(7);
-    let last_week: Vec<_> = rides
-        .iter()
-        .filter(|r| r.started_at >= week_ago)
-        .collect();
+    let last_week: Vec<_> = rides.iter().filter(|r| r.started_at >= week_ago).collect();
     assert_eq!(last_week.len(), 2);
 
     // Filter last 30 days
     let month_ago = Utc::now() - Duration::days(30);
-    let last_month: Vec<_> = rides
-        .iter()
-        .filter(|r| r.started_at >= month_ago)
-        .collect();
+    let last_month: Vec<_> = rides.iter().filter(|r| r.started_at >= month_ago).collect();
     assert_eq!(last_month.len(), 3);
 
     // All time

@@ -58,7 +58,10 @@ fn test_parse_zwo_basic() {
 
     assert_eq!(workout.name, "Test Workout");
     assert_eq!(workout.author.as_deref(), Some("Test Author"));
-    assert_eq!(workout.description.as_deref(), Some("A simple test workout"));
+    assert_eq!(
+        workout.description.as_deref(),
+        Some("A simple test workout")
+    );
     assert_eq!(workout.source_format, Some(WorkoutFormat::Zwo));
     assert!(!workout.segments.is_empty());
 }
@@ -74,15 +77,13 @@ fn test_parse_zwo_warmup() {
 
     // Should have a range power target (40% to 70%)
     match &warmup.power_target {
-        PowerTarget::Range { start, end } => {
-            match (start.as_ref(), end.as_ref()) {
-                (PowerTarget::PercentFtp { percent: s }, PowerTarget::PercentFtp { percent: e }) => {
-                    assert_eq!(*s, 40);
-                    assert_eq!(*e, 70);
-                }
-                _ => panic!("Expected PercentFtp targets"),
+        PowerTarget::Range { start, end } => match (start.as_ref(), end.as_ref()) {
+            (PowerTarget::PercentFtp { percent: s }, PowerTarget::PercentFtp { percent: e }) => {
+                assert_eq!(*s, 40);
+                assert_eq!(*e, 70);
             }
-        }
+            _ => panic!("Expected PercentFtp targets"),
+        },
         _ => panic!("Expected Range power target for warmup"),
     }
 }
@@ -172,10 +173,7 @@ fn test_parse_mrc_basic() {
     let workout = parse_mrc(SAMPLE_MRC).expect("Should parse MRC workout");
 
     assert_eq!(workout.name, "test_workout");
-    assert_eq!(
-        workout.description.as_deref(),
-        Some("Test MRC Workout")
-    );
+    assert_eq!(workout.description.as_deref(), Some("Test MRC Workout"));
     assert_eq!(workout.source_format, Some(WorkoutFormat::Mrc));
     assert!(!workout.segments.is_empty());
 }

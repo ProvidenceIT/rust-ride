@@ -3,9 +3,11 @@
 //! T101: Create ride summary screen with stats display
 //! T102: Implement export button with format selection
 //! T103: Implement save/discard controls
+//! T108: Add sync button with platform selection
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
+use crate::integrations::sync::{SyncPlatform, SyncRecordStatus};
 use crate::recording::types::{ExportFormat, Ride, RideSample};
 
 /// Ride summary screen state.
@@ -24,6 +26,14 @@ pub struct RideSummaryScreen {
     pub is_saved: bool,
     /// Notes text
     pub notes: String,
+    /// T108: Show sync dialog
+    pub show_sync_dialog: bool,
+    /// T108: Selected platforms for sync
+    pub selected_platforms: Vec<SyncPlatform>,
+    /// T108: Sync status for each platform
+    pub sync_status: Vec<(SyncPlatform, SyncRecordStatus)>,
+    /// T108: Connected/authorized platforms
+    pub connected_platforms: Vec<SyncPlatform>,
 }
 
 impl Default for RideSummaryScreen {
@@ -43,6 +53,10 @@ impl RideSummaryScreen {
             export_status: None,
             is_saved: false,
             notes: String::new(),
+            show_sync_dialog: false,
+            selected_platforms: Vec::new(),
+            sync_status: Vec::new(),
+            connected_platforms: Vec::new(),
         }
     }
 
@@ -63,6 +77,31 @@ impl RideSummaryScreen {
         self.export_status = None;
         self.is_saved = false;
         self.notes.clear();
+        self.show_sync_dialog = false;
+        self.selected_platforms.clear();
+        self.sync_status.clear();
+    }
+
+    /// T108: Set connected platforms for sync.
+    pub fn set_connected_platforms(&mut self, platforms: Vec<SyncPlatform>) {
+        self.connected_platforms = platforms;
+    }
+
+    /// T108: Update sync status for a platform.
+    pub fn update_sync_status(&mut self, platform: SyncPlatform, status: SyncRecordStatus) {
+        if let Some(entry) = self.sync_status.iter_mut().find(|(p, _)| *p == platform) {
+            entry.1 = status;
+        } else {
+            self.sync_status.push((platform, status));
+        }
+    }
+
+    /// T108: Get sync status for a platform.
+    pub fn get_sync_status(&self, platform: SyncPlatform) -> Option<SyncRecordStatus> {
+        self.sync_status
+            .iter()
+            .find(|(p, _)| *p == platform)
+            .map(|(_, s)| *s)
     }
 
     /// Render the ride summary screen.
@@ -139,6 +178,38 @@ impl RideSummaryScreen {
 
                     ui.add_space(8.0);
 
+                    // T108: Sync button
+                    let sync_btn_text = if self
+                        .sync_status
+                        .iter()
+                        .any(|(_, s)| *s == SyncRecordStatus::Completed)
+                    {
+                        "Synced"
+                    } else if self.connected_platforms.is_empty() {
+                        "Sync"
+                    } else {
+                        "Sync..."
+                    };
+                    let sync_btn_enabled = !self.connected_platforms.is_empty();
+                    if ui
+                        .add_enabled(
+                            sync_btn_enabled,
+                            egui::Button::new(RichText::new(sync_btn_text).size(14.0))
+                                .min_size(Vec2::new(100.0, 36.0))
+                                .fill(Color32::from_rgb(255, 152, 0)),
+                        )
+                        .on_hover_text(if sync_btn_enabled {
+                            "Sync to connected fitness platforms"
+                        } else {
+                            "Connect platforms in Settings first"
+                        })
+                        .clicked()
+                    {
+                        self.show_sync_dialog = true;
+                    }
+
+                    ui.add_space(8.0);
+
                     // Discard button
                     if ui
                         .add_sized(
@@ -173,6 +244,13 @@ impl RideSummaryScreen {
         if self.show_export_dialog {
             if let Some(export_action) = self.render_export_dialog(ui) {
                 action = export_action;
+            }
+        }
+
+        // T108: Sync dialog
+        if self.show_sync_dialog {
+            if let Some(sync_action) = self.render_sync_dialog(ui) {
+                action = sync_action;
             }
         }
 
@@ -279,6 +357,55 @@ impl RideSummaryScreen {
                 panel_color,
             );
         });
+
+        // T053: Cycling dynamics row (only show if dynamics data available)
+        if ride.avg_left_balance.is_some()
+            || ride.avg_left_torque_eff.is_some()
+            || ride.avg_left_smoothness.is_some()
+        {
+            ui.add_space(8.0);
+            self.render_dynamics_row(ui, ride, panel_color);
+        }
+    }
+
+    /// T053: Render cycling dynamics summary row.
+    fn render_dynamics_row(&self, ui: &mut Ui, ride: &Ride, fill: Color32) {
+        ui.horizontal(|ui| {
+            // Power Balance
+            let balance_text = if let Some(left) = ride.avg_left_balance {
+                let right = 100.0 - left;
+                format!("{:.0}/{:.0}", left, right)
+            } else {
+                "-".to_string()
+            };
+            self.render_stat_panel(ui, "L/R Balance", &balance_text, fill);
+
+            // Torque Effectiveness
+            let te_text =
+                if ride.avg_left_torque_eff.is_some() || ride.avg_right_torque_eff.is_some() {
+                    format!(
+                        "L:{:.0}% R:{:.0}%",
+                        ride.avg_left_torque_eff.unwrap_or(0.0),
+                        ride.avg_right_torque_eff.unwrap_or(0.0)
+                    )
+                } else {
+                    "-".to_string()
+                };
+            self.render_stat_panel(ui, "Torque Eff.", &te_text, fill);
+
+            // Pedal Smoothness
+            let ps_text =
+                if ride.avg_left_smoothness.is_some() || ride.avg_right_smoothness.is_some() {
+                    format!(
+                        "L:{:.0}% R:{:.0}%",
+                        ride.avg_left_smoothness.unwrap_or(0.0),
+                        ride.avg_right_smoothness.unwrap_or(0.0)
+                    )
+                } else {
+                    "-".to_string()
+                };
+            self.render_stat_panel(ui, "Smoothness", &ps_text, fill);
+        });
     }
 
     /// Render a single stat panel.
@@ -359,6 +486,152 @@ impl RideSummaryScreen {
         action
     }
 
+    /// T108: Render the sync dialog.
+    fn render_sync_dialog(&mut self, ui: &mut Ui) -> Option<RideSummaryAction> {
+        let mut action = None;
+
+        egui::Window::new("Sync to Platforms")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.set_min_size(Vec2::new(350.0, 250.0));
+
+                ui.vertical(|ui| {
+                    ui.add_space(8.0);
+
+                    if self.connected_platforms.is_empty() {
+                        ui.label(RichText::new("No platforms connected.").weak());
+                        ui.label(
+                            RichText::new("Connect to Strava or Garmin in Settings.")
+                                .weak()
+                                .size(12.0),
+                        );
+                    } else {
+                        ui.label("Select platforms to sync:");
+                        ui.add_space(8.0);
+
+                        // Platform checkboxes
+                        for platform in &self.connected_platforms {
+                            let platform_name = platform.display_name();
+                            let is_selected = self.selected_platforms.contains(platform);
+
+                            // Check if already synced
+                            let sync_status = self.get_sync_status(*platform);
+                            let is_synced = sync_status == Some(SyncRecordStatus::Completed);
+                            let is_syncing = sync_status == Some(SyncRecordStatus::Uploading);
+
+                            ui.horizontal(|ui| {
+                                let mut selected = is_selected;
+                                if ui
+                                    .add_enabled(
+                                        !is_synced && !is_syncing,
+                                        egui::Checkbox::new(&mut selected, platform_name),
+                                    )
+                                    .changed()
+                                {
+                                    if selected {
+                                        if !self.selected_platforms.contains(platform) {
+                                            self.selected_platforms.push(*platform);
+                                        }
+                                    } else {
+                                        self.selected_platforms.retain(|p| p != platform);
+                                    }
+                                }
+
+                                // Status indicator
+                                if is_synced {
+                                    ui.label(
+                                        RichText::new("(Synced)")
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                } else if is_syncing {
+                                    ui.label(
+                                        RichText::new("(Syncing...)")
+                                            .color(Color32::from_rgb(255, 152, 0))
+                                            .small(),
+                                    );
+                                } else if sync_status == Some(SyncRecordStatus::Failed) {
+                                    ui.label(
+                                        RichText::new("(Failed)")
+                                            .color(Color32::from_rgb(234, 67, 53))
+                                            .small(),
+                                    );
+                                }
+                            });
+                        }
+
+                        ui.add_space(16.0);
+
+                        // T110: Sync status summary
+                        if !self.sync_status.is_empty() {
+                            ui.separator();
+                            ui.add_space(8.0);
+                            for (platform, status) in &self.sync_status {
+                                let (icon, color) = match status {
+                                    SyncRecordStatus::Completed => {
+                                        ("", Color32::from_rgb(52, 168, 83))
+                                    }
+                                    SyncRecordStatus::Uploading => {
+                                        ("", Color32::from_rgb(255, 152, 0))
+                                    }
+                                    SyncRecordStatus::Pending => {
+                                        ("", Color32::from_rgb(66, 133, 244))
+                                    }
+                                    SyncRecordStatus::Failed => {
+                                        ("", Color32::from_rgb(234, 67, 53))
+                                    }
+                                    SyncRecordStatus::Cancelled => ("", Color32::GRAY),
+                                };
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(icon).color(color));
+                                    ui.label(platform.display_name());
+                                    ui.label(
+                                        RichText::new(format!("{:?}", status)).color(color).small(),
+                                    );
+                                });
+                            }
+                            ui.add_space(8.0);
+                        }
+                    }
+
+                    ui.add_space(16.0);
+
+                    // Buttons
+                    ui.horizontal(|ui| {
+                        let can_sync = !self.selected_platforms.is_empty();
+
+                        if ui
+                            .add_enabled(
+                                can_sync,
+                                egui::Button::new("Sync Selected")
+                                    .fill(Color32::from_rgb(255, 152, 0)),
+                            )
+                            .clicked()
+                        {
+                            let platforms_to_sync = self.selected_platforms.clone();
+                            action = Some(RideSummaryAction::SyncToPlatforms(platforms_to_sync));
+                            self.show_sync_dialog = false;
+                        }
+
+                        ui.add_space(8.0);
+
+                        if ui.button("Cancel").clicked() {
+                            self.show_sync_dialog = false;
+                        }
+                    });
+                });
+            });
+
+        // Close on Escape
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_sync_dialog = false;
+        }
+
+        action
+    }
+
     /// Set the export status message.
     pub fn set_export_status(&mut self, message: &str) {
         self.export_status = Some(message.to_string());
@@ -388,6 +661,8 @@ pub enum RideSummaryAction {
     Export(ExportFormat),
     /// Go to home screen
     GoHome,
+    /// T108: Sync to specified platforms
+    SyncToPlatforms(Vec<SyncPlatform>),
 }
 
 /// Format a duration in seconds to HH:MM:SS.

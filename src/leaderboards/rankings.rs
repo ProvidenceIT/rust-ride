@@ -320,7 +320,9 @@ impl LeaderboardService {
     fn get_unique_riders(&self, segment_id: &Uuid) -> Result<u32, LeaderboardError> {
         let conn = self.db.connection();
         let mut stmt = conn
-            .prepare("SELECT COUNT(DISTINCT rider_id) FROM social_segment_efforts WHERE segment_id = ?1")
+            .prepare(
+                "SELECT COUNT(DISTINCT rider_id) FROM social_segment_efforts WHERE segment_id = ?1",
+            )
             .map_err(|e| LeaderboardError::DatabaseError(e.to_string()))?;
 
         stmt.query_row([segment_id.to_string()], |row| row.get(0))

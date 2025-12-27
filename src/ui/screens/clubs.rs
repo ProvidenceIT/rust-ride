@@ -11,7 +11,10 @@ use crate::social::clubs::{ClubInfo, ClubMember};
 #[derive(Debug, Clone)]
 pub enum ClubsAction {
     /// Create a new club.
-    CreateClub { name: String, description: Option<String> },
+    CreateClub {
+        name: String,
+        description: Option<String>,
+    },
     /// Join a club by code.
     JoinClub { join_code: String },
     /// Leave a club.
@@ -285,7 +288,7 @@ impl ClubsScreen {
             let response = ui.add(
                 egui::TextEdit::singleline(&mut self.join_code)
                     .desired_width(200.0)
-                    .hint_text("e.g., ABCD1234")
+                    .hint_text("e.g., ABCD1234"),
             );
 
             // Auto-uppercase
@@ -419,12 +422,10 @@ impl ClubsScreen {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // Avatar placeholder
-                    let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(24.0), egui::Sense::hover());
-                    ui.painter().circle_filled(
-                        rect.center(),
-                        12.0,
-                        Color32::from_rgb(80, 80, 100),
-                    );
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::Vec2::splat(24.0), egui::Sense::hover());
+                    ui.painter()
+                        .circle_filled(rect.center(), 12.0, Color32::from_rgb(80, 80, 100));
 
                     ui.add_space(8.0);
 

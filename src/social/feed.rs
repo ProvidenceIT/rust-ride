@@ -96,15 +96,25 @@ impl ActivityFeed {
 
         let mut activities = Vec::new();
         for row in rows {
-            let (id, ride_id, rider_id, rider_name, distance_km, duration_minutes, avg_power, elevation, world_id, recorded_at, shared) =
-                row.map_err(|e| FeedError::DatabaseError(e.to_string()))?;
+            let (
+                id,
+                ride_id,
+                rider_id,
+                rider_name,
+                distance_km,
+                duration_minutes,
+                avg_power,
+                elevation,
+                world_id,
+                recorded_at,
+                shared,
+            ) = row.map_err(|e| FeedError::DatabaseError(e.to_string()))?;
 
             activities.push(ActivitySummary {
                 id: Uuid::parse_str(&id).map_err(|e| FeedError::DatabaseError(e.to_string()))?,
-                ride_id: ride_id
-                    .map(|s| Uuid::parse_str(&s).ok())
-                    .flatten(),
-                rider_id: Uuid::parse_str(&rider_id).map_err(|e| FeedError::DatabaseError(e.to_string()))?,
+                ride_id: ride_id.map(|s| Uuid::parse_str(&s).ok()).flatten(),
+                rider_id: Uuid::parse_str(&rider_id)
+                    .map_err(|e| FeedError::DatabaseError(e.to_string()))?,
                 rider_name,
                 distance_km,
                 duration_minutes,
@@ -132,7 +142,8 @@ impl ActivityFeed {
 
         // Keep only recent 50 peer activities
         if self.peer_activities.len() > 50 {
-            self.peer_activities.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+            self.peer_activities
+                .sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
             self.peer_activities.truncate(50);
         }
     }

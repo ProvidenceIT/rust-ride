@@ -5,14 +5,17 @@
 use egui::{Color32, RichText, Ui, Vec2};
 use uuid::Uuid;
 
-use crate::networking::{DiscoveryService, PeerInfo, SessionManager, SessionState};
 use crate::networking::protocol::RiderMetrics;
+use crate::networking::{DiscoveryService, PeerInfo, SessionManager, SessionState};
 
 /// Group ride screen actions.
 #[derive(Debug, Clone)]
 pub enum GroupRideAction {
     /// Start hosting a new session.
-    HostSession { name: Option<String>, world_id: String },
+    HostSession {
+        name: Option<String>,
+        world_id: String,
+    },
     /// Join an existing session.
     JoinSession { peer: PeerInfo, session_id: Uuid },
     /// Leave the current session.
@@ -128,8 +131,16 @@ impl GroupRideScreen {
                         ui.selectable_value(&mut self.world_id, "watopia".to_string(), "Watopia");
                         ui.selectable_value(&mut self.world_id, "london".to_string(), "London");
                         ui.selectable_value(&mut self.world_id, "richmond".to_string(), "Richmond");
-                        ui.selectable_value(&mut self.world_id, "innsbruck".to_string(), "Innsbruck");
-                        ui.selectable_value(&mut self.world_id, "yorkshire".to_string(), "Yorkshire");
+                        ui.selectable_value(
+                            &mut self.world_id,
+                            "innsbruck".to_string(),
+                            "Innsbruck",
+                        );
+                        ui.selectable_value(
+                            &mut self.world_id,
+                            "yorkshire".to_string(),
+                            "Yorkshire",
+                        );
                     });
             });
 

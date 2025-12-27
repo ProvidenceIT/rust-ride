@@ -307,6 +307,41 @@ pub enum WorkoutError {
     DatabaseError(String),
 }
 
+/// Events emitted by the workout engine for audio alerts.
+#[derive(Debug, Clone)]
+pub enum WorkoutEvent {
+    /// Workout has started
+    Started { workout_name: String },
+    /// Transitioned to a new interval/segment
+    IntervalChange {
+        /// Name of the new interval (segment type or text event)
+        interval_name: String,
+        /// Target power for the interval
+        target_power: Option<u16>,
+        /// Duration of the interval in seconds
+        duration_secs: u32,
+        /// Whether this is a recovery interval
+        is_recovery: bool,
+    },
+    /// Countdown before interval change
+    IntervalCountdown { seconds_remaining: u32 },
+    /// Workout has been paused
+    Paused,
+    /// Workout has been resumed
+    Resumed,
+    /// Workout has been completed
+    Completed {
+        /// Total workout duration
+        total_duration_secs: u32,
+    },
+    /// Workout was stopped early
+    Stopped,
+    /// Trainer disconnected during workout
+    TrainerDisconnected,
+    /// Trainer reconnected
+    TrainerReconnected,
+}
+
 /// Errors during workout file parsing.
 #[derive(Debug, Error)]
 pub enum WorkoutParseError {

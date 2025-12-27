@@ -55,12 +55,14 @@ impl<'a> SensorStatusIndicator<'a> {
 /// Get an icon for a sensor type.
 fn sensor_icon(sensor_type: SensorType) -> &'static str {
     match sensor_type {
-        SensorType::Trainer => "🚴",
+        SensorType::Trainer | SensorType::SmartTrainer => "🚴",
         SensorType::PowerMeter => "⚡",
         SensorType::HeartRate => "❤",
-        SensorType::Cadence => "🔄",
+        SensorType::Cadence | SensorType::CadenceSensor => "🔄",
         SensorType::Speed => "💨",
         SensorType::SpeedCadence => "📊",
+        SensorType::SmO2 => "🩸",
+        SensorType::Imu => "📐",
     }
 }
 

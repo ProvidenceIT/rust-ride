@@ -138,6 +138,17 @@ mod tests {
                 resistance_level: None,
                 target_power: Some(180),
                 trainer_grade: None,
+                left_right_balance: None,
+                left_torque_effectiveness: None,
+                right_torque_effectiveness: None,
+                left_pedal_smoothness: None,
+                right_pedal_smoothness: None,
+                left_power_phase_start: None,
+                left_power_phase_end: None,
+                left_power_phase_peak: None,
+                right_power_phase_start: None,
+                right_power_phase_end: None,
+                right_power_phase_peak: None,
             })
             .collect()
     }
@@ -238,6 +249,17 @@ mod tests {
             resistance_level: None,
             target_power: None, // Missing
             trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
         }];
 
         let csv = export_csv(&ride, &samples).unwrap();

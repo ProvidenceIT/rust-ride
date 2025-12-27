@@ -58,7 +58,9 @@ fn test_workout_engine_load() {
     let mut engine = WorkoutEngine::new();
     let workout = create_test_workout();
 
-    engine.load(workout.clone(), 200).expect("Should load workout");
+    engine
+        .load(workout.clone(), 200)
+        .expect("Should load workout");
 
     let state = engine.state();
     assert!(state.is_some());
@@ -322,10 +324,7 @@ fn test_workout_engine_ramp_power_calculation() {
     let segments = vec![WorkoutSegment {
         segment_type: SegmentType::Ramp,
         duration_seconds: 100,
-        power_target: PowerTarget::range(
-            PowerTarget::absolute(100),
-            PowerTarget::absolute(200),
-        ),
+        power_target: PowerTarget::range(PowerTarget::absolute(100), PowerTarget::absolute(200)),
         cadence_target: None,
         text_event: None,
     }];

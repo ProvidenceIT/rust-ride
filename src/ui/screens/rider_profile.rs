@@ -111,7 +111,8 @@ impl RiderProfileScreen {
         ui.horizontal(|ui| {
             // Avatar
             let avatar_size = 80.0;
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(avatar_size), egui::Sense::click());
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::splat(avatar_size), egui::Sense::click());
             ui.painter().circle_filled(
                 rect.center(),
                 avatar_size / 2.0,
@@ -120,7 +121,12 @@ impl RiderProfileScreen {
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                &profile.display_name.chars().next().unwrap_or('?').to_string(),
+                &profile
+                    .display_name
+                    .chars()
+                    .next()
+                    .unwrap_or('?')
+                    .to_string(),
                 egui::FontId::proportional(36.0),
                 Color32::WHITE,
             );
@@ -170,15 +176,27 @@ impl RiderProfileScreen {
             .show(ui, |ui| {
                 // Row 1
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{:.0}", profile.total_distance_km)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{:.0}", profile.total_distance_km))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label("km ridden");
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{:.1}", profile.total_time_hours)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{:.1}", profile.total_time_hours))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label("hours");
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("{}", profile.total_rides)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("{}", profile.total_rides))
+                            .size(24.0)
+                            .strong(),
+                    );
                     ui.label("rides");
                 });
                 ui.vertical(|ui| {
@@ -240,7 +258,10 @@ impl RiderProfileScreen {
                 ui.end_row();
 
                 ui.label("Share Activities:");
-                ui.checkbox(&mut self.edit_sharing_enabled, "Allow others to see my rides");
+                ui.checkbox(
+                    &mut self.edit_sharing_enabled,
+                    "Allow others to see my rides",
+                );
                 ui.end_row();
             });
 
@@ -289,11 +310,8 @@ impl RiderProfileScreen {
                         Color32::from_rgb(60, 60, 60)
                     };
 
-                    ui.painter().circle_filled(
-                        rect.center(),
-                        size / 2.0 - 5.0,
-                        color,
-                    );
+                    ui.painter()
+                        .circle_filled(rect.center(), size / 2.0 - 5.0, color);
 
                     // Badge icon text
                     ui.painter().text(
@@ -301,7 +319,11 @@ impl RiderProfileScreen {
                         egui::Align2::CENTER_CENTER,
                         &badge.icon,
                         egui::FontId::proportional(24.0),
-                        if badge.earned { Color32::BLACK } else { Color32::GRAY },
+                        if badge.earned {
+                            Color32::BLACK
+                        } else {
+                            Color32::GRAY
+                        },
                     );
 
                     // Badge name

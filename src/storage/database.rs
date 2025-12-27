@@ -14,7 +14,8 @@ use crate::recording::types::{Ride, RideSample};
 use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{
-    CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, SCHEMA, SCHEMA_VERSION_TABLE,
+    CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, MIGRATION_V5_TO_V6, SCHEMA,
+    SCHEMA_VERSION_TABLE,
 };
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
@@ -175,6 +176,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 5 (Social & Multiplayer tables)");
+        }
+
+        // Migration v5 -> v6: Add Hardware Integration tables
+        if from_version < 6 {
+            self.conn
+                .execute_batch(MIGRATION_V5_TO_V6)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 6
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (6, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 6 (Hardware Integration tables)");
         }
 
         Ok(())
@@ -575,6 +593,19 @@ impl Database {
                     resistance_level: row.get(7)?,
                     target_power: row.get(8)?,
                     trainer_grade: row.get(9)?,
+                    // T049: Dynamics fields (not stored in ride_samples table yet)
+                    left_right_balance: None,
+                    left_torque_effectiveness: None,
+                    right_torque_effectiveness: None,
+                    left_pedal_smoothness: None,
+                    right_pedal_smoothness: None,
+                    // T130: Power phase fields (not stored in ride_samples table yet)
+                    left_power_phase_start: None,
+                    left_power_phase_end: None,
+                    left_power_phase_peak: None,
+                    right_power_phase_start: None,
+                    right_power_phase_end: None,
+                    right_power_phase_peak: None,
                 })
             })
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
@@ -2099,6 +2130,12 @@ impl RideRow {
             ftp_at_ride: self.ftp_at_ride,
             notes: self.notes,
             created_at,
+            // T049: Dynamics averages (not in current DB schema)
+            avg_left_balance: None,
+            avg_left_torque_eff: None,
+            avg_right_torque_eff: None,
+            avg_left_smoothness: None,
+            avg_right_smoothness: None,
         })
     }
 }
@@ -2771,6 +2808,17 @@ mod tests {
                 resistance_level: None,
                 target_power: Some(200),
                 trainer_grade: None,
+                left_right_balance: None,
+                left_torque_effectiveness: None,
+                right_torque_effectiveness: None,
+                left_pedal_smoothness: None,
+                right_pedal_smoothness: None,
+                left_power_phase_start: None,
+                left_power_phase_end: None,
+                left_power_phase_peak: None,
+                right_power_phase_start: None,
+                right_power_phase_end: None,
+                right_power_phase_peak: None,
             })
             .collect()
     }

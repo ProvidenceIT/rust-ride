@@ -4,6 +4,7 @@
 //! Provides BLE sensor connectivity, structured workout execution with ERG mode,
 //! real-time metrics display, and ride recording with export capabilities.
 
+// Core modules
 pub mod goals;
 pub mod leaderboards;
 pub mod metrics;
@@ -17,6 +18,12 @@ pub mod storage;
 pub mod ui;
 pub mod workouts;
 pub mod world;
+
+// Hardware integration modules (Feature 007)
+pub mod audio;
+pub mod hid;
+pub mod integrations;
+pub mod video;
 
 // Re-export commonly used types
 pub use metrics::calculator::MetricsCalculator;

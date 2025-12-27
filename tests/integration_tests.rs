@@ -1,3 +1,4 @@
-//! Root integration test file that includes all integration test modules.
+//! Root test file that includes all test modules.
 
 mod integration;
+mod unit;
