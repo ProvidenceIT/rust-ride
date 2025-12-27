@@ -66,11 +66,12 @@ impl TimeOfDay {
     }
 
     /// Get ambient light intensity (0.0-1.0)
+    /// Ordering: Day (1.0) > Dawn (0.6) > Dusk (0.4) > Night (0.1)
     pub fn ambient_intensity(&self) -> f32 {
         match self {
-            Self::Dawn => 0.4,
+            Self::Dawn => 0.6,
             Self::Day => 1.0,
-            Self::Dusk => 0.5,
+            Self::Dusk => 0.4,
             Self::Night => 0.1,
         }
     }

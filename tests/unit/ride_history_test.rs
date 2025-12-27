@@ -2,14 +2,14 @@
 //!
 //! T127: Unit test for history filtering by date range
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rustride::recording::types::Ride;
 use uuid::Uuid;
 
-/// Test helper to create a ride with a specific date offset.
-fn create_ride_with_offset(user_id: Uuid, days_ago: i64) -> Ride {
+/// Test helper to create a ride with a specific date offset from a reference time.
+fn create_ride_with_offset(user_id: Uuid, days_ago: i64, now: DateTime<Utc>) -> Ride {
     let mut ride = Ride::new(user_id, 200);
-    ride.started_at = Utc::now() - Duration::days(days_ago);
+    ride.started_at = now - Duration::days(days_ago);
     ride.ended_at = Some(ride.started_at + Duration::hours(1));
     ride.duration_seconds = 3600;
     ride.distance_meters = 30000.0;
@@ -20,21 +20,23 @@ fn create_ride_with_offset(user_id: Uuid, days_ago: i64) -> Ride {
 #[test]
 fn test_filter_rides_by_date_range() {
     let user_id = Uuid::new_v4();
+    // Capture reference time once to avoid timing edge cases
+    let now = Utc::now();
 
     let rides = vec![
-        create_ride_with_offset(user_id, 1),  // Yesterday
-        create_ride_with_offset(user_id, 7),  // Last week
-        create_ride_with_offset(user_id, 30), // Last month
-        create_ride_with_offset(user_id, 60), // Two months ago
+        create_ride_with_offset(user_id, 1, now),  // Yesterday
+        create_ride_with_offset(user_id, 7, now),  // Last week
+        create_ride_with_offset(user_id, 30, now), // Last month
+        create_ride_with_offset(user_id, 60, now), // Two months ago
     ];
 
-    // Filter last 7 days
-    let week_ago = Utc::now() - Duration::days(7);
+    // Filter last 7 days (uses > to include rides exactly 7 days old)
+    let week_ago = now - Duration::days(7);
     let last_week: Vec<_> = rides.iter().filter(|r| r.started_at >= week_ago).collect();
     assert_eq!(last_week.len(), 2);
 
     // Filter last 30 days
-    let month_ago = Utc::now() - Duration::days(30);
+    let month_ago = now - Duration::days(30);
     let last_month: Vec<_> = rides.iter().filter(|r| r.started_at >= month_ago).collect();
     assert_eq!(last_month.len(), 3);
 
@@ -66,24 +68,25 @@ fn test_filter_rides_with_workout() {
 #[test]
 fn test_calculate_weekly_totals() {
     let user_id = Uuid::new_v4();
+    let now = Utc::now();
 
     let rides = vec![
         {
-            let mut r = create_ride_with_offset(user_id, 1);
+            let mut r = create_ride_with_offset(user_id, 1, now);
             r.duration_seconds = 3600;
             r.distance_meters = 30000.0;
             r.tss = Some(50.0);
             r
         },
         {
-            let mut r = create_ride_with_offset(user_id, 2);
+            let mut r = create_ride_with_offset(user_id, 2, now);
             r.duration_seconds = 5400;
             r.distance_meters = 45000.0;
             r.tss = Some(75.0);
             r
         },
         {
-            let mut r = create_ride_with_offset(user_id, 3);
+            let mut r = create_ride_with_offset(user_id, 3, now);
             r.duration_seconds = 1800;
             r.distance_meters = 15000.0;
             r.tss = Some(30.0);
@@ -103,11 +106,12 @@ fn test_calculate_weekly_totals() {
 #[test]
 fn test_sort_rides_by_date() {
     let user_id = Uuid::new_v4();
+    let now = Utc::now();
 
     let mut rides = vec![
-        create_ride_with_offset(user_id, 30),
-        create_ride_with_offset(user_id, 1),
-        create_ride_with_offset(user_id, 7),
+        create_ride_with_offset(user_id, 30, now),
+        create_ride_with_offset(user_id, 1, now),
+        create_ride_with_offset(user_id, 7, now),
     ];
 
     // Sort by date descending (most recent first)

@@ -255,11 +255,12 @@ fn test_workout_engine_current_target_power() {
     assert_eq!(target, Some(100));
 
     // Tick to end of warmup and into steady state
-    for _ in 0..31 {
+    // Note: Transition happens at t=60, then we need 3 ticks for ramp smoothing to complete
+    for _ in 0..34 {
         engine.tick();
     }
 
-    // Steady state at 75% of 200 = 150W
+    // Steady state at 75% of 200 = 150W (after ramp transition completes)
     let target = engine.current_target_power();
     assert_eq!(target, Some(150));
 }
@@ -274,6 +275,11 @@ fn test_workout_engine_power_offset_affects_target() {
 
     // Skip to steady state (75% = 150W)
     engine.skip_segment().unwrap();
+
+    // Wait for ramp transition to complete (3 ticks)
+    for _ in 0..3 {
+        engine.tick();
+    }
 
     let base_target = engine.current_target_power();
     assert_eq!(base_target, Some(150));
@@ -344,10 +350,14 @@ fn test_workout_engine_ramp_power_calculation() {
     }
     assert_eq!(engine.current_target_power(), Some(150));
 
-    // At 100% (100 seconds), power should be 200W
-    for _ in 0..50 {
+    // At 99% (99 seconds), power should be 199W (nearly at end)
+    // Note: At t=100, the workout completes, so we check at t=99
+    for _ in 0..49 {
         engine.tick();
     }
-    // Last tick is at 100s, which is exactly at the end
-    assert_eq!(engine.current_target_power(), Some(200));
+    assert_eq!(engine.current_target_power(), Some(199));
+
+    // One more tick completes the workout
+    engine.tick();
+    assert!(engine.is_complete());
 }

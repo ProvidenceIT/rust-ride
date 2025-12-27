@@ -332,11 +332,17 @@ impl WorkoutEngine {
                 }
 
                 // Apply ramp smoothing for segment transitions
-                let smoothed_power = if let Some(prev) = self.previous_power {
-                    if self.ramp_elapsed < self.ramp_duration {
-                        let ramp_progress = self.ramp_elapsed as f32 / self.ramp_duration as f32;
-                        let diff = base_power as i32 - prev as i32;
-                        (prev as i32 + (diff as f32 * ramp_progress) as i32) as u16
+                // On the transition frame itself, use base_power directly to show the new target.
+                // Smoothing applies from the next tick onwards.
+                let smoothed_power = if !is_transition {
+                    if let Some(prev) = self.previous_power {
+                        if self.ramp_elapsed < self.ramp_duration {
+                            let ramp_progress = self.ramp_elapsed as f32 / self.ramp_duration as f32;
+                            let diff = base_power as i32 - prev as i32;
+                            (prev as i32 + (diff as f32 * ramp_progress) as i32) as u16
+                        } else {
+                            base_power
+                        }
                     } else {
                         base_power
                     }

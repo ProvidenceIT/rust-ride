@@ -66,8 +66,10 @@ pub fn calculate_speed(power_watts: u16, gradient_percent: f32, mass_kg: f32) ->
     let gradient = gradient_percent / 100.0;
 
     // Base speed at flat ground (approximation)
-    // At 200W, roughly 30 km/h on flat
-    let base_speed_mps = (power / 20.0).powf(0.33) * 8.0 / 3.6;
+    // At 200W, roughly 30 km/h (8.33 m/s) on flat
+    // Using cube root relationship: speed ∝ power^(1/3)
+    // Calibrated so 200W gives ~8.5 m/s
+    let base_speed_mps = (power / 200.0).powf(0.33) * 8.5;
 
     // Gradient effect
     // Each 1% gradient reduces speed significantly
