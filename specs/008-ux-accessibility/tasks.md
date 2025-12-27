@@ -193,16 +193,16 @@
 
 ### Implementation for User Story 7
 
-- [ ] T077 [P] [US7] Create ToneGenerator using rodio SineWave in src/audio/cues.rs
-- [ ] T078 [P] [US7] Define tone frequencies and durations for cues in src/audio/cues.rs
-- [ ] T079 [US7] Implement AudioCueSystem trait in src/audio/alerts.rs
-- [ ] T080 [US7] Add interval transition cue (IntervalTransition enum) in src/audio/alerts.rs
-- [ ] T081 [US7] Add zone change cue (ascending/descending tones) in src/audio/alerts.rs
-- [ ] T082 [US7] Implement ZoneChangeDetector with debouncing in src/audio/alerts.rs
-- [ ] T083 [US7] Add volume control independent of system volume in src/audio/mod.rs
-- [ ] T084 [US7] Add audio settings UI in src/ui/screens/settings.rs
-- [ ] T085 [US7] Integrate audio cues with workout engine in src/workouts/engine.rs
-- [ ] T086 [US7] Respect system mute state in src/audio/mod.rs
+- [x] T077 [P] [US7] Create ToneGenerator using rodio SineWave in src/audio/tones.rs
+- [x] T078 [P] [US7] Define tone frequencies and durations for cues in src/audio/tones.rs
+- [x] T079 [US7] Implement AudioCueSystem trait in src/audio/alerts.rs
+- [x] T080 [US7] Add interval transition cue (IntervalTransition enum) in src/audio/alerts.rs
+- [x] T081 [US7] Add zone change cue (ascending/descending tones) in src/audio/tones.rs
+- [x] T082 [US7] Implement ZoneChangeDetector with debouncing in src/audio/tones.rs
+- [x] T083 [US7] Add volume control independent of system volume in src/audio/tones.rs
+- [x] T084 [US7] Add audio settings UI in src/ui/screens/settings.rs
+- [x] T085 [US7] Integrate audio cues with workout engine in src/workouts/engine.rs
+- [x] T086 [US7] Respect system mute state in src/audio/tones.rs
 
 **Checkpoint**: User Story 7 complete - audio feedback works for intervals and zones
 

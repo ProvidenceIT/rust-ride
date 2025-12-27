@@ -1,10 +1,16 @@
 //! Audio & Voice Alerts Module
 //!
 //! Provides audio cues and voice alerts for workouts and training zones.
+//!
+//! T077: ToneGenerator for audio cues
+//! T078: Tone frequencies and patterns
+//! T081: Zone change cues
+//! T082: ZoneChangeDetector with debouncing
 
 pub mod alerts;
 pub mod cues;
 pub mod engine;
+pub mod tones;
 pub mod tts;
 
 use std::time::Duration;
@@ -18,6 +24,9 @@ pub use alerts::{
 };
 pub use cues::{CueBuilder, CueTemplate};
 pub use engine::{AudioEngine, DefaultAudioEngine};
+pub use tones::{
+    CuePattern, Tone, ToneError, ToneGenerator, ZoneChange, ZoneChangeDetector, ZoneDirection,
+};
 pub use tts::{DefaultTtsProvider, TtsProvider, VoiceInfo};
 
 /// Errors that can occur during audio operations
