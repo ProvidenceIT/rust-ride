@@ -102,6 +102,18 @@ fitparser = "0.5"
 # Procedural Generation
 noise = "0.8"
 
+# Internationalization (UX & Accessibility Feature)
+fluent = "0.16"
+fluent-langneg = "0.14"
+unic-langid = "0.9"
+sys-locale = "0.3"
+
+# System Theme Detection (UX & Accessibility Feature)
+dark-light = "1.1"
+
+# Voice Recognition (UX & Accessibility Feature - optional)
+vosk = { version = "0.3", optional = true }
+
 # Platform-specific disk space checking
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem"] }
@@ -113,6 +125,7 @@ libc = "0.2"
 default = []
 video = []  # Enable video sync (requires FFmpeg)
 healthkit = []  # Enable Apple HealthKit (macOS only)
+voice-control = ["vosk"]  # Enable voice control (requires Vosk model)
 
 [dev-dependencies]
 tempfile = "3.0"

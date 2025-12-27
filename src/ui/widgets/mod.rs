@@ -7,6 +7,7 @@ pub mod metric_display;
 pub mod participant_list;
 pub mod pdc_chart;
 pub mod sensor_status;
+pub mod shortcut_overlay;
 pub mod smo2_display;
 pub mod tilt_indicator;
 pub mod weather_widget;
@@ -22,4 +23,5 @@ pub use sensor_status::{SensorConnectionCard, SensorStatusIndicator, SensorStatu
 pub use smo2_display::{SmO2Display, SmO2Placeholder, SmO2WidgetSize};
 pub use tilt_indicator::{TiltIndicator, TiltIndicatorConfig};
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
+pub use shortcut_overlay::ShortcutOverlay;
 pub use zone_indicator::ZoneIndicator;

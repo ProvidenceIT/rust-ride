@@ -49,6 +49,290 @@ impl std::fmt::Display for Theme {
     }
 }
 
+// ============================================================================
+// UX & Accessibility Types (Feature 008)
+// ============================================================================
+
+/// Theme selection preference with system-following option.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    /// Follow system dark/light mode
+    #[default]
+    FollowSystem,
+    /// Always use light theme
+    Light,
+    /// Always use dark theme
+    Dark,
+}
+
+impl std::fmt::Display for ThemePreference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThemePreference::FollowSystem => write!(f, "Follow System"),
+            ThemePreference::Light => write!(f, "Light"),
+            ThemePreference::Dark => write!(f, "Dark"),
+        }
+    }
+}
+
+/// Voice control activation mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceActivation {
+    /// Always listening for commands
+    AlwaysOn,
+    /// Requires push-to-talk key
+    PushToTalk,
+    /// Disabled
+    #[default]
+    Off,
+}
+
+/// Focus indicator style options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FocusIndicatorStyle {
+    /// Standard 2px outline
+    #[default]
+    Standard,
+    /// Bold 4px outline for visibility
+    Bold,
+    /// Animated pulsing outline
+    Animated,
+}
+
+/// Accessibility configuration stored per user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessibilitySettings {
+    /// Colorblind mode selection (uses ColorMode from accessibility module)
+    pub color_mode: String, // "normal", "protanopia", "deuteranopia", "tritanopia"
+
+    /// High contrast mode enabled
+    pub high_contrast: bool,
+
+    /// Screen reader optimizations enabled
+    pub screen_reader_enabled: bool,
+
+    /// Voice control enabled
+    pub voice_control_enabled: bool,
+
+    /// Voice control activation mode
+    pub voice_activation: VoiceActivation,
+
+    /// Focus indicator style
+    pub focus_indicator: FocusIndicatorStyle,
+
+    /// Reduce motion animations
+    pub reduce_motion: bool,
+}
+
+impl Default for AccessibilitySettings {
+    fn default() -> Self {
+        Self {
+            color_mode: "normal".to_string(),
+            high_contrast: false,
+            screen_reader_enabled: false,
+            voice_control_enabled: false,
+            voice_activation: VoiceActivation::Off,
+            focus_indicator: FocusIndicatorStyle::Standard,
+            reduce_motion: false,
+        }
+    }
+}
+
+/// Audio feedback settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioCueSettings {
+    /// Master audio enabled
+    pub enabled: bool,
+
+    /// Audio cue volume (0.0 - 1.0)
+    pub volume: f32,
+
+    /// Play sound on interval transitions
+    pub interval_cues: bool,
+
+    /// Play sound on zone changes
+    pub zone_change_cues: bool,
+
+    /// Play sound on workout start/end
+    pub workout_cues: bool,
+
+    /// Enable countdown beeps before intervals
+    pub countdown_enabled: bool,
+
+    /// Number of countdown beeps (3, 5, or 10 seconds)
+    pub countdown_seconds: u8,
+
+    /// Custom audio profile selection
+    pub profile: AudioProfile,
+}
+
+impl Default for AudioCueSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            volume: 0.7,
+            interval_cues: true,
+            zone_change_cues: true,
+            workout_cues: true,
+            countdown_enabled: true,
+            countdown_seconds: 3,
+            profile: AudioProfile::Simple,
+        }
+    }
+}
+
+/// Audio profile presets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioProfile {
+    /// Simple beep tones
+    #[default]
+    Simple,
+    /// Melodic tones
+    Melodic,
+    /// Minimal (only critical alerts)
+    Minimal,
+    /// Custom (user-defined frequencies)
+    Custom,
+}
+
+/// Display mode for the ride screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DisplayMode {
+    /// Standard dashboard layout
+    #[default]
+    Normal,
+    /// Large display optimized (TV Mode)
+    TvMode,
+    /// Minimal distraction (Flow Mode)
+    FlowMode,
+}
+
+/// Flow Mode configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowModeConfig {
+    /// Primary metric to display in Flow Mode
+    pub primary_metric: MetricType,
+
+    /// Show 3D world background
+    pub show_world: bool,
+
+    /// Show interval notifications
+    pub show_interval_alerts: bool,
+
+    /// Notification display duration in seconds
+    pub notification_duration_secs: f32,
+
+    /// Overlay opacity (0.0 - 1.0)
+    pub overlay_opacity: f32,
+}
+
+impl Default for FlowModeConfig {
+    fn default() -> Self {
+        Self {
+            primary_metric: MetricType::Power,
+            show_world: true,
+            show_interval_alerts: true,
+            notification_duration_secs: 3.0,
+            overlay_opacity: 0.9,
+        }
+    }
+}
+
+/// Date format preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DateFormat {
+    #[default]
+    /// YYYY-MM-DD
+    Iso,
+    /// MM/DD/YYYY
+    UsFormat,
+    /// DD/MM/YYYY
+    EuFormat,
+}
+
+/// Number format preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NumberFormat {
+    #[default]
+    /// 1,234.56 (comma thousands, period decimal)
+    Comma,
+    /// 1.234,56 (period thousands, comma decimal)
+    Period,
+}
+
+/// Language and locale settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocaleSettings {
+    /// Selected language code (e.g., "en-US", "es", "fr")
+    pub language: String,
+
+    /// Use system language on startup
+    pub follow_system: bool,
+
+    /// Date format preference
+    pub date_format: DateFormat,
+
+    /// Number format (decimal separator)
+    pub number_format: NumberFormat,
+}
+
+impl Default for LocaleSettings {
+    fn default() -> Self {
+        Self {
+            language: "en-US".to_string(),
+            follow_system: true,
+            date_format: DateFormat::Iso,
+            number_format: NumberFormat::Comma,
+        }
+    }
+}
+
+/// Extended user preferences including all UX & Accessibility settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPreferences {
+    /// Theme preference (extended from Theme to ThemePreference)
+    pub theme_preference: ThemePreference,
+
+    /// Accessibility settings
+    pub accessibility: AccessibilitySettings,
+
+    /// Audio feedback settings
+    pub audio: AudioCueSettings,
+
+    /// Current display mode
+    pub display_mode: DisplayMode,
+
+    /// Flow mode configuration
+    pub flow_mode: FlowModeConfig,
+
+    /// Locale/language settings
+    pub locale: LocaleSettings,
+
+    /// Active layout profile ID
+    pub active_layout_id: Option<Uuid>,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            theme_preference: ThemePreference::FollowSystem,
+            accessibility: AccessibilitySettings::default(),
+            audio: AudioCueSettings::default(),
+            display_mode: DisplayMode::Normal,
+            flow_mode: FlowModeConfig::default(),
+            locale: LocaleSettings::default(),
+            active_layout_id: None,
+        }
+    }
+}
+
 /// User profile with physiological data and preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserProfile {

@@ -25,6 +25,12 @@ pub mod hid;
 pub mod integrations;
 pub mod video;
 
+// UX & Accessibility modules (Feature 008)
+pub mod accessibility;
+pub mod i18n;
+pub mod input;
+pub mod onboarding;
+
 // Re-export commonly used types
 pub use metrics::calculator::MetricsCalculator;
 pub use recording::recorder::RideRecorder;
