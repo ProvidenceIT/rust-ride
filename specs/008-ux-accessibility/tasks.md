@@ -151,12 +151,12 @@
 
 ### Implementation for User Story 5
 
-- [ ] T061 [US5] Integrate dark-light crate for system theme detection in src/ui/theme.rs
-- [ ] T062 [US5] Implement ThemePreference enum handling (FollowSystem, Light, Dark) in src/ui/theme.rs
-- [ ] T063 [US5] Add system theme polling (5 second interval) in src/ui/theme.rs
-- [ ] T064 [US5] Implement smooth theme transition animation in src/ui/theme.rs
+- [x] T061 [US5] Integrate dark-light crate for system theme detection in src/ui/theme.rs
+- [x] T062 [US5] Implement ThemePreference enum handling (FollowSystem, Light, Dark) in src/ui/theme.rs
+- [x] T063 [US5] Add system theme polling (5 second interval) in src/ui/theme.rs
+- [x] T064 [US5] Implement smooth theme transition animation in src/ui/theme.rs
 - [x] T065 [US5] Add theme preference UI (Follow System / Light / Dark) in src/ui/screens/settings.rs
-- [ ] T066 [US5] Ensure theme changes don't disrupt active ride display in src/ui/screens/ride.rs
+- [x] T066 [US5] Ensure theme changes don't disrupt active ride display in src/ui/screens/ride.rs
 
 **Checkpoint**: User Story 5 complete - theme auto-detection works seamlessly
 
@@ -174,11 +174,11 @@
 - [x] T068 [US6] Implement drag-and-drop widget movement in src/ui/layout/editor.rs
 - [x] T069 [US6] Implement widget resize functionality in src/ui/layout/editor.rs
 - [x] T070 [US6] Add collision detection for widget placement in src/ui/layout/editor.rs
-- [ ] T071 [US6] Create layout profile save/load UI in src/ui/layout/mod.rs
-- [ ] T072 [US6] Implement profile naming dialog in src/ui/layout/mod.rs
-- [ ] T073 [US6] Implement profile deletion with confirmation in src/ui/layout/mod.rs
-- [ ] T074 [US6] Implement LayoutRenderer for dashboard in src/ui/layout/mod.rs
-- [ ] T075 [US6] Add layout profile selector to ride screen in src/ui/screens/ride.rs
+- [x] T071 [US6] Create layout profile save/load UI in src/ui/layout/mod.rs
+- [x] T072 [US6] Implement profile naming dialog in src/ui/layout/mod.rs
+- [x] T073 [US6] Implement profile deletion with confirmation in src/ui/layout/mod.rs
+- [x] T074 [US6] Implement LayoutRenderer for dashboard in src/ui/layout/mod.rs
+- [x] T075 [US6] Add layout profile selector to ride screen in src/ui/layout/mod.rs
 - [x] T076 [US6] Ensure default profile always exists and cannot be deleted in src/ui/layout/profiles.rs
 
 **Checkpoint**: User Story 6 complete - layout customization fully functional
