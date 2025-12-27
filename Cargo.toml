@@ -1,6 +1,6 @@
 [package]
 name = "rustride"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Open-source, self-hosted indoor cycling training application"
 authors = ["Providence IT"]
