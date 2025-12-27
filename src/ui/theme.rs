@@ -136,9 +136,12 @@ fn light_visuals() -> Visuals {
 }
 
 /// Power zone colors for display.
+/// T045: Updated to use ColorPaletteProvider for accessibility.
 pub mod zone_colors {
+    use crate::accessibility::{ColorMode, ColorPalette, ColorPaletteProvider};
     use egui::Color32;
 
+    /// Default zone colors (normal color vision).
     pub const Z1_RECOVERY: Color32 = Color32::from_rgb(128, 128, 128);
     pub const Z2_ENDURANCE: Color32 = Color32::from_rgb(0, 128, 255);
     pub const Z3_TEMPO: Color32 = Color32::from_rgb(0, 200, 100);
@@ -147,7 +150,7 @@ pub mod zone_colors {
     pub const Z6_ANAEROBIC: Color32 = Color32::from_rgb(255, 50, 50);
     pub const Z7_NEUROMUSCULAR: Color32 = Color32::from_rgb(180, 0, 180);
 
-    /// Get the color for a power zone (1-7).
+    /// Get the color for a power zone (1-7) using the default palette.
     pub fn power_zone_color(zone: u8) -> Color32 {
         match zone {
             1 => Z1_RECOVERY,
@@ -161,7 +164,14 @@ pub mod zone_colors {
         }
     }
 
-    /// Get the color for a HR zone (1-5).
+    /// Get the color for a power zone (1-7) using the specified color mode.
+    /// T045: Colorblind-safe zone colors.
+    pub fn power_zone_color_accessible(zone: u8, mode: ColorMode) -> Color32 {
+        let palette = ColorPalette::for_mode(mode);
+        palette.zone_color(zone)
+    }
+
+    /// Get the color for a HR zone (1-5) using the default palette.
     pub fn hr_zone_color(zone: u8) -> Color32 {
         match zone {
             1 => Z1_RECOVERY,
@@ -170,6 +180,77 @@ pub mod zone_colors {
             4 => Z4_THRESHOLD,
             5 => Z6_ANAEROBIC, // Red for max effort
             _ => Color32::GRAY,
+        }
+    }
+
+    /// Get the color for a HR zone (1-5) using the specified color mode.
+    /// T045: Colorblind-safe zone colors.
+    pub fn hr_zone_color_accessible(zone: u8, mode: ColorMode) -> Color32 {
+        let palette = ColorPalette::for_mode(mode);
+        palette.hr_zone_color(zone)
+    }
+
+    /// Zone color provider that caches the current palette.
+    /// T045: Efficient zone color lookups with active palette.
+    pub struct ZoneColorProvider {
+        palette: ColorPalette,
+        mode: ColorMode,
+    }
+
+    impl ZoneColorProvider {
+        /// Create a new zone color provider with the specified color mode.
+        pub fn new(mode: ColorMode) -> Self {
+            Self {
+                palette: ColorPalette::for_mode(mode),
+                mode,
+            }
+        }
+
+        /// Update the color mode.
+        pub fn set_mode(&mut self, mode: ColorMode) {
+            self.mode = mode;
+            self.palette = ColorPalette::for_mode(mode);
+        }
+
+        /// Get the current color mode.
+        pub fn mode(&self) -> ColorMode {
+            self.mode
+        }
+
+        /// Get the power zone color (1-7).
+        pub fn power_zone(&self, zone: u8) -> Color32 {
+            self.palette.zone_color(zone)
+        }
+
+        /// Get the HR zone color (1-5).
+        pub fn hr_zone(&self, zone: u8) -> Color32 {
+            self.palette.hr_zone_color(zone)
+        }
+
+        /// Get zone 4 (threshold) color for primary accent.
+        pub fn primary(&self) -> Color32 {
+            self.palette.zone_color(4)
+        }
+
+        /// Get zone 3 (tempo) color for success.
+        pub fn success(&self) -> Color32 {
+            self.palette.zone_color(3)
+        }
+
+        /// Get zone 5 (VO2max) color for warning.
+        pub fn warning(&self) -> Color32 {
+            self.palette.zone_color(5)
+        }
+
+        /// Get zone 6 (anaerobic) color for error.
+        pub fn error(&self) -> Color32 {
+            self.palette.zone_color(6)
+        }
+    }
+
+    impl Default for ZoneColorProvider {
+        fn default() -> Self {
+            Self::new(ColorMode::Normal)
         }
     }
 }

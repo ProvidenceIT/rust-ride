@@ -82,13 +82,13 @@
 ### Implementation for User Story 2
 
 - [x] T030 [US2] Extend Units enum with conversion methods in src/storage/config.rs
-- [ ] T031 [US2] Add unit preference UI toggle in src/ui/screens/settings.rs
+- [x] T031 [US2] Add unit preference UI toggle in src/ui/screens/settings.rs
 - [x] T032 [US2] Implement format_speed() with unit awareness in src/metrics/calculator.rs
 - [x] T033 [US2] Implement format_distance() with unit awareness in src/metrics/calculator.rs
 - [x] T034 [US2] Implement format_elevation() with unit awareness in src/metrics/calculator.rs
-- [ ] T035 [US2] Update metric_display widget to use unit-aware formatting in src/ui/widgets/metric_display.rs
-- [ ] T036 [US2] Update ride export to include unit metadata in src/recording/export.rs
-- [ ] T037 [US2] Ensure unit changes propagate immediately without restart in src/app.rs
+- [x] T035 [US2] Update metric_display widget to use unit-aware formatting in src/ui/widgets/metric_display.rs
+- [x] T036 [US2] Update ride export to include unit metadata in src/recording/export.rs
+- [x] T037 [US2] Ensure unit changes propagate immediately without restart in src/app.rs
 
 **Checkpoint**: User Story 2 complete - unit toggle works throughout application
 
@@ -109,10 +109,10 @@
 - [x] T042 [US3] Implement ColorPaletteProvider trait in src/accessibility/colorblind.rs
 - [x] T043 [US3] Create HighContrastTheme with WCAG AAA ratios (7:1) in src/accessibility/high_contrast.rs
 - [x] T044 [US3] Add contrast ratio calculation utility in src/accessibility/high_contrast.rs
-- [ ] T045 [US3] Update zone_colors module to use active palette in src/ui/theme.rs
+- [x] T045 [US3] Update zone_colors module to use active palette in src/ui/theme.rs
 - [ ] T046 [US3] Add pattern fills for charts (stripes, dots) as secondary indicators in src/ui/widgets/
 - [x] T047 [US3] Add colorblind/contrast mode UI in accessibility settings screen in src/ui/screens/settings.rs
-- [ ] T048 [US3] Ensure immediate mode switch without restart in src/app.rs
+- [x] T048 [US3] Ensure immediate mode switch without restart in src/app.rs
 
 **Checkpoint**: User Story 3 complete - all colorblind and high contrast modes functional
 

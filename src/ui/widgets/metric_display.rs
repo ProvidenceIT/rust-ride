@@ -1,7 +1,9 @@
 //! Metric display widget for showing training metrics.
 //!
 //! T049: Implement metric display widget (large readable numbers)
+//! T035: Add unit-aware formatting for speed, distance, elevation
 
+use crate::storage::config::Units;
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 /// A widget for displaying a single training metric.
@@ -100,10 +102,46 @@ impl<'a> MetricDisplay<'a> {
         Self::new(value, "km/h", "Speed")
     }
 
+    /// Create a metric display for speed with unit awareness.
+    /// T035: Unit-aware speed formatting.
+    pub fn speed_with_units(speed_mps: Option<f32>, units: Units) -> Self {
+        if let Some(mps) = speed_mps {
+            let (value, unit) = units.format_speed(mps as f64);
+            Self::new(format!("{:.1}", value), unit, "Speed")
+        } else {
+            let unit = match units {
+                Units::Metric => "km/h",
+                Units::Imperial => "mph",
+            };
+            Self::new("--".to_string(), unit, "Speed")
+        }
+    }
+
     /// Create a metric display for distance.
     pub fn distance(meters: f64) -> Self {
         let km = meters / 1000.0;
         Self::new(format!("{:.2}", km), "km", "Distance")
+    }
+
+    /// Create a metric display for distance with unit awareness.
+    /// T035: Unit-aware distance formatting.
+    pub fn distance_with_units(meters: f64, units: Units) -> Self {
+        let (value, unit) = units.format_distance(meters);
+        Self::new(format!("{:.2}", value), unit, "Distance")
+    }
+
+    /// Create a metric display for elevation with unit awareness.
+    /// T035: Unit-aware elevation formatting.
+    pub fn elevation_with_units(meters: f64, units: Units) -> Self {
+        let (value, unit) = units.format_elevation(meters);
+        Self::new(format!("{:.0}", value), unit, "Elevation")
+    }
+
+    /// Create a metric display for weight with unit awareness.
+    /// T035: Unit-aware weight formatting.
+    pub fn weight_with_units(kg: f64, units: Units) -> Self {
+        let (value, unit) = units.format_weight(kg);
+        Self::new(format!("{:.1}", value), unit, "Weight")
     }
 
     /// Create a metric display for duration.
