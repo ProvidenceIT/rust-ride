@@ -220,8 +220,8 @@
 - [x] T088 [US8] Define TvModeLayout with simplified metrics in src/ui/display_modes/tv_mode.rs
 - [x] T089 [US8] Implement enlarged button sizes for TV Mode in src/ui/display_modes/tv_mode.rs
 - [x] T090 [US8] Add TV Mode toggle hotkey (T key) in src/input/keyboard.rs
-- [ ] T091 [US8] Implement metrics de-emphasis/hiding for clutter reduction in src/ui/display_modes/tv_mode.rs
-- [ ] T092 [US8] Add TV Mode toggle in settings UI in src/ui/screens/settings.rs
+- [x] T091 [US8] Implement metrics de-emphasis/hiding for clutter reduction in src/ui/display_modes/tv_mode.rs
+- [x] T092 [US8] Add TV Mode toggle in settings UI in src/ui/screens/settings.rs
 - [x] T093 [US8] Ensure smooth transition between Normal and TV Mode in src/ui/display_modes/mod.rs
 
 **Checkpoint**: User Story 8 complete - TV Mode optimized for large displays

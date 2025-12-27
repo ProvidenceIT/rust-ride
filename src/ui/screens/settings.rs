@@ -106,6 +106,10 @@ pub struct SettingsScreen {
     pub locale_settings: LocaleSettings,
     /// T060: Restart onboarding flag
     pub restart_onboarding_requested: bool,
+    /// T092: TV Mode enabled
+    pub tv_mode_enabled: bool,
+    /// T092: TV Mode font scale (1.5-3.0)
+    pub tv_mode_font_scale: f32,
 }
 
 /// T064: Audio alert settings for voice alerts and notifications.
@@ -354,6 +358,8 @@ impl SettingsScreen {
             theme_preference: ThemePreference::FollowSystem,
             locale_settings: LocaleSettings::default(),
             restart_onboarding_requested: false,
+            tv_mode_enabled: false,
+            tv_mode_font_scale: 2.0,
         }
     }
 
@@ -2880,6 +2886,42 @@ impl SettingsScreen {
                     .changed()
                 {
                     self.has_changes = true;
+                }
+
+                ui.add_space(12.0);
+
+                // T092: TV Mode settings
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label(RichText::new("TV Mode").strong());
+                ui.label(
+                    RichText::new("Optimized for large displays (65\"+) at 3+ meter distance")
+                        .color(Color32::GRAY)
+                        .small(),
+                );
+
+                if ui
+                    .checkbox(&mut self.tv_mode_enabled, "Enable TV Mode")
+                    .on_hover_text("Enlarge fonts and simplify layout for viewing from a distance")
+                    .changed()
+                {
+                    self.has_changes = true;
+                }
+
+                if self.tv_mode_enabled {
+                    ui.horizontal(|ui| {
+                        ui.label("Font Scale:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut self.tv_mode_font_scale, 1.5..=3.0)
+                                    .text("x")
+                                    .step_by(0.1),
+                            )
+                            .changed()
+                        {
+                            self.has_changes = true;
+                        }
+                    });
                 }
 
                 ui.add_space(12.0);

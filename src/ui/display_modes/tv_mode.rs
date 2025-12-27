@@ -2,9 +2,11 @@
 //!
 //! Optimized for 65"+ displays at 3+ meter viewing distance with enlarged fonts
 //! and simplified layouts.
+//!
+//! T091: Implement metrics de-emphasis/hiding for clutter reduction
 
 use crate::storage::config::MetricType;
-use egui::{Context, Vec2};
+use egui::{Color32, Context, Vec2};
 use serde::{Deserialize, Serialize};
 
 /// TV Mode layout configuration.
@@ -193,6 +195,55 @@ impl TvModeRenderer {
     pub fn show_metric(&mut self, metric: MetricType) {
         self.hidden_metrics.retain(|m| *m != metric);
     }
+
+    /// T091: Get the de-emphasized metrics (shown with reduced opacity).
+    pub fn deemphasized_metrics(&self) -> Vec<MetricType> {
+        vec![
+            MetricType::Distance,
+            MetricType::NormalizedPower,
+            MetricType::Speed,
+        ]
+    }
+
+    /// T091: Check if a metric should be de-emphasized.
+    pub fn should_deemphasize(&self, metric: MetricType) -> bool {
+        self.deemphasized_metrics().contains(&metric)
+    }
+
+    /// T091: Get the de-emphasis color (reduced opacity).
+    pub fn deemphasize_color(&self) -> Color32 {
+        Color32::from_rgba_unmultiplied(160, 160, 170, 180)
+    }
+
+    /// T091: Get the visibility level for a metric.
+    pub fn metric_visibility(&self, metric: MetricType) -> MetricVisibility {
+        if self.should_hide_metric(metric) {
+            MetricVisibility::Hidden
+        } else if self.should_deemphasize(metric) {
+            MetricVisibility::Deemphasized
+        } else if self.layout.primary_metrics.contains(&metric) {
+            MetricVisibility::Primary
+        } else if self.layout.secondary_metrics.contains(&metric) {
+            MetricVisibility::Secondary
+        } else {
+            MetricVisibility::Normal
+        }
+    }
+}
+
+/// T091: Visibility levels for metrics in TV Mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricVisibility {
+    /// Primary metric - largest, most prominent
+    Primary,
+    /// Secondary metric - medium size
+    Secondary,
+    /// Normal visibility
+    Normal,
+    /// De-emphasized - reduced opacity
+    Deemphasized,
+    /// Hidden - not shown
+    Hidden,
 }
 
 /// Trait for TV Mode rendering.
