@@ -17,14 +17,14 @@
 
 **Purpose**: Project initialization and module structure for UX & Accessibility features
 
-- [ ] T001 Add new dependencies to Cargo.toml (fluent, fluent-langneg, unic-langid, sys-locale, dark-light)
-- [ ] T002 [P] Create src/accessibility/mod.rs with module structure and exports
-- [ ] T003 [P] Create src/i18n/mod.rs with module structure and exports
-- [ ] T004 [P] Create src/onboarding/mod.rs with module structure and exports
-- [ ] T005 [P] Create src/input/mod.rs with module structure and exports
-- [ ] T006 [P] Create src/ui/layout/mod.rs with module structure and exports
-- [ ] T007 [P] Create src/ui/display_modes/mod.rs with module structure and exports
-- [ ] T008 Register all new modules in src/lib.rs
+- [x] T001 Add new dependencies to Cargo.toml (fluent, fluent-langneg, unic-langid, sys-locale, dark-light)
+- [x] T002 [P] Create src/accessibility/mod.rs with module structure and exports
+- [x] T003 [P] Create src/i18n/mod.rs with module structure and exports
+- [x] T004 [P] Create src/onboarding/mod.rs with module structure and exports
+- [x] T005 [P] Create src/input/mod.rs with module structure and exports
+- [x] T006 [P] Create src/ui/layout/mod.rs with module structure and exports
+- [x] T007 [P] Create src/ui/display_modes/mod.rs with module structure and exports
+- [x] T008 Register all new modules in src/lib.rs
 
 ---
 
@@ -34,17 +34,17 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T009 Extend AccessibilitySettings struct in src/storage/config.rs per data-model.md
-- [ ] T010 [P] Extend AudioSettings struct in src/storage/config.rs per data-model.md
-- [ ] T011 [P] Add ThemePreference enum (FollowSystem, Light, Dark) to src/storage/config.rs
-- [ ] T012 [P] Add LocaleSettings struct to src/storage/config.rs per data-model.md
-- [ ] T013 [P] Add DisplayMode and FlowModeSettings to src/storage/config.rs per data-model.md
-- [ ] T014 Extend UserPreferences struct to include all new settings in src/storage/config.rs
-- [ ] T015 Create database migration for layout_profiles table in src/storage/migrations.rs
-- [ ] T016 [P] Create database migration for onboarding_state table in src/storage/migrations.rs
-- [ ] T017 [P] Create database migration for user_preferences table in src/storage/migrations.rs
-- [ ] T018 Create LayoutProfile struct and WidgetPlacement in src/ui/layout/profiles.rs
-- [ ] T019 Implement layout profile CRUD operations in src/ui/layout/profiles.rs (max 10 limit)
+- [x] T009 Extend AccessibilitySettings struct in src/storage/config.rs per data-model.md
+- [x] T010 [P] Extend AudioSettings struct in src/storage/config.rs per data-model.md
+- [x] T011 [P] Add ThemePreference enum (FollowSystem, Light, Dark) to src/storage/config.rs
+- [x] T012 [P] Add LocaleSettings struct to src/storage/config.rs per data-model.md
+- [x] T013 [P] Add DisplayMode and FlowModeSettings to src/storage/config.rs per data-model.md
+- [x] T014 Extend UserPreferences struct to include all new settings in src/storage/config.rs
+- [x] T015 Create database migration for layout_profiles table in src/storage/migrations.rs
+- [x] T016 [P] Create database migration for onboarding_state table in src/storage/migrations.rs
+- [x] T017 [P] Create database migration for user_preferences table in src/storage/migrations.rs
+- [x] T018 Create LayoutProfile struct and WidgetPlacement in src/ui/layout/profiles.rs
+- [x] T019 Implement layout profile CRUD operations in src/ui/layout/profiles.rs (max 10 limit)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -58,14 +58,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Create FocusManager struct for tracking focus order in src/accessibility/focus.rs
-- [ ] T021 [P] [US1] Implement FocusIndicatorStyle enum and focus ring rendering in src/accessibility/focus.rs
-- [ ] T022 [US1] Implement Tab/Shift+Tab navigation handler in src/input/keyboard.rs
-- [ ] T023 [US1] Implement Enter/Space button activation in src/input/keyboard.rs
-- [ ] T024 [US1] Implement Escape key for modal/overlay closing in src/input/keyboard.rs
-- [ ] T025 [US1] Create KeyboardShortcuts registry in src/input/keyboard.rs
-- [ ] T026 [US1] Implement shortcut guide overlay (? or F1 key) in src/ui/widgets/shortcut_overlay.rs
-- [ ] T027 [US1] Add focus trap for modal dialogs in src/accessibility/focus.rs
+- [x] T020 [P] [US1] Create FocusManager struct for tracking focus order in src/accessibility/focus.rs
+- [x] T021 [P] [US1] Implement FocusIndicatorStyle enum and focus ring rendering in src/accessibility/focus.rs
+- [x] T022 [US1] Implement Tab/Shift+Tab navigation handler in src/input/keyboard.rs
+- [x] T023 [US1] Implement Enter/Space button activation in src/input/keyboard.rs
+- [x] T024 [US1] Implement Escape key for modal/overlay closing in src/input/keyboard.rs
+- [x] T025 [US1] Create KeyboardShortcuts registry in src/input/keyboard.rs
+- [x] T026 [US1] Implement shortcut guide overlay (? or F1 key) in src/ui/widgets/shortcut_overlay.rs
+- [x] T027 [US1] Add focus trap for modal dialogs in src/accessibility/focus.rs
 - [ ] T028 [US1] Update all existing button widgets to support focus in src/ui/widgets/
 - [ ] T029 [US1] Integrate focus manager with main app loop in src/app.rs
 
@@ -81,11 +81,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Extend Units enum with conversion methods in src/storage/config.rs
+- [x] T030 [US2] Extend Units enum with conversion methods in src/storage/config.rs
 - [ ] T031 [US2] Add unit preference UI toggle in src/ui/screens/settings.rs
-- [ ] T032 [US2] Implement format_speed() with unit awareness in src/metrics/calculator.rs
-- [ ] T033 [US2] Implement format_distance() with unit awareness in src/metrics/calculator.rs
-- [ ] T034 [US2] Implement format_elevation() with unit awareness in src/metrics/calculator.rs
+- [x] T032 [US2] Implement format_speed() with unit awareness in src/metrics/calculator.rs
+- [x] T033 [US2] Implement format_distance() with unit awareness in src/metrics/calculator.rs
+- [x] T034 [US2] Implement format_elevation() with unit awareness in src/metrics/calculator.rs
 - [ ] T035 [US2] Update metric_display widget to use unit-aware formatting in src/ui/widgets/metric_display.rs
 - [ ] T036 [US2] Update ride export to include unit metadata in src/recording/export.rs
 - [ ] T037 [US2] Ensure unit changes propagate immediately without restart in src/app.rs
@@ -102,13 +102,13 @@
 
 ### Implementation for User Story 3
 
-- [ ] T038 [P] [US3] Create ColorMode enum (Normal, Protanopia, Deuteranopia, Tritanopia) in src/accessibility/colorblind.rs
-- [ ] T039 [P] [US3] Define protanopia-safe color palette in src/accessibility/colorblind.rs
-- [ ] T040 [P] [US3] Define deuteranopia-safe color palette in src/accessibility/colorblind.rs
-- [ ] T041 [P] [US3] Define tritanopia-safe color palette in src/accessibility/colorblind.rs
-- [ ] T042 [US3] Implement ColorPaletteProvider trait in src/accessibility/colorblind.rs
-- [ ] T043 [US3] Create HighContrastTheme with WCAG AAA ratios (7:1) in src/accessibility/high_contrast.rs
-- [ ] T044 [US3] Add contrast ratio calculation utility in src/accessibility/high_contrast.rs
+- [x] T038 [P] [US3] Create ColorMode enum (Normal, Protanopia, Deuteranopia, Tritanopia) in src/accessibility/colorblind.rs
+- [x] T039 [P] [US3] Define protanopia-safe color palette in src/accessibility/colorblind.rs
+- [x] T040 [P] [US3] Define deuteranopia-safe color palette in src/accessibility/colorblind.rs
+- [x] T041 [P] [US3] Define tritanopia-safe color palette in src/accessibility/colorblind.rs
+- [x] T042 [US3] Implement ColorPaletteProvider trait in src/accessibility/colorblind.rs
+- [x] T043 [US3] Create HighContrastTheme with WCAG AAA ratios (7:1) in src/accessibility/high_contrast.rs
+- [x] T044 [US3] Add contrast ratio calculation utility in src/accessibility/high_contrast.rs
 - [ ] T045 [US3] Update zone_colors module to use active palette in src/ui/theme.rs
 - [ ] T046 [US3] Add pattern fills for charts (stripes, dots) as secondary indicators in src/ui/widgets/
 - [ ] T047 [US3] Add colorblind/contrast mode UI in accessibility settings screen in src/ui/screens/settings.rs
@@ -126,16 +126,16 @@
 
 ### Implementation for User Story 4
 
-- [ ] T049 [P] [US4] Create OnboardingState struct and persistence in src/onboarding/mod.rs
-- [ ] T050 [P] [US4] Create OnboardingStep enum (Welcome, SensorSetup, ProfileSetup, FtpConfiguration, UiTour, Complete) in src/onboarding/steps.rs
-- [ ] T051 [US4] Implement OnboardingWizard state machine in src/onboarding/mod.rs
+- [x] T049 [P] [US4] Create OnboardingState struct and persistence in src/onboarding/mod.rs
+- [x] T050 [P] [US4] Create OnboardingStep enum (Welcome, SensorSetup, ProfileSetup, FtpConfiguration, UiTour, Complete) in src/onboarding/steps.rs
+- [x] T051 [US4] Implement OnboardingWizard state machine in src/onboarding/mod.rs
 - [ ] T052 [US4] Create Welcome step UI in src/onboarding/steps.rs
 - [ ] T053 [US4] Create SensorSetup step UI with discovery integration in src/onboarding/steps.rs
 - [ ] T054 [US4] Create ProfileSetup step UI in src/onboarding/steps.rs
 - [ ] T055 [US4] Create FtpConfiguration step UI in src/onboarding/steps.rs
 - [ ] T056 [US4] Create UiTour step UI in src/onboarding/steps.rs
-- [ ] T057 [US4] Implement glossary tooltips for cycling terms (FTP, FTMS, ANT+, TSS) in src/onboarding/glossary.rs
-- [ ] T058 [US4] Add skip/resume/restart functionality in src/onboarding/mod.rs
+- [x] T057 [US4] Implement glossary tooltips for cycling terms (FTP, FTMS, ANT+, TSS) in src/onboarding/glossary.rs
+- [x] T058 [US4] Add skip/resume/restart functionality in src/onboarding/mod.rs
 - [ ] T059 [US4] Integrate onboarding check on app startup in src/app.rs
 - [ ] T060 [US4] Add "Restart Onboarding" option in settings screen in src/ui/screens/settings.rs
 
@@ -170,16 +170,16 @@
 
 ### Implementation for User Story 6
 
-- [ ] T067 [US6] Create LayoutEditor struct for edit mode in src/ui/layout/editor.rs
-- [ ] T068 [US6] Implement drag-and-drop widget movement in src/ui/layout/editor.rs
-- [ ] T069 [US6] Implement widget resize functionality in src/ui/layout/editor.rs
-- [ ] T070 [US6] Add collision detection for widget placement in src/ui/layout/editor.rs
+- [x] T067 [US6] Create LayoutEditor struct for edit mode in src/ui/layout/editor.rs
+- [x] T068 [US6] Implement drag-and-drop widget movement in src/ui/layout/editor.rs
+- [x] T069 [US6] Implement widget resize functionality in src/ui/layout/editor.rs
+- [x] T070 [US6] Add collision detection for widget placement in src/ui/layout/editor.rs
 - [ ] T071 [US6] Create layout profile save/load UI in src/ui/layout/mod.rs
 - [ ] T072 [US6] Implement profile naming dialog in src/ui/layout/mod.rs
 - [ ] T073 [US6] Implement profile deletion with confirmation in src/ui/layout/mod.rs
 - [ ] T074 [US6] Implement LayoutRenderer for dashboard in src/ui/layout/mod.rs
 - [ ] T075 [US6] Add layout profile selector to ride screen in src/ui/screens/ride.rs
-- [ ] T076 [US6] Ensure default profile always exists and cannot be deleted in src/ui/layout/profiles.rs
+- [x] T076 [US6] Ensure default profile always exists and cannot be deleted in src/ui/layout/profiles.rs
 
 **Checkpoint**: User Story 6 complete - layout customization fully functional
 
@@ -216,13 +216,13 @@
 
 ### Implementation for User Story 8
 
-- [ ] T087 [US8] Create TvModeRenderer with font scaling (48pt+ primary) in src/ui/display_modes/tv_mode.rs
-- [ ] T088 [US8] Define TvModeLayout with simplified metrics in src/ui/display_modes/tv_mode.rs
-- [ ] T089 [US8] Implement enlarged button sizes for TV Mode in src/ui/display_modes/tv_mode.rs
-- [ ] T090 [US8] Add TV Mode toggle hotkey (T key) in src/input/keyboard.rs
+- [x] T087 [US8] Create TvModeRenderer with font scaling (48pt+ primary) in src/ui/display_modes/tv_mode.rs
+- [x] T088 [US8] Define TvModeLayout with simplified metrics in src/ui/display_modes/tv_mode.rs
+- [x] T089 [US8] Implement enlarged button sizes for TV Mode in src/ui/display_modes/tv_mode.rs
+- [x] T090 [US8] Add TV Mode toggle hotkey (T key) in src/input/keyboard.rs
 - [ ] T091 [US8] Implement metrics de-emphasis/hiding for clutter reduction in src/ui/display_modes/tv_mode.rs
 - [ ] T092 [US8] Add TV Mode toggle in settings UI in src/ui/screens/settings.rs
-- [ ] T093 [US8] Ensure smooth transition between Normal and TV Mode in src/ui/display_modes/mod.rs
+- [x] T093 [US8] Ensure smooth transition between Normal and TV Mode in src/ui/display_modes/mod.rs
 
 **Checkpoint**: User Story 8 complete - TV Mode optimized for large displays
 
@@ -236,14 +236,14 @@
 
 ### Implementation for User Story 9
 
-- [ ] T094 [US9] Create FlowModeRenderer in src/ui/display_modes/flow_mode.rs
-- [ ] T095 [US9] Implement single-metric centered display in src/ui/display_modes/flow_mode.rs
-- [ ] T096 [US9] Add Flow Mode settings (primary metric, world background) in src/ui/display_modes/flow_mode.rs
-- [ ] T097 [US9] Implement brief interval notification overlay with fade in src/ui/display_modes/flow_mode.rs
-- [ ] T098 [US9] Add Flow Mode toggle hotkey (F key) in src/input/keyboard.rs
-- [ ] T099 [US9] Add metric cycle hotkey (M key) for Flow Mode in src/input/keyboard.rs
+- [x] T094 [US9] Create FlowModeRenderer in src/ui/display_modes/flow_mode.rs
+- [x] T095 [US9] Implement single-metric centered display in src/ui/display_modes/flow_mode.rs
+- [x] T096 [US9] Add Flow Mode settings (primary metric, world background) in src/ui/display_modes/flow_mode.rs
+- [x] T097 [US9] Implement brief interval notification overlay with fade in src/ui/display_modes/flow_mode.rs
+- [x] T098 [US9] Add Flow Mode toggle hotkey (F key) in src/input/keyboard.rs
+- [x] T099 [US9] Add metric cycle hotkey (M key) for Flow Mode in src/input/keyboard.rs
 - [ ] T100 [US9] Integrate 3D world expansion in Flow Mode in src/ui/display_modes/flow_mode.rs
-- [ ] T101 [US9] Add Escape or any input to exit Flow Mode in src/input/keyboard.rs
+- [x] T101 [US9] Add Escape or any input to exit Flow Mode in src/input/keyboard.rs
 
 **Checkpoint**: User Story 9 complete - Flow Mode provides minimal distraction experience
 
@@ -257,17 +257,17 @@
 
 ### Implementation for User Story 10
 
-- [ ] T102 [P] [US10] Setup fluent-rs integration in src/i18n/mod.rs
-- [ ] T103 [P] [US10] Create TranslationLoader for .ftl files in src/i18n/loader.rs
-- [ ] T104 [P] [US10] Create English (en-US) translation file in src/i18n/locales/en-US/main.ftl
-- [ ] T105 [P] [US10] Create Spanish translation file in src/i18n/locales/es/main.ftl
-- [ ] T106 [P] [US10] Create French translation file in src/i18n/locales/fr/main.ftl
-- [ ] T107 [P] [US10] Create German translation file in src/i18n/locales/de/main.ftl
-- [ ] T108 [P] [US10] Create Italian translation file in src/i18n/locales/it/main.ftl
-- [ ] T109 [US10] Implement system locale detection via sys-locale in src/i18n/mod.rs
-- [ ] T110 [US10] Implement runtime language switching without restart in src/i18n/mod.rs
-- [ ] T111 [US10] Implement English fallback for missing translations in src/i18n/mod.rs
-- [ ] T112 [US10] Create t!() macro for translation lookups in src/i18n/mod.rs
+- [x] T102 [P] [US10] Setup fluent-rs integration in src/i18n/mod.rs
+- [x] T103 [P] [US10] Create TranslationLoader for .ftl files in src/i18n/loader.rs
+- [x] T104 [P] [US10] Create English (en-US) translation file in src/i18n/locales/en-US/main.ftl
+- [x] T105 [P] [US10] Create Spanish translation file in src/i18n/locales/es/main.ftl
+- [x] T106 [P] [US10] Create French translation file in src/i18n/locales/fr/main.ftl
+- [x] T107 [P] [US10] Create German translation file in src/i18n/locales/de/main.ftl
+- [x] T108 [P] [US10] Create Italian translation file in src/i18n/locales/it/main.ftl
+- [x] T109 [US10] Implement system locale detection via sys-locale in src/i18n/mod.rs
+- [x] T110 [US10] Implement runtime language switching without restart in src/i18n/mod.rs
+- [x] T111 [US10] Implement English fallback for missing translations in src/i18n/mod.rs
+- [x] T112 [US10] Create t!() macro for translation lookups in src/i18n/mod.rs
 - [ ] T113 [US10] Add language selector UI in settings screen in src/ui/screens/settings.rs
 - [ ] T114 [US10] Replace all hardcoded UI strings with t!() calls across src/ui/
 
@@ -305,16 +305,16 @@
 
 ### Implementation for User Story 12
 
-- [ ] T124 [US12] Add vosk as optional feature dependency in Cargo.toml
-- [ ] T125 [US12] Create VoiceControl trait and VoiceCommand enum in src/accessibility/voice_control.rs
+- [x] T124 [US12] Add vosk as optional feature dependency in Cargo.toml
+- [x] T125 [US12] Create VoiceControl trait and VoiceCommand enum in src/accessibility/voice_control.rs
 - [ ] T126 [US12] Implement Vosk model initialization (download on first run) in src/accessibility/voice_control.rs
-- [ ] T127 [US12] Implement command vocabulary recognition (start, pause, resume, end, skip) in src/accessibility/voice_control.rs
-- [ ] T128 [US12] Add VoiceControlState enum (Ready, Listening, Unavailable) in src/accessibility/voice_control.rs
+- [x] T127 [US12] Implement command vocabulary recognition (start, pause, resume, end, skip) in src/accessibility/voice_control.rs
+- [x] T128 [US12] Add VoiceControlState enum (Ready, Listening, Unavailable) in src/accessibility/voice_control.rs
 - [ ] T129 [US12] Implement "Voice Unavailable" indicator UI in src/ui/widgets/voice_indicator.rs
 - [ ] T130 [US12] Add visual/audio confirmation of recognized commands in src/accessibility/voice_control.rs
 - [ ] T131 [US12] Add voice control settings (enable, activation mode) in src/ui/screens/settings.rs
 - [ ] T132 [US12] Integrate voice commands with ride control in src/app.rs
-- [ ] T133 [US12] Handle graceful degradation when voice unavailable in src/accessibility/voice_control.rs
+- [x] T133 [US12] Handle graceful degradation when voice unavailable in src/accessibility/voice_control.rs
 
 **Checkpoint**: User Story 12 complete - voice control functional for all supported commands
 
@@ -328,11 +328,11 @@
 
 ### Implementation for User Story 13
 
-- [ ] T134 [US13] Create TouchGestureHandler in src/input/touch.rs
-- [ ] T135 [US13] Implement swipe detection (direction, distance) in src/input/gestures.rs
-- [ ] T136 [US13] Implement pinch-zoom detection via multi_touch() in src/input/gestures.rs
+- [x] T134 [US13] Create TouchGestureHandler in src/input/touch.rs
+- [x] T135 [US13] Implement swipe detection (direction, distance) in src/input/gestures.rs
+- [x] T136 [US13] Implement pinch-zoom detection via multi_touch() in src/input/gestures.rs
 - [ ] T137 [US13] Create AccessibleButton widget wrapper ensuring 44x44 minimum in src/ui/widgets/accessible_button.rs
-- [ ] T138 [US13] Implement swipe navigation between screens in src/input/gestures.rs
+- [x] T138 [US13] Implement swipe navigation between screens in src/input/gestures.rs
 - [ ] T139 [US13] Implement pinch-zoom for graphs in src/ui/widgets/
 - [ ] T140 [US13] Update all buttons to use AccessibleButton wrapper in src/ui/widgets/
 - [ ] T141 [US13] Add touch feedback visual effects in src/ui/widgets/accessible_button.rs

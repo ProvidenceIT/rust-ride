@@ -29,6 +29,163 @@ impl std::fmt::Display for Units {
     }
 }
 
+impl Units {
+    // Conversion constants
+    const KM_TO_MILES: f64 = 0.621371;
+    const METERS_TO_FEET: f64 = 3.28084;
+    const KG_TO_LBS: f64 = 2.20462;
+
+    /// Convert speed from m/s to display units.
+    /// Returns (value, unit_label)
+    pub fn format_speed(&self, meters_per_second: f64) -> (f64, &'static str) {
+        match self {
+            Units::Metric => {
+                let kmh = meters_per_second * 3.6;
+                (kmh, "km/h")
+            }
+            Units::Imperial => {
+                let mph = meters_per_second * 3.6 * Self::KM_TO_MILES;
+                (mph, "mph")
+            }
+        }
+    }
+
+    /// Convert distance from meters to display units.
+    /// Returns (value, unit_label)
+    pub fn format_distance(&self, meters: f64) -> (f64, &'static str) {
+        match self {
+            Units::Metric => {
+                if meters < 1000.0 {
+                    (meters, "m")
+                } else {
+                    (meters / 1000.0, "km")
+                }
+            }
+            Units::Imperial => {
+                let miles = meters / 1000.0 * Self::KM_TO_MILES;
+                if miles < 0.1 {
+                    let feet = meters * Self::METERS_TO_FEET;
+                    (feet, "ft")
+                } else {
+                    (miles, "mi")
+                }
+            }
+        }
+    }
+
+    /// Convert elevation from meters to display units.
+    /// Returns (value, unit_label)
+    pub fn format_elevation(&self, meters: f64) -> (f64, &'static str) {
+        match self {
+            Units::Metric => (meters, "m"),
+            Units::Imperial => {
+                let feet = meters * Self::METERS_TO_FEET;
+                (feet, "ft")
+            }
+        }
+    }
+
+    /// Convert weight from kg to display units.
+    /// Returns (value, unit_label)
+    pub fn format_weight(&self, kilograms: f64) -> (f64, &'static str) {
+        match self {
+            Units::Metric => (kilograms, "kg"),
+            Units::Imperial => {
+                let lbs = kilograms * Self::KG_TO_LBS;
+                (lbs, "lbs")
+            }
+        }
+    }
+
+    /// Convert temperature from Celsius to display units.
+    /// Returns (value, unit_label)
+    pub fn format_temperature(&self, celsius: f64) -> (f64, &'static str) {
+        match self {
+            Units::Metric => (celsius, "°C"),
+            Units::Imperial => {
+                let fahrenheit = celsius * 9.0 / 5.0 + 32.0;
+                (fahrenheit, "°F")
+            }
+        }
+    }
+
+    /// Get the speed unit label.
+    pub fn speed_unit(&self) -> &'static str {
+        match self {
+            Units::Metric => "km/h",
+            Units::Imperial => "mph",
+        }
+    }
+
+    /// Get the distance unit label (for longer distances).
+    pub fn distance_unit(&self) -> &'static str {
+        match self {
+            Units::Metric => "km",
+            Units::Imperial => "mi",
+        }
+    }
+
+    /// Get the elevation unit label.
+    pub fn elevation_unit(&self) -> &'static str {
+        match self {
+            Units::Metric => "m",
+            Units::Imperial => "ft",
+        }
+    }
+
+    /// Get the weight unit label.
+    pub fn weight_unit(&self) -> &'static str {
+        match self {
+            Units::Metric => "kg",
+            Units::Imperial => "lbs",
+        }
+    }
+
+    /// Get the temperature unit label.
+    pub fn temperature_unit(&self) -> &'static str {
+        match self {
+            Units::Metric => "°C",
+            Units::Imperial => "°F",
+        }
+    }
+
+    /// Convert input weight to kg for storage.
+    pub fn weight_to_kg(&self, value: f64) -> f64 {
+        match self {
+            Units::Metric => value,
+            Units::Imperial => value / Self::KG_TO_LBS,
+        }
+    }
+
+    /// Convert input elevation to meters for storage.
+    pub fn elevation_to_meters(&self, value: f64) -> f64 {
+        match self {
+            Units::Metric => value,
+            Units::Imperial => value / Self::METERS_TO_FEET,
+        }
+    }
+
+    /// Convert input distance to meters for storage.
+    pub fn distance_to_meters(&self, value: f64, is_large: bool) -> f64 {
+        match self {
+            Units::Metric => {
+                if is_large {
+                    value * 1000.0 // km to m
+                } else {
+                    value // already meters
+                }
+            }
+            Units::Imperial => {
+                if is_large {
+                    value / Self::KM_TO_MILES * 1000.0 // miles to m
+                } else {
+                    value / Self::METERS_TO_FEET // feet to m
+                }
+            }
+        }
+    }
+}
+
 /// UI theme preference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
