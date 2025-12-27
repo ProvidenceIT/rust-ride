@@ -8,6 +8,7 @@
 use eframe::egui;
 
 use crossbeam::channel::Receiver;
+use rustride::accessibility::{FocusIndicatorStyle, FocusManager};
 use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
 use rustride::hid::{
     ButtonAction, ButtonInputHandler, DefaultButtonInputHandler, DefaultHidDeviceManager,
@@ -125,6 +126,8 @@ pub struct RustRideApp {
     primary_cadence_sensor: Option<uuid::Uuid>,
     /// T135: Track secondary cadence sensor ID
     secondary_cadence_sensor: Option<uuid::Uuid>,
+    /// T029: Focus manager for keyboard navigation
+    focus_manager: FocusManager,
 }
 
 impl RustRideApp {
@@ -203,6 +206,9 @@ impl RustRideApp {
         let fusion_config = SensorFusionConfig::default();
         let cadence_fusion = CadenceFusion::with_config(fusion_config);
 
+        // T029: Initialize focus manager for keyboard navigation
+        let focus_manager = FocusManager::new();
+
         // Initialize settings screen with profile
         let mut settings_screen = SettingsScreen::new(profile.clone());
         settings_screen.set_incline_config(incline_config);
@@ -240,6 +246,7 @@ impl RustRideApp {
             cadence_fusion,
             primary_cadence_sensor: None,
             secondary_cadence_sensor: None,
+            focus_manager,
         }
     }
 
@@ -642,6 +649,12 @@ impl eframe::App for RustRideApp {
         if self.current_screen == Screen::Ride || self.current_screen == Screen::SensorSetup {
             ctx.request_repaint();
         }
+
+        // T029: Clear focus manager widgets at start of each frame
+        self.focus_manager.clear_widgets();
+
+        // T029: Handle focus navigation (Tab/Shift+Tab)
+        self.focus_manager.handle_keyboard_input(ctx);
 
         // Handle keyboard shortcuts
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.current_screen != Screen::Home {

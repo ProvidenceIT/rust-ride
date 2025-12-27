@@ -1,5 +1,6 @@
 //! UI widgets for reusable components.
 
+pub mod accessible_button;
 pub mod chat_panel;
 pub mod dynamics_display;
 pub mod ftp_notification;
@@ -25,3 +26,7 @@ pub use tilt_indicator::{TiltIndicator, TiltIndicatorConfig};
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
 pub use shortcut_overlay::ShortcutOverlay;
 pub use zone_indicator::ZoneIndicator;
+pub use accessible_button::{
+    accessible_button, accessible_icon_button, AccessibleButton, AccessibleButtonStyle,
+    AccessibleIconButton, MIN_TOUCH_TARGET,
+};

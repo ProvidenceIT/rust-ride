@@ -14,6 +14,7 @@
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
+use crate::accessibility::ColorMode;
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -21,7 +22,9 @@ use crate::integrations::weather::{WeatherConfig, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
-use crate::storage::config::{Theme, Units, UserProfile};
+use crate::storage::config::{
+    AccessibilitySettings, LocaleSettings, ThemePreference, Theme, Units, UserProfile,
+};
 use uuid::Uuid;
 
 /// Settings screen state.
@@ -93,6 +96,16 @@ pub struct SettingsScreen {
     pub hid_settings: HidSettings,
     /// T092: Show/hide HID section
     show_hid: bool,
+    /// T047, T060, T065, T113, T131: Accessibility settings
+    pub accessibility_settings: AccessibilitySettings,
+    /// T047: Show/hide accessibility section
+    show_accessibility: bool,
+    /// T065: Theme preference (Follow System, Light, Dark)
+    pub theme_preference: ThemePreference,
+    /// T113: Locale/language settings
+    pub locale_settings: LocaleSettings,
+    /// T060: Restart onboarding flag
+    pub restart_onboarding_requested: bool,
 }
 
 /// T064: Audio alert settings for voice alerts and notifications.
@@ -336,6 +349,11 @@ impl SettingsScreen {
             ],
             hid_settings: HidSettings::default(),
             show_hid: false,
+            accessibility_settings: AccessibilitySettings::default(),
+            show_accessibility: false,
+            theme_preference: ThemePreference::FollowSystem,
+            locale_settings: LocaleSettings::default(),
+            restart_onboarding_requested: false,
         }
     }
 
@@ -510,6 +528,11 @@ impl SettingsScreen {
 
             // T092: HID device settings section
             self.render_hid_section(ui);
+
+            ui.add_space(16.0);
+
+            // T047, T060, T065, T113, T131: Accessibility settings section
+            self.render_accessibility_section(ui);
 
             ui.add_space(32.0);
         });
@@ -2695,5 +2718,223 @@ impl SettingsScreen {
         if self.hid_settings.learning_mode {
             self.hid_settings.learned_button_code = Some(button_code);
         }
+    }
+
+    /// Render the accessibility settings section.
+    /// T047, T060, T065, T113, T131: Comprehensive accessibility settings UI.
+    fn render_accessibility_section(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Accessibility").size(18.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .button(if self.show_accessibility { "Hide" } else { "Show" })
+                        .clicked()
+                    {
+                        self.show_accessibility = !self.show_accessibility;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+
+            if self.show_accessibility {
+                // T065: Theme preference
+                ui.label(RichText::new("Theme").strong());
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(
+                            self.theme_preference == ThemePreference::FollowSystem,
+                            "Follow System",
+                        )
+                        .on_hover_text("Automatically match your system's light/dark mode")
+                        .clicked()
+                    {
+                        self.theme_preference = ThemePreference::FollowSystem;
+                        self.has_changes = true;
+                    }
+                    if ui
+                        .selectable_label(
+                            self.theme_preference == ThemePreference::Light,
+                            "Light",
+                        )
+                        .clicked()
+                    {
+                        self.theme_preference = ThemePreference::Light;
+                        self.has_changes = true;
+                    }
+                    if ui
+                        .selectable_label(
+                            self.theme_preference == ThemePreference::Dark,
+                            "Dark",
+                        )
+                        .clicked()
+                    {
+                        self.theme_preference = ThemePreference::Dark;
+                        self.has_changes = true;
+                    }
+                });
+
+                ui.add_space(12.0);
+
+                // T047: Colorblind mode
+                ui.label(RichText::new("Color Vision").strong());
+                ui.horizontal(|ui| {
+                    let modes = [
+                        ("Normal", "normal"),
+                        ("Protanopia", "protanopia"),
+                        ("Deuteranopia", "deuteranopia"),
+                        ("Tritanopia", "tritanopia"),
+                    ];
+                    for (label, mode) in modes {
+                        if ui
+                            .selectable_label(
+                                self.accessibility_settings.color_mode == mode,
+                                label,
+                            )
+                            .clicked()
+                        {
+                            self.accessibility_settings.color_mode = mode.to_string();
+                            self.has_changes = true;
+                        }
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // T047: High contrast mode
+                if ui
+                    .checkbox(
+                        &mut self.accessibility_settings.high_contrast,
+                        "High Contrast Mode",
+                    )
+                    .on_hover_text("WCAG AAA compliant 7:1 contrast ratio")
+                    .changed()
+                {
+                    self.has_changes = true;
+                }
+
+                // Reduce motion
+                if ui
+                    .checkbox(
+                        &mut self.accessibility_settings.reduce_motion,
+                        "Reduce Motion",
+                    )
+                    .on_hover_text("Minimize animations for motion sensitivity")
+                    .changed()
+                {
+                    self.has_changes = true;
+                }
+
+                ui.add_space(12.0);
+
+                // T113: Language selection
+                ui.label(RichText::new("Language").strong());
+                let languages = [
+                    ("English", "en-US"),
+                    ("Español", "es"),
+                    ("Français", "fr"),
+                    ("Deutsch", "de"),
+                    ("Italiano", "it"),
+                ];
+                ui.horizontal(|ui| {
+                    for (label, code) in languages {
+                        if ui
+                            .selectable_label(
+                                self.locale_settings.language == code,
+                                label,
+                            )
+                            .clicked()
+                        {
+                            self.locale_settings.language = code.to_string();
+                            self.has_changes = true;
+                        }
+                    }
+                });
+
+                ui.add_space(12.0);
+
+                // T131: Voice control settings
+                ui.label(RichText::new("Voice Control").strong());
+                if ui
+                    .checkbox(
+                        &mut self.accessibility_settings.voice_control_enabled,
+                        "Enable Voice Control",
+                    )
+                    .on_hover_text("Control the app with voice commands (start, pause, resume, end, skip)")
+                    .changed()
+                {
+                    self.has_changes = true;
+                }
+
+                // Screen reader support
+                if ui
+                    .checkbox(
+                        &mut self.accessibility_settings.screen_reader_enabled,
+                        "Screen Reader Optimizations",
+                    )
+                    .on_hover_text("Optimize for NVDA, VoiceOver, and Orca screen readers")
+                    .changed()
+                {
+                    self.has_changes = true;
+                }
+
+                ui.add_space(12.0);
+
+                // T060: Restart onboarding
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label(RichText::new("Onboarding").strong());
+                if ui
+                    .button("Restart Onboarding Tutorial")
+                    .on_hover_text("Start the onboarding wizard again to re-configure your setup")
+                    .clicked()
+                {
+                    self.restart_onboarding_requested = true;
+                    self.has_changes = true;
+                }
+
+                if self.restart_onboarding_requested {
+                    ui.label(
+                        RichText::new("Onboarding will restart when you save settings")
+                            .color(Color32::from_rgb(251, 188, 4))
+                            .small(),
+                    );
+                }
+            }
+        });
+    }
+
+    /// Set accessibility configuration.
+    pub fn set_accessibility_config(&mut self, config: AccessibilitySettings) {
+        self.accessibility_settings = config;
+    }
+
+    /// Get current accessibility configuration.
+    pub fn get_accessibility_config(&self) -> &AccessibilitySettings {
+        &self.accessibility_settings
+    }
+
+    /// Set locale configuration.
+    pub fn set_locale_config(&mut self, config: LocaleSettings) {
+        self.locale_settings = config;
+    }
+
+    /// Get current locale configuration.
+    pub fn get_locale_config(&self) -> &LocaleSettings {
+        &self.locale_settings
+    }
+
+    /// Check if onboarding restart was requested.
+    pub fn should_restart_onboarding(&self) -> bool {
+        self.restart_onboarding_requested
+    }
+
+    /// Clear the restart onboarding flag.
+    pub fn clear_restart_onboarding(&mut self) {
+        self.restart_onboarding_requested = false;
     }
 }

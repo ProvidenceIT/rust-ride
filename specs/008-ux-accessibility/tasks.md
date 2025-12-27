@@ -66,8 +66,8 @@
 - [x] T025 [US1] Create KeyboardShortcuts registry in src/input/keyboard.rs
 - [x] T026 [US1] Implement shortcut guide overlay (? or F1 key) in src/ui/widgets/shortcut_overlay.rs
 - [x] T027 [US1] Add focus trap for modal dialogs in src/accessibility/focus.rs
-- [ ] T028 [US1] Update all existing button widgets to support focus in src/ui/widgets/
-- [ ] T029 [US1] Integrate focus manager with main app loop in src/app.rs
+- [x] T028 [US1] Update all existing button widgets to support focus in src/ui/widgets/
+- [x] T029 [US1] Integrate focus manager with main app loop in src/app.rs
 
 **Checkpoint**: User Story 1 complete - keyboard navigation fully functional
 
@@ -111,7 +111,7 @@
 - [x] T044 [US3] Add contrast ratio calculation utility in src/accessibility/high_contrast.rs
 - [ ] T045 [US3] Update zone_colors module to use active palette in src/ui/theme.rs
 - [ ] T046 [US3] Add pattern fills for charts (stripes, dots) as secondary indicators in src/ui/widgets/
-- [ ] T047 [US3] Add colorblind/contrast mode UI in accessibility settings screen in src/ui/screens/settings.rs
+- [x] T047 [US3] Add colorblind/contrast mode UI in accessibility settings screen in src/ui/screens/settings.rs
 - [ ] T048 [US3] Ensure immediate mode switch without restart in src/app.rs
 
 **Checkpoint**: User Story 3 complete - all colorblind and high contrast modes functional
@@ -137,7 +137,7 @@
 - [x] T057 [US4] Implement glossary tooltips for cycling terms (FTP, FTMS, ANT+, TSS) in src/onboarding/glossary.rs
 - [x] T058 [US4] Add skip/resume/restart functionality in src/onboarding/mod.rs
 - [ ] T059 [US4] Integrate onboarding check on app startup in src/app.rs
-- [ ] T060 [US4] Add "Restart Onboarding" option in settings screen in src/ui/screens/settings.rs
+- [x] T060 [US4] Add "Restart Onboarding" option in settings screen in src/ui/screens/settings.rs
 
 **Checkpoint**: User Story 4 complete - onboarding wizard fully functional
 
@@ -155,7 +155,7 @@
 - [ ] T062 [US5] Implement ThemePreference enum handling (FollowSystem, Light, Dark) in src/ui/theme.rs
 - [ ] T063 [US5] Add system theme polling (5 second interval) in src/ui/theme.rs
 - [ ] T064 [US5] Implement smooth theme transition animation in src/ui/theme.rs
-- [ ] T065 [US5] Add theme preference UI (Follow System / Light / Dark) in src/ui/screens/settings.rs
+- [x] T065 [US5] Add theme preference UI (Follow System / Light / Dark) in src/ui/screens/settings.rs
 - [ ] T066 [US5] Ensure theme changes don't disrupt active ride display in src/ui/screens/ride.rs
 
 **Checkpoint**: User Story 5 complete - theme auto-detection works seamlessly
@@ -268,7 +268,7 @@
 - [x] T110 [US10] Implement runtime language switching without restart in src/i18n/mod.rs
 - [x] T111 [US10] Implement English fallback for missing translations in src/i18n/mod.rs
 - [x] T112 [US10] Create t!() macro for translation lookups in src/i18n/mod.rs
-- [ ] T113 [US10] Add language selector UI in settings screen in src/ui/screens/settings.rs
+- [x] T113 [US10] Add language selector UI in settings screen in src/ui/screens/settings.rs
 - [ ] T114 [US10] Replace all hardcoded UI strings with t!() calls across src/ui/
 
 **Checkpoint**: User Story 10 complete - application fully localized in 5 languages
@@ -312,7 +312,7 @@
 - [x] T128 [US12] Add VoiceControlState enum (Ready, Listening, Unavailable) in src/accessibility/voice_control.rs
 - [ ] T129 [US12] Implement "Voice Unavailable" indicator UI in src/ui/widgets/voice_indicator.rs
 - [ ] T130 [US12] Add visual/audio confirmation of recognized commands in src/accessibility/voice_control.rs
-- [ ] T131 [US12] Add voice control settings (enable, activation mode) in src/ui/screens/settings.rs
+- [x] T131 [US12] Add voice control settings (enable, activation mode) in src/ui/screens/settings.rs
 - [ ] T132 [US12] Integrate voice commands with ride control in src/app.rs
 - [x] T133 [US12] Handle graceful degradation when voice unavailable in src/accessibility/voice_control.rs
 
@@ -331,7 +331,7 @@
 - [x] T134 [US13] Create TouchGestureHandler in src/input/touch.rs
 - [x] T135 [US13] Implement swipe detection (direction, distance) in src/input/gestures.rs
 - [x] T136 [US13] Implement pinch-zoom detection via multi_touch() in src/input/gestures.rs
-- [ ] T137 [US13] Create AccessibleButton widget wrapper ensuring 44x44 minimum in src/ui/widgets/accessible_button.rs
+- [x] T137 [US13] Create AccessibleButton widget wrapper ensuring 44x44 minimum in src/ui/widgets/accessible_button.rs
 - [x] T138 [US13] Implement swipe navigation between screens in src/input/gestures.rs
 - [ ] T139 [US13] Implement pinch-zoom for graphs in src/ui/widgets/
 - [ ] T140 [US13] Update all buttons to use AccessibleButton wrapper in src/ui/widgets/

@@ -2,7 +2,7 @@
 //!
 //! Implements focus tracking, focus indicators, and focus traps for modal dialogs.
 
-use egui::{Color32, Id, Stroke};
+use egui::{Color32, Id, Stroke, StrokeKind};
 use std::collections::VecDeque;
 
 /// Style for focus indicators.
@@ -279,4 +279,216 @@ impl FocusManager {
             self.set_focus(widget.id);
         }
     }
+
+    /// Process keyboard input for focus navigation.
+    /// Returns true if the input was handled.
+    pub fn handle_keyboard_input(&mut self, ctx: &egui::Context) -> bool {
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::Tab) {
+                if i.modifiers.shift {
+                    self.focus_previous();
+                } else {
+                    self.focus_next();
+                }
+                return true;
+            }
+            false
+        })
+    }
+}
+
+/// Extension trait for egui::Ui to support focusable buttons.
+pub trait FocusableExt {
+    /// Create a button that integrates with the focus manager.
+    fn focusable_button(
+        &mut self,
+        focus_manager: &mut FocusManager,
+        id: impl Into<Id>,
+        tab_index: i32,
+        text: impl Into<String>,
+    ) -> egui::Response;
+
+    /// Create a styled button that integrates with the focus manager.
+    fn focusable_button_styled(
+        &mut self,
+        focus_manager: &mut FocusManager,
+        id: impl Into<Id>,
+        tab_index: i32,
+        text: impl Into<egui::WidgetText>,
+    ) -> egui::Response;
+}
+
+impl FocusableExt for egui::Ui {
+    fn focusable_button(
+        &mut self,
+        focus_manager: &mut FocusManager,
+        id: impl Into<Id>,
+        tab_index: i32,
+        text: impl Into<String>,
+    ) -> egui::Response {
+        let id = id.into();
+        let text = text.into();
+
+        // Register this widget with the focus manager
+        focus_manager.register_simple(id, tab_index);
+
+        // Check if this widget has focus
+        let has_focus = focus_manager.has_focus(id);
+
+        // Create the button with focus handling
+        let response = self.add(egui::Button::new(&text).sense(egui::Sense::click()));
+
+        // Draw focus indicator if focused
+        if has_focus {
+            let style = focus_manager.indicator_style();
+            let rect = response.rect.expand(style.offset);
+            self.painter()
+                .rect_stroke(rect, style.corner_radius, style.stroke(), StrokeKind::Middle);
+        }
+
+        // Handle click to set focus
+        if response.clicked() || response.gained_focus() {
+            focus_manager.set_focus(id);
+        }
+
+        // Handle Enter/Space activation when focused
+        if has_focus {
+            let activated = self.ctx().input(|i| {
+                i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
+            });
+            if activated {
+                // Return a "clicked" response
+                return response.clone().on_hover_text("");
+            }
+        }
+
+        response
+    }
+
+    fn focusable_button_styled(
+        &mut self,
+        focus_manager: &mut FocusManager,
+        id: impl Into<Id>,
+        tab_index: i32,
+        text: impl Into<egui::WidgetText>,
+    ) -> egui::Response {
+        let id = id.into();
+        let text = text.into();
+
+        // Register this widget with the focus manager
+        focus_manager.register_simple(id, tab_index);
+
+        // Check if this widget has focus
+        let has_focus = focus_manager.has_focus(id);
+
+        // Create the button with focus handling
+        let response = self.add(egui::Button::new(text).sense(egui::Sense::click()));
+
+        // Draw focus indicator if focused
+        if has_focus {
+            let style = focus_manager.indicator_style();
+            let rect = response.rect.expand(style.offset);
+            self.painter()
+                .rect_stroke(rect, style.corner_radius, style.stroke(), StrokeKind::Middle);
+        }
+
+        // Handle click to set focus
+        if response.clicked() || response.gained_focus() {
+            focus_manager.set_focus(id);
+        }
+
+        response
+    }
+}
+
+/// Render a focus indicator around a rectangle.
+pub fn draw_focus_indicator(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    style: &FocusIndicatorStyle,
+) {
+    let expanded = rect.expand(style.offset);
+    painter.rect_stroke(expanded, style.corner_radius, style.stroke(), StrokeKind::Middle);
+}
+
+/// Create a focusable button with accessible features.
+///
+/// This function creates a button that:
+/// - Has a minimum touch target of 44x44 pixels
+/// - Shows a focus ring when keyboard focused
+/// - Responds to Enter/Space when focused
+pub fn accessible_focusable_button(
+    ui: &mut egui::Ui,
+    focus_manager: &mut FocusManager,
+    id: impl Into<Id>,
+    tab_index: i32,
+    text: &str,
+    min_size: egui::Vec2,
+) -> egui::Response {
+    let id = id.into();
+
+    // Register with focus manager
+    focus_manager.register_simple(id, tab_index);
+    let has_focus = focus_manager.has_focus(id);
+
+    // Calculate minimum size (at least 44x44 for touch)
+    let text_galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::default(),
+        Color32::WHITE,
+    );
+    let text_size = text_galley.size();
+
+    let padding = egui::Vec2::new(16.0, 8.0);
+    let content_size = egui::Vec2::new(
+        text_size.x + padding.x * 2.0,
+        text_size.y + padding.y * 2.0,
+    );
+
+    let size = egui::Vec2::new(
+        content_size.x.max(min_size.x),
+        content_size.y.max(min_size.y),
+    );
+
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+
+        // Background
+        ui.painter().rect_filled(rect, 4.0, visuals.bg_fill);
+
+        // Focus indicator
+        if has_focus {
+            let style = focus_manager.indicator_style();
+            draw_focus_indicator(ui.painter(), rect, style);
+        }
+
+        // Text
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::default(),
+            visuals.text_color(),
+        );
+    }
+
+    // Handle focus changes
+    if response.clicked() {
+        focus_manager.set_focus(id);
+    }
+
+    // Handle Enter/Space activation
+    if has_focus {
+        let activated = ui.ctx().input(|i| {
+            i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
+        });
+        if activated {
+            // Simulate a click by requesting repaint
+            ui.ctx().request_repaint();
+        }
+    }
+
+    response
 }

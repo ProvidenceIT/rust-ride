@@ -16,7 +16,10 @@ pub mod voice_control;
 
 // Re-export primary types
 pub use colorblind::{ColorMode, ColorPalette, ColorPaletteProvider};
-pub use focus::{FocusIndicatorStyle, FocusManager, FocusableWidget};
+pub use focus::{
+    accessible_focusable_button, draw_focus_indicator, FocusIndicatorStyle, FocusManager,
+    FocusableExt, FocusableWidget,
+};
 pub use high_contrast::HighContrastTheme;
 pub use screen_reader::ScreenReaderSupport;
 #[cfg(feature = "voice-control")]

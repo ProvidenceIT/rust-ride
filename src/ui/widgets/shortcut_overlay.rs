@@ -74,7 +74,7 @@ impl ShortcutOverlay {
             .show(ctx, |ui| {
                 Frame::popup(ui.style())
                     .fill(Color32::from_rgb(30, 30, 30))
-                    .rounding(8.0)
+                    .corner_radius(8.0)
                     .inner_margin(20.0)
                     .show(ui, |ui| {
                         self.render_content(ui, keyboard);
