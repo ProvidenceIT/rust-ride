@@ -129,14 +129,14 @@
 - [x] T049 [P] [US4] Create OnboardingState struct and persistence in src/onboarding/mod.rs
 - [x] T050 [P] [US4] Create OnboardingStep enum (Welcome, SensorSetup, ProfileSetup, FtpConfiguration, UiTour, Complete) in src/onboarding/steps.rs
 - [x] T051 [US4] Implement OnboardingWizard state machine in src/onboarding/mod.rs
-- [ ] T052 [US4] Create Welcome step UI in src/onboarding/steps.rs
-- [ ] T053 [US4] Create SensorSetup step UI with discovery integration in src/onboarding/steps.rs
-- [ ] T054 [US4] Create ProfileSetup step UI in src/onboarding/steps.rs
-- [ ] T055 [US4] Create FtpConfiguration step UI in src/onboarding/steps.rs
-- [ ] T056 [US4] Create UiTour step UI in src/onboarding/steps.rs
+- [x] T052 [US4] Create Welcome step UI in src/onboarding/steps.rs
+- [x] T053 [US4] Create SensorSetup step UI with discovery integration in src/onboarding/steps.rs
+- [x] T054 [US4] Create ProfileSetup step UI in src/onboarding/steps.rs
+- [x] T055 [US4] Create FtpConfiguration step UI in src/onboarding/steps.rs
+- [x] T056 [US4] Create UiTour step UI in src/onboarding/steps.rs
 - [x] T057 [US4] Implement glossary tooltips for cycling terms (FTP, FTMS, ANT+, TSS) in src/onboarding/glossary.rs
 - [x] T058 [US4] Add skip/resume/restart functionality in src/onboarding/mod.rs
-- [ ] T059 [US4] Integrate onboarding check on app startup in src/app.rs
+- [x] T059 [US4] Integrate onboarding check on app startup in src/app.rs
 - [x] T060 [US4] Add "Restart Onboarding" option in settings screen in src/ui/screens/settings.rs
 
 **Checkpoint**: User Story 4 complete - onboarding wizard fully functional
