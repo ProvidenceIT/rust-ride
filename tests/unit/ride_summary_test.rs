@@ -117,7 +117,7 @@ fn test_max_power_calculation() {
 #[test]
 fn test_normalized_power_calculation_steady_state() {
     // For steady-state power, NP should equal average power
-    let ftp = 250u16;
+    let _ftp = 250u16;
     let samples = create_steady_power_samples(200, 300); // 5 minutes at 200W
 
     // NP calculation:

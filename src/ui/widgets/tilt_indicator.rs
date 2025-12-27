@@ -4,7 +4,7 @@
 //!
 //! Displays current tilt angles from IMU sensor as a visual indicator.
 
-use crate::sensors::{MotionSample, MotionSensorState, Quaternion};
+use crate::sensors::{MotionSample, MotionSensorState};
 use egui::{Color32, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 
 /// Configuration for the tilt indicator widget.

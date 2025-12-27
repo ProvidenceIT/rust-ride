@@ -250,21 +250,19 @@ impl ClubsScreen {
         ui.add_space(20.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Create").clicked() {
-                if !self.new_club_name.is_empty() {
-                    let description = if self.new_club_description.is_empty() {
-                        None
-                    } else {
-                        Some(self.new_club_description.clone())
-                    };
-                    action = Some(ClubsAction::CreateClub {
-                        name: self.new_club_name.clone(),
-                        description,
-                    });
-                    self.view = ClubsView::List;
-                    self.new_club_name.clear();
-                    self.new_club_description.clear();
-                }
+            if ui.button("Create").clicked() && !self.new_club_name.is_empty() {
+                let description = if self.new_club_description.is_empty() {
+                    None
+                } else {
+                    Some(self.new_club_description.clone())
+                };
+                action = Some(ClubsAction::CreateClub {
+                    name: self.new_club_name.clone(),
+                    description,
+                });
+                self.view = ClubsView::List;
+                self.new_club_name.clear();
+                self.new_club_description.clear();
             }
             if ui.button("Cancel").clicked() {
                 self.view = ClubsView::List;
@@ -300,14 +298,12 @@ impl ClubsScreen {
         ui.add_space(20.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Join").clicked() {
-                if !self.join_code.is_empty() {
-                    action = Some(ClubsAction::JoinClub {
-                        join_code: self.join_code.clone(),
-                    });
-                    self.view = ClubsView::List;
-                    self.join_code.clear();
-                }
+            if ui.button("Join").clicked() && !self.join_code.is_empty() {
+                action = Some(ClubsAction::JoinClub {
+                    join_code: self.join_code.clone(),
+                });
+                self.view = ClubsView::List;
+                self.join_code.clear();
             }
             if ui.button("Cancel").clicked() {
                 self.view = ClubsView::List;
@@ -396,12 +392,10 @@ impl ClubsScreen {
             ui.add_space(20.0);
 
             // Leave button (non-admin only)
-            if !is_admin {
-                if ui.button("Leave Club").clicked() {
-                    action = Some(ClubsAction::LeaveClub(club.id));
-                    self.view = ClubsView::List;
-                    self.selected_club_id = None;
-                }
+            if !is_admin && ui.button("Leave Club").clicked() {
+                action = Some(ClubsAction::LeaveClub(club.id));
+                self.view = ClubsView::List;
+                self.selected_club_id = None;
             }
         } else {
             ui.label("Club not found");

@@ -66,6 +66,7 @@ impl BadgeCategory {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "distance" => Some(BadgeCategory::Distance),
@@ -101,6 +102,7 @@ impl CriteriaType {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "total_distance_km" => Some(CriteriaType::TotalDistanceKm),
@@ -167,6 +169,7 @@ impl GoalType {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "total_distance_km" => Some(GoalType::TotalDistanceKm),

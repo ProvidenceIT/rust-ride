@@ -127,11 +127,10 @@ impl LeaderboardService {
             .map_err(|e| LeaderboardError::DatabaseError(e.to_string()))?;
 
         let mut entries = Vec::new();
-        let mut rank = 0u32;
         let mut rider_entry = None;
 
-        for row in rows {
-            rank += 1;
+        for (rank, row) in rows.enumerate() {
+            let rank = (rank + 1) as u32;
             let (rider_id_str, rider_name, elapsed_time_ms, avg_power, recorded_at_str) =
                 row.map_err(|e| LeaderboardError::DatabaseError(e.to_string()))?;
 

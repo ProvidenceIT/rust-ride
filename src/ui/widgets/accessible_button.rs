@@ -175,11 +175,9 @@ impl Widget for AccessibleButton<'_> {
         } = self;
 
         // Calculate size ensuring minimum touch target
-        let text_galley = ui.painter().layout_no_wrap(
-            text.to_string(),
-            egui::FontId::default(),
-            Color32::WHITE,
-        );
+        let text_galley =
+            ui.painter()
+                .layout_no_wrap(text.to_string(), egui::FontId::default(), Color32::WHITE);
         let text_size = text_galley.size();
 
         let icon_width = if icon.is_some() { 24.0 } else { 0.0 };
@@ -198,7 +196,7 @@ impl Widget for AccessibleButton<'_> {
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
         if ui.is_rect_visible(rect) {
-            let visuals = if !enabled {
+            let _visuals = if !enabled {
                 ui.visuals().widgets.inactive
             } else if response.is_pointer_button_down_on() {
                 ui.visuals().widgets.active
@@ -239,7 +237,7 @@ impl Widget for AccessibleButton<'_> {
                 style.text_color.gamma_multiply(0.5)
             };
 
-            let text_pos = rect.center() - text_size / 2.0;
+            let _text_pos = rect.center() - text_size / 2.0;
 
             if let Some(icon_str) = icon {
                 // Draw icon + text
@@ -287,7 +285,8 @@ impl Widget for AccessibleButton<'_> {
                         // Scale effect overlay (darker center)
                         let scale_overlay = Color32::from_rgba_unmultiplied(0, 0, 0, 20);
                         let shrunk = rect.shrink(2.0);
-                        ui.painter().rect_filled(shrunk, style.rounding - 1.0, scale_overlay);
+                        ui.painter()
+                            .rect_filled(shrunk, style.rounding - 1.0, scale_overlay);
                     }
                     TouchFeedbackStyle::Highlight => {
                         // Highlight flash effect (bright outline)
@@ -388,7 +387,8 @@ impl Widget for AccessibleIconButton<'_> {
             };
 
             // Draw circular button background
-            ui.painter().circle_filled(rect.center(), size.x / 2.0, bg_color);
+            ui.painter()
+                .circle_filled(rect.center(), size.x / 2.0, bg_color);
 
             // Draw focus indicator if keyboard focused
             if response.has_focus() {

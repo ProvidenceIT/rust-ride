@@ -10,7 +10,7 @@
 pub mod editor;
 pub mod profiles;
 
-use egui::{Align, Color32, Layout, Rect, RichText, Ui, Vec2};
+use egui::{Align, Color32, Layout, Rect, RichText, Ui};
 use serde::{Deserialize, Serialize};
 
 // Re-export types
@@ -128,7 +128,8 @@ pub trait LayoutRenderer {
 pub struct LayoutProfileUi {
     /// Profile manager
     manager: LayoutProfileManager,
-    /// Whether the profile selector is open
+    /// Whether the profile selector is open (reserved for future use)
+    #[allow(dead_code)]
     selector_open: bool,
     /// Profile naming dialog state
     naming_dialog: Option<NamingDialogState>,
@@ -266,17 +267,16 @@ impl LayoutProfileUi {
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             // Delete button (disabled for default)
-                            if !profile.is_default {
-                                if ui
+                            if !profile.is_default
+                                && ui
                                     .add_enabled(true, egui::Button::new("🗑").small())
                                     .on_hover_text("Delete profile")
                                     .clicked()
-                                {
-                                    self.delete_dialog = Some(DeleteDialogState {
-                                        profile_id: profile.id,
-                                        profile_name: profile.name.clone(),
-                                    });
-                                }
+                            {
+                                self.delete_dialog = Some(DeleteDialogState {
+                                    profile_id: profile.id,
+                                    profile_name: profile.name.clone(),
+                                });
                             }
 
                             // Rename button
@@ -369,9 +369,8 @@ impl LayoutProfileUi {
 
                     ui.horizontal(|ui| {
                         ui.label("Name:");
-                        let response = ui.text_edit_singleline(
-                            &mut self.naming_dialog.as_mut().unwrap().name,
-                        );
+                        let response =
+                            ui.text_edit_singleline(&mut self.naming_dialog.as_mut().unwrap().name);
 
                         // Auto-focus the text field
                         if response.changed() {
@@ -390,7 +389,10 @@ impl LayoutProfileUi {
                             let name = &self.naming_dialog.as_ref().unwrap().name;
                             let can_save = !name.trim().is_empty();
 
-                            if ui.add_enabled(can_save, egui::Button::new("Save")).clicked() {
+                            if ui
+                                .add_enabled(can_save, egui::Button::new("Save"))
+                                .clicked()
+                            {
                                 let state = self.naming_dialog.take().unwrap();
                                 let result = if state.is_new {
                                     if let Some(dup_id) = state.duplicate_from {
@@ -540,7 +542,8 @@ impl LayoutRenderer for DefaultLayoutRenderer {
 
 /// T075: Layout profile selector widget for ride screen.
 pub struct LayoutProfileSelector {
-    /// Expanded state
+    /// Expanded state (reserved for future use)
+    #[allow(dead_code)]
     expanded: bool,
 }
 
@@ -559,11 +562,7 @@ impl LayoutProfileSelector {
     /// Show the compact selector.
     ///
     /// Returns the selected profile ID if changed.
-    pub fn show(
-        &mut self,
-        ui: &mut Ui,
-        manager: &LayoutProfileManager,
-    ) -> Option<uuid::Uuid> {
+    pub fn show(&mut self, ui: &mut Ui, manager: &LayoutProfileManager) -> Option<uuid::Uuid> {
         let mut selected = None;
         let active = manager.active_profile();
         let active_id = active.id;

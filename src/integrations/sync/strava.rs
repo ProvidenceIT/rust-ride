@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// Strava API client
+#[allow(dead_code)]
 pub struct StravaClient {
     /// Access token for API calls
     access_token: Arc<RwLock<Option<String>>>,
@@ -55,11 +56,11 @@ impl StravaClient {
     pub async fn upload_activity(
         &self,
         ride_id: &Uuid,
-        fit_data: &[u8],
-        activity_name: Option<&str>,
-        description: Option<&str>,
+        _fit_data: &[u8],
+        _activity_name: Option<&str>,
+        _description: Option<&str>,
     ) -> Result<SyncRecord, SyncError> {
-        let token = self
+        let _token = self
             .access_token
             .read()
             .await
@@ -146,7 +147,7 @@ impl StravaClient {
 
     /// Deauthorize application
     pub async fn deauthorize(&self) -> Result<(), SyncError> {
-        let token = self
+        let _token = self
             .access_token
             .read()
             .await

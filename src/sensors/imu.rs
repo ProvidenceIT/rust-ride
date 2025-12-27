@@ -7,7 +7,6 @@
 //! gyroscopes) commonly found in rocker plates and smart trainers.
 
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// 3D vector for accelerometer/gyroscope readings.
@@ -327,6 +326,12 @@ pub struct ImuCalibration {
     pub is_calibrated: bool,
     /// Number of samples used for calibration
     pub sample_count: usize,
+    /// Maximum detected roll angle during calibration (reserved for future use)
+    #[allow(dead_code)]
+    pub max_roll: f32,
+    /// Maximum detected pitch angle during calibration (reserved for future use)
+    #[allow(dead_code)]
+    pub max_pitch: f32,
 }
 
 impl ImuCalibration {
@@ -545,6 +550,8 @@ impl MotionProvider for DefaultMotionProvider {
             gyro_bias: Vector3::zero(),
             is_calibrated: true,
             sample_count: 100,
+            max_roll: 0.0,
+            max_pitch: 0.0,
         };
 
         self.state = MotionSensorState::Ready;

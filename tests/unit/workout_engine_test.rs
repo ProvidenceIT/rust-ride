@@ -299,7 +299,7 @@ fn test_workout_engine_no_workout_loaded() {
     assert!(engine.pause().is_err());
     assert!(engine.resume().is_err());
     assert!(engine.stop().is_err());
-    assert!(engine.tick() == ());
+    engine.tick();
     assert!(engine.current_target_power().is_none());
 }
 

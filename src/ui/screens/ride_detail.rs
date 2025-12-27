@@ -8,7 +8,7 @@
 //! T142: Add motion visualization to post-ride analysis
 
 use chrono::Local;
-use egui::{Align, Color32, Layout, Painter, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
+use egui::{Align, Color32, Layout, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
 
 use crate::recording::types::{Ride, RideSample};
 use crate::sensors::MotionSample;
@@ -733,6 +733,10 @@ impl RideDetailScreen {
 struct MotionStats {
     max_tilt: f32,
     avg_tilt: f32,
+    /// Maximum roll angle (reserved for future use)
+    #[allow(dead_code)]
     max_roll: f32,
+    /// Maximum pitch angle (reserved for future use)
+    #[allow(dead_code)]
     max_pitch: f32,
 }

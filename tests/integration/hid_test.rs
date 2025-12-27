@@ -7,7 +7,6 @@ use rustride::hid::{
     DefaultHidDeviceManager, HidConfig, HidDevice, HidDeviceManager, HidDeviceStatus,
     KNOWN_DEVICES,
 };
-use std::sync::Arc;
 use uuid::Uuid;
 
 /// Test HID config defaults.

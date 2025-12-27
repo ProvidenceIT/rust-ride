@@ -103,10 +103,7 @@ impl DiscoveryService {
 
     /// Start browsing for peers.
     fn browse(&self) -> Result<(), DiscoveryError> {
-        let daemon = self
-            .daemon
-            .as_ref()
-            .ok_or_else(|| DiscoveryError::NotStarted)?;
+        let daemon = self.daemon.as_ref().ok_or(DiscoveryError::NotStarted)?;
 
         let receiver = daemon
             .browse(SERVICE_TYPE)
@@ -173,15 +170,12 @@ impl DiscoveryService {
         _world_id: Option<&str>,
         _session_id: Option<Uuid>,
     ) -> Result<(), DiscoveryError> {
-        let _daemon = self
-            .daemon
-            .as_ref()
-            .ok_or_else(|| DiscoveryError::NotStarted)?;
+        let _daemon = self.daemon.as_ref().ok_or(DiscoveryError::NotStarted)?;
 
         let _service_name = self
             .registered_name
             .as_ref()
-            .ok_or_else(|| DiscoveryError::NotStarted)?;
+            .ok_or(DiscoveryError::NotStarted)?;
 
         // Note: mdns-sd doesn't support updating properties directly,
         // so we'd need to unregister and re-register.

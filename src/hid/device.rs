@@ -135,7 +135,7 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     fn scan_devices(&self) -> Vec<HidDevice> {
         tracing::info!("Scanning for HID devices...");
 
-        let mut found = Vec::new();
+        let found = Vec::new();
 
         // TODO: Use hidapi to enumerate devices
         // let api = HidApi::new().unwrap();

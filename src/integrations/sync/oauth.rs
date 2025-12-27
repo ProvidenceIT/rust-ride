@@ -110,6 +110,7 @@ pub struct OAuthConfig {
 }
 
 /// Default OAuth handler implementation
+#[allow(dead_code)]
 pub struct DefaultOAuthHandler {
     configs: Arc<RwLock<HashMap<SyncPlatform, OAuthConfig>>>,
     tokens: Arc<RwLock<HashMap<SyncPlatform, TokenResponse>>>,
@@ -300,6 +301,7 @@ impl OAuthHandler for DefaultOAuthHandler {
 }
 
 /// Keyring-based credential store
+#[allow(dead_code)]
 pub struct KeyringCredentialStore {
     service_name: String,
 }
@@ -322,10 +324,10 @@ impl CredentialStore for KeyringCredentialStore {
         platform: SyncPlatform,
         tokens: &TokenResponse,
     ) -> Result<(), SyncError> {
-        let key = self.key_for_platform(platform);
+        let _key = self.key_for_platform(platform);
 
         // Serialize tokens to JSON
-        let json =
+        let _json =
             serde_json::to_string(tokens).map_err(|e| SyncError::CredentialError(e.to_string()))?;
 
         // TODO: Use keyring crate to store
@@ -338,7 +340,7 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     async fn get_tokens(&self, platform: SyncPlatform) -> Result<Option<TokenResponse>, SyncError> {
-        let key = self.key_for_platform(platform);
+        let _key = self.key_for_platform(platform);
 
         // TODO: Use keyring crate to retrieve
         // let entry = keyring::Entry::new(&self.service_name, &key)?;
@@ -355,7 +357,7 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     async fn delete_tokens(&self, platform: SyncPlatform) -> Result<(), SyncError> {
-        let key = self.key_for_platform(platform);
+        let _key = self.key_for_platform(platform);
 
         // TODO: Use keyring crate to delete
         // let entry = keyring::Entry::new(&self.service_name, &key)?;
@@ -403,8 +405,12 @@ mod urlencoding {
 /// Starts a local HTTP server to receive the OAuth callback from the
 /// authorization flow. Once the callback is received, it extracts the
 /// authorization code and state, then shuts down.
+#[allow(dead_code)]
 pub struct OAuthCallbackServer {
     port: u16,
+    base_url: String,
+    callback_port: u16,
+    service_name: String,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -422,6 +428,9 @@ impl OAuthCallbackServer {
     pub fn new(port: u16) -> Self {
         Self {
             port,
+            base_url: format!("http://localhost:{}", port),
+            callback_port: port,
+            service_name: "RustRide".to_string(),
             shutdown_tx: None,
         }
     }
@@ -564,7 +573,7 @@ mod tests {
     #[test]
     fn test_state_generation() {
         let state1 = DefaultOAuthHandler::generate_state();
-        let state2 = DefaultOAuthHandler::generate_state();
+        let _state2 = DefaultOAuthHandler::generate_state();
 
         assert!(!state1.is_empty());
         // States should be different (unless generated at exact same nanosecond)

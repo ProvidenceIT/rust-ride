@@ -183,11 +183,13 @@ impl LayoutEditor {
                     widget.width = self.snap_to_grid((sw + delta.x).max(min_w).min(1.0 - widget.x));
                 }
                 ResizeHandle::Bottom => {
-                    widget.height = self.snap_to_grid((sh + delta.y).max(min_h).min(1.0 - widget.y));
+                    widget.height =
+                        self.snap_to_grid((sh + delta.y).max(min_h).min(1.0 - widget.y));
                 }
                 ResizeHandle::BottomRight => {
                     widget.width = self.snap_to_grid((sw + delta.x).max(min_w).min(1.0 - widget.x));
-                    widget.height = self.snap_to_grid((sh + delta.y).max(min_h).min(1.0 - widget.y));
+                    widget.height =
+                        self.snap_to_grid((sh + delta.y).max(min_h).min(1.0 - widget.y));
                 }
                 ResizeHandle::Left => {
                     let new_x = self.snap_to_grid((sx + delta.x).max(0.0));
@@ -306,7 +308,10 @@ impl LayoutEditor {
             let mut x = container.left();
             while x <= container.right() {
                 painter.line_segment(
-                    [Pos2::new(x, container.top()), Pos2::new(x, container.bottom())],
+                    [
+                        Pos2::new(x, container.top()),
+                        Pos2::new(x, container.bottom()),
+                    ],
                     Stroke::new(1.0, grid_color),
                 );
                 x += step_x;
@@ -315,7 +320,10 @@ impl LayoutEditor {
             let mut y = container.top();
             while y <= container.bottom() {
                 painter.line_segment(
-                    [Pos2::new(container.left(), y), Pos2::new(container.right(), y)],
+                    [
+                        Pos2::new(container.left(), y),
+                        Pos2::new(container.right(), y),
+                    ],
                     Stroke::new(1.0, grid_color),
                 );
                 y += step_y;
@@ -338,7 +346,12 @@ impl LayoutEditor {
                 Color32::from_rgba_unmultiplied(150, 150, 150, 100)
             };
 
-            painter.rect_stroke(rect, 2.0, Stroke::new(2.0, stroke_color), StrokeKind::Middle);
+            painter.rect_stroke(
+                rect,
+                2.0,
+                Stroke::new(2.0, stroke_color),
+                StrokeKind::Middle,
+            );
 
             // Draw resize handles for selected widget
             if is_selected && widget.widget_type.is_resizable() {

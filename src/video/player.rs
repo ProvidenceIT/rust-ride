@@ -210,6 +210,7 @@ pub trait VideoPlayer: Send + Sync {
 }
 
 /// Playback state
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 enum PlaybackState {
     Idle,
@@ -221,6 +222,8 @@ enum PlaybackState {
 
 /// Default video player implementation
 pub struct DefaultVideoPlayer {
+    /// Video configuration (reserved for future use)
+    #[allow(dead_code)]
     config: VideoConfig,
     state: Arc<RwLock<PlaybackState>>,
     info: Arc<RwLock<Option<VideoInfo>>>,

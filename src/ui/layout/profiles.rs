@@ -149,11 +149,7 @@ impl LayoutProfile {
             .iter()
             .enumerate()
             .filter(|(_, w)| {
-                w.visible
-                    && x >= w.x
-                    && x <= w.x + w.width
-                    && y >= w.y
-                    && y <= w.y + w.height
+                w.visible && x >= w.x && x <= w.x + w.width && y >= w.y && y <= w.y + w.height
             })
             .map(|(i, _)| i)
             .collect()
@@ -209,10 +205,7 @@ impl LayoutProfileManager {
     pub fn active_profile_mut(&mut self) -> &mut LayoutProfile {
         let id = self.active_profile_id;
         // Find the index first to avoid borrow conflicts
-        let idx = self.profiles
-            .iter()
-            .position(|p| p.id == id)
-            .unwrap_or(0);
+        let idx = self.profiles.iter().position(|p| p.id == id).unwrap_or(0);
         &mut self.profiles[idx]
     }
 
@@ -239,7 +232,11 @@ impl LayoutProfileManager {
     }
 
     /// Duplicate an existing profile.
-    pub fn duplicate_profile(&mut self, id: Uuid, new_name: impl Into<String>) -> Result<Uuid, ProfileError> {
+    pub fn duplicate_profile(
+        &mut self,
+        id: Uuid,
+        new_name: impl Into<String>,
+    ) -> Result<Uuid, ProfileError> {
         if self.profiles.len() >= MAX_PROFILES {
             return Err(ProfileError::MaxProfilesReached);
         }
@@ -283,7 +280,11 @@ impl LayoutProfileManager {
     }
 
     /// Rename a profile.
-    pub fn rename_profile(&mut self, id: Uuid, new_name: impl Into<String>) -> Result<(), ProfileError> {
+    pub fn rename_profile(
+        &mut self,
+        id: Uuid,
+        new_name: impl Into<String>,
+    ) -> Result<(), ProfileError> {
         let profile = self
             .profiles
             .iter_mut()

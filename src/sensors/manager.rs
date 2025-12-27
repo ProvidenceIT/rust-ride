@@ -7,9 +7,7 @@
 //! T034: Implement disconnect()
 //! T035: Implement event channel for SensorEvent streaming
 
-use crate::sensors::ant::dongle::{
-    AntDongle, AntDongleManager, DefaultDongleManager, DongleStatus,
-};
+use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleManager};
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
@@ -31,6 +29,7 @@ use uuid::Uuid;
 
 /// Context for handling notifications from a connected peripheral.
 /// Groups related parameters to reduce function argument count.
+#[allow(dead_code)]
 struct NotificationContext {
     event_tx: Option<Sender<SensorEvent>>,
     sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
@@ -361,7 +360,7 @@ impl SensorManager {
 
     /// Start ANT+ sensor discovery.
     async fn start_ant_discovery(&self) -> Result<(), SensorError> {
-        let manager = match &self.ant_manager {
+        let _manager = match &self.ant_manager {
             Some(m) => m.clone(),
             None => {
                 tracing::warn!("ANT+ not initialized, skipping ANT+ discovery");

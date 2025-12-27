@@ -21,6 +21,7 @@ impl ChallengeManager {
     }
 
     /// Create a new challenge.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_challenge(
         &self,
         name: String,
@@ -206,8 +207,7 @@ impl ChallengeManager {
                     .get(1)
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 completed_at: completed_str
-                    .map(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .flatten()
+                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
                     .map(|dt| dt.with_timezone(&Utc)),
                 last_updated: DateTime::parse_from_rfc3339(&last_updated_str)
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
@@ -275,7 +275,7 @@ impl ChallengeManager {
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
                 end_date: NaiveDate::parse_from_str(&end_str, "%Y-%m-%d")
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?,
-                created_by_rider_id: created_by_str.map(|s| Uuid::parse_str(&s).ok()).flatten(),
+                created_by_rider_id: created_by_str.and_then(|s| Uuid::parse_str(&s).ok()),
                 created_at: DateTime::parse_from_rfc3339(&created_str)
                     .map_err(|e| ChallengeError::DatabaseError(e.to_string()))?
                     .with_timezone(&Utc),

@@ -286,16 +286,14 @@ impl RaceLobbyScreen {
         ui.add_space(20.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Create").clicked() {
-                if !self.new_race_name.is_empty() {
-                    if let Ok(distance) = self.new_distance.parse::<f64>() {
-                        action = Some(RaceLobbyAction::CreateRace {
-                            name: self.new_race_name.clone(),
-                            route_id: self.new_route_id.clone(),
-                            distance_km: distance,
-                        });
-                        self.view = RaceLobbyView::Lobby;
-                    }
+            if ui.button("Create").clicked() && !self.new_race_name.is_empty() {
+                if let Ok(distance) = self.new_distance.parse::<f64>() {
+                    action = Some(RaceLobbyAction::CreateRace {
+                        name: self.new_race_name.clone(),
+                        route_id: self.new_route_id.clone(),
+                        distance_km: distance,
+                    });
+                    self.view = RaceLobbyView::Lobby;
                 }
             }
             if ui.button("Cancel").clicked() {

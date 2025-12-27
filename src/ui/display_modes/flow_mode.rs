@@ -75,7 +75,8 @@ impl Default for FlowModeSettings {
 struct IntervalNotification {
     /// Interval name
     text: String,
-    /// Duration remaining
+    /// Duration remaining (reserved for future use)
+    #[allow(dead_code)]
     duration_remaining: u32,
     /// When the notification was shown
     shown_at: Instant,

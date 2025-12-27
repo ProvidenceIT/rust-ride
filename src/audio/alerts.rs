@@ -404,6 +404,7 @@ pub struct DefaultAlertManager {
 
 impl DefaultAlertManager {
     /// Create a new alert manager with the given audio engine
+    #[allow(clippy::field_reassign_with_default)]
     pub fn new(audio_engine: std::sync::Arc<super::engine::DefaultAudioEngine>) -> Self {
         // Initialize with default configs for each alert type
         let mut configs = std::collections::HashMap::new();
@@ -550,6 +551,7 @@ impl AlertManager for DefaultAlertManager {
         configs.get(&alert_type).cloned().unwrap_or_default()
     }
 
+    #[allow(clippy::field_reassign_with_default)]
     fn set_enabled(&self, alert_type: AlertType, enabled: bool) {
         let mut configs = self.configs.write().unwrap();
         if let Some(config) = configs.get_mut(&alert_type) {

@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// Garmin Connect API client
+#[allow(dead_code)]
 pub struct GarminClient {
     /// Access token for API calls
     access_token: Arc<RwLock<Option<String>>>,
@@ -55,9 +56,9 @@ impl GarminClient {
     pub async fn upload_activity(
         &self,
         ride_id: &Uuid,
-        fit_data: &[u8],
+        _fit_data: &[u8],
     ) -> Result<SyncRecord, SyncError> {
-        let token = self
+        let _token = self
             .access_token
             .read()
             .await
@@ -125,7 +126,7 @@ impl GarminClient {
     /// Get recent activities
     pub async fn get_recent_activities(
         &self,
-        limit: u32,
+        _limit: u32,
     ) -> Result<Vec<GarminActivity>, SyncError> {
         let _token = self
             .access_token

@@ -112,7 +112,7 @@ impl ActivityFeed {
 
             activities.push(ActivitySummary {
                 id: Uuid::parse_str(&id).map_err(|e| FeedError::DatabaseError(e.to_string()))?,
-                ride_id: ride_id.map(|s| Uuid::parse_str(&s).ok()).flatten(),
+                ride_id: ride_id.and_then(|s| Uuid::parse_str(&s).ok()),
                 rider_id: Uuid::parse_str(&rider_id)
                     .map_err(|e| FeedError::DatabaseError(e.to_string()))?,
                 rider_name,

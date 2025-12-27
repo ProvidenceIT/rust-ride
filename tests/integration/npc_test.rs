@@ -2,9 +2,9 @@
 //!
 //! T057: Integration test for NPC system in tests/integration/npc_test.rs
 
-use rustride::world::npc::ai::{calculate_speed, calculate_speed_physics, AiBehavior};
+use rustride::world::npc::ai::{calculate_speed_physics, AiBehavior};
 use rustride::world::npc::spawner::{generate_spawn_positions, NpcSpawner, SpawnStrategy};
-use rustride::world::npc::{DraftingState, NpcCyclist, NpcDifficulty, NpcManager, NpcSettings};
+use rustride::world::npc::{NpcCyclist, NpcDifficulty, NpcManager, NpcSettings};
 
 /// Test complete NPC lifecycle: spawn, update, passing
 #[test]
@@ -245,7 +245,7 @@ fn test_npc_gradient_response() {
 
     // NPCs should have moved less than on flat
     let distance_0 = manager.npcs()[0].distance_meters - initial_pos_0;
-    let distance_1 = manager.npcs()[1].distance_meters - initial_pos_1;
+    let _distance_1 = manager.npcs()[1].distance_meters - initial_pos_1;
 
     // Reset and test flat
     manager.reset();
@@ -296,7 +296,7 @@ fn test_ai_behavior_integration() {
     let mut behavior = AiBehavior::default();
 
     // Initial state
-    let initial_power = npc.current_power_watts;
+    let _initial_power = npc.current_power_watts;
 
     // Simulate 30 seconds of updates (6 variation intervals)
     for _ in 0..300 {
@@ -437,7 +437,7 @@ fn test_npc_spawn_ordering() {
 
     // NPCs should be spawned with increasing positions
     let npcs = manager.npcs();
-    for i in 0..npcs.len() - 1 {
+    for _i in 0..npcs.len() - 1 {
         // Note: With random variation, some may be slightly out of order
         // but generally increasing
     }

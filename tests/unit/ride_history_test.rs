@@ -23,7 +23,7 @@ fn test_filter_rides_by_date_range() {
     // Capture reference time once to avoid timing edge cases
     let now = Utc::now();
 
-    let rides = vec![
+    let rides = [
         create_ride_with_offset(user_id, 1, now),  // Yesterday
         create_ride_with_offset(user_id, 7, now),  // Last week
         create_ride_with_offset(user_id, 30, now), // Last month
@@ -54,7 +54,7 @@ fn test_filter_rides_with_workout() {
     let mut ride_workout = Ride::new(user_id, 200);
     ride_workout.workout_id = Some(Uuid::new_v4());
 
-    let rides = vec![ride_free, ride_workout];
+    let rides = [ride_free, ride_workout];
 
     // Filter workout rides
     let workout_rides: Vec<_> = rides.iter().filter(|r| r.workout_id.is_some()).collect();
@@ -70,7 +70,7 @@ fn test_calculate_weekly_totals() {
     let user_id = Uuid::new_v4();
     let now = Utc::now();
 
-    let rides = vec![
+    let rides = [
         {
             let mut r = create_ride_with_offset(user_id, 1, now);
             r.duration_seconds = 3600;
@@ -108,7 +108,7 @@ fn test_sort_rides_by_date() {
     let user_id = Uuid::new_v4();
     let now = Utc::now();
 
-    let mut rides = vec![
+    let mut rides = [
         create_ride_with_offset(user_id, 30, now),
         create_ride_with_offset(user_id, 1, now),
         create_ride_with_offset(user_id, 7, now),

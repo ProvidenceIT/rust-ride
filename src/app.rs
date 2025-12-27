@@ -8,12 +8,9 @@
 use eframe::egui;
 
 use crossbeam::channel::Receiver;
-use rustride::accessibility::{FocusIndicatorStyle, FocusManager};
+use rustride::accessibility::FocusManager;
 use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
-use rustride::hid::{
-    ButtonAction, ButtonInputHandler, DefaultButtonInputHandler, DefaultHidDeviceManager,
-    HidConfig, HidDeviceManager,
-};
+use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
 };
@@ -22,6 +19,7 @@ use rustride::integrations::streaming::{
     StreamingMetrics, StreamingServer,
 };
 use rustride::metrics::MetricsCalculator;
+use rustride::onboarding::OnboardingState;
 use rustride::recording::RideRecorder;
 use rustride::sensors::types::{ConnectionState, SensorEvent};
 use rustride::sensors::{
@@ -29,7 +27,6 @@ use rustride::sensors::{
     SensorFusion, SensorFusionConfig, SensorManager,
 };
 use rustride::storage::config::{AppConfig, UserProfile};
-use rustride::onboarding::OnboardingState;
 use rustride::ui::screens::{
     AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
@@ -97,7 +94,8 @@ pub struct RustRideApp {
     incline_controller: DefaultInclineController,
     /// T043: Gradient controller for route-based resistance
     gradient_controller: GradientController,
-    /// T071: MQTT client for smart home integration
+    /// T071: MQTT client for smart home integration (reserved for future use)
+    #[allow(dead_code)]
     mqtt_client: Arc<DefaultMqttClient>,
     /// T071: Fan controller for zone-based fan speed control
     fan_controller: Arc<DefaultFanController<DefaultMqttClient>>,
@@ -107,9 +105,11 @@ pub struct RustRideApp {
     streaming_server: Arc<DefaultStreamingServer>,
     /// T080: Streaming configuration
     streaming_config: StreamingConfig,
-    /// T091: HID device manager for USB buttons/Stream Deck
+    /// T091: HID device manager for USB buttons/Stream Deck (reserved for future use)
+    #[allow(dead_code)]
     hid_device_manager: Arc<DefaultHidDeviceManager>,
-    /// T091: Button input handler for mapping
+    /// T091: Button input handler for mapping (reserved for future use)
+    #[allow(dead_code)]
     button_input_handler: Arc<DefaultButtonInputHandler>,
     /// Sensor event receiver
     sensor_event_rx: Option<Receiver<SensorEvent>>,
@@ -437,7 +437,7 @@ impl RustRideApp {
                 zone_name: aggregated.power_zone.map(|z| format!("Zone {}", z)),
                 gradient: None, // TODO: Get from gradient controller
                 left_right_balance: None,
-                calories: Some(aggregated.calories as u32),
+                calories: Some(aggregated.calories),
                 normalized_power: aggregated.normalized_power,
                 intensity_factor: aggregated.intensity_factor,
             };

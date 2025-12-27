@@ -1269,9 +1269,10 @@ impl RideScreen {
         }
 
         // Check if we have meaningful dynamics data
-        let has_dynamics = self.dynamics_data.as_ref().map_or(false, |d| {
-            d.balance.left_percent != 50.0 || d.balance.right_percent != 50.0
-        });
+        let has_dynamics = self
+            .dynamics_data
+            .as_ref()
+            .is_some_and(|d| d.balance.left_percent != 50.0 || d.balance.right_percent != 50.0);
 
         if !has_dynamics && self.dynamics_data.is_none() {
             return;
@@ -1360,7 +1361,7 @@ impl RideScreen {
     /// and status information. The video panel can be toggled on/off during a ride.
     fn render_video_panel(&mut self, ui: &mut Ui) {
         let available_width = ui.available_width();
-        let panel_width = (available_width * 0.6).min(800.0).max(400.0);
+        let panel_width = (available_width * 0.6).clamp(400.0, 800.0);
         let panel_height = panel_width * 9.0 / 16.0; // 16:9 aspect ratio
 
         ui.horizontal(|ui| {

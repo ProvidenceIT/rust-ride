@@ -78,24 +78,16 @@ impl OnboardingStep {
     /// Get the description for this step.
     pub fn description(&self) -> &'static str {
         match self {
-            OnboardingStep::Welcome => {
-                "Let's get you set up for your first ride."
-            }
+            OnboardingStep::Welcome => "Let's get you set up for your first ride.",
             OnboardingStep::SensorSetup => {
                 "Connect your smart trainer, power meter, or heart rate monitor."
             }
-            OnboardingStep::ProfileSetup => {
-                "Enter your details to personalize your training."
-            }
+            OnboardingStep::ProfileSetup => "Enter your details to personalize your training.",
             OnboardingStep::FtpConfiguration => {
                 "Set your Functional Threshold Power for accurate training zones."
             }
-            OnboardingStep::UiTour => {
-                "Let's explore the main features of RustRide."
-            }
-            OnboardingStep::Complete => {
-                "You're ready to start riding."
-            }
+            OnboardingStep::UiTour => "Let's explore the main features of RustRide.",
+            OnboardingStep::Complete => "You're ready to start riding.",
         }
     }
 
@@ -106,7 +98,7 @@ impl OnboardingStep {
             OnboardingStep::SensorSetup => true, // Can connect later
             OnboardingStep::ProfileSetup => true, // Can use defaults
             OnboardingStep::FtpConfiguration => true, // Can estimate or test later
-            OnboardingStep::UiTour => true, // Optional tour
+            OnboardingStep::UiTour => true,      // Optional tour
             OnboardingStep::Complete => false,
         }
     }
@@ -174,7 +166,11 @@ impl WelcomeStepUi {
             ui.group(|ui| {
                 ui.set_min_width(400.0);
                 ui.vertical(|ui| {
-                    Self::feature_item(ui, "🔌", "Connect smart trainers, power meters, and HR monitors");
+                    Self::feature_item(
+                        ui,
+                        "🔌",
+                        "Connect smart trainers, power meters, and HR monitors",
+                    );
                     Self::feature_item(ui, "📊", "Track your training with real-time metrics");
                     Self::feature_item(ui, "🏋️", "Execute structured workouts with ERG mode");
                     Self::feature_item(ui, "📈", "Analyze your progress with detailed analytics");
@@ -209,6 +205,7 @@ impl WelcomeStepUi {
 }
 
 /// T053: Sensor setup step UI.
+#[derive(Default)]
 pub struct SensorSetupStepUi {
     /// Whether scanning is active
     pub scanning: bool,
@@ -229,16 +226,6 @@ pub struct SensorInfo {
     pub sensor_type: String,
     /// Signal strength (if available)
     pub signal_strength: Option<i8>,
-}
-
-impl Default for SensorSetupStepUi {
-    fn default() -> Self {
-        Self {
-            scanning: false,
-            discovered_sensors: Vec::new(),
-            selected_sensors: Vec::new(),
-        }
-    }
 }
 
 impl SensorSetupStepUi {
@@ -410,8 +397,10 @@ impl ProfileSetupStepUi {
             ui.label(RichText::new("Create Your Profile").size(24.0).strong());
             ui.add_space(10.0);
             ui.label(
-                RichText::new("Enter your details for personalized training zones and calorie calculations.")
-                    .color(Color32::GRAY),
+                RichText::new(
+                    "Enter your details for personalized training zones and calorie calculations.",
+                )
+                .color(Color32::GRAY),
             );
             ui.add_space(30.0);
 
@@ -428,23 +417,37 @@ impl ProfileSetupStepUi {
                     // Unit preference
                     ui.label("Units:");
                     ui.horizontal(|ui| {
-                        if ui.selectable_label(self.use_metric, "Metric (kg, km)").clicked() {
+                        if ui
+                            .selectable_label(self.use_metric, "Metric (kg, km)")
+                            .clicked()
+                        {
                             self.use_metric = true;
                         }
-                        if ui.selectable_label(!self.use_metric, "Imperial (lbs, mi)").clicked() {
+                        if ui
+                            .selectable_label(!self.use_metric, "Imperial (lbs, mi)")
+                            .clicked()
+                        {
                             self.use_metric = false;
                         }
                     });
                     ui.end_row();
 
                     // Weight
-                    let weight_label = if self.use_metric { "Weight (kg):" } else { "Weight (lbs):" };
+                    let weight_label = if self.use_metric {
+                        "Weight (kg):"
+                    } else {
+                        "Weight (lbs):"
+                    };
                     ui.label(weight_label);
                     ui.add(egui::TextEdit::singleline(&mut self.weight_kg).desired_width(100.0));
                     ui.end_row();
 
                     // Height
-                    let height_label = if self.use_metric { "Height (cm):" } else { "Height (in):" };
+                    let height_label = if self.use_metric {
+                        "Height (cm):"
+                    } else {
+                        "Height (in):"
+                    };
                     ui.label(height_label);
                     ui.add(egui::TextEdit::singleline(&mut self.height_cm).desired_width(100.0));
                     ui.end_row();
@@ -452,13 +455,22 @@ impl ProfileSetupStepUi {
                     // Gender (optional)
                     ui.label("Gender (optional):");
                     ui.horizontal(|ui| {
-                        if ui.selectable_label(self.gender.as_deref() == Some("male"), "Male").clicked() {
+                        if ui
+                            .selectable_label(self.gender.as_deref() == Some("male"), "Male")
+                            .clicked()
+                        {
                             self.gender = Some("male".to_string());
                         }
-                        if ui.selectable_label(self.gender.as_deref() == Some("female"), "Female").clicked() {
+                        if ui
+                            .selectable_label(self.gender.as_deref() == Some("female"), "Female")
+                            .clicked()
+                        {
                             self.gender = Some("female".to_string());
                         }
-                        if ui.selectable_label(self.gender.is_none(), "Prefer not to say").clicked() {
+                        if ui
+                            .selectable_label(self.gender.is_none(), "Prefer not to say")
+                            .clicked()
+                        {
                             self.gender = None;
                         }
                     });
@@ -648,15 +660,10 @@ impl FtpConfigurationStepUi {
 }
 
 /// T056: UI tour step.
+#[derive(Default)]
 pub struct UiTourStepUi {
     /// Current tour item
     pub current_item: usize,
-}
-
-impl Default for UiTourStepUi {
-    fn default() -> Self {
-        Self { current_item: 0 }
-    }
 }
 
 impl UiTourStepUi {
@@ -668,11 +675,31 @@ impl UiTourStepUi {
     /// Get tour items.
     fn tour_items() -> &'static [(&'static str, &'static str, &'static str)] {
         &[
-            ("🏠", "Home Screen", "Start rides, access workouts, and view your training history."),
-            ("🚴", "Ride Screen", "See real-time metrics during your ride including power, heart rate, and cadence."),
-            ("📊", "Analytics", "Review your training progress, power curves, and fitness trends."),
-            ("⚙️", "Settings", "Customize your experience, connect sensors, and configure training zones."),
-            ("⌨️", "Keyboard Shortcuts", "Press F1 or ? anytime to see available keyboard shortcuts."),
+            (
+                "🏠",
+                "Home Screen",
+                "Start rides, access workouts, and view your training history.",
+            ),
+            (
+                "🚴",
+                "Ride Screen",
+                "See real-time metrics during your ride including power, heart rate, and cadence.",
+            ),
+            (
+                "📊",
+                "Analytics",
+                "Review your training progress, power curves, and fitness trends.",
+            ),
+            (
+                "⚙️",
+                "Settings",
+                "Customize your experience, connect sensors, and configure training zones.",
+            ),
+            (
+                "⌨️",
+                "Keyboard Shortcuts",
+                "Press F1 or ? anytime to see available keyboard shortcuts.",
+            ),
         ]
     }
 
@@ -688,8 +715,7 @@ impl UiTourStepUi {
             ui.label(RichText::new("Quick Tour").size(24.0).strong());
             ui.add_space(10.0);
             ui.label(
-                RichText::new("Let's take a quick look at the main features.")
-                    .color(Color32::GRAY),
+                RichText::new("Let's take a quick look at the main features.").color(Color32::GRAY),
             );
             ui.add_space(30.0);
 
@@ -703,7 +729,11 @@ impl UiTourStepUi {
                     } else {
                         Color32::GRAY
                     };
-                    ui.add(egui::widgets::ProgressBar::new(1.0).fill(color).desired_width(30.0));
+                    ui.add(
+                        egui::widgets::ProgressBar::new(1.0)
+                            .fill(color)
+                            .desired_width(30.0),
+                    );
                     if i < items.len() - 1 {
                         ui.add_space(5.0);
                     }
@@ -750,13 +780,11 @@ impl UiTourStepUi {
                         {
                             self.current_item += 1;
                         }
-                    } else {
-                        if ui
-                            .add_sized(Vec2::new(100.0, 36.0), egui::Button::new("Finish"))
-                            .clicked()
-                        {
-                            action = StepAction::Next;
-                        }
+                    } else if ui
+                        .add_sized(Vec2::new(100.0, 36.0), egui::Button::new("Finish"))
+                        .clicked()
+                    {
+                        action = StepAction::Next;
                     }
 
                     if ui.button("Skip Tour").clicked() {

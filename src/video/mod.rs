@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::broadcast;
 
 // Re-export main types
 pub use player::{VideoFrame, VideoInfo, VideoPlayer, VideoTextureHandle, VideoTextureManager};

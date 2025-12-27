@@ -2,8 +2,7 @@
 //!
 //! Handles mapping of button presses to actions.
 
-use super::actions::{ActionResult, ButtonAction};
-use super::HidError;
+use super::actions::ButtonAction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -261,7 +260,7 @@ impl ButtonInputHandler for DefaultButtonInputHandler {
     }
 
     fn get_learned_button(&self) -> Option<u8> {
-        self.learned_button.try_read().ok()?.clone()
+        *self.learned_button.try_read().ok()?
     }
 }
 

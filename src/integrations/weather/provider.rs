@@ -33,6 +33,7 @@ pub trait WeatherProvider: Send + Sync {
 }
 
 /// OpenWeatherMap API response (simplified)
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct OwmResponse {
     main: OwmMain,
@@ -42,6 +43,7 @@ struct OwmResponse {
     sys: Option<OwmSys>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct OwmMain {
     temp: f32,
@@ -50,6 +52,7 @@ struct OwmMain {
     pressure: u16,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct OwmWeather {
     id: u32,
@@ -57,12 +60,14 @@ struct OwmWeather {
     description: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct OwmWind {
     speed: f32,
     deg: Option<u16>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct OwmSys {
     country: Option<String>,
@@ -99,6 +104,7 @@ impl OpenWeatherMapProvider {
     }
 
     /// Map OpenWeatherMap condition code to our condition
+    #[allow(dead_code)]
     fn map_condition(code: u32) -> WeatherCondition {
         match code {
             200..=232 => WeatherCondition::Thunderstorm,
@@ -141,9 +147,7 @@ impl OpenWeatherMapProvider {
             return Err(WeatherError::LocationMissing);
         }
 
-        let url = self.build_url(&config, api_key);
-        drop(config);
-        drop(api_key);
+        let _url = self.build_url(&config, api_key);
 
         tracing::debug!("Fetching weather data from OpenWeatherMap");
 
@@ -219,7 +223,7 @@ impl WeatherProvider for OpenWeatherMapProvider {
     }
 
     fn last_updated(&self) -> Option<DateTime<Utc>> {
-        self.last_fetch.try_read().ok()?.clone()
+        *self.last_fetch.try_read().ok()?
     }
 }
 

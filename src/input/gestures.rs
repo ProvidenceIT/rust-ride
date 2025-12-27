@@ -105,7 +105,12 @@ impl GestureHandler {
     }
 
     /// Detect a tap gesture.
-    pub fn detect_tap(&mut self, pos: Pos2, duration: std::time::Duration, moved: bool) -> Option<GestureType> {
+    pub fn detect_tap(
+        &mut self,
+        pos: Pos2,
+        duration: std::time::Duration,
+        moved: bool,
+    ) -> Option<GestureType> {
         // Must not have moved and must be quick
         if moved || duration > self.double_tap_threshold {
             return None;

@@ -4,7 +4,7 @@
 
 use egui::{Align, Color32, Layout, Rect, RichText, Stroke, Ui, Vec2};
 
-use crate::sensors::smo2::{MuscleLocation, SmO2Reading};
+use crate::sensors::smo2::SmO2Reading;
 
 /// SmO2 display size variants.
 #[derive(Debug, Clone, Copy, Default)]
@@ -359,6 +359,7 @@ impl SmO2Placeholder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sensors::MuscleLocation;
     use uuid::Uuid;
 
     fn sample_reading() -> SmO2Reading {

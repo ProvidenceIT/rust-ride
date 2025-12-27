@@ -337,7 +337,8 @@ impl WorkoutEngine {
                 let smoothed_power = if !is_transition {
                     if let Some(prev) = self.previous_power {
                         if self.ramp_elapsed < self.ramp_duration {
-                            let ramp_progress = self.ramp_elapsed as f32 / self.ramp_duration as f32;
+                            let ramp_progress =
+                                self.ramp_elapsed as f32 / self.ramp_duration as f32;
                             let diff = base_power as i32 - prev as i32;
                             (prev as i32 + (diff as f32 * ramp_progress) as i32) as u16
                         } else {

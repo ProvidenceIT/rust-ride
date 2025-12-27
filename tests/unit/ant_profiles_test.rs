@@ -114,8 +114,8 @@ fn test_hr_rmssd_calculation() {
     let mut state = HeartRateState::default();
 
     // Simulate several beats with varying intervals
-    let intervals = vec![800, 850, 790, 820, 810, 800, 830, 780];
-    for (i, &interval) in intervals.iter().enumerate() {
+    let intervals = [800, 850, 790, 820, 810, 800, 830, 780];
+    for (i, &_interval) in intervals.iter().enumerate() {
         let beat_time = intervals[..=i]
             .iter()
             .map(|&x| (x * 1024 / 1000) as u16)

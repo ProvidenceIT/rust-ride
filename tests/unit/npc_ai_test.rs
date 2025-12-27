@@ -21,7 +21,7 @@ fn test_ai_behavior_update() {
     let mut npc = NpcCyclist::new(1, "Test".to_string(), 0.0, 200, 0);
 
     // Initial power
-    let initial_power = npc.current_power_watts;
+    let _initial_power = npc.current_power_watts;
 
     // Update with 6 seconds (exceeds variation interval)
     behavior.update(&mut npc, 6.0, 0.0);

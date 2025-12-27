@@ -36,6 +36,7 @@ impl RaceStatus {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "scheduled" => Some(RaceStatus::Scheduled),
@@ -72,6 +73,7 @@ impl ParticipantStatus {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "registered" => Some(ParticipantStatus::Registered),

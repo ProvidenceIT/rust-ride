@@ -47,6 +47,7 @@ pub trait MqttClient: Send + Sync {
 }
 
 /// Connection state
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ConnectionState {
     Disconnected,
@@ -80,7 +81,8 @@ impl DefaultMqttClient {
         }
     }
 
-    /// Start the reconnection loop
+    /// Start the reconnection loop (reserved for future use)
+    #[allow(dead_code)]
     async fn start_reconnect_loop(
         state: Arc<RwLock<ConnectionState>>,
         config: Arc<RwLock<Option<MqttConfig>>>,
@@ -185,7 +187,7 @@ impl MqttClient for DefaultMqttClient {
         }
     }
 
-    async fn publish(&self, topic: &str, payload: &str, qos: QoS) -> Result<(), MqttError> {
+    async fn publish(&self, topic: &str, payload: &str, _qos: QoS) -> Result<(), MqttError> {
         if !self.is_connected() {
             return Err(MqttError::NotConnected);
         }

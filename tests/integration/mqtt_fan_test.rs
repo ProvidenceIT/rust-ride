@@ -51,11 +51,13 @@ fn test_fan_profile_defaults() {
 /// Test fan profile command topic generation.
 #[test]
 fn test_fan_profile_command_topic() {
-    let mut profile = FanProfile::default();
-    profile.mqtt_topic = "home/fan/bedroom".to_string();
+    let mut profile = FanProfile {
+        mqtt_topic: "home/fan/bedroom".to_string(),
+        use_set_suffix: true,
+        ..Default::default()
+    };
 
     // With /set suffix
-    profile.use_set_suffix = true;
     assert_eq!(profile.command_topic(), "home/fan/bedroom/set");
 
     // Without /set suffix
@@ -66,10 +68,12 @@ fn test_fan_profile_command_topic() {
 /// Test fan profile payload formatting.
 #[test]
 fn test_fan_profile_payload_formats() {
-    let mut profile = FanProfile::default();
+    let mut profile = FanProfile {
+        payload_format: PayloadFormat::SpeedOnly,
+        ..Default::default()
+    };
 
     // Speed only format
-    profile.payload_format = PayloadFormat::SpeedOnly;
     assert_eq!(profile.format_payload(75, true), "75");
     assert_eq!(profile.format_payload(0, false), "0");
 
@@ -117,10 +121,11 @@ fn test_fan_profile_zone_speed_mapping() {
 /// Test custom zone speed mapping.
 #[test]
 fn test_fan_profile_custom_zone_speeds() {
-    let mut profile = FanProfile::default();
-
     // Set a "threshold only" profile (fan only at high zones)
-    profile.zone_speeds = [0, 0, 0, 25, 50, 75, 100];
+    let profile = FanProfile {
+        zone_speeds: [0, 0, 0, 25, 50, 75, 100],
+        ..Default::default()
+    };
 
     assert_eq!(profile.speed_for_zone(1), 0);
     assert_eq!(profile.speed_for_zone(2), 0);

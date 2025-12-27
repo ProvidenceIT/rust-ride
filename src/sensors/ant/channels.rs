@@ -5,7 +5,6 @@
 use super::{AntDeviceType, AntError, AntEvent};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
-use uuid::Uuid;
 
 /// Status of an ANT+ channel
 #[derive(Debug, Clone, PartialEq, Eq)]

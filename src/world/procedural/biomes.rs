@@ -347,7 +347,7 @@ mod tests {
             for x in 0..16 {
                 let _biome = map.get(x, y); // Should not panic
                 let blend = map.blend(x, y);
-                assert!(blend >= 0.0 && blend <= 1.0);
+                assert!((0.0..=1.0).contains(&blend));
             }
         }
     }

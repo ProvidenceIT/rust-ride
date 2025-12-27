@@ -121,7 +121,7 @@ impl RiderProfileScreen {
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                &profile
+                profile
                     .display_name
                     .chars()
                     .next()
@@ -268,20 +268,18 @@ impl RiderProfileScreen {
         ui.add_space(20.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                if !self.edit_name.is_empty() {
-                    let mut updated = profile.clone();
-                    updated.display_name = self.edit_name.clone();
-                    updated.bio = if self.edit_bio.is_empty() {
-                        None
-                    } else {
-                        Some(self.edit_bio.clone())
-                    };
-                    updated.sharing_enabled = self.edit_sharing_enabled;
+            if ui.button("Save").clicked() && !self.edit_name.is_empty() {
+                let mut updated = profile.clone();
+                updated.display_name = self.edit_name.clone();
+                updated.bio = if self.edit_bio.is_empty() {
+                    None
+                } else {
+                    Some(self.edit_bio.clone())
+                };
+                updated.sharing_enabled = self.edit_sharing_enabled;
 
-                    action = Some(RiderProfileAction::SaveProfile(updated));
-                    self.view = RiderProfileView::View;
-                }
+                action = Some(RiderProfileAction::SaveProfile(updated));
+                self.view = RiderProfileView::View;
             }
             if ui.button("Cancel").clicked() {
                 self.view = RiderProfileView::View;

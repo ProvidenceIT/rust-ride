@@ -129,17 +129,17 @@ impl AntDongleManager for DefaultDongleManager {
         // For now, return empty list
         tracing::info!("Scanning for ANT+ dongles...");
 
-        let mut found = Vec::new();
+        let found = Vec::new();
 
         // This would use libusb to enumerate USB devices
         // and match against KNOWN_DONGLES
-        for (vid, pid, name) in KNOWN_DONGLES {
+        for (vid, _pid, name) in KNOWN_DONGLES {
             // Placeholder: In real implementation, check if device exists
             tracing::debug!(
                 "Would check for dongle: {} (VID: {:04X}, PID: {:04X})",
                 name,
                 vid,
-                pid
+                _pid
             );
         }
 
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test_known_dongles() {
         assert!(!KNOWN_DONGLES.is_empty());
-        for (vid, pid, name) in KNOWN_DONGLES {
+        for (vid, _pid, name) in KNOWN_DONGLES {
             assert_eq!(*vid, 0x0FCF); // All Dynastream/Garmin dongles
             assert!(!name.is_empty());
         }

@@ -4,7 +4,7 @@
 
 use glam::{Vec2, Vec3};
 use rustride::world::weather::particles::{ParticleSystem, ParticleType};
-use rustride::world::weather::skybox::{sun_position, SkyColors, Skybox};
+use rustride::world::weather::skybox::{sun_position, Skybox};
 use rustride::world::weather::{TimeOfDay, WeatherController, WeatherState, WeatherType};
 
 /// Test the full weather system workflow
@@ -164,7 +164,7 @@ fn test_sun_arc_throughout_day() {
     }
 
     // Maximum sun height should be around noon
-    assert!(max_height_time >= 11.0 && max_height_time <= 13.0);
+    assert!((11.0..=13.0).contains(&max_height_time));
 }
 
 /// Test particle lifecycle in system

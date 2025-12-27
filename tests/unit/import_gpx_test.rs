@@ -161,8 +161,8 @@ fn test_parse_famous_routes() {
         .filter_map(|p| p.elevation)
         .fold(f32::NEG_INFINITY, f32::max);
 
-    assert!(min_elev >= 700.0 && min_elev <= 750.0);
-    assert!(max_elev >= 1750.0 && max_elev <= 1800.0);
+    assert!((700.0..=750.0).contains(&min_elev));
+    assert!((1750.0..=1800.0).contains(&max_elev));
 
     // Verify name extraction
     let name = extract_name(&content);

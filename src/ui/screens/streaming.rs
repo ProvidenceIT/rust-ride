@@ -6,7 +6,7 @@
 use egui::{Align, Color32, Layout, RichText, Ui};
 
 use crate::integrations::streaming::{
-    PinAuthenticator, QrCodeData, StreamingConfig, StreamingServer, StreamingSession,
+    QrCodeData, StreamingConfig, StreamingServer, StreamingSession,
 };
 
 /// Streaming screen state.

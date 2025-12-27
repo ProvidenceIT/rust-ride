@@ -3,7 +3,7 @@
 //! T045: Unit test for skybox rendering in tests/unit/skybox_test.rs
 
 use rustride::world::weather::skybox::{ambient_light, sun_position, SkyColors, Skybox};
-use rustride::world::weather::{TimeOfDay, WeatherType};
+use rustride::world::weather::WeatherType;
 
 #[test]
 fn test_sky_colors_for_clear_day() {

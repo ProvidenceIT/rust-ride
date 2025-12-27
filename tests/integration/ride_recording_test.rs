@@ -217,7 +217,7 @@ fn test_pause_does_not_record_samples() {
 fn test_recording_with_workout() {
     let mut recorder = RideRecorder::with_defaults();
     let user_id = Uuid::new_v4();
-    let workout_id = Uuid::new_v4();
+    let _workout_id = Uuid::new_v4();
 
     recorder.start(user_id, 250).unwrap();
 

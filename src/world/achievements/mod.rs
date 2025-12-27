@@ -376,7 +376,7 @@ mod tests {
         assert!(!manager.achievements().is_empty());
 
         // Find a distance achievement and update it
-        if let Some(ach) = manager
+        if let Some(_ach) = manager
             .achievements()
             .iter()
             .find(|a| a.key == "first_ride")

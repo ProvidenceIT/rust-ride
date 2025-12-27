@@ -15,7 +15,6 @@ pub mod tts;
 
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::broadcast;
 
 // Re-export main types
 pub use alerts::{

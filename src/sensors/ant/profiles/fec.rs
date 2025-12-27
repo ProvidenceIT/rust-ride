@@ -262,8 +262,8 @@ pub mod commands {
         wind_speed_kmh: i8,
         drafting_factor: f32,
     ) -> [u8; 8] {
-        let wrc = ((wind_resistance_coefficient / 0.01).round() as u8).min(255);
-        let df = ((drafting_factor / 0.01).round() as u8).min(255);
+        let wrc = (wind_resistance_coefficient / 0.01).round() as u8;
+        let df = (drafting_factor / 0.01).round() as u8;
 
         [0x32, 0xFF, 0xFF, 0xFF, 0xFF, wrc, wind_speed_kmh as u8, df]
     }
@@ -275,7 +275,7 @@ pub mod commands {
         let grade_encoded = ((grade_percent + 200.0) / 0.01).round() as u16;
         let grade_bytes = grade_encoded.to_le_bytes();
 
-        let rr = ((rolling_resistance / 0.00005).round() as u8).min(255);
+        let rr = (rolling_resistance / 0.00005).round() as u8;
 
         [
             0x33,

@@ -8,9 +8,7 @@ pub mod dongle;
 pub mod duplex;
 pub mod profiles;
 
-use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 // Re-export main types
@@ -75,7 +73,7 @@ impl AntDeviceType {
         match n {
             120 => AntDeviceType::HeartRate,
             11 => AntDeviceType::Power,
-            121 | 122 | 123 => AntDeviceType::SpeedCadence,
+            121..=123 => AntDeviceType::SpeedCadence,
             17 => AntDeviceType::FitnessEquipment,
             _ => AntDeviceType::Unknown(n),
         }

@@ -27,10 +27,7 @@ fn test_all_appearance_variants() {
             "Appearance {} should have name",
             i
         );
-        // All appearances should have valid colors
-        assert!(appearance.jersey_color[0] <= 255);
-        assert!(appearance.jersey_color[1] <= 255);
-        assert!(appearance.jersey_color[2] <= 255);
+        // All appearances should have valid colors (u8 is always <= 255, no check needed)
     }
 }
 

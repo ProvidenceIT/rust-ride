@@ -184,6 +184,7 @@ pub struct DefaultInclineController {
 
 impl DefaultInclineController {
     /// Create a new incline controller with the given configuration.
+    #[allow(clippy::field_reassign_with_default)]
     pub fn new(config: InclineConfig) -> Self {
         let mut state = GradientState::default();
         state.transition_duration = Duration::from_millis(config.smoothing_duration_ms as u64);
@@ -513,6 +514,7 @@ pub mod physics {
     ///
     /// # Returns
     /// Virtual speed in km/h.
+    #[allow(dead_code)]
     pub fn calculate_virtual_speed(
         power_watts: f32,
         gradient_percent: f32,

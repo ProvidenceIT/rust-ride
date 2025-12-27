@@ -32,20 +32,15 @@ pub struct DualProtocolBinding {
 }
 
 /// Protocol preference
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Protocol {
     /// Prefer BLE (Bluetooth Low Energy)
     Ble,
     /// Prefer ANT+
     AntPlus,
     /// No preference - use whichever connects first
+    #[default]
     Auto,
-}
-
-impl Default for Protocol {
-    fn default() -> Self {
-        Protocol::Auto
-    }
 }
 
 impl DualProtocolBinding {
@@ -159,7 +154,7 @@ pub struct SensorMatcher;
 impl SensorMatcher {
     /// Calculate match confidence between two sensor descriptions
     pub fn calculate_match(
-        sensor_type: SensorType,
+        _sensor_type: SensorType,
         serial1: Option<&str>,
         serial2: Option<&str>,
         manufacturer1: Option<&str>,

@@ -14,7 +14,6 @@
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
-use crate::accessibility::ColorMode;
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -23,7 +22,7 @@ use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
 use crate::storage::config::{
-    AccessibilitySettings, LocaleSettings, ThemePreference, Theme, Units, UserProfile,
+    AccessibilitySettings, LocaleSettings, Theme, ThemePreference, Units, UserProfile,
 };
 use uuid::Uuid;
 
@@ -1799,14 +1798,13 @@ impl SettingsScreen {
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             // Remove button (only if more than one profile)
-                            if profiles_len > 1 {
-                                if ui
+                            if profiles_len > 1
+                                && ui
                                     .small_button("✕")
                                     .on_hover_text("Remove profile")
                                     .clicked()
-                                {
-                                    remove_idx = Some(idx);
-                                }
+                            {
+                                remove_idx = Some(idx);
                             }
 
                             // Edit button
@@ -2688,18 +2686,18 @@ impl SettingsScreen {
         ui.add_space(8.0);
 
         // Add mapping button
-        if !self.hid_settings.learning_mode && self.hid_settings.selecting_action_for.is_none() {
-            if ui
+        if !self.hid_settings.learning_mode
+            && self.hid_settings.selecting_action_for.is_none()
+            && ui
                 .button("+ Add Button Mapping")
                 .on_hover_text("Press a button on the device to map it to an action")
                 .clicked()
-            {
-                self.hid_settings.learning_mode = true;
-                self.hid_settings.learning_target = Some((selected_id, 0));
-                self.hid_settings.learned_button_code = None;
-                // TODO: Signal to HID handler to start learning mode
-                tracing::info!("Started button learning mode for device {:?}", selected_id);
-            }
+        {
+            self.hid_settings.learning_mode = true;
+            self.hid_settings.learning_target = Some((selected_id, 0));
+            self.hid_settings.learned_button_code = None;
+            // TODO: Signal to HID handler to start learning mode
+            tracing::info!("Started button learning mode for device {:?}", selected_id);
         }
     }
 
@@ -2737,7 +2735,11 @@ impl SettingsScreen {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
-                        .button(if self.show_accessibility { "Hide" } else { "Show" })
+                        .button(if self.show_accessibility {
+                            "Hide"
+                        } else {
+                            "Show"
+                        })
                         .clicked()
                     {
                         self.show_accessibility = !self.show_accessibility;
@@ -2763,20 +2765,14 @@ impl SettingsScreen {
                         self.has_changes = true;
                     }
                     if ui
-                        .selectable_label(
-                            self.theme_preference == ThemePreference::Light,
-                            "Light",
-                        )
+                        .selectable_label(self.theme_preference == ThemePreference::Light, "Light")
                         .clicked()
                     {
                         self.theme_preference = ThemePreference::Light;
                         self.has_changes = true;
                     }
                     if ui
-                        .selectable_label(
-                            self.theme_preference == ThemePreference::Dark,
-                            "Dark",
-                        )
+                        .selectable_label(self.theme_preference == ThemePreference::Dark, "Dark")
                         .clicked()
                     {
                         self.theme_preference = ThemePreference::Dark;
@@ -2797,10 +2793,7 @@ impl SettingsScreen {
                     ];
                     for (label, mode) in modes {
                         if ui
-                            .selectable_label(
-                                self.accessibility_settings.color_mode == mode,
-                                label,
-                            )
+                            .selectable_label(self.accessibility_settings.color_mode == mode, label)
                             .clicked()
                         {
                             self.accessibility_settings.color_mode = mode.to_string();
@@ -2849,10 +2842,7 @@ impl SettingsScreen {
                 ui.horizontal(|ui| {
                     for (label, code) in languages {
                         if ui
-                            .selectable_label(
-                                self.locale_settings.language == code,
-                                label,
-                            )
+                            .selectable_label(self.locale_settings.language == code, label)
                             .clicked()
                         {
                             self.locale_settings.language = code.to_string();
@@ -2870,7 +2860,9 @@ impl SettingsScreen {
                         &mut self.accessibility_settings.voice_control_enabled,
                         "Enable Voice Control",
                     )
-                    .on_hover_text("Control the app with voice commands (start, pause, resume, end, skip)")
+                    .on_hover_text(
+                        "Control the app with voice commands (start, pause, resume, end, skip)",
+                    )
                     .changed()
                 {
                     self.has_changes = true;

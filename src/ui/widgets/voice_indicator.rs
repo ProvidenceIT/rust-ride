@@ -3,7 +3,7 @@
 //! T129: Shows voice control status and provides visual feedback when unavailable.
 
 #[cfg(feature = "voice-control")]
-use crate::accessibility::voice_control::{VoiceControlState, CommandAudioCue};
+use crate::accessibility::voice_control::{CommandAudioCue, VoiceControlState};
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
@@ -150,7 +150,10 @@ impl VoiceIndicator {
 
         VoiceIndicatorResponse {
             response,
-            is_available: matches!(self.state, VoiceIndicatorState::Ready | VoiceIndicatorState::Listening),
+            is_available: matches!(
+                self.state,
+                VoiceIndicatorState::Ready | VoiceIndicatorState::Listening
+            ),
         }
     }
 
@@ -191,8 +194,13 @@ impl VoiceIndicator {
                 // Draw pulsing animation circles
                 let time = ui.ctx().input(|i| i.time);
                 let pulse = ((time * 3.0).sin() * 0.5 + 0.5) as f32;
-                let pulse_color = Color32::from_rgba_unmultiplied(100, 200, 100, (pulse * 100.0) as u8);
-                painter.circle_stroke(center, radius + 3.0 + pulse * 3.0, Stroke::new(1.5, pulse_color));
+                let pulse_color =
+                    Color32::from_rgba_unmultiplied(100, 200, 100, (pulse * 100.0) as u8);
+                painter.circle_stroke(
+                    center,
+                    radius + 3.0 + pulse * 3.0,
+                    Stroke::new(1.5, pulse_color),
+                );
                 ui.ctx().request_repaint(); // Continue animation
             }
             VoiceIndicatorState::Initializing => {
@@ -215,7 +223,13 @@ impl VoiceIndicator {
     }
 
     /// Draw microphone icon.
-    fn draw_microphone_icon(&self, painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
+    fn draw_microphone_icon(
+        &self,
+        painter: &egui::Painter,
+        center: Pos2,
+        size: f32,
+        color: Color32,
+    ) {
         // Simplified microphone shape
         let mic_width = size * 0.4;
         let mic_height = size * 0.7;
@@ -295,8 +309,13 @@ impl VoiceIndicator {
             tooltip.push_str(&format!("\n{}", reason));
         }
 
-        if matches!(self.state, VoiceIndicatorState::Ready | VoiceIndicatorState::Listening) {
-            tooltip.push_str("\nCommands: Start, Pause, Resume, End, Skip, Increase, Decrease, Status");
+        if matches!(
+            self.state,
+            VoiceIndicatorState::Ready | VoiceIndicatorState::Listening
+        ) {
+            tooltip.push_str(
+                "\nCommands: Start, Pause, Resume, End, Skip, Increase, Decrease, Status",
+            );
         }
 
         tooltip
@@ -316,20 +335,24 @@ impl VoiceIndicator {
         let painter = ui.painter();
 
         // Background
-        let bg_color = self.confirmation_cue.map_or(
-            Color32::from_rgb(50, 50, 50),
-            |cue| match cue {
-                ConfirmationCue::Positive => Color32::from_rgb(30, 70, 30),
-                ConfirmationCue::Neutral => Color32::from_rgb(50, 50, 60),
-                ConfirmationCue::Action => Color32::from_rgb(60, 50, 30),
-                ConfirmationCue::Adjustment => Color32::from_rgb(50, 50, 70),
-                ConfirmationCue::Info => Color32::from_rgb(40, 50, 70),
-                ConfirmationCue::Error => Color32::from_rgb(70, 30, 30),
-            },
-        );
+        let bg_color =
+            self.confirmation_cue
+                .map_or(Color32::from_rgb(50, 50, 50), |cue| match cue {
+                    ConfirmationCue::Positive => Color32::from_rgb(30, 70, 30),
+                    ConfirmationCue::Neutral => Color32::from_rgb(50, 50, 60),
+                    ConfirmationCue::Action => Color32::from_rgb(60, 50, 30),
+                    ConfirmationCue::Adjustment => Color32::from_rgb(50, 50, 70),
+                    ConfirmationCue::Info => Color32::from_rgb(40, 50, 70),
+                    ConfirmationCue::Error => Color32::from_rgb(70, 30, 30),
+                });
 
         painter.rect_filled(popup_rect, 4.0, bg_color);
-        painter.rect_stroke(popup_rect, 4.0, Stroke::new(1.0, Color32::from_gray(100)), StrokeKind::Middle);
+        painter.rect_stroke(
+            popup_rect,
+            4.0,
+            Stroke::new(1.0, Color32::from_gray(100)),
+            StrokeKind::Middle,
+        );
 
         // Text
         let text_color = Color32::WHITE;
@@ -373,8 +396,12 @@ impl CompactVoiceIndicator {
             let radius = 6.0;
 
             let color = match self.state {
-                VoiceIndicatorState::Ready | VoiceIndicatorState::Listening => Color32::from_rgb(100, 200, 100),
-                VoiceIndicatorState::Unavailable | VoiceIndicatorState::Error => Color32::from_rgb(200, 100, 100),
+                VoiceIndicatorState::Ready | VoiceIndicatorState::Listening => {
+                    Color32::from_rgb(100, 200, 100)
+                }
+                VoiceIndicatorState::Unavailable | VoiceIndicatorState::Error => {
+                    Color32::from_rgb(200, 100, 100)
+                }
                 VoiceIndicatorState::Initializing => Color32::from_rgb(200, 200, 100),
                 VoiceIndicatorState::Uninitialized => Color32::from_gray(100),
             };
@@ -385,8 +412,13 @@ impl CompactVoiceIndicator {
             if matches!(self.state, VoiceIndicatorState::Listening) {
                 let time = ui.ctx().input(|i| i.time);
                 let pulse = ((time * 3.0).sin() * 0.5 + 0.5) as f32;
-                let pulse_color = Color32::from_rgba_unmultiplied(100, 200, 100, (pulse * 80.0) as u8);
-                painter.circle_stroke(center, radius + 2.0 + pulse * 2.0, Stroke::new(1.0, pulse_color));
+                let pulse_color =
+                    Color32::from_rgba_unmultiplied(100, 200, 100, (pulse * 80.0) as u8);
+                painter.circle_stroke(
+                    center,
+                    radius + 2.0 + pulse * 2.0,
+                    Stroke::new(1.0, pulse_color),
+                );
                 ui.ctx().request_repaint();
             }
         }

@@ -106,10 +106,13 @@ fn test_power_zone_colors_defined() {
     assert_eq!(POWER_ZONE_COLORS.len(), 7);
 
     // Verify all colors are different
-    for i in 0..7 {
-        for j in (i + 1)..7 {
-            let c1 = &POWER_ZONE_COLORS[i];
-            let c2 = &POWER_ZONE_COLORS[j];
+    for (i, c1) in POWER_ZONE_COLORS.iter().enumerate().take(7) {
+        for (j, c2) in POWER_ZONE_COLORS
+            .iter()
+            .enumerate()
+            .skip(i + 1)
+            .take(7 - i - 1)
+        {
             assert!(
                 c1.r != c2.r || c1.g != c2.g || c1.b != c2.b,
                 "Zone {} and {} should have different colors",

@@ -2,10 +2,10 @@
 //!
 //! Core audio playback engine using rodio.
 
-use super::{AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType};
+use super::{AudioConfig, AudioError, AudioEvent, AudioItem, AudioType};
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::broadcast;
 
 /// Trait for audio engine implementations
@@ -260,6 +260,7 @@ impl AudioEngine for DefaultAudioEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::AudioPriority;
 
     #[test]
     fn test_queue_priority_ordering() {

@@ -8,7 +8,6 @@ pub mod server;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 // Re-export main types

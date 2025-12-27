@@ -199,8 +199,8 @@ fn test_full_gpx_import_workflow() {
 
     // Create waypoints
     let mut waypoints = Vec::new();
-    let origin_lat = points[0].latitude;
-    let origin_lon = points[0].longitude;
+    let _origin_lat = points[0].latitude;
+    let _origin_lon = points[0].longitude;
     let mut cumulative_distance = 0.0;
 
     for (i, point) in points.iter().enumerate() {

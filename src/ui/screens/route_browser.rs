@@ -79,7 +79,7 @@ pub enum RouteBrowserAction {
     /// Navigate to a screen
     Navigate(Screen),
     /// Start a ride on selected route with difficulty settings and optional video sync
-    StartRide(StoredRoute, GradientScaler, Option<VideoSync>),
+    StartRide(Box<(StoredRoute, GradientScaler, Option<VideoSync>)>),
     /// Delete a route
     DeleteRoute(uuid::Uuid),
     /// Navigate to import screen
@@ -743,11 +743,11 @@ impl RouteBrowserScreen {
                     )
                     .clicked()
                 {
-                    action = Some(RouteBrowserAction::StartRide(
+                    action = Some(RouteBrowserAction::StartRide(Box::new((
                         route.clone(),
                         self.gradient_scaler.clone(),
                         self.video_sync.clone(),
-                    ));
+                    ))));
                 }
 
                 ui.add_space(8.0);
@@ -985,11 +985,11 @@ impl RouteBrowserScreen {
                         for rec in recommendations.iter().take(5) {
                             let card_response = self.render_recommendation_card(ui, rec);
                             if card_response {
-                                action = Some(RouteBrowserAction::StartRide(
+                                action = Some(RouteBrowserAction::StartRide(Box::new((
                                     rec.route.clone(),
                                     self.gradient_scaler.clone(),
                                     None, // No video sync for quick-start from recommendations
-                                ));
+                                ))));
                             }
                         }
                     });
@@ -1160,17 +1160,18 @@ impl RouteBrowserScreen {
                         self.video_recording_speed = 25.0;
                     }
                 } else if let Some(route) = selected_route {
-                    if !self.video_path_input.is_empty() {
-                        if ui.button("✓ Configure Video").clicked() {
+                    if !self.video_path_input.is_empty()
+                        && ui.button("✓ Configure Video").clicked() {
                             // Create video sync configuration for selected route
-                            let mut sync = VideoSync::default();
-                            sync.route_id = route.id;
-                            sync.video_path = self.video_path_input.clone();
-                            sync.total_route_distance = route.distance_meters as f32;
-                            sync.recording_speed_kmh = self.video_recording_speed;
+                            let sync = VideoSync {
+                                route_id: route.id,
+                                video_path: self.video_path_input.clone(),
+                                total_route_distance: route.distance_meters as f32,
+                                recording_speed_kmh: self.video_recording_speed,
+                                ..Default::default()
+                            };
                             self.video_sync = Some(sync);
                         }
-                    }
                 } else {
                     ui.label(RichText::new("Select a route first").weak());
                 }
@@ -1184,7 +1185,7 @@ impl RouteBrowserScreen {
                     ui.label(
                         RichText::new(format!(
                             "Video configured: {} ({:.1} km @ {:.0} km/h)",
-                            sync.video_path.split('/').last().unwrap_or(&sync.video_path),
+                            sync.video_path.split('/').next_back().unwrap_or(&sync.video_path),
                             sync.total_route_distance / 1000.0,
                             sync.recording_speed_kmh
                         ))

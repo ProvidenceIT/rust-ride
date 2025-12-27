@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_rmssd_calculation() {
-        let mut state = HeartRateState {
+        let state = HeartRateState {
             last_beat_time: 0,
             last_beat_count: 0,
             rr_intervals: vec![800, 810, 790, 820, 780],

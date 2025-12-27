@@ -159,7 +159,8 @@ impl<C: MqttClient> DefaultFanController<C> {
         }
     }
 
-    /// Calculate target speed based on zone
+    /// Calculate target speed based on zone (reserved for future use)
+    #[allow(dead_code)]
     fn calculate_target_speed(
         &self,
         profile: &FanProfile,
@@ -378,9 +379,10 @@ mod tests {
 
     #[test]
     fn test_payload_formats() {
-        let mut profile = FanProfile::default();
-
-        profile.payload_format = PayloadFormat::SpeedOnly;
+        let mut profile = FanProfile {
+            payload_format: PayloadFormat::SpeedOnly,
+            ..Default::default()
+        };
         assert_eq!(profile.format_payload(75, true), "75");
 
         profile.payload_format = PayloadFormat::JsonSpeed;
@@ -398,10 +400,11 @@ mod tests {
 
     #[test]
     fn test_command_topic() {
-        let mut profile = FanProfile::default();
-        profile.mqtt_topic = "home/fan/bedroom".to_string();
-
-        profile.use_set_suffix = true;
+        let mut profile = FanProfile {
+            mqtt_topic: "home/fan/bedroom".to_string(),
+            use_set_suffix: true,
+            ..Default::default()
+        };
         assert_eq!(profile.command_topic(), "home/fan/bedroom/set");
 
         profile.use_set_suffix = false;

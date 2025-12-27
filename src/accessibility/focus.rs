@@ -342,8 +342,12 @@ impl FocusableExt for egui::Ui {
         if has_focus {
             let style = focus_manager.indicator_style();
             let rect = response.rect.expand(style.offset);
-            self.painter()
-                .rect_stroke(rect, style.corner_radius, style.stroke(), StrokeKind::Middle);
+            self.painter().rect_stroke(
+                rect,
+                style.corner_radius,
+                style.stroke(),
+                StrokeKind::Middle,
+            );
         }
 
         // Handle click to set focus
@@ -353,9 +357,9 @@ impl FocusableExt for egui::Ui {
 
         // Handle Enter/Space activation when focused
         if has_focus {
-            let activated = self.ctx().input(|i| {
-                i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
-            });
+            let activated = self
+                .ctx()
+                .input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
             if activated {
                 // Return a "clicked" response
                 return response.clone().on_hover_text("");
@@ -388,8 +392,12 @@ impl FocusableExt for egui::Ui {
         if has_focus {
             let style = focus_manager.indicator_style();
             let rect = response.rect.expand(style.offset);
-            self.painter()
-                .rect_stroke(rect, style.corner_radius, style.stroke(), StrokeKind::Middle);
+            self.painter().rect_stroke(
+                rect,
+                style.corner_radius,
+                style.stroke(),
+                StrokeKind::Middle,
+            );
         }
 
         // Handle click to set focus
@@ -408,7 +416,12 @@ pub fn draw_focus_indicator(
     style: &FocusIndicatorStyle,
 ) {
     let expanded = rect.expand(style.offset);
-    painter.rect_stroke(expanded, style.corner_radius, style.stroke(), StrokeKind::Middle);
+    painter.rect_stroke(
+        expanded,
+        style.corner_radius,
+        style.stroke(),
+        StrokeKind::Middle,
+    );
 }
 
 /// Create a focusable button with accessible features.
@@ -432,18 +445,14 @@ pub fn accessible_focusable_button(
     let has_focus = focus_manager.has_focus(id);
 
     // Calculate minimum size (at least 44x44 for touch)
-    let text_galley = ui.painter().layout_no_wrap(
-        text.to_string(),
-        egui::FontId::default(),
-        Color32::WHITE,
-    );
+    let text_galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::default(), Color32::WHITE);
     let text_size = text_galley.size();
 
     let padding = egui::Vec2::new(16.0, 8.0);
-    let content_size = egui::Vec2::new(
-        text_size.x + padding.x * 2.0,
-        text_size.y + padding.y * 2.0,
-    );
+    let content_size =
+        egui::Vec2::new(text_size.x + padding.x * 2.0, text_size.y + padding.y * 2.0);
 
     let size = egui::Vec2::new(
         content_size.x.max(min_size.x),
@@ -481,9 +490,9 @@ pub fn accessible_focusable_button(
 
     // Handle Enter/Space activation
     if has_focus {
-        let activated = ui.ctx().input(|i| {
-            i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
-        });
+        let activated = ui
+            .ctx()
+            .input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
         if activated {
             // Simulate a click by requesting repaint
             ui.ctx().request_repaint();

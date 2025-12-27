@@ -323,15 +323,16 @@ impl ChallengesScreen {
         ui.add_space(20.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Create").clicked() {
-                if !self.new_name.is_empty() && !self.new_target.is_empty() {
-                    action = Some(ChallengesAction::Create);
-                    // Reset form
-                    self.view = ChallengesView::List;
-                    self.new_name.clear();
-                    self.new_description.clear();
-                    self.new_target.clear();
-                }
+            if ui.button("Create").clicked()
+                && !self.new_name.is_empty()
+                && !self.new_target.is_empty()
+            {
+                action = Some(ChallengesAction::Create);
+                // Reset form
+                self.view = ChallengesView::List;
+                self.new_name.clear();
+                self.new_description.clear();
+                self.new_target.clear();
             }
             if ui.button("Cancel").clicked() {
                 self.view = ChallengesView::List;

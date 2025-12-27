@@ -241,8 +241,8 @@ impl ToneGenerator {
         let (_stream, stream_handle) =
             OutputStream::try_default().map_err(|e| ToneError::DeviceError(e.to_string()))?;
 
-        let sink = Sink::try_new(&stream_handle)
-            .map_err(|e| ToneError::PlaybackError(e.to_string()))?;
+        let sink =
+            Sink::try_new(&stream_handle).map_err(|e| ToneError::PlaybackError(e.to_string()))?;
 
         // Create sine wave source
         let source = SineWave::new(frequency_hz)

@@ -200,7 +200,7 @@ impl SensorSetupScreen {
                         DongleStatus::Detected => "Detected",
                         DongleStatus::Initializing => "Initializing...",
                         DongleStatus::Ready => "Ready",
-                        DongleStatus::Error(e) => "Error",
+                        DongleStatus::Error(_e) => "Error",
                         DongleStatus::Disconnected => "Disconnected",
                     };
                     let status_color = match &dongle.status {

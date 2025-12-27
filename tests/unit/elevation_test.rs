@@ -6,24 +6,21 @@ use rustride::world::import::elevation::ElevationService;
 
 #[test]
 fn test_elevation_service_creation() {
-    let service = ElevationService::new();
+    let _service = ElevationService::new();
     // Service should be created successfully
     // We can't easily verify internal state, but creation should not panic
-    assert!(true);
 }
 
 #[test]
 fn test_elevation_service_with_custom_url() {
-    let service = ElevationService::with_url("http://localhost:8080/api");
+    let _service = ElevationService::with_url("http://localhost:8080/api");
     // Custom URL service should be created successfully
-    assert!(true);
 }
 
 #[test]
 fn test_elevation_service_default() {
-    let service = ElevationService::default();
+    let _service = ElevationService::default();
     // Default should work same as new()
-    assert!(true);
 }
 
 // Note: Async tests for actual elevation fetching would require:

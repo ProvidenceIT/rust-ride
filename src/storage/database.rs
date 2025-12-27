@@ -2091,7 +2091,14 @@ impl Database {
             let created_str: String = row.get(4)?;
             let updated_str: String = row.get(5)?;
 
-            Ok((id_str, name, layout_json, is_default, created_str, updated_str))
+            Ok((
+                id_str,
+                name,
+                layout_json,
+                is_default,
+                created_str,
+                updated_str,
+            ))
         });
 
         match result {
@@ -2122,7 +2129,9 @@ impl Database {
     }
 
     /// Get all layout profiles.
-    pub fn list_layout_profiles(&self) -> Result<Vec<crate::ui::layout::LayoutProfile>, DatabaseError> {
+    pub fn list_layout_profiles(
+        &self,
+    ) -> Result<Vec<crate::ui::layout::LayoutProfile>, DatabaseError> {
         use crate::ui::layout::{LayoutProfile, WidgetPlacement};
 
         let mut stmt = self
@@ -2142,7 +2151,14 @@ impl Database {
                 let created_str: String = row.get(4)?;
                 let updated_str: String = row.get(5)?;
 
-                Ok((id_str, name, layout_json, is_default, created_str, updated_str))
+                Ok((
+                    id_str,
+                    name,
+                    layout_json,
+                    is_default,
+                    created_str,
+                    updated_str,
+                ))
             })
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -2199,7 +2215,10 @@ impl Database {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         if rows_affected == 0 {
-            return Err(DatabaseError::NotFound(format!("Layout profile {}", profile.id)));
+            return Err(DatabaseError::NotFound(format!(
+                "Layout profile {}",
+                profile.id
+            )));
         }
 
         Ok(())
@@ -2233,7 +2252,9 @@ impl Database {
     }
 
     /// Get or create default layout profile.
-    pub fn get_or_create_default_layout(&self) -> Result<crate::ui::layout::LayoutProfile, DatabaseError> {
+    pub fn get_or_create_default_layout(
+        &self,
+    ) -> Result<crate::ui::layout::LayoutProfile, DatabaseError> {
         use crate::ui::layout::LayoutProfile;
 
         // Check if any profiles exist
@@ -2272,18 +2293,24 @@ impl Database {
             let completed_steps_json: String = row.get(4)?;
             let _started_at_str: String = row.get(5)?;
 
-            Ok((current_step, completed, skipped_at_str, completed_steps_json))
+            Ok((
+                current_step,
+                completed,
+                skipped_at_str,
+                completed_steps_json,
+            ))
         });
 
         match result {
             Ok((current_step_idx, completed, skipped_at_str, completed_steps_json)) => {
                 let steps = OnboardingStep::all();
-                let current_step = steps.get(current_step_idx as usize)
+                let current_step = steps
+                    .get(current_step_idx as usize)
                     .copied()
                     .unwrap_or(OnboardingStep::Welcome);
                 let skipped = skipped_at_str.is_some();
-                let completed_steps: Vec<OnboardingStep> = serde_json::from_str(&completed_steps_json)
-                    .unwrap_or_default();
+                let completed_steps: Vec<OnboardingStep> =
+                    serde_json::from_str(&completed_steps_json).unwrap_or_default();
 
                 Ok(Some(OnboardingState {
                     completed: completed != 0,
@@ -2352,8 +2379,8 @@ impl Database {
         &self,
     ) -> Result<Option<crate::storage::config::UserPreferences>, DatabaseError> {
         use crate::storage::config::{
-            AccessibilitySettings, AudioCueSettings, DisplayMode, FlowModeConfig,
-            LocaleSettings, ThemePreference, UserPreferences,
+            AccessibilitySettings, AudioCueSettings, DisplayMode, FlowModeConfig, LocaleSettings,
+            ThemePreference, UserPreferences,
         };
 
         let mut stmt = self
@@ -2401,19 +2428,17 @@ impl Database {
                     "dark" => ThemePreference::Dark,
                     _ => ThemePreference::FollowSystem,
                 };
-                let accessibility: AccessibilitySettings = serde_json::from_str(&accessibility_json)
-                    .unwrap_or_default();
-                let audio: AudioCueSettings = serde_json::from_str(&audio_json)
-                    .unwrap_or_default();
+                let accessibility: AccessibilitySettings =
+                    serde_json::from_str(&accessibility_json).unwrap_or_default();
+                let audio: AudioCueSettings = serde_json::from_str(&audio_json).unwrap_or_default();
                 let display_mode = match display_mode_str.as_str() {
                     "tv_mode" => DisplayMode::TvMode,
                     "flow_mode" => DisplayMode::FlowMode,
                     _ => DisplayMode::Normal,
                 };
-                let flow_mode: FlowModeConfig = serde_json::from_str(&flow_mode_json)
-                    .unwrap_or_default();
-                let locale: LocaleSettings = serde_json::from_str(&locale_json)
-                    .unwrap_or_default();
+                let flow_mode: FlowModeConfig =
+                    serde_json::from_str(&flow_mode_json).unwrap_or_default();
+                let locale: LocaleSettings = serde_json::from_str(&locale_json).unwrap_or_default();
                 let active_layout_id = active_layout_id_str
                     .map(|s| Uuid::parse_str(&s))
                     .transpose()

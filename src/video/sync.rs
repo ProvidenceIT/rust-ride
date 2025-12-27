@@ -2,12 +2,13 @@
 //!
 //! Synchronizes video playback with ride progress.
 
-use super::{VideoError, VideoPlayer, PAUSE_THRESHOLD_KMH};
+use super::{VideoError, PAUSE_THRESHOLD_KMH};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// Video sync configuration
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoSync {
     /// Unique ID
@@ -28,6 +29,27 @@ pub struct VideoSync {
     pub max_playback_speed: f32,
     /// Sync points for calibration
     pub sync_points: Vec<SyncPoint>,
+    /// Configuration for sync behavior
+    pub config: VideoSyncConfig,
+}
+
+/// Configuration for video sync behavior
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoSyncConfig {
+    /// Whether to pause video when rider stops
+    pub pause_on_stop: bool,
+    /// Speed threshold for pausing (km/h)
+    pub pause_threshold: f32,
+}
+
+impl Default for VideoSyncConfig {
+    fn default() -> Self {
+        Self {
+            pause_on_stop: true,
+            pause_threshold: 5.0,
+        }
+    }
 }
 
 impl Default for VideoSync {
@@ -42,6 +64,7 @@ impl Default for VideoSync {
             min_playback_speed: 0.5,
             max_playback_speed: 2.0,
             sync_points: Vec::new(),
+            config: VideoSyncConfig::default(),
         }
     }
 }

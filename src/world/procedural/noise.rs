@@ -246,8 +246,8 @@ mod tests {
         let n2 = gen.perlin(0.5, 0.5);
 
         // Values should be in -1..1 range
-        assert!(n1 >= -1.0 && n1 <= 1.0);
-        assert!(n2 >= -1.0 && n2 <= 1.0);
+        assert!((-1.0..=1.0).contains(&n1));
+        assert!((-1.0..=1.0).contains(&n2));
 
         // Same seed, same input should give same output
         let gen2 = NoiseGenerator::new(42);

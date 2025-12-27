@@ -205,7 +205,7 @@ impl PowerPhase {
 }
 
 /// Complete cycling dynamics data from a dual-sided power meter.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct CyclingDynamicsData {
     /// Left/right power balance
     pub balance: LeftRightBalance,
@@ -220,19 +220,6 @@ pub struct CyclingDynamicsData {
     /// Timestamp of this reading
     #[serde(skip)]
     pub timestamp: Option<Instant>,
-}
-
-impl Default for CyclingDynamicsData {
-    fn default() -> Self {
-        Self {
-            balance: LeftRightBalance::default(),
-            smoothness: PedalSmoothness::default(),
-            torque_effectiveness: TorqueEffectiveness::default(),
-            left_power_phase: None,
-            right_power_phase: None,
-            timestamp: None,
-        }
-    }
 }
 
 impl CyclingDynamicsData {

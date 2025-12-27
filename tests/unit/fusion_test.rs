@@ -2,9 +2,7 @@
 //!
 //! T136: Write unit tests for sensor fusion algorithms
 
-use rustride::sensors::{
-    CadenceFusion, FusionDiagnostics, FusionMode, SensorFusion, SensorFusionConfig,
-};
+use rustride::sensors::{CadenceFusion, FusionMode, SensorFusion, SensorFusionConfig};
 use std::thread::sleep;
 use std::time::Duration;
 

@@ -115,21 +115,12 @@ impl Default for SyncConfig {
 }
 
 /// Platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlatformConfig {
     /// Whether this platform is enabled
     pub enabled: bool,
     /// Auto-sync after ride completion
     pub auto_sync: bool,
-}
-
-impl Default for PlatformConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            auto_sync: false,
-        }
-    }
 }
 
 /// Sync record for tracking upload status

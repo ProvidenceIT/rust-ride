@@ -89,7 +89,7 @@ fn test_full_analytics_pipeline() {
     // Athlete profile
     let ftp = 250u16;
     let weight_kg = 75.0f32;
-    let age = 35u8;
+    let _age = 35u8;
 
     // Step 1: Simulate a ride with power data
     let ride_samples = simulate_structured_workout(ftp, 60);
@@ -306,22 +306,18 @@ fn test_sensor_gap_interpolation() {
     // Simulate power data with sensor dropouts
     let mut samples = vec![250u16; 100];
     // Insert 5-second gap
-    for i in 40..45 {
-        samples[i] = 0;
+    for sample in samples.iter_mut().take(45).skip(40) {
+        *sample = 0;
     }
 
     let interpolated = interpolate_sensor_gaps(&samples);
 
     // Gap should be filled
-    for i in 40..45 {
-        assert!(
-            interpolated[i] > 0,
-            "Gap at index {} should be interpolated",
-            i
-        );
+    for (i, &value) in interpolated.iter().enumerate().take(45).skip(40) {
+        assert!(value > 0, "Gap at index {} should be interpolated", i);
         // Should be close to surrounding values
         assert!(
-            (interpolated[i] as i32 - 250).abs() < 20,
+            (value as i32 - 250).abs() < 20,
             "Interpolated value should be close to surrounding"
         );
     }

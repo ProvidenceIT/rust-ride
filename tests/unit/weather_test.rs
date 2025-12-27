@@ -108,9 +108,11 @@ fn test_set_time() {
 
 #[test]
 fn test_realistic_time_progression() {
-    let mut state = WeatherState::default();
-    state.realistic_time = true;
-    state.time_hours = 12.0;
+    let mut state = WeatherState {
+        realistic_time: true,
+        time_hours: 12.0,
+        ..Default::default()
+    };
 
     // 60 seconds real = 1 hour in-game
     state.update(60.0);
@@ -120,9 +122,11 @@ fn test_realistic_time_progression() {
 
 #[test]
 fn test_realistic_time_wrapping() {
-    let mut state = WeatherState::default();
-    state.realistic_time = true;
-    state.time_hours = 23.5;
+    let mut state = WeatherState {
+        realistic_time: true,
+        time_hours: 23.5,
+        ..Default::default()
+    };
 
     state.update(60.0); // +1 hour
 

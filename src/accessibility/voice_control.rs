@@ -9,7 +9,6 @@
 
 use std::path::PathBuf;
 
-
 /// Voice command types that can be recognized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceCommand {
@@ -43,7 +42,10 @@ impl VoiceCommand {
             VoiceCommand::Start
         } else if phrase.contains("pause") || phrase.contains("stop") || phrase.contains("hold") {
             VoiceCommand::Pause
-        } else if phrase.contains("resume") || phrase.contains("continue") || phrase.contains("unpause") {
+        } else if phrase.contains("resume")
+            || phrase.contains("continue")
+            || phrase.contains("unpause")
+        {
             VoiceCommand::Resume
         } else if phrase.contains("end") || phrase.contains("finish") || phrase.contains("done") {
             VoiceCommand::End
@@ -51,9 +53,13 @@ impl VoiceCommand {
             VoiceCommand::Skip
         } else if phrase.contains("increase") || phrase.contains("up") || phrase.contains("more") {
             VoiceCommand::Increase
-        } else if phrase.contains("decrease") || phrase.contains("down") || phrase.contains("less") {
+        } else if phrase.contains("decrease") || phrase.contains("down") || phrase.contains("less")
+        {
             VoiceCommand::Decrease
-        } else if phrase.contains("status") || phrase.contains("metrics") || phrase.contains("how am i doing") {
+        } else if phrase.contains("status")
+            || phrase.contains("metrics")
+            || phrase.contains("how am i doing")
+        {
             VoiceCommand::Status
         } else {
             VoiceCommand::Unknown(phrase)
@@ -111,7 +117,10 @@ pub trait VoiceControl {
 
     /// Check if voice control is available on this system.
     fn is_available(&self) -> bool {
-        matches!(self.state(), VoiceControlState::Ready | VoiceControlState::Listening)
+        matches!(
+            self.state(),
+            VoiceControlState::Ready | VoiceControlState::Listening
+        )
     }
 
     /// Get the reason voice control is unavailable, if applicable.
@@ -306,7 +315,10 @@ impl VoiceControl for VoskVoiceControl {
         // T126: Check for Vosk model and download if needed
         let model_path = Self::get_model_path();
         if !model_path.exists() {
-            tracing::info!("Vosk model not found at {:?}, attempting download...", model_path);
+            tracing::info!(
+                "Vosk model not found at {:?}, attempting download...",
+                model_path
+            );
 
             // In a real implementation, we would download the model here
             // For now, mark as unavailable with instructions
@@ -332,7 +344,7 @@ impl VoiceControl for VoskVoiceControl {
     fn start_listening(&mut self) -> Result<(), VoiceControlError> {
         if self.state == VoiceControlState::Unavailable {
             return Err(VoiceControlError::InitializationFailed(
-                self.unavailable_reason.clone().unwrap_or_default()
+                self.unavailable_reason.clone().unwrap_or_default(),
             ));
         }
 

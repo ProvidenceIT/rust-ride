@@ -48,8 +48,8 @@ mod field_type {
     pub const RIGHT_TORQUE_EFFECTIVENESS: u8 = 58;
     pub const LEFT_PEDAL_SMOOTHNESS: u8 = 59;
     pub const RIGHT_PEDAL_SMOOTHNESS: u8 = 60;
-    pub const CALORIES: u8 = 33;
-    // T130: Power phase fields for extended pedal metrics
+    pub const _CALORIES: u8 = 33; // Reserved for future use
+                                  // T130: Power phase fields for extended pedal metrics
     pub const LEFT_POWER_PHASE: u8 = 69; // Start/end as 2x u16 (degrees * 256 / 360)
     pub const LEFT_POWER_PHASE_PEAK: u8 = 70; // Peak as 2x u16
     pub const RIGHT_POWER_PHASE: u8 = 71;
@@ -59,12 +59,12 @@ mod field_type {
 /// FIT base types
 mod base_type {
     pub const UINT8: u8 = 0x00;
-    pub const SINT8: u8 = 0x01;
+    pub const _SINT8: u8 = 0x01; // Reserved for future use
     pub const UINT16: u8 = 0x84;
-    pub const SINT16: u8 = 0x83;
+    pub const _SINT16: u8 = 0x83; // Reserved for future use
     pub const UINT32: u8 = 0x86;
     pub const _SINT32: u8 = 0x85;
-    pub const STRING: u8 = 0x07;
+    pub const _STRING: u8 = 0x07; // Reserved for future use
     pub const ENUM: u8 = 0x00;
 }
 

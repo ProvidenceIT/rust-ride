@@ -7,7 +7,6 @@ pub mod fan;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 // Re-export main types

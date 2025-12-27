@@ -32,9 +32,10 @@ pub enum SmO2Error {
 }
 
 /// T111: Muscle location for SmO2 sensor placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum MuscleLocation {
     /// Left quadriceps
+    #[default]
     LeftQuad,
     /// Right quadriceps
     RightQuad,
@@ -83,12 +84,6 @@ impl MuscleLocation {
             Self::RightGlute => "R.Glu",
             Self::Other => "Oth",
         }
-    }
-}
-
-impl Default for MuscleLocation {
-    fn default() -> Self {
-        Self::LeftQuad
     }
 }
 

@@ -326,7 +326,7 @@ fn light_visuals() -> Visuals {
 /// Power zone colors for display.
 /// T045: Updated to use ColorPaletteProvider for accessibility.
 pub mod zone_colors {
-    use crate::accessibility::{ColorMode, ColorPalette, ColorPaletteProvider};
+    use crate::accessibility::{ColorMode, ColorPalette};
     use egui::Color32;
 
     /// Default zone colors (normal color vision).

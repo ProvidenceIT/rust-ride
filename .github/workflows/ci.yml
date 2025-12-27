@@ -40,7 +40,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev libspeechd-dev pkg-config
 
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -66,7 +66,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev libspeechd-dev pkg-config
 
       - name: Build
         run: cargo build --verbose
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Linux dependencies
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libasound2-dev libspeechd-dev pkg-config
 
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items

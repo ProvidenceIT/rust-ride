@@ -56,7 +56,7 @@ impl ShortcutOverlay {
         }
 
         // Semi-transparent background
-        let screen_rect = ctx.screen_rect();
+        let screen_rect = ctx.input(|i| i.viewport_rect());
         let painter = ctx.layer_painter(egui::LayerId::new(
             Order::Foreground,
             egui::Id::new("shortcut_overlay_bg"),
@@ -90,33 +90,50 @@ impl ShortcutOverlay {
 
             // Group shortcuts by category
             let categories = [
-                ("Navigation", vec![
-                    KeyAction::FocusNext,
-                    KeyAction::FocusPrevious,
-                    KeyAction::Activate,
-                    KeyAction::Cancel,
-                ]),
-                ("Display", vec![
-                    KeyAction::ToggleTvMode,
-                    KeyAction::ToggleFlowMode,
-                    KeyAction::CycleFlowMetric,
-                ]),
-                ("Ride Control", vec![
-                    KeyAction::StartRide,
-                    KeyAction::PauseRide,
-                    KeyAction::EndRide,
-                    KeyAction::SkipInterval,
-                ]),
-                ("Other", vec![
-                    KeyAction::AnnounceMetrics,
-                    KeyAction::ShowShortcuts,
-                    KeyAction::OpenSettings,
-                ]),
+                (
+                    "Navigation",
+                    vec![
+                        KeyAction::FocusNext,
+                        KeyAction::FocusPrevious,
+                        KeyAction::Activate,
+                        KeyAction::Cancel,
+                    ],
+                ),
+                (
+                    "Display",
+                    vec![
+                        KeyAction::ToggleTvMode,
+                        KeyAction::ToggleFlowMode,
+                        KeyAction::CycleFlowMetric,
+                    ],
+                ),
+                (
+                    "Ride Control",
+                    vec![
+                        KeyAction::StartRide,
+                        KeyAction::PauseRide,
+                        KeyAction::EndRide,
+                        KeyAction::SkipInterval,
+                    ],
+                ),
+                (
+                    "Other",
+                    vec![
+                        KeyAction::AnnounceMetrics,
+                        KeyAction::ShowShortcuts,
+                        KeyAction::OpenSettings,
+                    ],
+                ),
             ];
 
             for (category, actions) in categories {
                 ui.add_space(10.0);
-                ui.label(RichText::new(category).size(16.0).strong().color(Color32::from_rgb(100, 150, 255)));
+                ui.label(
+                    RichText::new(category)
+                        .size(16.0)
+                        .strong()
+                        .color(Color32::from_rgb(100, 150, 255)),
+                );
                 ui.add_space(5.0);
 
                 for action in actions {
@@ -140,7 +157,11 @@ impl ShortcutOverlay {
 
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Press").color(Color32::GRAY));
-                ui.label(RichText::new("Esc").monospace().color(Color32::from_rgb(200, 200, 100)));
+                ui.label(
+                    RichText::new("Esc")
+                        .monospace()
+                        .color(Color32::from_rgb(200, 200, 100)),
+                );
                 ui.label(RichText::new("to close").color(Color32::GRAY));
             });
         });

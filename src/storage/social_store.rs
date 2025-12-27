@@ -343,13 +343,11 @@ impl<'a> SocialStore<'a> {
             started_at: DateTime::parse_from_rfc3339(&started_str)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
                 .with_timezone(&Utc),
-            ended_at: ended_str
-                .map(|s| {
-                    DateTime::parse_from_rfc3339(&s)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .ok()
-                })
-                .flatten(),
+            ended_at: ended_str.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .ok()
+            }),
             max_participants: row
                 .get(6)
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?,
@@ -434,13 +432,11 @@ impl<'a> SocialStore<'a> {
                 joined_at: DateTime::parse_from_rfc3339(&joined_str)
                     .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
                     .with_timezone(&Utc),
-                left_at: left_str
-                    .map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .map(|dt| dt.with_timezone(&Utc))
-                            .ok()
-                    })
-                    .flatten(),
+                left_at: left_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .ok()
+                }),
             });
         }
 

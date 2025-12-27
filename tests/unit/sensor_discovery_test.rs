@@ -54,7 +54,7 @@ fn test_heart_rate_service_uuid() {
     // Heart Rate Service UUID should be 0x180D
     assert_eq!(
         HEART_RATE_SERVICE_UUID,
-        Uuid::from_u128(0x0000180D_0000_1000_8000_00805f9b34fb)
+        Uuid::from_u128(0x0000180d_0000_1000_8000_00805f9b34fb)
     );
 }
 
@@ -105,19 +105,19 @@ fn test_classify_speed_cadence() {
 
 #[test]
 fn test_classify_unknown_service() {
-    let unknown_uuid = Uuid::from_u128(0x0000ABCD_0000_1000_8000_00805f9b34fb);
+    let unknown_uuid = Uuid::from_u128(0x0000abcd_0000_1000_8000_00805f9b34fb);
     let result = classify_sensor(&unknown_uuid);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_filter_supported_services() {
-    let services = vec![
+    let services = [
         FTMS_SERVICE_UUID,
         CYCLING_POWER_SERVICE_UUID,
         HEART_RATE_SERVICE_UUID,
-        Uuid::from_u128(0x0000180F_0000_1000_8000_00805f9b34fb), // Battery Service (not supported)
-        Uuid::from_u128(0x0000180A_0000_1000_8000_00805f9b34fb), // Device Info (not supported)
+        Uuid::from_u128(0x0000180f_0000_1000_8000_00805f9b34fb), // Battery Service (not supported)
+        Uuid::from_u128(0x0000180a_0000_1000_8000_00805f9b34fb), // Device Info (not supported)
     ];
 
     let supported: Vec<_> = services
@@ -152,7 +152,7 @@ fn test_protocol_display() {
 #[test]
 fn test_multiple_services_per_device() {
     // A smart trainer might advertise both FTMS and Heart Rate
-    let services = vec![FTMS_SERVICE_UUID, HEART_RATE_SERVICE_UUID];
+    let services = [FTMS_SERVICE_UUID, HEART_RATE_SERVICE_UUID];
 
     let classifications: Vec<_> = services.iter().filter_map(classify_sensor).collect();
 

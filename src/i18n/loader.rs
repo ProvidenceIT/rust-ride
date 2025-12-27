@@ -25,13 +25,13 @@ impl TranslationLoader {
             ));
         }
 
-        for entry in std::fs::read_dir(dir)
-            .map_err(|e| TranslationLoadError::IoError(e.to_string()))?
+        for entry in
+            std::fs::read_dir(dir).map_err(|e| TranslationLoadError::IoError(e.to_string()))?
         {
             let entry = entry.map_err(|e| TranslationLoadError::IoError(e.to_string()))?;
             let path = entry.path();
 
-            if path.extension().map_or(false, |ext| ext == "ftl") {
+            if path.extension().is_some_and(|ext| ext == "ftl") {
                 self.load_file(&path)?;
             }
         }

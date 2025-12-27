@@ -30,6 +30,7 @@ impl SegmentCategory {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "climb" => Some(SegmentCategory::Climb),
@@ -292,16 +293,10 @@ impl SegmentManager {
     ) -> Option<Segment> {
         let segments = self.segments_for_world(world_id).ok()?;
 
-        for segment in segments {
-            // Check if we crossed the start line (going forward)
-            if previous_distance_m < segment.start_distance_m
-                && distance_m >= segment.start_distance_m
-            {
-                return Some(segment);
-            }
-        }
-
-        None
+        // Check if we crossed the start line (going forward)
+        segments.into_iter().find(|segment| {
+            previous_distance_m < segment.start_distance_m && distance_m >= segment.start_distance_m
+        })
     }
 
     /// Check if rider has exited a segment.
