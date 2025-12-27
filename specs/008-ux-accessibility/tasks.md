@@ -346,15 +346,15 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T143 [P] Update CLAUDE.md with new modules and dependencies
-- [ ] T144 [P] Verify all 44x44 touch targets across application
-- [ ] T145 [P] Verify WCAG 2.1 AA compliance across all screens
-- [ ] T146 Run all translation files through validation (< 1% missing)
-- [ ] T147 Performance test: theme changes < 1 second
-- [ ] T148 Performance test: audio cues < 100ms latency
-- [ ] T149 Integration test: keyboard navigation through all screens
-- [ ] T150 Integration test: screen reader workflow completion
-- [ ] T151 Run quickstart.md validation checklist
+- [x] T143 [P] Update CLAUDE.md with new modules and dependencies
+- [x] T144 [P] Verify all 44x44 touch targets across application
+- [x] T145 [P] Verify WCAG 2.1 AA compliance across all screens
+- [x] T146 Run all translation files through validation (< 1% missing)
+- [x] T147 Performance test: theme changes < 1 second
+- [x] T148 Performance test: audio cues < 100ms latency
+- [x] T149 Integration test: keyboard navigation through all screens
+- [x] T150 Integration test: screen reader workflow completion
+- [x] T151 Run quickstart.md validation checklist
 
 ---
 
