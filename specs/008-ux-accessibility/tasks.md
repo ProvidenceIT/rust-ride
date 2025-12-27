@@ -283,15 +283,15 @@
 
 ### Implementation for User Story 11
 
-- [ ] T115 [US11] Enable accesskit in eframe native options in src/main.rs
-- [ ] T116 [US11] Create ScreenReaderSupport trait implementation in src/accessibility/screen_reader.rs
-- [ ] T117 [US11] Add accessible labels to all buttons in src/ui/widgets/
-- [ ] T118 [US11] Add accessible labels to all form inputs in src/ui/widgets/
-- [ ] T119 [US11] Implement live region for interval change announcements in src/accessibility/screen_reader.rs
-- [ ] T120 [US11] Implement metrics hotkey (e.g., Ctrl+M) for on-demand announcement in src/accessibility/screen_reader.rs
-- [ ] T121 [US11] Add accessible labels to metric displays in src/ui/widgets/metric_display.rs
-- [ ] T122 [US11] Ensure all alerts/errors announced immediately in src/accessibility/screen_reader.rs
-- [ ] T123 [US11] Test and fix focus order for screen reader navigation in src/accessibility/focus.rs
+- [x] T115 [US11] Enable accesskit in eframe native options in src/main.rs
+- [x] T116 [US11] Create ScreenReaderSupport trait implementation in src/accessibility/screen_reader.rs
+- [x] T117 [US11] Add accessible labels to all buttons in src/ui/widgets/
+- [x] T118 [US11] Add accessible labels to all form inputs in src/ui/widgets/
+- [x] T119 [US11] Implement live region for interval change announcements in src/accessibility/screen_reader.rs
+- [x] T120 [US11] Implement metrics hotkey (e.g., Ctrl+M) for on-demand announcement in src/accessibility/screen_reader.rs
+- [x] T121 [US11] Add accessible labels to metric displays in src/ui/widgets/metric_display.rs
+- [x] T122 [US11] Ensure all alerts/errors announced immediately in src/accessibility/screen_reader.rs
+- [x] T123 [US11] Test and fix focus order for screen reader navigation in src/accessibility/focus.rs
 
 **Checkpoint**: User Story 11 complete - screen reader users can complete full workflows
 

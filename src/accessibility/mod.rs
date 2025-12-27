@@ -21,6 +21,9 @@ pub use focus::{
     FocusableExt, FocusableWidget,
 };
 pub use high_contrast::HighContrastTheme;
-pub use screen_reader::ScreenReaderSupport;
+pub use screen_reader::{
+    AccessibleLabel, AccessibleRole, CurrentMetrics, DefaultScreenReaderSupport, LiveRegion,
+    ScreenReaderSupport,
+};
 #[cfg(feature = "voice-control")]
 pub use voice_control::{VoiceCommand, VoiceControl, VoiceControlState};
