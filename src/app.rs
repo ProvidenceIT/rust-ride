@@ -8,6 +8,7 @@
 use eframe::egui;
 
 use crossbeam::channel::Receiver;
+use rustride::accessibility::{FocusIndicatorStyle, FocusManager};
 use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
 use rustride::hid::{
     ButtonAction, ButtonInputHandler, DefaultButtonInputHandler, DefaultHidDeviceManager,
@@ -28,9 +29,10 @@ use rustride::sensors::{
     SensorFusion, SensorFusionConfig, SensorManager,
 };
 use rustride::storage::config::{AppConfig, UserProfile};
+use rustride::onboarding::OnboardingState;
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, HomeScreen, RideScreen, Screen, SensorSetupScreen,
-    SettingsScreen, WorldSelectScreen,
+    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
+    SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
 use rustride::workouts::WorkoutEngine;
@@ -125,6 +127,10 @@ pub struct RustRideApp {
     primary_cadence_sensor: Option<uuid::Uuid>,
     /// T135: Track secondary cadence sensor ID
     secondary_cadence_sensor: Option<uuid::Uuid>,
+    /// T029: Focus manager for keyboard navigation
+    focus_manager: FocusManager,
+    /// T059: Onboarding screen for first-time user experience
+    onboarding_screen: OnboardingScreen,
 }
 
 impl RustRideApp {
@@ -203,12 +209,29 @@ impl RustRideApp {
         let fusion_config = SensorFusionConfig::default();
         let cadence_fusion = CadenceFusion::with_config(fusion_config);
 
+        // T029: Initialize focus manager for keyboard navigation
+        let focus_manager = FocusManager::new();
+
+        // T059: Initialize onboarding screen and check if it should be shown
+        // In a real implementation, we'd load the onboarding state from storage
+        let onboarding_state = load_onboarding_state();
+        let onboarding_screen = OnboardingScreen::from_wizard(
+            rustride::onboarding::OnboardingWizard::from_state(onboarding_state.clone()),
+        );
+
+        // Determine starting screen based on onboarding state
+        let start_screen = if onboarding_screen.should_show() {
+            Screen::Onboarding
+        } else {
+            Screen::Home
+        };
+
         // Initialize settings screen with profile
         let mut settings_screen = SettingsScreen::new(profile.clone());
         settings_screen.set_incline_config(incline_config);
 
         Self {
-            current_screen: Screen::Home,
+            current_screen: start_screen,
             theme,
             profile,
             _config: config,
@@ -240,6 +263,8 @@ impl RustRideApp {
             cadence_fusion,
             primary_cadence_sensor: None,
             secondary_cadence_sensor: None,
+            focus_manager,
+            onboarding_screen,
         }
     }
 
@@ -643,6 +668,12 @@ impl eframe::App for RustRideApp {
             ctx.request_repaint();
         }
 
+        // T029: Clear focus manager widgets at start of each frame
+        self.focus_manager.clear_widgets();
+
+        // T029: Handle focus navigation (Tab/Shift+Tab)
+        self.focus_manager.handle_keyboard_input(ctx);
+
         // Handle keyboard shortcuts
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.current_screen != Screen::Home {
             self.navigate(Screen::Home);
@@ -673,6 +704,32 @@ impl eframe::App for RustRideApp {
         // Main content area
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.current_screen {
+                Screen::Onboarding => {
+                    // T059: Show onboarding wizard on first launch
+                    if self.onboarding_screen.show(ui) {
+                        // Onboarding complete - save state and navigate to home
+                        save_onboarding_complete();
+
+                        // Apply profile data from onboarding
+                        let profile_data = self.onboarding_screen.get_profile_data();
+                        if !profile_data.name.is_empty() {
+                            self.profile.name = profile_data.name;
+                        }
+                        self.profile.weight_kg = profile_data.weight_kg as f32;
+                        self.profile.ftp = profile_data.ftp;
+                        if let Some(max_hr) = profile_data.max_hr {
+                            self.profile.max_hr = Some(max_hr);
+                        }
+
+                        // Update metrics calculator with new FTP
+                        self.metrics_calculator = MetricsCalculator::new(self.profile.ftp);
+
+                        // Update settings screen with new profile
+                        self.settings_screen = SettingsScreen::new(self.profile.clone());
+
+                        self.navigate(Screen::Home);
+                    }
+                }
                 Screen::Home => {
                     if let Some(next) = HomeScreen::show(ui) {
                         self.navigate(next);
@@ -874,5 +931,37 @@ impl eframe::App for RustRideApp {
 
         // Crash recovery dialog (shown on top of everything)
         self.render_recovery_dialog(ctx);
+    }
+}
+
+/// T059: Load onboarding state from storage.
+///
+/// In a real implementation, this would read from the database.
+/// For now, returns default state which triggers onboarding on first launch.
+fn load_onboarding_state() -> OnboardingState {
+    // Check if a marker file exists to determine if onboarding was completed
+    let data_dir = rustride::storage::config::get_data_dir();
+    let onboarding_marker = data_dir.join("onboarding_complete");
+
+    if onboarding_marker.exists() {
+        OnboardingState {
+            completed: true,
+            current_step: rustride::onboarding::OnboardingStep::Complete,
+            skipped: false,
+            completed_steps: rustride::onboarding::OnboardingStep::all().to_vec(),
+        }
+    } else {
+        OnboardingState::default()
+    }
+}
+
+/// T059: Save onboarding state to storage.
+///
+/// Marks onboarding as complete by creating a marker file.
+fn save_onboarding_complete() {
+    let data_dir = rustride::storage::config::get_data_dir();
+    if std::fs::create_dir_all(&data_dir).is_ok() {
+        let marker = data_dir.join("onboarding_complete");
+        let _ = std::fs::write(marker, "1");
     }
 }

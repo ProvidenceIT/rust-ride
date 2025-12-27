@@ -14,8 +14,8 @@ use crate::recording::types::{Ride, RideSample};
 use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{
-    CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, MIGRATION_V5_TO_V6, SCHEMA,
-    SCHEMA_VERSION_TABLE,
+    CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, MIGRATION_V5_TO_V6,
+    MIGRATION_V6_TO_V7, SCHEMA, SCHEMA_VERSION_TABLE,
 };
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
@@ -193,6 +193,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 6 (Hardware Integration tables)");
+        }
+
+        // Migration v6 -> v7: Add UX & Accessibility tables
+        if from_version < 7 {
+            self.conn
+                .execute_batch(MIGRATION_V6_TO_V7)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 7
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (7, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 7 (UX & Accessibility tables)");
         }
 
         Ok(())
@@ -2021,6 +2038,465 @@ impl Database {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         Ok(count as usize)
+    }
+
+    // ========== Layout Profile CRUD Operations (T018-T019) ==========
+
+    /// Insert a new layout profile.
+    pub fn insert_layout_profile(
+        &self,
+        profile: &crate::ui::layout::LayoutProfile,
+    ) -> Result<(), DatabaseError> {
+        let layout_json = serde_json::to_string(&profile.widgets)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+
+        self.conn
+            .execute(
+                "INSERT INTO layout_profiles (id, name, layout_json, is_default, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    profile.id.to_string(),
+                    profile.name,
+                    layout_json,
+                    profile.is_default as i32,
+                    profile.created_at.to_rfc3339(),
+                    profile.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get a layout profile by ID.
+    pub fn get_layout_profile(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<crate::ui::layout::LayoutProfile>, DatabaseError> {
+        use crate::ui::layout::{LayoutProfile, WidgetPlacement};
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, layout_json, is_default, created_at, updated_at
+                 FROM layout_profiles WHERE id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row(params![id.to_string()], |row| {
+            let id_str: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let layout_json: String = row.get(2)?;
+            let is_default: i32 = row.get(3)?;
+            let created_str: String = row.get(4)?;
+            let updated_str: String = row.get(5)?;
+
+            Ok((id_str, name, layout_json, is_default, created_str, updated_str))
+        });
+
+        match result {
+            Ok((id_str, name, layout_json, is_default, created_str, updated_str)) => {
+                let id = Uuid::parse_str(&id_str)
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+                let widgets: Vec<WidgetPlacement> = serde_json::from_str(&layout_json)
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+                let created_at = DateTime::parse_from_rfc3339(&created_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+                let updated_at = DateTime::parse_from_rfc3339(&updated_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+                Ok(Some(LayoutProfile {
+                    id,
+                    name,
+                    widgets,
+                    is_default: is_default != 0,
+                    created_at,
+                    updated_at,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get all layout profiles.
+    pub fn list_layout_profiles(&self) -> Result<Vec<crate::ui::layout::LayoutProfile>, DatabaseError> {
+        use crate::ui::layout::{LayoutProfile, WidgetPlacement};
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, layout_json, is_default, created_at, updated_at
+                 FROM layout_profiles ORDER BY created_at ASC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id_str: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let layout_json: String = row.get(2)?;
+                let is_default: i32 = row.get(3)?;
+                let created_str: String = row.get(4)?;
+                let updated_str: String = row.get(5)?;
+
+                Ok((id_str, name, layout_json, is_default, created_str, updated_str))
+            })
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut profiles = Vec::new();
+        for row in rows {
+            let (id_str, name, layout_json, is_default, created_str, updated_str) =
+                row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            let id = Uuid::parse_str(&id_str)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let widgets: Vec<WidgetPlacement> = serde_json::from_str(&layout_json)
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let created_at = DateTime::parse_from_rfc3339(&created_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+            let updated_at = DateTime::parse_from_rfc3339(&updated_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+            profiles.push(LayoutProfile {
+                id,
+                name,
+                widgets,
+                is_default: is_default != 0,
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(profiles)
+    }
+
+    /// Update an existing layout profile.
+    pub fn update_layout_profile(
+        &self,
+        profile: &crate::ui::layout::LayoutProfile,
+    ) -> Result<(), DatabaseError> {
+        let layout_json = serde_json::to_string(&profile.widgets)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE layout_profiles SET name = ?2, layout_json = ?3, is_default = ?4, updated_at = ?5
+                 WHERE id = ?1",
+                params![
+                    profile.id.to_string(),
+                    profile.name,
+                    layout_json,
+                    profile.is_default as i32,
+                    profile.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Layout profile {}", profile.id)));
+        }
+
+        Ok(())
+    }
+
+    /// Delete a layout profile by ID.
+    pub fn delete_layout_profile(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM layout_profiles WHERE id = ?1",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(DatabaseError::NotFound(format!("Layout profile {}", id)));
+        }
+
+        Ok(())
+    }
+
+    /// Count layout profiles.
+    pub fn count_layout_profiles(&self) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM layout_profiles", [], |row| row.get(0))
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    /// Get or create default layout profile.
+    pub fn get_or_create_default_layout(&self) -> Result<crate::ui::layout::LayoutProfile, DatabaseError> {
+        use crate::ui::layout::LayoutProfile;
+
+        // Check if any profiles exist
+        let profiles = self.list_layout_profiles()?;
+        if let Some(default) = profiles.into_iter().find(|p| p.is_default) {
+            return Ok(default);
+        }
+
+        // Create and insert default profile
+        let profile = LayoutProfile::default_layout();
+        self.insert_layout_profile(&profile)?;
+        Ok(profile)
+    }
+
+    // ========== Onboarding State CRUD Operations (T020-T021) ==========
+
+    /// Get onboarding state.
+    pub fn get_onboarding_state(
+        &self,
+    ) -> Result<Option<crate::onboarding::OnboardingState>, DatabaseError> {
+        use crate::onboarding::{OnboardingState, OnboardingStep};
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, current_step, completed, skipped_at, completed_steps, started_at
+                 FROM onboarding_state WHERE id = 1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row([], |row| {
+            let _id: i32 = row.get(0)?;
+            let current_step: i32 = row.get(1)?;
+            let completed: i32 = row.get(2)?;
+            let skipped_at_str: Option<String> = row.get(3)?;
+            let completed_steps_json: String = row.get(4)?;
+            let _started_at_str: String = row.get(5)?;
+
+            Ok((current_step, completed, skipped_at_str, completed_steps_json))
+        });
+
+        match result {
+            Ok((current_step_idx, completed, skipped_at_str, completed_steps_json)) => {
+                let steps = OnboardingStep::all();
+                let current_step = steps.get(current_step_idx as usize)
+                    .copied()
+                    .unwrap_or(OnboardingStep::Welcome);
+                let skipped = skipped_at_str.is_some();
+                let completed_steps: Vec<OnboardingStep> = serde_json::from_str(&completed_steps_json)
+                    .unwrap_or_default();
+
+                Ok(Some(OnboardingState {
+                    completed: completed != 0,
+                    current_step,
+                    skipped,
+                    completed_steps,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Save or update onboarding state (upsert).
+    pub fn save_onboarding_state(
+        &self,
+        state: &crate::onboarding::OnboardingState,
+    ) -> Result<(), DatabaseError> {
+        let completed_steps_json = serde_json::to_string(&state.completed_steps)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+        let skipped_at = if state.skipped {
+            Some(Utc::now().to_rfc3339())
+        } else {
+            None
+        };
+
+        self.conn
+            .execute(
+                "INSERT INTO onboarding_state (id, current_step, completed, skipped_at, completed_steps, started_at)
+                 VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO UPDATE SET
+                 current_step = excluded.current_step,
+                 completed = excluded.completed,
+                 skipped_at = excluded.skipped_at,
+                 completed_steps = excluded.completed_steps",
+                params![
+                    state.current_step.index() as i32,
+                    state.completed as i32,
+                    skipped_at,
+                    completed_steps_json,
+                    Utc::now().to_rfc3339(), // started_at only set on insert
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get or create initial onboarding state.
+    pub fn get_or_create_onboarding_state(
+        &self,
+    ) -> Result<crate::onboarding::OnboardingState, DatabaseError> {
+        if let Some(state) = self.get_onboarding_state()? {
+            return Ok(state);
+        }
+
+        let state = crate::onboarding::OnboardingState::default();
+        self.save_onboarding_state(&state)?;
+        Ok(state)
+    }
+
+    // ========== User Preferences CRUD Operations (T022-T023) ==========
+
+    /// Get user preferences.
+    pub fn get_user_preferences(
+        &self,
+    ) -> Result<Option<crate::storage::config::UserPreferences>, DatabaseError> {
+        use crate::storage::config::{
+            AccessibilitySettings, AudioCueSettings, DisplayMode, FlowModeConfig,
+            LocaleSettings, ThemePreference, UserPreferences,
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, theme_preference, accessibility_json, audio_json, display_mode,
+                 flow_mode_json, locale_json, active_layout_id
+                 FROM user_preferences WHERE id = 1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let result = stmt.query_row([], |row| {
+            let _id: i32 = row.get(0)?;
+            let theme_pref_str: String = row.get(1)?;
+            let accessibility_json: String = row.get(2)?;
+            let audio_json: String = row.get(3)?;
+            let display_mode_str: String = row.get(4)?;
+            let flow_mode_json: String = row.get(5)?;
+            let locale_json: String = row.get(6)?;
+            let active_layout_id_str: Option<String> = row.get(7)?;
+
+            Ok((
+                theme_pref_str,
+                accessibility_json,
+                audio_json,
+                display_mode_str,
+                flow_mode_json,
+                locale_json,
+                active_layout_id_str,
+            ))
+        });
+
+        match result {
+            Ok((
+                theme_pref_str,
+                accessibility_json,
+                audio_json,
+                display_mode_str,
+                flow_mode_json,
+                locale_json,
+                active_layout_id_str,
+            )) => {
+                let theme_preference = match theme_pref_str.as_str() {
+                    "light" => ThemePreference::Light,
+                    "dark" => ThemePreference::Dark,
+                    _ => ThemePreference::FollowSystem,
+                };
+                let accessibility: AccessibilitySettings = serde_json::from_str(&accessibility_json)
+                    .unwrap_or_default();
+                let audio: AudioCueSettings = serde_json::from_str(&audio_json)
+                    .unwrap_or_default();
+                let display_mode = match display_mode_str.as_str() {
+                    "tv_mode" => DisplayMode::TvMode,
+                    "flow_mode" => DisplayMode::FlowMode,
+                    _ => DisplayMode::Normal,
+                };
+                let flow_mode: FlowModeConfig = serde_json::from_str(&flow_mode_json)
+                    .unwrap_or_default();
+                let locale: LocaleSettings = serde_json::from_str(&locale_json)
+                    .unwrap_or_default();
+                let active_layout_id = active_layout_id_str
+                    .map(|s| Uuid::parse_str(&s))
+                    .transpose()
+                    .map_err(|e| DatabaseError::DeserializationError(e.to_string()))?;
+
+                Ok(Some(UserPreferences {
+                    theme_preference,
+                    accessibility,
+                    audio,
+                    display_mode,
+                    flow_mode,
+                    locale,
+                    active_layout_id,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Save or update user preferences (upsert).
+    pub fn save_user_preferences(
+        &self,
+        prefs: &crate::storage::config::UserPreferences,
+    ) -> Result<(), DatabaseError> {
+        let theme_pref_str = match prefs.theme_preference {
+            crate::storage::config::ThemePreference::FollowSystem => "follow_system",
+            crate::storage::config::ThemePreference::Light => "light",
+            crate::storage::config::ThemePreference::Dark => "dark",
+        };
+        let accessibility_json = serde_json::to_string(&prefs.accessibility)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+        let audio_json = serde_json::to_string(&prefs.audio)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+        let display_mode_str = match prefs.display_mode {
+            crate::storage::config::DisplayMode::Normal => "normal",
+            crate::storage::config::DisplayMode::TvMode => "tv_mode",
+            crate::storage::config::DisplayMode::FlowMode => "flow_mode",
+        };
+        let flow_mode_json = serde_json::to_string(&prefs.flow_mode)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+        let locale_json = serde_json::to_string(&prefs.locale)
+            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+
+        self.conn
+            .execute(
+                "INSERT INTO user_preferences (id, theme_preference, accessibility_json, audio_json,
+                 display_mode, flow_mode_json, locale_json, active_layout_id)
+                 VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(id) DO UPDATE SET
+                 theme_preference = excluded.theme_preference,
+                 accessibility_json = excluded.accessibility_json,
+                 audio_json = excluded.audio_json,
+                 display_mode = excluded.display_mode,
+                 flow_mode_json = excluded.flow_mode_json,
+                 locale_json = excluded.locale_json,
+                 active_layout_id = excluded.active_layout_id",
+                params![
+                    theme_pref_str,
+                    accessibility_json,
+                    audio_json,
+                    display_mode_str,
+                    flow_mode_json,
+                    locale_json,
+                    prefs.active_layout_id.map(|id| id.to_string()),
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get or create default user preferences.
+    pub fn get_or_create_user_preferences(
+        &self,
+    ) -> Result<crate::storage::config::UserPreferences, DatabaseError> {
+        if let Some(prefs) = self.get_user_preferences()? {
+            return Ok(prefs);
+        }
+
+        let prefs = crate::storage::config::UserPreferences::default();
+        self.save_user_preferences(&prefs)?;
+        Ok(prefs)
     }
 }
 

@@ -8,6 +8,7 @@ pub mod clubs;
 pub mod group_ride;
 pub mod home;
 pub mod leaderboard;
+pub mod onboarding;
 pub mod race_lobby;
 pub mod ride;
 pub mod ride_detail;
@@ -31,6 +32,7 @@ pub use clubs::{ClubsAction, ClubsScreen};
 pub use group_ride::{GroupRideAction, GroupRideScreen};
 pub use home::HomeScreen;
 pub use leaderboard::{LeaderboardAction, LeaderboardScreen};
+pub use onboarding::{OnboardingProfileData, OnboardingScreen};
 pub use race_lobby::{RaceLobbyAction, RaceLobbyScreen};
 pub use ride::RideScreen;
 pub use ride_detail::{ExportFormat as DetailExportFormat, RideDetailAction, RideDetailScreen};
@@ -48,6 +50,8 @@ pub use world_select::{WorldRouteSelection, WorldSelectScreen};
 /// Screen navigation state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Screen {
+    /// Onboarding wizard (T059: shown on first launch)
+    Onboarding,
     /// Home screen
     #[default]
     Home,

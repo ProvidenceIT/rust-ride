@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 6;
+pub const CURRENT_VERSION: i32 = 7;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -793,6 +793,44 @@ CREATE INDEX IF NOT EXISTS idx_activity_summaries_rider ON activity_summaries(ri
 CREATE INDEX IF NOT EXISTS idx_chat_messages_group_ride ON chat_messages(group_ride_id);
 CREATE INDEX IF NOT EXISTS idx_group_ride_participants_ride ON group_ride_participants(group_ride_id);
 CREATE INDEX IF NOT EXISTS idx_race_participants_race ON race_participants(race_id);
+"#;
+
+/// SQL for migration from v6 to v7 (UX & Accessibility tables)
+pub const MIGRATION_V6_TO_V7: &str = r#"
+-- Layout profiles (max 10 per user enforced at application layer)
+CREATE TABLE IF NOT EXISTS layout_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    layout_json TEXT NOT NULL,  -- Serialized Vec<WidgetPlacement>
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_layout_profiles_default ON layout_profiles(is_default);
+
+-- Onboarding state (single row table)
+CREATE TABLE IF NOT EXISTS onboarding_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Ensure single row
+    current_step INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    skipped_at TEXT,
+    completed_steps TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    started_at TEXT NOT NULL
+);
+
+-- Extended user preferences
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    theme_preference TEXT NOT NULL DEFAULT 'follow_system',
+    accessibility_json TEXT NOT NULL DEFAULT '{}',
+    audio_json TEXT NOT NULL DEFAULT '{}',
+    display_mode TEXT NOT NULL DEFAULT 'normal',
+    flow_mode_json TEXT NOT NULL DEFAULT '{}',
+    locale_json TEXT NOT NULL DEFAULT '{}',
+    active_layout_id TEXT,
+    FOREIGN KEY (active_layout_id) REFERENCES layout_profiles(id)
+);
 "#;
 
 /// SQL for migration from v5 to v6 (Hardware Integration tables)

@@ -55,6 +55,10 @@ pub struct PdcChart<'a> {
     log_x: bool,
     /// Optional comparison PDC (e.g., previous period)
     comparison: Option<&'a PowerDurationCurve>,
+    /// T139: Whether to allow pinch-zoom interaction
+    allow_zoom: bool,
+    /// T139: Whether to allow drag panning
+    allow_drag: bool,
 }
 
 impl<'a> PdcChart<'a> {
@@ -65,7 +69,28 @@ impl<'a> PdcChart<'a> {
             height: 250.0,
             log_x: true,
             comparison: None,
+            allow_zoom: false,
+            allow_drag: false,
         }
+    }
+
+    /// T139: Enable touch pinch-zoom and scroll-wheel zoom.
+    pub fn allow_zoom(mut self, allow: bool) -> Self {
+        self.allow_zoom = allow;
+        self
+    }
+
+    /// T139: Enable touch/mouse drag panning.
+    pub fn allow_drag(mut self, allow: bool) -> Self {
+        self.allow_drag = allow;
+        self
+    }
+
+    /// T139: Enable all touch gestures (zoom + drag).
+    pub fn touch_enabled(mut self, enabled: bool) -> Self {
+        self.allow_zoom = enabled;
+        self.allow_drag = enabled;
+        self
     }
 
     /// Set chart height.
@@ -100,11 +125,12 @@ impl<'a> PdcChart<'a> {
         let plot_points = self.points_to_plot(points);
         let line = Line::new("Current PDC", plot_points); // Default blue color
 
+        // T139: Configure touch/zoom interactions
         let mut plot = Plot::new("pdc_chart")
             .height(self.height)
-            .allow_drag(false)
-            .allow_zoom(false)
-            .allow_scroll(false)
+            .allow_drag(self.allow_drag)
+            .allow_zoom(self.allow_zoom)
+            .allow_scroll(self.allow_zoom) // Enable scroll-wheel zoom if zoom is enabled
             .show_x(true)
             .show_y(true)
             .x_axis_label("Duration")

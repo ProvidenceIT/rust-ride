@@ -317,6 +317,57 @@ pub enum ExportFormat {
     Csv,
 }
 
+/// T036: Export configuration with unit preference support.
+#[derive(Debug, Clone)]
+pub struct ExportConfig {
+    /// Export format
+    pub format: ExportFormat,
+    /// Unit preference for export metadata and human-readable values
+    pub units: crate::storage::config::Units,
+    /// Include cycling dynamics data if available
+    pub include_dynamics: bool,
+    /// Include power phase data if available
+    pub include_power_phase: bool,
+}
+
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self {
+            format: ExportFormat::Tcx,
+            units: crate::storage::config::Units::Metric,
+            include_dynamics: true,
+            include_power_phase: true,
+        }
+    }
+}
+
+impl ExportConfig {
+    /// Create a new export config with the specified format and units.
+    pub fn new(format: ExportFormat, units: crate::storage::config::Units) -> Self {
+        Self {
+            format,
+            units,
+            include_dynamics: true,
+            include_power_phase: true,
+        }
+    }
+
+    /// Create a config for TCX export.
+    pub fn tcx(units: crate::storage::config::Units) -> Self {
+        Self::new(ExportFormat::Tcx, units)
+    }
+
+    /// Create a config for FIT export.
+    pub fn fit(units: crate::storage::config::Units) -> Self {
+        Self::new(ExportFormat::Fit, units)
+    }
+
+    /// Create a config for CSV export.
+    pub fn csv(units: crate::storage::config::Units) -> Self {
+        Self::new(ExportFormat::Csv, units)
+    }
+}
+
 impl std::fmt::Display for ExportFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

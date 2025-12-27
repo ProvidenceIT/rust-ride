@@ -3,6 +3,7 @@
 //! T048: Implement ride screen layout with metric panels
 //! T051: Implement "End Ride" button
 //! T053: Implement keyboard shortcut: Space for pause
+//! T066: Theme changes do not disrupt active ride display (egui redraws safely)
 //! T076: Extend ride screen with workout progress bar
 //! T077: Display current interval, target power, time remaining
 //! T078: Implement pause/resume/skip interval buttons
