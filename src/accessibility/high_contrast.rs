@@ -78,7 +78,7 @@ impl HighContrastTheme {
     }
 
     /// Calculate relative luminance of a color.
-    /// https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
+    /// <https://www.w3.org/TR/WCAG21/#dfn-relative-luminance>
     fn relative_luminance(color: Color32) -> f32 {
         let r = Self::linearize(color.r() as f32 / 255.0);
         let g = Self::linearize(color.g() as f32 / 255.0);
