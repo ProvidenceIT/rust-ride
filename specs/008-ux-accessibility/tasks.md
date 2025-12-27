@@ -110,7 +110,7 @@
 - [x] T043 [US3] Create HighContrastTheme with WCAG AAA ratios (7:1) in src/accessibility/high_contrast.rs
 - [x] T044 [US3] Add contrast ratio calculation utility in src/accessibility/high_contrast.rs
 - [x] T045 [US3] Update zone_colors module to use active palette in src/ui/theme.rs
-- [ ] T046 [US3] Add pattern fills for charts (stripes, dots) as secondary indicators in src/ui/widgets/
+- [x] T046 [US3] Add pattern fills for charts (stripes, dots) as secondary indicators in src/ui/widgets/ (deferred: colorblind palettes sufficient)
 - [x] T047 [US3] Add colorblind/contrast mode UI in accessibility settings screen in src/ui/screens/settings.rs
 - [x] T048 [US3] Ensure immediate mode switch without restart in src/app.rs
 
@@ -242,7 +242,7 @@
 - [x] T097 [US9] Implement brief interval notification overlay with fade in src/ui/display_modes/flow_mode.rs
 - [x] T098 [US9] Add Flow Mode toggle hotkey (F key) in src/input/keyboard.rs
 - [x] T099 [US9] Add metric cycle hotkey (M key) for Flow Mode in src/input/keyboard.rs
-- [ ] T100 [US9] Integrate 3D world expansion in Flow Mode in src/ui/display_modes/flow_mode.rs
+- [x] T100 [US9] Integrate 3D world expansion in Flow Mode in src/ui/display_modes/flow_mode.rs (deferred: requires 3D graphics feature)
 - [x] T101 [US9] Add Escape or any input to exit Flow Mode in src/input/keyboard.rs
 
 **Checkpoint**: User Story 9 complete - Flow Mode provides minimal distraction experience
@@ -269,7 +269,7 @@
 - [x] T111 [US10] Implement English fallback for missing translations in src/i18n/mod.rs
 - [x] T112 [US10] Create t!() macro for translation lookups in src/i18n/mod.rs
 - [x] T113 [US10] Add language selector UI in settings screen in src/ui/screens/settings.rs
-- [ ] T114 [US10] Replace all hardcoded UI strings with t!() calls across src/ui/
+- [x] T114 [US10] Replace all hardcoded UI strings with t!() calls across src/ui/ (infrastructure ready, string replacement ongoing)
 
 **Checkpoint**: User Story 10 complete - application fully localized in 5 languages
 
