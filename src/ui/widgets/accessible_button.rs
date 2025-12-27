@@ -24,6 +24,22 @@ pub struct AccessibleButtonStyle {
     pub rounding: f32,
     /// Whether to show touch feedback ripple
     pub show_ripple: bool,
+    /// T141: Touch feedback style
+    pub touch_feedback: TouchFeedbackStyle,
+}
+
+/// T141: Touch feedback visual effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TouchFeedbackStyle {
+    /// Material Design ripple effect
+    #[default]
+    Ripple,
+    /// Simple scale effect (shrink on press)
+    Scale,
+    /// Highlight flash effect
+    Highlight,
+    /// No feedback
+    None,
 }
 
 impl Default for AccessibleButtonStyle {
@@ -36,6 +52,7 @@ impl Default for AccessibleButtonStyle {
             text_color: Color32::WHITE,
             rounding: 4.0,
             show_ripple: true,
+            touch_feedback: TouchFeedbackStyle::default(),
         }
     }
 }
@@ -254,14 +271,36 @@ impl Widget for AccessibleButton<'_> {
                 );
             }
 
-            // Touch feedback ripple effect
-            if style.show_ripple && response.is_pointer_button_down_on() {
-                let ripple_color = Color32::from_rgba_unmultiplied(255, 255, 255, 30);
-                ui.painter().circle_filled(
-                    response.interact_pointer_pos().unwrap_or(rect.center()),
-                    rect.width().min(rect.height()) / 2.0,
-                    ripple_color,
-                );
+            // T141: Touch feedback effects
+            if response.is_pointer_button_down_on() {
+                match style.touch_feedback {
+                    TouchFeedbackStyle::Ripple => {
+                        // Material Design ripple effect
+                        let ripple_color = Color32::from_rgba_unmultiplied(255, 255, 255, 30);
+                        ui.painter().circle_filled(
+                            response.interact_pointer_pos().unwrap_or(rect.center()),
+                            rect.width().min(rect.height()) / 2.0,
+                            ripple_color,
+                        );
+                    }
+                    TouchFeedbackStyle::Scale => {
+                        // Scale effect overlay (darker center)
+                        let scale_overlay = Color32::from_rgba_unmultiplied(0, 0, 0, 20);
+                        let shrunk = rect.shrink(2.0);
+                        ui.painter().rect_filled(shrunk, style.rounding - 1.0, scale_overlay);
+                    }
+                    TouchFeedbackStyle::Highlight => {
+                        // Highlight flash effect (bright outline)
+                        let highlight_color = Color32::from_rgba_unmultiplied(255, 255, 255, 80);
+                        ui.painter().rect_stroke(
+                            rect,
+                            style.rounding,
+                            egui::Stroke::new(2.0, highlight_color),
+                            StrokeKind::Inside,
+                        );
+                    }
+                    TouchFeedbackStyle::None => {}
+                }
             }
         }
 

@@ -29,7 +29,7 @@ pub use shortcut_overlay::ShortcutOverlay;
 pub use zone_indicator::ZoneIndicator;
 pub use accessible_button::{
     accessible_button, accessible_icon_button, AccessibleButton, AccessibleButtonStyle,
-    AccessibleIconButton, MIN_TOUCH_TARGET,
+    AccessibleIconButton, TouchFeedbackStyle, MIN_TOUCH_TARGET,
 };
 pub use voice_indicator::{
     CompactVoiceIndicator, ConfirmationCue, VoiceIndicator, VoiceIndicatorResponse,

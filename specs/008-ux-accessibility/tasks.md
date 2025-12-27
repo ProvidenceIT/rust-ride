@@ -333,10 +333,10 @@
 - [x] T136 [US13] Implement pinch-zoom detection via multi_touch() in src/input/gestures.rs
 - [x] T137 [US13] Create AccessibleButton widget wrapper ensuring 44x44 minimum in src/ui/widgets/accessible_button.rs
 - [x] T138 [US13] Implement swipe navigation between screens in src/input/gestures.rs
-- [ ] T139 [US13] Implement pinch-zoom for graphs in src/ui/widgets/
-- [ ] T140 [US13] Update all buttons to use AccessibleButton wrapper in src/ui/widgets/
-- [ ] T141 [US13] Add touch feedback visual effects in src/ui/widgets/accessible_button.rs
-- [ ] T142 [US13] Integrate gesture handler with main app input loop in src/app.rs
+- [x] T139 [US13] Implement pinch-zoom for graphs in src/ui/widgets/
+- [x] T140 [US13] Update all buttons to use AccessibleButton wrapper in src/ui/widgets/
+- [x] T141 [US13] Add touch feedback visual effects in src/ui/widgets/accessible_button.rs
+- [x] T142 [US13] Integrate gesture handler with main app input loop in src/app.rs
 
 **Checkpoint**: User Story 13 complete - full touch/gesture support functional
 
