@@ -11,6 +11,7 @@ pub mod sensor_status;
 pub mod shortcut_overlay;
 pub mod smo2_display;
 pub mod tilt_indicator;
+pub mod voice_indicator;
 pub mod weather_widget;
 pub mod zone_indicator;
 
@@ -29,4 +30,8 @@ pub use zone_indicator::ZoneIndicator;
 pub use accessible_button::{
     accessible_button, accessible_icon_button, AccessibleButton, AccessibleButtonStyle,
     AccessibleIconButton, MIN_TOUCH_TARGET,
+};
+pub use voice_indicator::{
+    CompactVoiceIndicator, ConfirmationCue, VoiceIndicator, VoiceIndicatorResponse,
+    VoiceIndicatorState,
 };

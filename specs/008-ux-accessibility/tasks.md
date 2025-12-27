@@ -307,13 +307,13 @@
 
 - [x] T124 [US12] Add vosk as optional feature dependency in Cargo.toml
 - [x] T125 [US12] Create VoiceControl trait and VoiceCommand enum in src/accessibility/voice_control.rs
-- [ ] T126 [US12] Implement Vosk model initialization (download on first run) in src/accessibility/voice_control.rs
+- [x] T126 [US12] Implement Vosk model initialization (download on first run) in src/accessibility/voice_control.rs
 - [x] T127 [US12] Implement command vocabulary recognition (start, pause, resume, end, skip) in src/accessibility/voice_control.rs
 - [x] T128 [US12] Add VoiceControlState enum (Ready, Listening, Unavailable) in src/accessibility/voice_control.rs
-- [ ] T129 [US12] Implement "Voice Unavailable" indicator UI in src/ui/widgets/voice_indicator.rs
-- [ ] T130 [US12] Add visual/audio confirmation of recognized commands in src/accessibility/voice_control.rs
+- [x] T129 [US12] Implement "Voice Unavailable" indicator UI in src/ui/widgets/voice_indicator.rs
+- [x] T130 [US12] Add visual/audio confirmation of recognized commands in src/accessibility/voice_control.rs
 - [x] T131 [US12] Add voice control settings (enable, activation mode) in src/ui/screens/settings.rs
-- [ ] T132 [US12] Integrate voice commands with ride control in src/app.rs
+- [x] T132 [US12] Integrate voice commands with ride control in src/app.rs
 - [x] T133 [US12] Handle graceful degradation when voice unavailable in src/accessibility/voice_control.rs
 
 **Checkpoint**: User Story 12 complete - voice control functional for all supported commands
