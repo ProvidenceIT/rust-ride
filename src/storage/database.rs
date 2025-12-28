@@ -15,7 +15,7 @@ use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{
     CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, MIGRATION_V5_TO_V6,
-    MIGRATION_V6_TO_V7, SCHEMA, SCHEMA_VERSION_TABLE,
+    MIGRATION_V6_TO_V7, MIGRATION_V7_TO_V8, SCHEMA, SCHEMA_VERSION_TABLE,
 };
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
@@ -41,6 +41,11 @@ impl Database {
 
         let conn =
             Connection::open(path).map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+
+        // T075: Enable WAL mode for crash safety
+        // WAL provides better crash recovery and allows concurrent reads during writes
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .map_err(|e| DatabaseError::MigrationFailed(format!("Failed to enable WAL mode: {}", e)))?;
 
         let db = Self { conn };
         db.initialize()?;
@@ -210,6 +215,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 7 (UX & Accessibility tables)");
+        }
+
+        // T074: Migration v7 -> v8: Add Headless/CLI Mode tables
+        if from_version < 8 {
+            self.conn
+                .execute_batch(MIGRATION_V7_TO_V8)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 8
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (8, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 8 (Headless/CLI Mode tables)");
         }
 
         Ok(())

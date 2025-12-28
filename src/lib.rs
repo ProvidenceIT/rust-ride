@@ -31,6 +31,14 @@ pub mod i18n;
 pub mod input;
 pub mod onboarding;
 
+// Headless/CLI Mode modules (Feature 009)
+#[cfg(target_os = "linux")]
+pub mod cli;
+#[cfg(target_os = "linux")]
+pub mod daemon;
+#[cfg(target_os = "linux")]
+pub mod ipc;
+
 // Re-export commonly used types
 pub use metrics::calculator::MetricsCalculator;
 pub use recording::recorder::RideRecorder;

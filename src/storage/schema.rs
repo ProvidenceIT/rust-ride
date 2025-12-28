@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 7;
+pub const CURRENT_VERSION: i32 = 8;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -1092,4 +1092,47 @@ CREATE TABLE IF NOT EXISTS smo2_samples (
 
 CREATE INDEX IF NOT EXISTS idx_smo2_samples_ride ON smo2_samples(ride_id);
 CREATE INDEX IF NOT EXISTS idx_smo2_samples_sensor ON smo2_samples(ride_id, sensor_id);
+"#;
+
+/// SQL for migration from v7 to v8 (Headless/CLI Mode tables)
+/// T074: Add database migration for is_headless and recovery_attempted columns
+pub const MIGRATION_V7_TO_V8: &str = r#"
+-- Add headless mode tracking to rides table
+ALTER TABLE rides ADD COLUMN is_headless INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN recovery_attempted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN recovery_source TEXT;
+
+-- Create daemon sessions table for tracking headless daemon state
+CREATE TABLE IF NOT EXISTS daemon_sessions (
+    id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    pid INTEGER NOT NULL,
+    socket_path TEXT NOT NULL,
+    log_path TEXT,
+    is_graceful_shutdown INTEGER NOT NULL DEFAULT 0,
+    connected_sensors_json TEXT,
+    last_heartbeat_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_daemon_sessions_started ON daemon_sessions(started_at);
+
+-- Create IPC command log for debugging/audit
+CREATE TABLE IF NOT EXISTS ipc_command_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT REFERENCES daemon_sessions(id) ON DELETE CASCADE,
+    command TEXT NOT NULL,
+    params_json TEXT,
+    response_success INTEGER NOT NULL,
+    error_code TEXT,
+    error_message TEXT,
+    executed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ipc_command_log_session ON ipc_command_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_ipc_command_log_executed ON ipc_command_log(executed_at);
+
+-- Update autosave table for headless mode
+ALTER TABLE autosave ADD COLUMN is_headless INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE autosave ADD COLUMN daemon_session_id TEXT;
 "#;

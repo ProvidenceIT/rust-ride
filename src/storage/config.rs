@@ -631,6 +631,9 @@ pub struct AppConfig {
     pub recording: RecordingSettings,
     /// UI settings
     pub ui: UiSettings,
+    /// T064: Daemon settings for headless operation
+    #[serde(default)]
+    pub daemon: DaemonSettings,
 }
 
 impl Default for AppConfig {
@@ -641,6 +644,7 @@ impl Default for AppConfig {
             sensors: SensorSettings::default(),
             recording: RecordingSettings::default(),
             ui: UiSettings::default(),
+            daemon: DaemonSettings::default(),
         }
     }
 }
@@ -865,4 +869,218 @@ pub enum ConfigError {
 
     #[error("Serialize error: {0}")]
     SerializeError(String),
+}
+
+// =============================================================================
+// T064-T070: Daemon Configuration (Feature 009 - Headless/CLI Mode)
+// =============================================================================
+
+/// Log level options for daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    /// Error level only
+    Error,
+    /// Warnings and errors
+    Warn,
+    /// Informational messages (default)
+    #[default]
+    Info,
+    /// Debug messages
+    Debug,
+    /// Trace messages (verbose)
+    Trace,
+}
+
+impl std::fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogLevel::Error => write!(f, "error"),
+            LogLevel::Warn => write!(f, "warn"),
+            LogLevel::Info => write!(f, "info"),
+            LogLevel::Debug => write!(f, "debug"),
+            LogLevel::Trace => write!(f, "trace"),
+        }
+    }
+}
+
+/// Preferred sensor entry for auto-connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreferredSensor {
+    /// Sensor ID (BLE address or identifier)
+    pub id: String,
+    /// Friendly name for the sensor
+    pub name: String,
+    /// Sensor type for matching
+    pub sensor_type: String,
+}
+
+/// T064-T070: Daemon-specific settings for headless operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonSettings {
+    /// T069: Custom socket path (default: /run/user/{uid}/rustride.sock)
+    #[serde(default)]
+    pub socket_path: Option<PathBuf>,
+
+    /// T067: Custom log file path (default: none, logs to stderr)
+    #[serde(default)]
+    pub log_path: Option<PathBuf>,
+
+    /// T067: Log level for daemon (default: info)
+    #[serde(default)]
+    pub log_level: LogLevel,
+
+    /// T065: List of preferred sensors to auto-connect on startup
+    #[serde(default)]
+    pub preferred_sensors: Vec<PreferredSensor>,
+
+    /// Auto-save interval in seconds (default: 30)
+    #[serde(default = "default_autosave_interval")]
+    pub autosave_interval_secs: u32,
+
+    /// Enable crash recovery detection
+    #[serde(default = "default_true")]
+    pub enable_crash_recovery: bool,
+
+    /// PID file path (default: /run/user/{uid}/rustride.pid)
+    #[serde(default)]
+    pub pid_path: Option<PathBuf>,
+}
+
+fn default_autosave_interval() -> u32 {
+    30
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for DaemonSettings {
+    fn default() -> Self {
+        Self {
+            socket_path: None,
+            log_path: None,
+            log_level: LogLevel::Info,
+            preferred_sensors: Vec::new(),
+            autosave_interval_secs: 30,
+            enable_crash_recovery: true,
+            pid_path: None,
+        }
+    }
+}
+
+impl DaemonSettings {
+    /// T070: Validate settings and apply safe defaults on error.
+    pub fn validate(&mut self) {
+        // Ensure autosave interval is reasonable (5-300 seconds)
+        if self.autosave_interval_secs < 5 {
+            tracing::warn!(
+                "Autosave interval {} too low, using 5 seconds",
+                self.autosave_interval_secs
+            );
+            self.autosave_interval_secs = 5;
+        } else if self.autosave_interval_secs > 300 {
+            tracing::warn!(
+                "Autosave interval {} too high, using 300 seconds",
+                self.autosave_interval_secs
+            );
+            self.autosave_interval_secs = 300;
+        }
+
+        // Validate socket path if provided
+        if let Some(ref path) = self.socket_path {
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    tracing::warn!(
+                        "Socket path parent directory does not exist: {:?}",
+                        parent
+                    );
+                }
+            }
+        }
+
+        // Validate log path if provided
+        if let Some(ref path) = self.log_path {
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    tracing::warn!("Log path parent directory does not exist: {:?}", parent);
+                }
+            }
+        }
+    }
+
+    /// Get the effective socket path.
+    pub fn get_socket_path(&self) -> PathBuf {
+        self.socket_path.clone().unwrap_or_else(default_socket_path)
+    }
+
+    /// Get the effective PID path.
+    pub fn get_pid_path(&self) -> PathBuf {
+        self.pid_path.clone().unwrap_or_else(default_pid_path)
+    }
+}
+
+/// Get the default socket path for the daemon.
+#[cfg(target_os = "linux")]
+pub fn default_socket_path() -> PathBuf {
+    // Use XDG_RUNTIME_DIR if available, otherwise /tmp
+    std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        .join("rustride.sock")
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn default_socket_path() -> PathBuf {
+    // Not used on non-Linux, but provide a default
+    PathBuf::from("/tmp/rustride.sock")
+}
+
+/// Get the default PID path for the daemon.
+#[cfg(target_os = "linux")]
+pub fn default_pid_path() -> PathBuf {
+    std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        .join("rustride.pid")
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn default_pid_path() -> PathBuf {
+    PathBuf::from("/tmp/rustride.pid")
+}
+
+/// Load daemon configuration from TOML file.
+pub fn load_daemon_config() -> DaemonSettings {
+    let config = load_config().unwrap_or_default();
+    config.daemon
+}
+
+/// Example TOML configuration for daemon settings.
+/// This can be used to generate a default config file.
+pub fn example_daemon_config() -> &'static str {
+    r#"
+# Daemon settings for headless operation
+[daemon]
+# Custom socket path (optional)
+# socket_path = "/run/rustride/rustride.sock"
+
+# Custom log file path (optional, default logs to stderr)
+# log_path = "/var/log/rustride/daemon.log"
+
+# Log level: error, warn, info, debug, trace
+log_level = "info"
+
+# Autosave interval in seconds (5-300)
+autosave_interval_secs = 30
+
+# Enable crash recovery detection
+enable_crash_recovery = true
+
+# Preferred sensors for auto-connection on startup
+# [[daemon.preferred_sensors]]
+# id = "12:34:56:78:9A:BC"
+# name = "My Trainer"
+# sensor_type = "smart_trainer"
+"#
 }
