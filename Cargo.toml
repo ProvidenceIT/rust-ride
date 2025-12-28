@@ -78,6 +78,12 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# CLI Framework (Headless Mode)
+clap = { version = "4", features = ["derive"] }
+
+# Stream utilities (for signal handling)
+tokio-stream = "0.1"
+
 # Channels
 crossbeam = "0.8"
 
@@ -121,6 +127,12 @@ windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Headless Mode (Linux-only)
+[target.'cfg(target_os = "linux")'.dependencies]
+daemonize = "0.5"
+signal-hook = { version = "0.3", features = ["iterator"] }
+signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
+
 [features]
 default = []
 video = []  # Enable video sync (requires FFmpeg)
@@ -139,6 +151,10 @@ strip = true
 [[bin]]
 name = "rustride"
 path = "src/main.rs"
+
+[[bin]]
+name = "rustride-cli"
+path = "src/cli/main.rs"
 
 [lib]
 name = "rustride"

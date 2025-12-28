@@ -1,0 +1,56 @@
+# T077: systemd service file for RustRide daemon
+# Install to: /etc/systemd/system/rustride.service
+#
+# Usage:
+#   sudo cp assets/rustride.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rustride
+#   sudo systemctl start rustride
+
+[Unit]
+Description=RustRide Indoor Cycling Daemon
+Documentation=https://github.com/ProvidenceIT/rust-ride
+After=network.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=rustride
+Group=rustride
+
+# Run in foreground mode (systemd manages the process)
+ExecStart=/usr/local/bin/rustride --headless --foreground
+
+# Graceful shutdown
+ExecStop=/usr/local/bin/rustride-cli daemon stop
+TimeoutStopSec=30
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+# Allow access to Bluetooth
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+# Directories
+RuntimeDirectory=rustride
+StateDirectory=rustride
+ConfigurationDirectory=rustride
+
+# Environment
+Environment=RUST_LOG=info
+Environment=XDG_RUNTIME_DIR=/run/rustride
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustride
+
+[Install]
+WantedBy=multi-user.target
