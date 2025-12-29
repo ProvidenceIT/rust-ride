@@ -119,8 +119,12 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc
 
+      # Code signing is optional - only runs if Azure secrets are configured
       - name: Azure Login
+        if: env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         with:
           creds: |
             {
@@ -130,6 +134,9 @@ jobs:
             }
 
       - name: Sign with Azure Trusted Signing
+        if: env.AZURE_CLIENT_ID != ''
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         uses: azure/trusted-signing-action@v0.5.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
