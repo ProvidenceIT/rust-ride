@@ -3,8 +3,8 @@
 //! T031: Unit tests for gradient calculator and related functionality.
 
 use rustride::gradient::{
-    GpxRoute, GradientCalculator, GradientController, GradientResult, GradientSegment,
-    GradientSettings, GradientSmoother, RoutePoint,
+    GpxRoute, GradientController, GradientResult, GradientSegment, GradientSettings,
+    GradientSmoother, RoutePoint,
 };
 
 // ========== GradientSettings Tests ==========
@@ -62,8 +62,10 @@ fn test_gradient_settings_apply_difficulty() {
 
 #[test]
 fn test_gradient_settings_effective_gradient() {
-    let mut settings = GradientSettings::default();
-    settings.difficulty = 0.5;
+    let settings = GradientSettings {
+        difficulty: 0.5,
+        ..Default::default()
+    };
 
     // 10% gradient at 50% difficulty = 5% effective
     assert_eq!(settings.effective_gradient(10.0), 5.0);

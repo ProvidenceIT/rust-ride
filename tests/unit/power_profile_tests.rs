@@ -6,8 +6,8 @@ use chrono::Utc;
 use rustride::power_profile::{
     duration_label, female_reference_wpk, is_standard_duration, male_reference_wpk, EnergySystem,
     LifetimeBestTracker, MmpAdapter, PowerProfile, PowerProfileManager, PowerProfileManagerBuilder,
-    PowerProfilePoint, ProfileAnalysis, ProfileComparer, ProfileType, ReferenceLevel,
-    RiderClassification, RiderType, StrengthLevel, PROFILE_DURATIONS,
+    PowerProfilePoint, ProfileAnalysis, ProfileComparer, ProfileType, ReferenceLevel, RiderType,
+    StrengthLevel, PROFILE_DURATIONS,
 };
 use uuid::Uuid;
 

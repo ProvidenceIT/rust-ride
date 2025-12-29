@@ -6,8 +6,8 @@ use rustride::achievements::checks::ConsistencyChecker;
 use rustride::achievements::{
     achievement_count, all_achievements, xp_from_ride, xp_from_workout, Achievement,
     AchievementCategory, AchievementChecker, AchievementTier, AchievementTracker, AllCheckers,
-    CumulativeChecker, DefaultAchievementTracker, EarnedAchievement, RideChecker, RideMetrics,
-    XpGain, XpMultiplier, XpSource, XpStatus,
+    CumulativeChecker, DefaultAchievementTracker, RideChecker, RideMetrics, XpGain, XpMultiplier,
+    XpSource, XpStatus,
 };
 use rustride::career::{cumulative_xp_to_level, level_from_xp, xp_for_level, MAX_LEVEL};
 use uuid::Uuid;
@@ -351,8 +351,10 @@ fn test_cumulative_checker_distance() {
     let checker = CumulativeChecker::new();
     let metrics = RideMetrics::new(Uuid::new_v4(), 50.0, 7200);
 
-    let mut stats = rustride::achievements::CumulativeStats::default();
-    stats.total_distance_km = 1500.0;
+    let stats = rustride::achievements::CumulativeStats {
+        total_distance_km: 1500.0,
+        ..Default::default()
+    };
 
     let achievements = checker.check(&metrics, &stats);
     assert!(achievements.iter().any(|a| a.name == "lifetime_1000k"));
@@ -363,8 +365,10 @@ fn test_consistency_checker_streak() {
     let checker = ConsistencyChecker::new();
     let metrics = RideMetrics::new(Uuid::new_v4(), 20.0, 3600);
 
-    let mut stats = rustride::achievements::CumulativeStats::default();
-    stats.current_streak = 7;
+    let stats = rustride::achievements::CumulativeStats {
+        current_streak: 7,
+        ..Default::default()
+    };
 
     let achievements = checker.check(&metrics, &stats);
     assert!(achievements.iter().any(|a| a.name == "streak_7"));
@@ -377,9 +381,11 @@ fn test_all_checkers_combined() {
     let mut metrics = RideMetrics::new(Uuid::new_v4(), 100.0, 14400);
     metrics.elevation_gain_m = 1500.0;
 
-    let mut stats = rustride::achievements::CumulativeStats::default();
-    stats.current_streak = 14;
-    stats.total_rides = 100;
+    let stats = rustride::achievements::CumulativeStats {
+        current_streak: 14,
+        total_rides: 100,
+        ..Default::default()
+    };
 
     let achievements = checker.check_all(&metrics, &stats);
 

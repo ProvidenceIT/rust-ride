@@ -433,7 +433,6 @@ impl TrainingPlanManagerBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::training_plans::{DifficultyLevel, Discipline};
     use chrono::NaiveDate;
 
     fn setup_test_db() -> Connection {

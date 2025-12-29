@@ -430,7 +430,7 @@ impl WorkoutCompletionEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::training_plans::plan::{PlanWeek, PlanWorkout, TrainingPhase, WorkoutType};
+    use crate::training_plans::plan::{PlanWeek, PlanWorkout, TrainingPhase};
     use crate::training_plans::{DifficultyLevel, Discipline};
 
     fn create_test_data() -> (TrainingPlan, Vec<ScheduledWorkout>, PlanAssignment) {
