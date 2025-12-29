@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 use crate::ipc::protocol::IpcServer;
-use crate::storage::config::{load_daemon_config, DaemonSettings};
+use crate::storage::config::load_daemon_config;
 use state::DaemonState;
 
 /// T072: Information about an incomplete ride detected on startup.

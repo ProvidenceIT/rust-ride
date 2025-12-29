@@ -345,7 +345,7 @@ impl ScheduleAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::training_plans::plan::{PlanWeek, PlanWorkout, WorkoutType};
+    use crate::training_plans::plan::{PlanWeek, PlanWorkout};
     use crate::training_plans::{DifficultyLevel, Discipline};
 
     fn create_test_plan() -> TrainingPlan {

@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_week_summary() {
-        let (plan, workouts, _) = create_test_data();
+        let (_plan, workouts, _) = create_test_data();
         let workout_refs: Vec<_> = workouts.iter().collect();
 
         let summary = WeekSummary::from_workouts(1, "Week 1", TrainingPhase::Base, &workout_refs);

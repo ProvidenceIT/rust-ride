@@ -301,7 +301,7 @@ impl UpcomingWorkoutList {
     /// Sort workouts by priority.
     pub fn sort_by_priority(&mut self) {
         self.workouts
-            .sort_by(|a, b| b.priority_score().cmp(&a.priority_score()));
+            .sort_by_key(|w| std::cmp::Reverse(w.priority_score()));
     }
 
     /// Get today's workouts.

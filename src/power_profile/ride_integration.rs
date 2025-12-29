@@ -13,7 +13,7 @@ use crate::recording::types::RideSample;
 
 /// Extract power samples from ride samples.
 ///
-/// Filters to valid power readings and returns as Vec<u16>.
+/// Filters to valid power readings and returns as `Vec<u16>`.
 pub fn extract_power_samples(samples: &[RideSample]) -> Vec<u16> {
     samples.iter().filter_map(|s| s.power_watts).collect()
 }
