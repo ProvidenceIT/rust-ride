@@ -1,9 +1,12 @@
 //! Integration test modules.
 
+mod achievement_flow_test;
 mod analytics_integration_test;
+mod gradient_ride_test;
 mod hid_test;
 mod mqtt_fan_test;
 mod npc_test;
+mod power_profile_test;
 mod ride_recording_test;
 mod route_import_test;
 mod segment_test;

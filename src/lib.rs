@@ -31,6 +31,13 @@ pub mod i18n;
 pub mod input;
 pub mod onboarding;
 
+// Competitive Features modules (Feature 010)
+pub mod achievements;
+pub mod career;
+pub mod gradient;
+pub mod power_profile;
+pub mod training_plans;
+
 // Headless/CLI Mode modules (Feature 009)
 #[cfg(target_os = "linux")]
 pub mod cli;

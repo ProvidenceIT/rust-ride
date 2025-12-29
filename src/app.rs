@@ -4,11 +4,16 @@
 //! T044: Implement screen navigation state machine
 //! T050: Wire sensor data to UI via crossbeam channel
 //! T157: Implement crash recovery prompt on startup
+//! T043: Integrate achievement tracking into ride completion flow
 
 use eframe::egui;
 
 use crossbeam::channel::Receiver;
 use rustride::accessibility::FocusManager;
+use rustride::achievements::{
+    AchievementTracker, AllCheckers, CumulativeStats,
+    DefaultAchievementTracker, NotificationQueue, RideMetrics,
+};
 use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
 use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
 use rustride::integrations::mqtt::{
@@ -31,11 +36,13 @@ use rustride::ui::screens::{
     AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
+use rustride::ui::widgets::AchievementNotificationWidget;
 use rustride::ui::theme::Theme;
 use rustride::workouts::WorkoutEngine;
 use rustride::world::physics::GradientController;
 use std::sync::Arc;
 use std::time::Instant;
+use uuid::Uuid;
 
 /// Crash recovery dialog state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +138,18 @@ pub struct RustRideApp {
     focus_manager: FocusManager,
     /// T059: Onboarding screen for first-time user experience
     onboarding_screen: OnboardingScreen,
+    /// T043: Achievement tracker for gamification
+    achievement_tracker: DefaultAchievementTracker,
+    /// T043: Achievement notification queue
+    achievement_notification_queue: NotificationQueue,
+    /// T043: Achievement notification widget
+    achievement_notification_widget: AchievementNotificationWidget,
+    /// T043: Achievement checker for ride completion
+    achievement_checker: AllCheckers,
+    /// T043: Cumulative stats for lifetime achievements
+    cumulative_stats: CumulativeStats,
+    /// T043: User ID for achievement tracking
+    user_id: Uuid,
 }
 
 impl RustRideApp {
@@ -141,6 +160,10 @@ impl RustRideApp {
 
         // Create default profile
         let profile = UserProfile::default();
+
+        // T043: Generate or load user ID for achievement tracking
+        // In a full implementation, this would be loaded from the database
+        let user_id = Uuid::new_v4();
 
         // Set up theme
         let theme = Theme::Dark;
@@ -265,6 +288,13 @@ impl RustRideApp {
             secondary_cadence_sensor: None,
             focus_manager,
             onboarding_screen,
+            // T043: Achievement system initialization
+            achievement_tracker: DefaultAchievementTracker::new(user_id),
+            achievement_notification_queue: NotificationQueue::default(),
+            achievement_notification_widget: AchievementNotificationWidget::default(),
+            achievement_checker: AllCheckers::new(),
+            cumulative_stats: CumulativeStats::default(),
+            user_id,
         }
     }
 
@@ -510,6 +540,69 @@ impl RustRideApp {
         self.primary_cadence_sensor = None;
         self.secondary_cadence_sensor = None;
         tracing::debug!("Cadence fusion state reset");
+    }
+
+    /// T043: Check achievements after ride completion.
+    ///
+    /// This analyzes the completed ride metrics and cumulative stats
+    /// to determine which achievements have been earned.
+    fn check_ride_achievements(&mut self) {
+        // Build ride metrics from the completed ride
+        let ride_id = Uuid::new_v4();
+        let metrics = self.ride_screen.metrics.clone();
+
+        let ride_metrics = RideMetrics {
+            ride_id,
+            distance_km: metrics.distance / 1000.0, // Convert m to km
+            duration_secs: self.ride_screen.elapsed_seconds,
+            elevation_gain_m: 0.0, // Would come from gradient controller if available
+            avg_power: self.metrics_calculator.average_power(),
+            normalized_power: metrics.normalized_power,
+            max_power: self.metrics_calculator.max_power(),
+            avg_hr: metrics.heart_rate,
+            max_hr: metrics.heart_rate, // Use current HR as max (simplified)
+            avg_cadence: metrics.cadence,
+            calories: Some(metrics.calories),
+            workout_completed: self.ride_screen.workout.is_some()
+                && self.ride_screen.workout_status == rustride::workouts::types::WorkoutStatus::Completed,
+            workout_id: self.ride_screen.workout.as_ref().map(|_| Uuid::new_v4()),
+            tss: metrics.tss,
+            intensity_factor: metrics.intensity_factor,
+            ..Default::default()
+        };
+
+        // Update cumulative stats
+        self.cumulative_stats.total_distance_km += ride_metrics.distance_km;
+        self.cumulative_stats.total_time_secs += ride_metrics.duration_secs as u64;
+        self.cumulative_stats.total_rides += 1;
+        if ride_metrics.workout_completed {
+            self.cumulative_stats.total_workouts += 1;
+        }
+
+        // Check for earned achievements
+        let earned = self.achievement_checker.check_all(&ride_metrics, &self.cumulative_stats);
+
+        // Award achievements and queue notifications
+        for achievement in earned {
+            if let Some(earned_achievement) = self.achievement_tracker.award(&achievement, Some(ride_id)) {
+                tracing::info!(
+                    "Achievement unlocked: {} (+{} XP)",
+                    achievement.name,
+                    earned_achievement.xp_awarded
+                );
+
+                // Queue notification
+                let notification = rustride::achievements::AchievementNotification::new(
+                    self.user_id,
+                    achievement.title.clone(),
+                    &achievement.description,
+                    achievement.category,
+                    achievement.tier,
+                    earned_achievement.xp_awarded,
+                );
+                self.achievement_notification_queue.push(notification);
+            }
+        }
     }
 
     /// Update incline controller with route gradient (T043).
@@ -765,6 +858,10 @@ impl eframe::App for RustRideApp {
                     }
 
                     if let Some(next) = self.ride_screen.show(ui) {
+                        // T043: Check achievements before resetting ride screen
+                        if next == Screen::RideSummary {
+                            self.check_ride_achievements();
+                        }
                         // Reset gradient controller when leaving ride
                         self.gradient_controller.reset();
                         // T135: Reset cadence fusion when ending ride
@@ -917,6 +1014,41 @@ impl eframe::App for RustRideApp {
                         self.navigate(Screen::Home);
                     }
                 }
+                Screen::Achievements => {
+                    ui.heading("Achievements");
+                    ui.label("Achievement gallery - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::PowerProfile => {
+                    ui.heading("Power Profile");
+                    ui.label("4D Power profiling - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::Career => {
+                    ui.heading("Career Progress");
+                    ui.label("Career progression with level unlocks - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::Rewards => {
+                    ui.heading("Rewards Gallery");
+                    ui.label("Cosmetic rewards gallery - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
+                Screen::TrainingPlans => {
+                    ui.heading("Training Plans");
+                    ui.label("Training plans browser - coming soon");
+                    if ui.button("Back to Home").clicked() {
+                        self.navigate(Screen::Home);
+                    }
+                }
             }
         });
 
@@ -928,6 +1060,20 @@ impl eframe::App for RustRideApp {
                 ui.label(&self.sensor_status);
             });
         });
+
+        // T043: Achievement notification overlay (shown on top of other UI)
+        egui::Area::new(egui::Id::new("achievement_notification_area"))
+            .anchor(egui::Align2::RIGHT_TOP, [-16.0, 60.0])
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                self.achievement_notification_widget
+                    .show(ui, &mut self.achievement_notification_queue);
+            });
+
+        // Request repaint if notifications are animating
+        if self.achievement_notification_queue.current().is_some() {
+            ctx.request_repaint();
+        }
 
         // Crash recovery dialog (shown on top of everything)
         self.render_recovery_dialog(ctx);

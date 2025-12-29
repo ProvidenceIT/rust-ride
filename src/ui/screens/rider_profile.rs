@@ -1,9 +1,11 @@
 //! Rider profile screen.
 //!
 //! Displays and edits rider profile information, stats, and badges.
+//! T044: Add XP/level display to user profile screen.
 
 use egui::{Color32, RichText, Ui, Vec2};
 
+use crate::achievements::XpStatus;
 use crate::social::types::{Badge, RiderProfile};
 
 /// Rider profile screen actions.
@@ -37,6 +39,8 @@ pub struct RiderProfileScreen {
     edit_bio: String,
     /// Edited sharing preference.
     edit_sharing_enabled: bool,
+    /// T044: Current XP status
+    xp_status: Option<XpStatus>,
 }
 
 impl Default for RiderProfileScreen {
@@ -53,7 +57,13 @@ impl RiderProfileScreen {
             edit_name: String::new(),
             edit_bio: String::new(),
             edit_sharing_enabled: true,
+            xp_status: None,
         }
+    }
+
+    /// T044: Set the current XP status for display.
+    pub fn set_xp_status(&mut self, status: XpStatus) {
+        self.xp_status = Some(status);
     }
 
     /// Start editing with current profile values.
@@ -214,6 +224,13 @@ impl RiderProfileScreen {
         ui.separator();
         ui.add_space(15.0);
 
+        // T044: Career Level & XP section
+        self.show_xp_section(ui);
+
+        ui.add_space(20.0);
+        ui.separator();
+        ui.add_space(15.0);
+
         // Badges section
         ui.label(RichText::new("Badges").strong().size(18.0));
         ui.add_space(10.0);
@@ -287,6 +304,119 @@ impl RiderProfileScreen {
         });
 
         action
+    }
+
+    /// T044: Show the XP and career level section.
+    fn show_xp_section(&self, ui: &mut Ui) {
+        ui.label(RichText::new("Career Level").strong().size(18.0));
+        ui.add_space(10.0);
+
+        if let Some(ref status) = self.xp_status {
+            // Level display with circular progress indicator
+            ui.horizontal(|ui| {
+                // Level circle
+                let level_size = 80.0;
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(level_size), egui::Sense::hover());
+
+                // Draw outer circle (progress ring background)
+                ui.painter().circle_stroke(
+                    rect.center(),
+                    level_size / 2.0 - 4.0,
+                    egui::Stroke::new(6.0, Color32::from_rgb(60, 60, 70)),
+                );
+
+                // Draw progress arc
+                if !status.is_max_level() {
+                    let progress = status.level_progress;
+                    let start_angle = -std::f32::consts::FRAC_PI_2; // Start from top
+                    let end_angle = start_angle + progress * std::f32::consts::TAU;
+
+                    // Draw progress arc using small line segments
+                    let center = rect.center();
+                    let radius = level_size / 2.0 - 4.0;
+                    let segments = 32;
+                    let angle_step = (end_angle - start_angle) / segments as f32;
+
+                    for i in 0..segments {
+                        let a1 = start_angle + i as f32 * angle_step;
+                        let a2 = start_angle + (i + 1) as f32 * angle_step;
+                        let p1 = center + Vec2::new(a1.cos(), a1.sin()) * radius;
+                        let p2 = center + Vec2::new(a2.cos(), a2.sin()) * radius;
+                        ui.painter().line_segment(
+                            [p1, p2],
+                            egui::Stroke::new(6.0, Color32::from_rgb(76, 175, 80)),
+                        );
+                    }
+                }
+
+                // Inner circle
+                ui.painter().circle_filled(
+                    rect.center(),
+                    level_size / 2.0 - 10.0,
+                    Color32::from_rgb(40, 45, 55),
+                );
+
+                // Level number
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    format!("{}", status.level),
+                    egui::FontId::proportional(32.0),
+                    Color32::WHITE,
+                );
+
+                ui.add_space(20.0);
+
+                // XP details
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(format!("Level {}", status.level)).size(24.0).strong());
+
+                    ui.add_space(5.0);
+
+                    // XP progress bar
+                    let xp_progress = status.level_progress;
+                    let progress_bar = egui::ProgressBar::new(xp_progress)
+                        .fill(Color32::from_rgb(76, 175, 80))
+                        .desired_width(200.0);
+                    ui.add(progress_bar);
+
+                    ui.add_space(5.0);
+
+                    // XP text
+                    if status.is_max_level() {
+                        ui.label(
+                            RichText::new(format!("{} XP (Max Level)", status.total_xp))
+                                .color(Color32::GOLD),
+                        );
+                    } else {
+                        let xp_remaining = status.xp_for_next.saturating_sub(status.xp_into_level);
+                        ui.label(format!(
+                            "{} / {} XP to next level",
+                            status.xp_into_level, status.xp_for_next
+                        ));
+                        ui.label(
+                            RichText::new(format!("{} XP remaining", xp_remaining))
+                                .weak()
+                                .small(),
+                        );
+                    }
+
+                    ui.add_space(5.0);
+
+                    // Total XP
+                    ui.label(
+                        RichText::new(format!("Total: {} XP", status.total_xp))
+                            .weak()
+                            .small(),
+                    );
+                });
+            });
+        } else {
+            // No XP data yet
+            ui.label(RichText::new("Level 1").size(24.0).strong());
+            ui.add_space(5.0);
+            ui.label("Complete rides and earn achievements to gain XP!");
+        }
     }
 
     /// Show a badge.

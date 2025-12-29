@@ -1,17 +1,21 @@
 //! Unit test modules.
 
+mod achievements_tests;
 mod ant_profiles_test;
+mod career_tests;
 mod audio_test;
 mod dynamics_test;
 mod elevation_test;
 mod ftms_parser_test;
 mod fusion_test;
+mod gradient_tests;
 mod import_fit_test;
 mod import_gpx_test;
 mod import_tcx_test;
 mod leaderboard_test;
 mod npc_ai_test;
 mod npc_spawner_test;
+mod power_profile_tests;
 mod ride_history_test;
 mod ride_summary_test;
 mod segment_timing_test;

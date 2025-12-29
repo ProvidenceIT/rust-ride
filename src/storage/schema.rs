@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 8;
+pub const CURRENT_VERSION: i32 = 9;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -1135,4 +1135,87 @@ CREATE INDEX IF NOT EXISTS idx_ipc_command_log_executed ON ipc_command_log(execu
 -- Update autosave table for headless mode
 ALTER TABLE autosave ADD COLUMN is_headless INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE autosave ADD COLUMN daemon_session_id TEXT;
+"#;
+
+/// SQL for migration from v8 to v9 (Competitive Features tables)
+/// Feature 010: Gradient-responsive resistance, achievements/XP, power profiling,
+/// training plans, and career progression.
+pub const MIGRATION_V8_TO_V9: &str = r#"
+-- User achievements (earned badges)
+CREATE TABLE IF NOT EXISTS user_achievements (
+    user_id INTEGER NOT NULL,
+    achievement_key TEXT NOT NULL,
+    earned_at TEXT NOT NULL,
+    ride_id TEXT,
+    progress_value REAL,
+    PRIMARY KEY (user_id, achievement_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements(user_id);
+
+-- User XP and level
+CREATE TABLE IF NOT EXISTS user_xp (
+    user_id INTEGER PRIMARY KEY,
+    total_xp INTEGER NOT NULL DEFAULT 0,
+    current_level INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+
+-- Unlocked cosmetic rewards
+CREATE TABLE IF NOT EXISTS user_rewards (
+    user_id INTEGER NOT NULL,
+    reward_type TEXT NOT NULL,
+    reward_id TEXT NOT NULL,
+    unlocked_at TEXT NOT NULL,
+    unlocked_at_level INTEGER NOT NULL,
+    PRIMARY KEY (user_id, reward_type, reward_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_rewards_user ON user_rewards(user_id);
+
+-- Gradient simulation settings
+CREATE TABLE IF NOT EXISTS gradient_settings (
+    user_id INTEGER PRIMARY KEY,
+    difficulty_percent INTEGER NOT NULL DEFAULT 100,
+    max_gradient REAL NOT NULL DEFAULT 15.0,
+    min_gradient REAL NOT NULL DEFAULT -15.0,
+    smoothing_secs INTEGER NOT NULL DEFAULT 3,
+    rolling_resistance REAL NOT NULL DEFAULT 0.004
+);
+
+-- Power profiles (current 90-day and lifetime)
+CREATE TABLE IF NOT EXISTS power_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    profile_type TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_power_profiles_user_current ON power_profiles(user_id, is_current);
+
+-- Power profile points at standard durations
+CREATE TABLE IF NOT EXISTS power_profile_points (
+    profile_id INTEGER NOT NULL,
+    duration_secs INTEGER NOT NULL,
+    power_watts INTEGER NOT NULL,
+    achieved_at TEXT NOT NULL,
+    ride_id TEXT,
+    PRIMARY KEY (profile_id, duration_secs),
+    FOREIGN KEY (profile_id) REFERENCES power_profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_power_profile_points_achieved ON power_profile_points(achieved_at);
+
+-- Training plan assignments
+CREATE TABLE IF NOT EXISTS plan_assignments (
+    user_id INTEGER PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    current_week INTEGER NOT NULL DEFAULT 1,
+    completed_workouts INTEGER NOT NULL DEFAULT 0,
+    skipped_workouts INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    available_days INTEGER NOT NULL DEFAULT 127
+);
 "#;
