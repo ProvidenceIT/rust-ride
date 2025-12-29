@@ -68,9 +68,11 @@ pub enum RidesCommands {
 pub async fn execute(cmd: RidesCommands) -> i32 {
     match cmd {
         RidesCommands::List { limit } => execute_list(limit).await,
-        RidesCommands::Export { ride_id, format, output } => {
-            execute_export(ride_id, format, output).await
-        }
+        RidesCommands::Export {
+            ride_id,
+            format,
+            output,
+        } => execute_export(ride_id, format, output).await,
         RidesCommands::Incomplete => execute_incomplete().await,
         RidesCommands::Recover { ride_id } => execute_recover(ride_id).await,
     }
@@ -92,7 +94,10 @@ async fn execute_list(limit: usize) -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
@@ -104,14 +109,24 @@ async fn execute_list(limit: usize) -> i32 {
                                 println!("==============");
                                 for ride in rides {
                                     let id = ride.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let date = ride.get("date").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let duration = ride.get("duration_seconds").and_then(|v| v.as_u64()).unwrap_or(0);
-                                    let distance = ride.get("distance_km").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    let date =
+                                        ride.get("date").and_then(|v| v.as_str()).unwrap_or("?");
+                                    let duration = ride
+                                        .get("duration_seconds")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0);
+                                    let distance = ride
+                                        .get("distance_km")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.0);
 
                                     let hours = duration / 3600;
                                     let minutes = (duration % 3600) / 60;
 
-                                    println!("{} | {} | {}h {}m | {:.1} km", id, date, hours, minutes, distance);
+                                    println!(
+                                        "{} | {} | {}h {}m | {:.1} km",
+                                        id, date, hours, minutes, distance
+                                    );
                                 }
                             }
                         }
@@ -119,7 +134,10 @@ async fn execute_list(limit: usize) -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -157,7 +175,10 @@ async fn execute_export(ride_id: String, format: ExportFormat, output: Option<Pa
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
@@ -167,7 +188,10 @@ async fn execute_export(ride_id: String, format: ExportFormat, output: Option<Pa
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -198,7 +222,10 @@ async fn execute_incomplete() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else if let Some(result) = &response.result {
                     if let Some(rides) = result.get("incomplete_rides").and_then(|v| v.as_array()) {
@@ -210,20 +237,34 @@ async fn execute_incomplete() -> i32 {
                             for ride in rides {
                                 let id = ride.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                                 let date = ride.get("date").and_then(|v| v.as_str()).unwrap_or("?");
-                                let samples = ride.get("sample_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                                let duration_secs = ride.get("duration_seconds").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let samples = ride
+                                    .get("sample_count")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let duration_secs = ride
+                                    .get("duration_seconds")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
                                 let minutes = duration_secs / 60;
 
-                                println!("{} | {} | {} samples | ~{} min", id, date, samples, minutes);
+                                println!(
+                                    "{} | {} | {} samples | ~{} min",
+                                    id, date, samples, minutes
+                                );
                             }
                             println!();
-                            println!("Use 'rustride-cli rides recover <ride_id>' to recover a ride.");
+                            println!(
+                                "Use 'rustride-cli rides recover <ride_id>' to recover a ride."
+                            );
                         }
                     }
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -259,11 +300,20 @@ async fn execute_recover(ride_id: String) -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else if let Some(result) = &response.result {
-                    let recovered_id = result.get("ride_id").and_then(|v| v.as_str()).unwrap_or("?");
-                    let status = result.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let recovered_id = result
+                        .get("ride_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    let status = result
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     println!("Ride {} recovery: {}", recovered_id, status);
                     if let Some(msg) = result.get("message").and_then(|v| v.as_str()) {
                         println!("{}", msg);
@@ -271,7 +321,10 @@ async fn execute_recover(ride_id: String) -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {

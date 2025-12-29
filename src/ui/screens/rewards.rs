@@ -7,8 +7,8 @@
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::career::{
-    CareerManager, CosmeticInventory, CosmeticType, EquippedCosmetics, Reward, RewardType,
-    all_rewards,
+    all_rewards, CareerManager, CosmeticInventory, CosmeticType, EquippedCosmetics, Reward,
+    RewardType,
 };
 
 /// Rewards gallery screen state.
@@ -73,7 +73,12 @@ impl RewardsScreen {
     }
 
     /// Show header with collection stats.
-    fn show_header(&self, ui: &mut Ui, inventory: &CosmeticInventory, equipped: &EquippedCosmetics) {
+    fn show_header(
+        &self,
+        ui: &mut Ui,
+        inventory: &CosmeticInventory,
+        equipped: &EquippedCosmetics,
+    ) {
         let all_rewards = all_rewards();
         let unlocked_count = inventory.unlocked_count();
         let total_count = all_rewards.len();
@@ -89,9 +94,13 @@ impl RewardsScreen {
                 // Collection progress
                 let progress = unlocked_count as f32 / total_count as f32;
                 ui.label(
-                    RichText::new(format!("{} / {} collected ({:.0}%)",
-                        unlocked_count, total_count, progress * 100.0))
-                        .size(14.0),
+                    RichText::new(format!(
+                        "{} / {} collected ({:.0}%)",
+                        unlocked_count,
+                        total_count,
+                        progress * 100.0
+                    ))
+                    .size(14.0),
                 );
             });
         });
@@ -118,9 +127,13 @@ impl RewardsScreen {
     /// Show mini equipped badge.
     fn show_mini_equipped(&self, ui: &mut Ui, emoji: &str, id: &str) {
         ui.label(
-            RichText::new(format!("{} {}", emoji, id.split('_').next_back().unwrap_or(id)))
-                .size(11.0)
-                .color(Color32::from_rgb(150, 200, 150)),
+            RichText::new(format!(
+                "{} {}",
+                emoji,
+                id.split('_').next_back().unwrap_or(id)
+            ))
+            .size(11.0)
+            .color(Color32::from_rgb(150, 200, 150)),
         );
     }
 
@@ -287,7 +300,12 @@ impl RewardsScreen {
     }
 
     /// Show preview panel for selected reward.
-    fn show_preview(&mut self, ui: &mut Ui, reward_id: &str, manager: &mut CareerManager) -> Option<RewardsAction> {
+    fn show_preview(
+        &mut self,
+        ui: &mut Ui,
+        reward_id: &str,
+        manager: &mut CareerManager,
+    ) -> Option<RewardsAction> {
         let all_rewards = all_rewards();
         let reward = match all_rewards.iter().find(|r| r.id == reward_id) {
             Some(r) => r,
@@ -303,7 +321,10 @@ impl RewardsScreen {
 
         // Check if this reward is currently equipped
         let cosmetic_type = CosmeticType::from_reward_type(reward.reward_type);
-        let is_equipped = equipped.get(cosmetic_type).map(|id| id == reward_id).unwrap_or(false);
+        let is_equipped = equipped
+            .get(cosmetic_type)
+            .map(|id| id == reward_id)
+            .unwrap_or(false);
 
         egui::Frame::new()
             .fill(Color32::from_gray(30))
@@ -318,11 +339,7 @@ impl RewardsScreen {
                     ui.add_space(8.0);
 
                     // Name
-                    ui.label(
-                        RichText::new(&reward.name)
-                            .strong()
-                            .size(20.0),
-                    );
+                    ui.label(RichText::new(&reward.name).strong().size(20.0));
 
                     // Type
                     ui.label(
@@ -334,21 +351,15 @@ impl RewardsScreen {
                     ui.add_space(8.0);
 
                     // Description
-                    ui.label(
-                        RichText::new(&reward.description)
-                            .weak()
-                            .size(14.0),
-                    );
+                    ui.label(RichText::new(&reward.description).weak().size(14.0));
 
                     ui.add_space(16.0);
 
                     // Color preview if applicable
                     if let Some(color) = &reward.color {
                         ui.label(RichText::new("Color:").weak().size(12.0));
-                        let (color_rect, _) = ui.allocate_exact_size(
-                            Vec2::new(60.0, 30.0),
-                            egui::Sense::hover(),
-                        );
+                        let (color_rect, _) =
+                            ui.allocate_exact_size(Vec2::new(60.0, 30.0), egui::Sense::hover());
                         if let Ok(parsed_color) = parse_hex_color(color) {
                             ui.painter().rect_filled(color_rect, 4.0, parsed_color);
                             ui.painter().rect_stroke(
@@ -410,13 +421,13 @@ impl RewardsScreen {
 /// Get emoji for reward type.
 fn reward_type_emoji(reward_type: RewardType) -> &'static str {
     match reward_type {
-        RewardType::JerseyColor => "\u{1F455}",    // T-shirt
-        RewardType::BikeFrame => "\u{1F6B2}",       // Bicycle
-        RewardType::UiTheme => "\u{1F3A8}",         // Palette
-        RewardType::AccentColor => "\u{1F308}",    // Rainbow
-        RewardType::ProfileBadge => "\u{1F396}",   // Medal
-        RewardType::WheelStyle => "\u{26AA}",       // Circle
-        RewardType::HelmetStyle => "\u{26D1}",     // Helmet
+        RewardType::JerseyColor => "\u{1F455}",  // T-shirt
+        RewardType::BikeFrame => "\u{1F6B2}",    // Bicycle
+        RewardType::UiTheme => "\u{1F3A8}",      // Palette
+        RewardType::AccentColor => "\u{1F308}",  // Rainbow
+        RewardType::ProfileBadge => "\u{1F396}", // Medal
+        RewardType::WheelStyle => "\u{26AA}",    // Circle
+        RewardType::HelmetStyle => "\u{26D1}",   // Helmet
     }
 }
 

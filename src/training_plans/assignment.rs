@@ -297,7 +297,8 @@ impl PlanProgress {
 
     /// Get remaining workouts.
     pub fn remaining_workouts(&self) -> u32 {
-        self.total_plan_workouts.saturating_sub(self.completed_workouts)
+        self.total_plan_workouts
+            .saturating_sub(self.completed_workouts)
     }
 
     /// Get remaining weeks.
@@ -345,8 +346,8 @@ pub mod days {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::training_plans::plan::{PlanWeek, PlanWorkout, TrainingPhase};
     use crate::training_plans::{DifficultyLevel, Discipline};
-    use crate::training_plans::plan::{PlanWeek, TrainingPhase, PlanWorkout};
 
     #[test]
     fn test_plan_assignment() {
@@ -371,8 +372,7 @@ mod tests {
 
     #[test]
     fn test_available_day_names() {
-        let assignment = PlanAssignment::new(1, Uuid::new_v4())
-            .with_available_days(days::WEEKDAYS);
+        let assignment = PlanAssignment::new(1, Uuid::new_v4()).with_available_days(days::WEEKDAYS);
 
         let names = assignment.available_day_names();
         assert_eq!(names, vec!["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -417,16 +417,14 @@ mod tests {
             "Test",
         );
 
-        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "W1", 60),
-                PlanWorkout::new(3, "W2", 60),
-            ]);
-        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "W3", 60),
-                PlanWorkout::new(3, "W4", 60),
-            ]);
+        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "W1", 60),
+            PlanWorkout::new(3, "W2", 60),
+        ]);
+        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "W3", 60),
+            PlanWorkout::new(3, "W4", 60),
+        ]);
 
         plan.add_week(week1);
         plan.add_week(week2);
@@ -446,7 +444,10 @@ mod tests {
 
     #[test]
     fn test_days_helpers() {
-        assert_eq!(days::from_days(&[1, 3, 5]), days::MON | days::WED | days::FRI);
+        assert_eq!(
+            days::from_days(&[1, 3, 5]),
+            days::MON | days::WED | days::FRI
+        );
         assert_eq!(days::to_days(days::WEEKEND), vec![6, 7]);
     }
 }

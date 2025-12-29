@@ -5,8 +5,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::xp_curve::{cumulative_xp_to_level, level_from_xp, xp_for_level, MAX_LEVEL};
 use super::rewards::Reward;
+use super::xp_curve::{cumulative_xp_to_level, level_from_xp, xp_for_level, MAX_LEVEL};
 
 /// Current career status for a user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,7 +161,9 @@ impl CareerStatus {
     pub fn summary(&self) -> String {
         format!(
             "Level {} {} ({} XP)",
-            self.current_level, self.level_title, format_xp(self.total_xp)
+            self.current_level,
+            self.level_title,
+            format_xp(self.total_xp)
         )
     }
 }
@@ -269,9 +271,13 @@ mod tests {
     #[test]
     fn test_add_xp_level_up() {
         let mut status = CareerStatus::new(1, 1100);
-        let rewards = vec![
-            Reward::new("test_reward", RewardType::JerseyColor, "Test", "Test reward", 2),
-        ];
+        let rewards = vec![Reward::new(
+            "test_reward",
+            RewardType::JerseyColor,
+            "Test",
+            "Test reward",
+            2,
+        )];
 
         let result = status.add_xp(100, &rewards);
 

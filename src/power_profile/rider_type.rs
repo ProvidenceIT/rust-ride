@@ -182,9 +182,9 @@ impl RiderClassification {
     /// Create classification from profile analysis.
     pub fn from_analysis(analysis: &ProfileAnalysis, weight_kg: Option<f64>) -> Self {
         // Calculate W/kg at FTP
-        let watts_per_kg = analysis.estimated_ftp.and_then(|ftp| {
-            weight_kg.map(|w| ftp as f64 / w)
-        });
+        let watts_per_kg = analysis
+            .estimated_ftp
+            .and_then(|ftp| weight_kg.map(|w| ftp as f64 / w));
 
         // Get energy system scores
         let mut system_scores = Vec::new();
@@ -271,10 +271,10 @@ mod tests {
     #[test]
     fn test_classification_from_scores_rouleur() {
         let rider_type = RiderType::from_energy_system_scores(
-            -5.0,  // Neuromuscular - average
-            0.0,   // Anaerobic - average
-            5.0,   // Aerobic - slightly strong
-            15.0,  // Threshold - strong
+            -5.0, // Neuromuscular - average
+            0.0,  // Anaerobic - average
+            5.0,  // Aerobic - slightly strong
+            15.0, // Threshold - strong
             None,
         );
         assert_eq!(rider_type, RiderType::Rouleur);
@@ -283,10 +283,10 @@ mod tests {
     #[test]
     fn test_classification_from_scores_climber() {
         let rider_type = RiderType::from_energy_system_scores(
-            -10.0, // Neuromuscular - weak
-            -5.0,  // Anaerobic - average
-            5.0,   // Aerobic - strong
-            10.0,  // Threshold - strong
+            -10.0,     // Neuromuscular - weak
+            -5.0,      // Anaerobic - average
+            5.0,       // Aerobic - strong
+            10.0,      // Threshold - strong
             Some(4.5), // High W/kg
         );
         assert_eq!(rider_type, RiderType::Climber);
@@ -295,11 +295,10 @@ mod tests {
     #[test]
     fn test_classification_from_scores_allrounder() {
         let rider_type = RiderType::from_energy_system_scores(
-            2.0,   // All within
-            0.0,   // 10% of
-            -2.0,  // each other
-            1.0,
-            None,
+            2.0,  // All within
+            0.0,  // 10% of
+            -2.0, // each other
+            1.0, None,
         );
         assert_eq!(rider_type, RiderType::AllRounder);
     }

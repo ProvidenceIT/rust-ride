@@ -2,13 +2,13 @@
 //!
 //! T045: Add unit tests for XP curve and level calculations.
 
+use rustride::achievements::checks::ConsistencyChecker;
 use rustride::achievements::{
     achievement_count, all_achievements, xp_from_ride, xp_from_workout, Achievement,
     AchievementCategory, AchievementChecker, AchievementTier, AchievementTracker, AllCheckers,
     CumulativeChecker, DefaultAchievementTracker, EarnedAchievement, RideChecker, RideMetrics,
     XpGain, XpMultiplier, XpSource, XpStatus,
 };
-use rustride::achievements::checks::ConsistencyChecker;
 use rustride::career::{cumulative_xp_to_level, level_from_xp, xp_for_level, MAX_LEVEL};
 use uuid::Uuid;
 
@@ -91,7 +91,11 @@ fn test_xp_status_at_various_levels() {
     let level_5_xp = cumulative_xp_to_level(5);
     let status = XpStatus::from_total_xp(level_5_xp);
     // At exactly the boundary, we've achieved level 5
-    assert!(status.level >= 4, "Expected level 4 or 5, got {}", status.level);
+    assert!(
+        status.level >= 4,
+        "Expected level 4 or 5, got {}",
+        status.level
+    );
 
     // Test at max level
     let max_xp = 999_999_999;
@@ -193,7 +197,10 @@ fn test_all_categories_have_achievements() {
     let achievements = all_achievements();
 
     for category in AchievementCategory::all() {
-        let count = achievements.iter().filter(|a| a.category == *category).count();
+        let count = achievements
+            .iter()
+            .filter(|a| a.category == *category)
+            .count();
         assert!(
             count > 0,
             "Category {:?} should have at least one achievement",
@@ -222,7 +229,11 @@ fn test_achievement_xp_values() {
 
     for achievement in &achievements {
         let xp = achievement.effective_xp();
-        assert!(xp > 0, "Achievement {} should have positive XP", achievement.name);
+        assert!(
+            xp > 0,
+            "Achievement {} should have positive XP",
+            achievement.name
+        );
 
         // Verify tier-based XP
         let expected_base = achievement.tier.base_xp();
@@ -308,7 +319,10 @@ fn test_tracker_summary() {
     }
 
     let summary = tracker.summary();
-    assert_eq!(summary.total_earned, AchievementCategory::all().len() as u32);
+    assert_eq!(
+        summary.total_earned,
+        AchievementCategory::all().len() as u32
+    );
     assert_eq!(summary.by_category.len(), AchievementCategory::all().len());
 }
 
@@ -406,8 +420,8 @@ fn test_achievement_progress_clamping() {
 
 #[test]
 fn test_notification_queue_ordering() {
-    use rustride::achievements::NotificationQueue;
     use rustride::achievements::AchievementNotification;
+    use rustride::achievements::NotificationQueue;
 
     let mut queue = NotificationQueue::with_settings(1, 5);
 

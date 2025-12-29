@@ -55,7 +55,10 @@ async fn execute_start(path: PathBuf, wait: bool) -> i32 {
     // Validate path exists
     if !path.exists() {
         if is_json_output() {
-            println!(r#"{{"error": "Workout file not found: {}"}}"#, path.display());
+            println!(
+                r#"{{"error": "Workout file not found: {}"}}"#,
+                path.display()
+            );
         } else {
             eprintln!("Error: Workout file not found: {}", path.display());
         }
@@ -74,12 +77,21 @@ async fn execute_start(path: PathBuf, wait: bool) -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result.clone() {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
-                        let name = result.get("workout_name").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                        let session_id = result.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let name = result
+                            .get("workout_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown");
+                        let session_id = result
+                            .get("session_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
                         println!("Started workout: {}", name);
                         println!("Session ID: {}", session_id);
                     }
@@ -95,7 +107,10 @@ async fn execute_start(path: PathBuf, wait: bool) -> i32 {
 
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -164,7 +179,10 @@ async fn execute_pause() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -199,7 +217,10 @@ async fn execute_resume() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -229,18 +250,30 @@ async fn execute_skip() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
-                        let index = result.get("current_interval_index").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let total = result.get("total_intervals").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let index = result
+                            .get("current_interval_index")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let total = result
+                            .get("total_intervals")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         println!("Skipped to interval {} of {}", index + 1, total);
                     }
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -270,11 +303,17 @@ async fn execute_stop() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
-                        let elapsed = result.get("elapsed_seconds").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let elapsed = result
+                            .get("elapsed_seconds")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         let hours = elapsed / 3600;
                         let minutes = (elapsed % 3600) / 60;
                         let seconds = elapsed % 60;
@@ -284,7 +323,10 @@ async fn execute_stop() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -314,23 +356,35 @@ async fn execute_status() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
                         println!("Live Status");
                         println!("===========");
 
-                        let session_type = result.get("session_type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let session_type = result
+                            .get("session_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
                         println!("Session: {}", session_type);
 
-                        let elapsed = result.get("elapsed_seconds").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let elapsed = result
+                            .get("elapsed_seconds")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         let hours = elapsed / 3600;
                         let minutes = (elapsed % 3600) / 60;
                         let seconds = elapsed % 60;
                         println!("Elapsed: {}h {}m {}s", hours, minutes, seconds);
 
-                        let is_paused = result.get("is_paused").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_paused = result
+                            .get("is_paused")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         if is_paused {
                             println!("Status: PAUSED");
                         } else {
@@ -339,13 +393,17 @@ async fn execute_status() -> i32 {
 
                         if let Some(metrics) = result.get("metrics") {
                             println!("\nMetrics:");
-                            if let Some(power) = metrics.get("power_watts").and_then(|v| v.as_u64()) {
+                            if let Some(power) = metrics.get("power_watts").and_then(|v| v.as_u64())
+                            {
                                 println!("  Power: {}W", power);
                             }
-                            if let Some(hr) = metrics.get("heart_rate_bpm").and_then(|v| v.as_u64()) {
+                            if let Some(hr) = metrics.get("heart_rate_bpm").and_then(|v| v.as_u64())
+                            {
                                 println!("  Heart Rate: {} bpm", hr);
                             }
-                            if let Some(cadence) = metrics.get("cadence_rpm").and_then(|v| v.as_u64()) {
+                            if let Some(cadence) =
+                                metrics.get("cadence_rpm").and_then(|v| v.as_u64())
+                            {
                                 println!("  Cadence: {} rpm", cadence);
                             }
                             if let Some(speed) = metrics.get("speed_kmh").and_then(|v| v.as_f64()) {
@@ -356,13 +414,21 @@ async fn execute_status() -> i32 {
                         if let Some(workout_info) = result.get("workout_info") {
                             if !workout_info.is_null() {
                                 println!("\nWorkout:");
-                                if let Some(name) = workout_info.get("name").and_then(|v| v.as_str()) {
+                                if let Some(name) =
+                                    workout_info.get("name").and_then(|v| v.as_str())
+                                {
                                     println!("  Name: {}", name);
                                 }
-                                if let Some(interval_name) = workout_info.get("current_interval_name").and_then(|v| v.as_str()) {
+                                if let Some(interval_name) = workout_info
+                                    .get("current_interval_name")
+                                    .and_then(|v| v.as_str())
+                                {
                                     println!("  Current Interval: {}", interval_name);
                                 }
-                                if let Some(target) = workout_info.get("target_power_watts").and_then(|v| v.as_u64()) {
+                                if let Some(target) = workout_info
+                                    .get("target_power_watts")
+                                    .and_then(|v| v.as_u64())
+                                {
                                     println!("  Target Power: {}W", target);
                                 }
                             }
@@ -371,7 +437,10 @@ async fn execute_status() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {

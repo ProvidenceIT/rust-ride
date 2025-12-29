@@ -93,7 +93,10 @@ pub fn daemonize(config: &DaemonConfig) -> anyhow::Result<()> {
     // Fork to background
     match daemonize.start() {
         Ok(_) => {
-            info!("Daemon forked to background, PID file: {:?}", config.pid_path);
+            info!(
+                "Daemon forked to background, PID file: {:?}",
+                config.pid_path
+            );
             Ok(())
         }
         Err(e) => {
@@ -240,7 +243,6 @@ pub async fn run_daemon(config: DaemonConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-
 /// T076: Run the auto-save checkpoint loop.
 ///
 /// This task runs every `interval_secs` seconds and saves ride data
@@ -283,8 +285,7 @@ pub fn configure_tracing_from_config() {
     let log_level = daemon_config.log_level.to_string();
 
     // Build the filter, preferring env var RUST_LOG if set
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&log_level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&log_level));
 
     // Check if we need to log to a file
     let log_path = daemon_config.log_path.clone();
@@ -337,9 +338,7 @@ pub fn configure_tracing_from_config() {
 ///
 /// This function reads the daemon config and attempts to connect to
 /// any sensors listed in the preferred_sensors configuration.
-pub async fn auto_connect_preferred_sensors(
-    state: Arc<RwLock<DaemonState>>,
-) {
+pub async fn auto_connect_preferred_sensors(state: Arc<RwLock<DaemonState>>) {
     // Load daemon config to get preferred sensors
     let config = load_daemon_config();
 

@@ -533,8 +533,12 @@ mod tests {
         let checker = TrainingChecker::new();
         let achievements = checker.check_plan_completion(true, 95.0);
 
-        assert!(achievements.iter().any(|a| a.name == "training_plan_finisher"));
-        assert!(achievements.iter().any(|a| a.name == "training_perfect_execution"));
+        assert!(achievements
+            .iter()
+            .any(|a| a.name == "training_plan_finisher"));
+        assert!(achievements
+            .iter()
+            .any(|a| a.name == "training_perfect_execution"));
     }
 
     #[test]
@@ -542,6 +546,8 @@ mod tests {
         let checker = TrainingChecker::new();
         let achievements = checker.check_plan_completion(true, 100.0);
 
-        assert!(achievements.iter().any(|a| a.name == "training_perfect_100"));
+        assert!(achievements
+            .iter()
+            .any(|a| a.name == "training_perfect_100"));
     }
 }

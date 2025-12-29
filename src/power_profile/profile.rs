@@ -33,7 +33,11 @@ impl PowerProfilePoint {
     }
 
     /// Create with specific timestamp.
-    pub fn with_timestamp(duration_secs: u32, power_watts: u16, achieved_at: DateTime<Utc>) -> Self {
+    pub fn with_timestamp(
+        duration_secs: u32,
+        power_watts: u16,
+        achieved_at: DateTime<Utc>,
+    ) -> Self {
         Self {
             duration_secs,
             power_watts,
@@ -94,7 +98,11 @@ impl PowerProfile {
     }
 
     /// Create a profile with initial points.
-    pub fn with_points(user_id: Uuid, profile_type: ProfileType, points: Vec<PowerProfilePoint>) -> Self {
+    pub fn with_points(
+        user_id: Uuid,
+        profile_type: ProfileType,
+        points: Vec<PowerProfilePoint>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             user_id,
@@ -123,7 +131,10 @@ impl PowerProfile {
     /// Update or add a power point.
     /// Returns true if this was a new PR at this duration.
     pub fn update_point(&mut self, point: PowerProfilePoint) -> bool {
-        let existing = self.points.iter_mut().find(|p| p.duration_secs == point.duration_secs);
+        let existing = self
+            .points
+            .iter_mut()
+            .find(|p| p.duration_secs == point.duration_secs);
 
         match existing {
             Some(existing_point) => {
@@ -145,9 +156,9 @@ impl PowerProfile {
 
     /// Check if this profile has data for all standard durations.
     pub fn is_complete(&self) -> bool {
-        PROFILE_DURATIONS.iter().all(|&d|
-            self.points.iter().any(|p| p.duration_secs == d)
-        )
+        PROFILE_DURATIONS
+            .iter()
+            .all(|&d| self.points.iter().any(|p| p.duration_secs == d))
     }
 
     /// Get the number of duration points recorded.
@@ -157,7 +168,8 @@ impl PowerProfile {
 
     /// Get estimated FTP from 20-minute power (95% of 20min power).
     pub fn estimated_ftp(&self) -> Option<u16> {
-        self.power_at_duration(1200).map(|p20| (p20 as f64 * 0.95) as u16)
+        self.power_at_duration(1200)
+            .map(|p20| (p20 as f64 * 0.95) as u16)
     }
 
     /// Get the maximum power across all durations.
@@ -179,7 +191,11 @@ impl PowerProfile {
     }
 
     /// Filter points to only include those within a date range.
-    pub fn filter_by_date_range(&self, start: NaiveDate, end: NaiveDate) -> Vec<&PowerProfilePoint> {
+    pub fn filter_by_date_range(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Vec<&PowerProfilePoint> {
         self.points
             .iter()
             .filter(|p| {

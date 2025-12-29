@@ -57,11 +57,7 @@ impl GradientDisplay {
         } else if gradient < 10.0 {
             // Steep - orange
             let t = (gradient - 5.0) / 5.0;
-            Color32::from_rgb(
-                255,
-                (204.0 - 102.0 * t) as u8,
-                (72.0 - 40.0 * t) as u8,
-            )
+            Color32::from_rgb(255, (204.0 - 102.0 * t) as u8, (72.0 - 40.0 * t) as u8)
         } else {
             // Very steep - red
             let t = ((gradient - 10.0) / 10.0).min(1.0);
@@ -89,10 +85,8 @@ impl GradientDisplay {
         let available_width = ui.available_width();
         let height = config.height;
 
-        let (response, painter) = ui.allocate_painter(
-            Vec2::new(available_width, height),
-            egui::Sense::hover(),
-        );
+        let (response, painter) =
+            ui.allocate_painter(Vec2::new(available_width, height), egui::Sense::hover());
 
         let rect = response.rect;
         let bg_color = Color32::from_gray(30);
@@ -238,10 +232,8 @@ impl GradientPreview {
 
         let available_width = ui.available_width();
 
-        let (response, painter) = ui.allocate_painter(
-            Vec2::new(available_width, height),
-            egui::Sense::hover(),
-        );
+        let (response, painter) =
+            ui.allocate_painter(Vec2::new(available_width, height), egui::Sense::hover());
 
         let rect = response.rect;
         let bg_color = Color32::from_gray(25);

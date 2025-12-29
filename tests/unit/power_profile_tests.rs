@@ -4,15 +4,10 @@
 
 use chrono::Utc;
 use rustride::power_profile::{
-    duration_label, is_standard_duration,
-    PowerProfile, PowerProfilePoint, ProfileAnalysis, ProfileType,
-    RiderClassification, RiderType,
-    EnergySystem, StrengthLevel,
-    ProfileComparer, ReferenceLevel,
-    male_reference_wpk, female_reference_wpk,
-    PowerProfileManager, PowerProfileManagerBuilder,
-    MmpAdapter, PROFILE_DURATIONS,
-    LifetimeBestTracker,
+    duration_label, female_reference_wpk, is_standard_duration, male_reference_wpk, EnergySystem,
+    LifetimeBestTracker, MmpAdapter, PowerProfile, PowerProfileManager, PowerProfileManagerBuilder,
+    PowerProfilePoint, ProfileAnalysis, ProfileComparer, ProfileType, ReferenceLevel,
+    RiderClassification, RiderType, StrengthLevel, PROFILE_DURATIONS,
 };
 use uuid::Uuid;
 
@@ -189,8 +184,14 @@ fn test_strength_level_from_deviation() {
     assert_eq!(StrengthLevel::from_deviation(3.0), StrengthLevel::Average);
     assert_eq!(StrengthLevel::from_deviation(-10.0), StrengthLevel::Weak);
     assert_eq!(StrengthLevel::from_deviation(10.0), StrengthLevel::Strong);
-    assert_eq!(StrengthLevel::from_deviation(-20.0), StrengthLevel::VeryWeak);
-    assert_eq!(StrengthLevel::from_deviation(20.0), StrengthLevel::VeryStrong);
+    assert_eq!(
+        StrengthLevel::from_deviation(-20.0),
+        StrengthLevel::VeryWeak
+    );
+    assert_eq!(
+        StrengthLevel::from_deviation(20.0),
+        StrengthLevel::VeryStrong
+    );
 }
 
 #[test]
@@ -255,11 +256,26 @@ fn test_lifetime_tracker_new_bests() {
 #[test]
 fn test_reference_level_ordering() {
     // Test that levels are in the correct order
-    assert_eq!(ReferenceLevel::Untrained.next_level(), Some(ReferenceLevel::Recreational));
-    assert_eq!(ReferenceLevel::Recreational.next_level(), Some(ReferenceLevel::Trained));
-    assert_eq!(ReferenceLevel::Trained.next_level(), Some(ReferenceLevel::Competitive));
-    assert_eq!(ReferenceLevel::Competitive.next_level(), Some(ReferenceLevel::Elite));
-    assert_eq!(ReferenceLevel::Elite.next_level(), Some(ReferenceLevel::WorldClass));
+    assert_eq!(
+        ReferenceLevel::Untrained.next_level(),
+        Some(ReferenceLevel::Recreational)
+    );
+    assert_eq!(
+        ReferenceLevel::Recreational.next_level(),
+        Some(ReferenceLevel::Trained)
+    );
+    assert_eq!(
+        ReferenceLevel::Trained.next_level(),
+        Some(ReferenceLevel::Competitive)
+    );
+    assert_eq!(
+        ReferenceLevel::Competitive.next_level(),
+        Some(ReferenceLevel::Elite)
+    );
+    assert_eq!(
+        ReferenceLevel::Elite.next_level(),
+        Some(ReferenceLevel::WorldClass)
+    );
     assert_eq!(ReferenceLevel::WorldClass.next_level(), None);
 }
 
@@ -294,13 +310,15 @@ fn test_reference_curve_interpolation() {
 fn test_profile_comparison() {
     let user_id = Uuid::new_v4();
     let mut profile = PowerProfile::new(user_id, ProfileType::Current);
-    profile.update_point(PowerProfilePoint::new(300, 280));  // 5-min at 280W
+    profile.update_point(PowerProfilePoint::new(300, 280)); // 5-min at 280W
 
     let comparer = ProfileComparer::new(70.0, false);
     let comparison = comparer.compare(&profile);
 
     // Should have comparison for 5-min duration
-    let five_min = comparison.duration_comparisons.iter()
+    let five_min = comparison
+        .duration_comparisons
+        .iter()
         .find(|c| c.duration_secs == 300);
     assert!(five_min.is_some());
 
@@ -350,12 +368,7 @@ fn test_manager_process_ride() {
     let now = Utc::now();
 
     // Process a ride with MMP values
-    let mmp_values = vec![
-        (5, 800),
-        (60, 400),
-        (300, 320),
-        (1200, 280),
-    ];
+    let mmp_values = vec![(5, 800), (60, 400), (300, 320), (1200, 280)];
 
     let result = manager.process_ride(ride_id, now, mmp_values);
 
@@ -375,7 +388,7 @@ fn test_manager_ftp_estimation() {
 
     // Process a ride with 20-min power
     let mmp_values = vec![
-        (1200, 300),  // 300W for 20 min
+        (1200, 300), // 300W for 20 min
     ];
 
     manager.process_ride(ride_id, now, mmp_values);
@@ -399,7 +412,7 @@ fn test_manager_classification() {
         Uuid::new_v4(),
         now,
         vec![
-            (5, 1200),   // Very strong sprint
+            (5, 1200), // Very strong sprint
             (15, 900),
             (30, 600),
             (60, 450),
@@ -444,11 +457,7 @@ fn test_manager_compare_rolling_to_lifetime() {
     let now = Utc::now();
 
     // Process a ride
-    manager.process_ride(
-        Uuid::new_v4(),
-        now,
-        vec![(300, 350)],
-    );
+    manager.process_ride(Uuid::new_v4(), now, vec![(300, 350)]);
 
     let comparison = manager.compare_rolling_to_lifetime();
 
@@ -471,7 +480,7 @@ fn test_mmp_adapter_profile_mmp() {
     let samples: Vec<u16> = (0..600)
         .map(|i| {
             if i < 5 {
-                900  // Sprint start
+                900 // Sprint start
             } else if i < 60 {
                 400
             } else {
@@ -492,7 +501,7 @@ fn test_mmp_adapter_profile_mmp() {
 
 #[test]
 fn test_mmp_adapter_create_ride_data() {
-    let samples: Vec<u16> = vec![300; 600];  // 10 min at 300W
+    let samples: Vec<u16> = vec![300; 600]; // 10 min at 300W
     let ride_id = Uuid::new_v4();
     let now = Utc::now();
 
@@ -559,7 +568,7 @@ fn test_profile_lifetime_vs_rolling() {
     // Add a strong ride from the past
     let old_ride = Uuid::new_v4();
     let old_date = now - chrono::Duration::days(10);
-    manager.process_ride(old_ride, old_date, vec![(300, 350)]);  // Strong 5-min
+    manager.process_ride(old_ride, old_date, vec![(300, 350)]); // Strong 5-min
 
     // Both rolling and lifetime should show 350W
     assert_eq!(manager.rolling_profile().power_at_duration(300), Some(350));

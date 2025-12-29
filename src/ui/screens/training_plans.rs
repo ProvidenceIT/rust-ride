@@ -62,7 +62,11 @@ impl TrainingPlansScreen {
     }
 
     /// Show the training plans screen.
-    pub fn show(&mut self, ui: &mut Ui, manager: Option<&TrainingPlanManager>) -> Option<TrainingPlansAction> {
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        manager: Option<&TrainingPlanManager>,
+    ) -> Option<TrainingPlansAction> {
         let mut action = None;
 
         ui.vertical(|ui| {
@@ -120,17 +124,16 @@ impl TrainingPlansScreen {
                     );
 
                     if let Some(plan) = manager.current_plan() {
-                        ui.label(
-                            RichText::new(&plan.name)
-                                .color(Color32::WHITE)
-                                .strong(),
-                        );
+                        ui.label(RichText::new(&plan.name).color(Color32::WHITE).strong());
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if let Some(progress) = manager.progress() {
                                 ui.label(
-                                    RichText::new(format!("Week {} of {}", progress.current_week, progress.total_weeks))
-                                        .color(Color32::from_gray(180)),
+                                    RichText::new(format!(
+                                        "Week {} of {}",
+                                        progress.current_week, progress.total_weeks
+                                    ))
+                                    .color(Color32::from_gray(180)),
                                 );
                             }
                         });
@@ -161,7 +164,10 @@ impl TrainingPlansScreen {
                         .unwrap_or("All"),
                 )
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.discipline_filter.is_none(), "All").clicked() {
+                    if ui
+                        .selectable_label(self.discipline_filter.is_none(), "All")
+                        .clicked()
+                    {
                         self.discipline_filter = None;
                     }
                     for discipline in Discipline::all() {
@@ -188,7 +194,10 @@ impl TrainingPlansScreen {
                         .unwrap_or("All"),
                 )
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.difficulty_filter.is_none(), "All").clicked() {
+                    if ui
+                        .selectable_label(self.difficulty_filter.is_none(), "All")
+                        .clicked()
+                    {
                         self.difficulty_filter = None;
                     }
                     for difficulty in DifficultyLevel::all() {
@@ -255,10 +264,7 @@ impl TrainingPlansScreen {
             std::collections::HashMap::new();
 
         for plan in &plans {
-            by_discipline
-                .entry(plan.discipline)
-                .or_default()
-                .push(plan);
+            by_discipline.entry(plan.discipline).or_default().push(plan);
         }
 
         // Sort disciplines for consistent display
@@ -271,15 +277,8 @@ impl TrainingPlansScreen {
 
                 // Discipline header
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(discipline_emoji(discipline))
-                            .size(18.0),
-                    );
-                    ui.label(
-                        RichText::new(discipline.display_name())
-                            .strong()
-                            .size(16.0),
-                    );
+                    ui.label(RichText::new(discipline_emoji(discipline)).size(18.0));
+                    ui.label(RichText::new(discipline.display_name()).strong().size(16.0));
                     ui.label(
                         RichText::new(format!("({} plans)", plans.len()))
                             .color(Color32::from_gray(150))
@@ -313,7 +312,8 @@ impl TrainingPlansScreen {
         let card_width = 280.0;
         let card_height = 160.0;
 
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(card_width, card_height), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(card_width, card_height), egui::Sense::click());
 
         if response.clicked() {
             action = Some(TrainingPlansAction::ViewPlanDetails(plan.id.to_string()));
@@ -336,7 +336,12 @@ impl TrainingPlansScreen {
         } else {
             Color32::from_rgb(60, 60, 70)
         };
-        ui.painter().rect_stroke(rect, 8.0, Stroke::new(1.0, border_color), StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            rect,
+            8.0,
+            Stroke::new(1.0, border_color),
+            StrokeKind::Inside,
+        );
 
         // Content
         let content_rect = rect.shrink(12.0);
@@ -469,7 +474,9 @@ impl TrainingPlansScreen {
         match self.sort_order {
             PlanSortOrder::Name => filtered.sort_by(|a, b| a.name.cmp(&b.name)),
             PlanSortOrder::DurationAsc => filtered.sort_by_key(|p| p.duration_weeks),
-            PlanSortOrder::DurationDesc => filtered.sort_by_key(|p| std::cmp::Reverse(p.duration_weeks)),
+            PlanSortOrder::DurationDesc => {
+                filtered.sort_by_key(|p| std::cmp::Reverse(p.duration_weeks))
+            }
             PlanSortOrder::DifficultyAsc => filtered.sort_by_key(|p| p.difficulty as u8),
             PlanSortOrder::DifficultyDesc => {
                 filtered.sort_by_key(|p| std::cmp::Reverse(p.difficulty as u8))
@@ -509,11 +516,11 @@ impl PlanSortOrder {
 /// Get emoji for discipline.
 fn discipline_emoji(discipline: Discipline) -> &'static str {
     match discipline {
-        Discipline::Road => "\u{1F6B4}",            // Person biking
-        Discipline::Gravel => "\u{26F0}",           // Mountain
-        Discipline::Triathlon => "\u{1F3CA}",       // Person swimming
-        Discipline::MTB => "\u{1F6B5}",             // Mountain biking
-        Discipline::GeneralFitness => "\u{1F4AA}",  // Flexed biceps
+        Discipline::Road => "\u{1F6B4}",           // Person biking
+        Discipline::Gravel => "\u{26F0}",          // Mountain
+        Discipline::Triathlon => "\u{1F3CA}",      // Person swimming
+        Discipline::MTB => "\u{1F6B5}",            // Mountain biking
+        Discipline::GeneralFitness => "\u{1F4AA}", // Flexed biceps
     }
 }
 
@@ -557,6 +564,9 @@ mod tests {
     #[test]
     fn test_sort_order_display_names() {
         assert_eq!(PlanSortOrder::Name.display_name(), "Name");
-        assert_eq!(PlanSortOrder::DurationAsc.display_name(), "Duration (short first)");
+        assert_eq!(
+            PlanSortOrder::DurationAsc.display_name(),
+            "Duration (short first)"
+        );
     }
 }

@@ -2,11 +2,11 @@
 //!
 //! T085: Integration test for power profile updates.
 
-use uuid::Uuid;
 use rustride::power_profile::{
     DurationStrength, EnergySystem, LifetimeBestTracker, PowerProfile, PowerProfilePoint,
     ProfileAnalysis, ProfileType, RiderType, StrengthLevel,
 };
+use uuid::Uuid;
 
 #[test]
 fn test_power_profile_creation() {
@@ -41,10 +41,16 @@ fn test_rider_type_display() {
 #[test]
 fn test_energy_system_classification() {
     // Test energy system display names
-    assert_eq!(EnergySystem::Neuromuscular.display_name(), "Neuromuscular (Sprint)");
+    assert_eq!(
+        EnergySystem::Neuromuscular.display_name(),
+        "Neuromuscular (Sprint)"
+    );
     assert_eq!(EnergySystem::Anaerobic.display_name(), "Anaerobic Capacity");
     assert_eq!(EnergySystem::Aerobic.display_name(), "VO2max (Aerobic)");
-    assert_eq!(EnergySystem::Threshold.display_name(), "Threshold (Endurance)");
+    assert_eq!(
+        EnergySystem::Threshold.display_name(),
+        "Threshold (Endurance)"
+    );
 }
 
 #[test]
@@ -67,11 +73,17 @@ fn test_energy_system_from_duration() {
 
 #[test]
 fn test_strength_level_from_deviation() {
-    assert_eq!(StrengthLevel::from_deviation(-20.0), StrengthLevel::VeryWeak);
+    assert_eq!(
+        StrengthLevel::from_deviation(-20.0),
+        StrengthLevel::VeryWeak
+    );
     assert_eq!(StrengthLevel::from_deviation(-10.0), StrengthLevel::Weak);
     assert_eq!(StrengthLevel::from_deviation(0.0), StrengthLevel::Average);
     assert_eq!(StrengthLevel::from_deviation(10.0), StrengthLevel::Strong);
-    assert_eq!(StrengthLevel::from_deviation(20.0), StrengthLevel::VeryStrong);
+    assert_eq!(
+        StrengthLevel::from_deviation(20.0),
+        StrengthLevel::VeryStrong
+    );
 }
 
 #[test]
@@ -101,12 +113,7 @@ fn test_lifetime_best_check_ride() {
     let now = chrono::Utc::now();
 
     // Check a ride with power values
-    let mmp_values: Vec<(u32, u16)> = vec![
-        (5, 900),
-        (60, 450),
-        (300, 350),
-        (1200, 280),
-    ];
+    let mmp_values: Vec<(u32, u16)> = vec![(5, 900), (60, 450), (300, 350), (1200, 280)];
 
     let result = tracker.check_ride(ride_id, now, &mmp_values);
 
@@ -129,26 +136,20 @@ fn test_lifetime_best_only_improves() {
 
     // First ride with initial values
     let ride1_id = Uuid::new_v4();
-    let mmp1: Vec<(u32, u16)> = vec![
-        (300, 350),
-    ];
+    let mmp1: Vec<(u32, u16)> = vec![(300, 350)];
     tracker.check_ride(ride1_id, now, &mmp1);
     assert_eq!(tracker.best_at(300), Some(350));
 
     // Second ride with lower value (should not update)
     let ride2_id = Uuid::new_v4();
-    let mmp2: Vec<(u32, u16)> = vec![
-        (300, 340),
-    ];
+    let mmp2: Vec<(u32, u16)> = vec![(300, 340)];
     let result2 = tracker.check_ride(ride2_id, now, &mmp2);
     assert!(!result2.has_new_bests());
     assert_eq!(tracker.best_at(300), Some(350)); // Still the first value
 
     // Third ride with higher value (should update)
     let ride3_id = Uuid::new_v4();
-    let mmp3: Vec<(u32, u16)> = vec![
-        (300, 380),
-    ];
+    let mmp3: Vec<(u32, u16)> = vec![(300, 380)];
     let result3 = tracker.check_ride(ride3_id, now, &mmp3);
     assert!(result3.has_new_bests());
     assert_eq!(tracker.best_at(300), Some(380)); // Updated
@@ -227,21 +228,16 @@ fn test_full_profile_workflow() {
 
     // First ride establishing baseline
     let ride1_id = Uuid::new_v4();
-    let mmp1: Vec<(u32, u16)> = vec![
-        (5, 900),
-        (60, 450),
-        (300, 350),
-        (1200, 280),
-    ];
+    let mmp1: Vec<(u32, u16)> = vec![(5, 900), (60, 450), (300, 350), (1200, 280)];
     let result1 = tracker.check_ride(ride1_id, now, &mmp1);
     assert_eq!(result1.new_pr_count(), 4);
 
     // Second ride with some PRs
     let ride2_id = Uuid::new_v4();
     let mmp2: Vec<(u32, u16)> = vec![
-        (5, 920),   // New PR!
-        (60, 440),  // Not a PR
-        (300, 360), // New PR!
+        (5, 920),    // New PR!
+        (60, 440),   // Not a PR
+        (300, 360),  // New PR!
         (1200, 275), // Not a PR
     ];
     let result2 = tracker.check_ride(ride2_id, now, &mmp2);

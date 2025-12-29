@@ -51,12 +51,10 @@ impl GradientStore {
 
         match result {
             Ok(record) => Ok(record),
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                Ok(GradientSettingsRecord {
-                    user_id,
-                    ..Default::default()
-                })
-            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(GradientSettingsRecord {
+                user_id,
+                ..Default::default()
+            }),
             Err(e) => Err(e),
         }
     }
@@ -108,7 +106,10 @@ impl GradientStore {
 
     /// Reset settings to defaults.
     pub fn reset_to_defaults(conn: &Connection, user_id: i64) -> Result<()> {
-        conn.execute("DELETE FROM gradient_settings WHERE user_id = ?", params![user_id])?;
+        conn.execute(
+            "DELETE FROM gradient_settings WHERE user_id = ?",
+            params![user_id],
+        )?;
         Ok(())
     }
 }
@@ -129,7 +130,8 @@ mod tests {
                 rolling_resistance REAL NOT NULL DEFAULT 0.004
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 

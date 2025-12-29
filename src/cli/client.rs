@@ -2,8 +2,8 @@
 //!
 //! Connects to the daemon socket and sends commands.
 
-use std::path::Path;
 use anyhow::Result;
+use std::path::Path;
 
 use crate::ipc::messages::{IpcRequest, IpcResponse};
 use crate::ipc::protocol::IpcClient;

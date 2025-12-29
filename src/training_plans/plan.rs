@@ -88,7 +88,8 @@ impl TrainingPlan {
             self.workouts_per_week = 0;
         } else {
             let total_workouts: usize = self.weeks.iter().map(|w| w.workouts.len()).sum();
-            self.workouts_per_week = (total_workouts as f32 / self.weeks.len() as f32).round() as u8;
+            self.workouts_per_week =
+                (total_workouts as f32 / self.weeks.len() as f32).round() as u8;
         }
     }
 
@@ -115,7 +116,9 @@ impl TrainingPlan {
     pub fn summary(&self) -> String {
         format!(
             "{} weeks, {} workouts/week, {} total workouts",
-            self.duration_weeks, self.workouts_per_week, self.total_workouts()
+            self.duration_weeks,
+            self.workouts_per_week,
+            self.total_workouts()
         )
     }
 }
@@ -175,7 +178,10 @@ impl PlanWeek {
 
     /// Get total hours from workouts.
     pub fn total_hours(&self) -> f32 {
-        self.workouts.iter().map(|w| w.duration_minutes as f32 / 60.0).sum()
+        self.workouts
+            .iter()
+            .map(|w| w.duration_minutes as f32 / 60.0)
+            .sum()
     }
 
     /// Get the number of workouts.
@@ -209,11 +215,7 @@ pub struct PlanWorkout {
 
 impl PlanWorkout {
     /// Create a new plan workout.
-    pub fn new(
-        day_of_week: u8,
-        workout_name: impl Into<String>,
-        duration_minutes: u16,
-    ) -> Self {
+    pub fn new(day_of_week: u8, workout_name: impl Into<String>, duration_minutes: u16) -> Self {
         Self {
             day_of_week,
             workout_id: None,
@@ -424,18 +426,16 @@ mod tests {
             "Test",
         );
 
-        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "Endurance Ride", 60),
-                PlanWorkout::new(3, "Tempo", 45),
-                PlanWorkout::new(5, "Endurance Ride", 60),
-            ]);
+        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "Endurance Ride", 60),
+            PlanWorkout::new(3, "Tempo", 45),
+            PlanWorkout::new(5, "Endurance Ride", 60),
+        ]);
 
-        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "Endurance Ride", 60),
-                PlanWorkout::new(4, "Sweet Spot", 60),
-            ]);
+        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "Endurance Ride", 60),
+            PlanWorkout::new(4, "Sweet Spot", 60),
+        ]);
 
         plan.add_week(week1);
         plan.add_week(week2);
@@ -447,11 +447,10 @@ mod tests {
 
     #[test]
     fn test_week_hours() {
-        let week = PlanWeek::new(1, "Test Week", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "Workout 1", 60),
-                PlanWorkout::new(3, "Workout 2", 90),
-            ]);
+        let week = PlanWeek::new(1, "Test Week", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "Workout 1", 60),
+            PlanWorkout::new(3, "Workout 2", 90),
+        ]);
 
         assert!((week.total_hours() - 2.5).abs() < 0.01);
     }

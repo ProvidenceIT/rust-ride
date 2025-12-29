@@ -5,9 +5,9 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::workout::ScheduledWorkout;
-use super::plan::TrainingPlan;
 use super::assignment::PlanAssignment;
+use super::plan::TrainingPlan;
+use super::workout::ScheduledWorkout;
 
 /// Tracker for plan progress and compliance.
 #[derive(Debug, Default)]
@@ -23,11 +23,7 @@ impl ProgressTracker {
     }
 
     /// Generate weekly summaries from scheduled workouts.
-    pub fn generate_summaries(
-        &mut self,
-        plan: &TrainingPlan,
-        workouts: &[ScheduledWorkout],
-    ) {
+    pub fn generate_summaries(&mut self, plan: &TrainingPlan, workouts: &[ScheduledWorkout]) {
         self.weekly_summaries.clear();
 
         for week in &plan.weeks {
@@ -83,10 +79,7 @@ impl ProgressTracker {
             .map(|w| w.estimated_tss)
             .sum();
 
-        let total_tss_planned: f32 = workouts
-            .iter()
-            .map(|w| w.estimated_tss)
-            .sum();
+        let total_tss_planned: f32 = workouts.iter().map(|w| w.estimated_tss).sum();
 
         let total_hours_completed: f32 = workouts
             .iter()
@@ -123,10 +116,7 @@ impl ProgressTracker {
     /// Calculate the current workout streak.
     fn calculate_streak(&self, workouts: &[ScheduledWorkout]) -> u32 {
         // Sort by date descending
-        let mut sorted: Vec<_> = workouts
-            .iter()
-            .filter(|w| !w.is_pending())
-            .collect();
+        let mut sorted: Vec<_> = workouts.iter().filter(|w| !w.is_pending()).collect();
         sorted.sort_by(|a, b| b.scheduled_date.cmp(&a.scheduled_date));
 
         let mut streak = 0u32;
@@ -453,20 +443,17 @@ mod tests {
             "Test",
         );
 
-        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "Workout 1", 60),
-                PlanWorkout::new(3, "Workout 2", 60),
-            ]);
+        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "Workout 1", 60),
+            PlanWorkout::new(3, "Workout 2", 60),
+        ]);
         plan.add_week(week1);
 
         let today = Utc::now().date_naive();
 
         let mut workouts = vec![
-            ScheduledWorkout::new(plan_id, 1, 1, today, "Workout 1", 60)
-                .with_tss(50.0),
-            ScheduledWorkout::new(plan_id, 1, 3, today, "Workout 2", 60)
-                .with_tss(50.0),
+            ScheduledWorkout::new(plan_id, 1, 1, today, "Workout 1", 60).with_tss(50.0),
+            ScheduledWorkout::new(plan_id, 1, 3, today, "Workout 2", 60).with_tss(50.0),
         ];
 
         // Complete first workout
@@ -482,12 +469,7 @@ mod tests {
         let (plan, workouts, _) = create_test_data();
         let workout_refs: Vec<_> = workouts.iter().collect();
 
-        let summary = WeekSummary::from_workouts(
-            1,
-            "Week 1",
-            TrainingPhase::Base,
-            &workout_refs,
-        );
+        let summary = WeekSummary::from_workouts(1, "Week 1", TrainingPhase::Base, &workout_refs);
 
         assert_eq!(summary.total_workouts, 2);
         assert_eq!(summary.completed, 1);

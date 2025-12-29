@@ -41,7 +41,10 @@ impl RideProcessResult {
         self.lifetime_prs
             .iter()
             .filter(|lp| {
-                !self.rolling_prs.iter().any(|rp| rp.duration_secs == lp.duration_secs)
+                !self
+                    .rolling_prs
+                    .iter()
+                    .any(|rp| rp.duration_secs == lp.duration_secs)
             })
             .collect()
     }
@@ -220,9 +223,8 @@ impl PowerProfileManager {
 
     /// Get W/kg at FTP for rolling profile.
     pub fn watts_per_kg_ftp(&self) -> Option<f64> {
-        self.estimated_ftp_rolling().and_then(|ftp| {
-            self.weight_kg.map(|w| ftp as f64 / w)
-        })
+        self.estimated_ftp_rolling()
+            .and_then(|ftp| self.weight_kg.map(|w| ftp as f64 / w))
     }
 
     /// Prune old ride data to save memory.
@@ -233,7 +235,10 @@ impl PowerProfileManager {
     /// Update rider classification based on current profile.
     fn update_classification(&mut self) {
         let analysis = self.analyze_rolling();
-        self.classification = Some(RiderClassification::from_analysis(&analysis, self.weight_kg));
+        self.classification = Some(RiderClassification::from_analysis(
+            &analysis,
+            self.weight_kg,
+        ));
     }
 }
 
@@ -284,9 +289,11 @@ impl PowerProfileManagerBuilder {
 
     /// Build the manager.
     pub fn build(self) -> PowerProfileManager {
-        let rolling_profile = self.rolling_profile
+        let rolling_profile = self
+            .rolling_profile
             .unwrap_or_else(|| PowerProfile::new(self.user_id, ProfileType::Current));
-        let lifetime_profile = self.lifetime_profile
+        let lifetime_profile = self
+            .lifetime_profile
             .unwrap_or_else(|| PowerProfile::new(self.user_id, ProfileType::Lifetime));
 
         PowerProfileManager::with_data(
@@ -370,7 +377,7 @@ mod tests {
             Uuid::new_v4(),
             now,
             vec![
-                (5, 1200),   // Very strong sprint
+                (5, 1200), // Very strong sprint
                 (15, 900),
                 (30, 600),
                 (60, 450),

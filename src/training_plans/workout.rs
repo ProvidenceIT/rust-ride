@@ -294,16 +294,14 @@ impl UpcomingWorkoutList {
 
     /// Sort workouts by scheduled date.
     pub fn sort_by_date(&mut self) {
-        self.workouts.sort_by(|a, b| {
-            a.workout.scheduled_date.cmp(&b.workout.scheduled_date)
-        });
+        self.workouts
+            .sort_by(|a, b| a.workout.scheduled_date.cmp(&b.workout.scheduled_date));
     }
 
     /// Sort workouts by priority.
     pub fn sort_by_priority(&mut self) {
-        self.workouts.sort_by(|a, b| {
-            b.priority_score().cmp(&a.priority_score())
-        });
+        self.workouts
+            .sort_by(|a, b| b.priority_score().cmp(&a.priority_score()));
     }
 
     /// Get today's workouts.
@@ -381,14 +379,7 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
         let yesterday = NaiveDate::from_ymd_opt(2025, 1, 14).unwrap();
 
-        let workout = ScheduledWorkout::new(
-            Uuid::new_v4(),
-            1,
-            1,
-            yesterday,
-            "Old Workout",
-            60,
-        );
+        let workout = ScheduledWorkout::new(Uuid::new_v4(), 1, 1, yesterday, "Old Workout", 60);
 
         assert!(workout.is_overdue(today));
         assert_eq!(workout.days_relative(today), -1);
@@ -397,14 +388,7 @@ mod tests {
     #[test]
     fn test_upcoming_workout() {
         let today = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
-        let workout = ScheduledWorkout::new(
-            Uuid::new_v4(),
-            1,
-            3,
-            today,
-            "Today's Workout",
-            60,
-        );
+        let workout = ScheduledWorkout::new(Uuid::new_v4(), 1, 3, today, "Today's Workout", 60);
 
         let upcoming = UpcomingWorkout::from_scheduled(
             workout,

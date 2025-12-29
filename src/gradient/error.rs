@@ -33,7 +33,11 @@ impl fmt::Display for GradientError {
             Self::NoRouteLoaded => write!(f, "No route is currently loaded"),
             Self::InvalidGpx(msg) => write!(f, "Invalid GPX file: {}", msg),
             Self::InsufficientPoints { found, minimum } => {
-                write!(f, "Route has {} points, minimum {} required", found, minimum)
+                write!(
+                    f,
+                    "Route has {} points, minimum {} required",
+                    found, minimum
+                )
             }
             Self::FtmsError(msg) => write!(f, "FTMS error: {}", msg),
         }

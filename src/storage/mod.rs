@@ -32,8 +32,6 @@ pub use social_store::{
 pub use achievements_store::{AchievementsStore, UserAchievementRecord};
 pub use gradient_store::{GradientSettingsRecord, GradientStore};
 pub use plan_store::{PlanAssignmentRecord, PlanStore};
-pub use power_profile_store::{
-    PowerProfilePointRecord, PowerProfileRecord, PowerProfileStore,
-};
+pub use power_profile_store::{PowerProfilePointRecord, PowerProfileRecord, PowerProfileStore};
 pub use rewards_store::{RewardsStore, UserRewardRecord};
 pub use xp_store::{UserXpRecord, XpStore};

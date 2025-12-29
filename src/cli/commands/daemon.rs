@@ -6,9 +6,9 @@ use clap::Subcommand;
 use std::path::Path;
 use std::process::Command;
 
-use crate::cli::{exit_codes, format_output, is_json_output};
 use crate::cli::client::{is_daemon_running, send_command};
-use crate::daemon::{default_socket_path, default_pid_path, stop_daemon, DaemonConfig};
+use crate::cli::{exit_codes, format_output, is_json_output};
+use crate::daemon::{default_pid_path, default_socket_path, stop_daemon, DaemonConfig};
 use crate::ipc::messages::IpcRequest;
 
 /// Daemon control subcommands
@@ -92,7 +92,10 @@ async fn execute_start(foreground: bool) -> i32 {
                 // Verify it's running
                 if is_daemon_running(&socket_path).await {
                     if is_json_output() {
-                        println!(r#"{{"status": "started", "socket": "{}"}}"#, socket_path.display());
+                        println!(
+                            r#"{{"status": "started", "socket": "{}"}}"#,
+                            socket_path.display()
+                        );
                     } else {
                         println!("Daemon started successfully");
                         println!("Socket: {}", socket_path.display());
@@ -194,7 +197,10 @@ async fn execute_status() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     // Human-readable output
@@ -207,13 +213,16 @@ async fn execute_status() -> i32 {
                         if let Some(pid) = result.get("pid").and_then(|v| v.as_u64()) {
                             println!("PID: {}", pid);
                         }
-                        if let Some(uptime) = result.get("uptime_seconds").and_then(|v| v.as_u64()) {
+                        if let Some(uptime) = result.get("uptime_seconds").and_then(|v| v.as_u64())
+                        {
                             let hours = uptime / 3600;
                             let minutes = (uptime % 3600) / 60;
                             let seconds = uptime % 60;
                             println!("Uptime: {}h {}m {}s", hours, minutes, seconds);
                         }
-                        if let Some(sensors) = result.get("connected_sensors").and_then(|v| v.as_array()) {
+                        if let Some(sensors) =
+                            result.get("connected_sensors").and_then(|v| v.as_array())
+                        {
                             println!("Connected sensors: {}", sensors.len());
                         }
                         if let Some(session) = result.get("active_session") {
@@ -227,7 +236,10 @@ async fn execute_status() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {

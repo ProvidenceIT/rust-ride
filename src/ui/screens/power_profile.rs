@@ -8,9 +8,9 @@
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
 
 use crate::power_profile::{
-    DurationComparison, EnergySystem, PowerProfile, ProfileAnalysis,
+    duration_label, DurationComparison, EnergySystem, PowerProfile, ProfileAnalysis,
     ProfileComparer, ReferenceLevel, RiderClassification, RiderType, StrengthLevel,
-    duration_label, PROFILE_DURATIONS,
+    PROFILE_DURATIONS,
 };
 
 /// Tab selection for power profile screen.
@@ -279,8 +279,7 @@ impl PowerProfileScreen {
 
         let (rect, _) = ui.allocate_exact_size(Vec2::new(120.0, 90.0), egui::Sense::hover());
 
-        ui.painter()
-            .rect_filled(rect, 4.0, Color32::from_gray(40));
+        ui.painter().rect_filled(rect, 4.0, Color32::from_gray(40));
 
         let content_rect = rect.shrink(8.0);
         let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
@@ -290,16 +289,8 @@ impl PowerProfileScreen {
 
             if let Some(power) = rolling {
                 let wpk = power as f64 / self.weight_kg;
-                ui.label(
-                    RichText::new(format!("{}W", power))
-                        .strong()
-                        .size(18.0),
-                );
-                ui.label(
-                    RichText::new(format!("{:.2} W/kg", wpk))
-                        .weak()
-                        .size(12.0),
-                );
+                ui.label(RichText::new(format!("{}W", power)).strong().size(18.0));
+                ui.label(RichText::new(format!("{:.2} W/kg", wpk)).weak().size(12.0));
             } else {
                 ui.label(RichText::new("--").weak().size(18.0));
             }
@@ -339,11 +330,7 @@ impl PowerProfileScreen {
     /// Show a single energy system bar.
     fn show_energy_system_bar(&self, ui: &mut Ui, system: EnergySystem, score: f64) {
         ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(system.short_name())
-                    .strong()
-                    .size(12.0),
-            );
+            ui.label(RichText::new(system.short_name()).strong().size(12.0));
 
             // Normalize score to 0-1 range (assuming -30 to +30 range)
             let _normalized = ((score + 30.0) / 60.0).clamp(0.0, 1.0) as f32;
@@ -353,16 +340,19 @@ impl PowerProfileScreen {
             let color = strength_color(strength);
 
             let bar_width = 200.0;
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(bar_width, 16.0), egui::Sense::hover());
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(bar_width, 16.0), egui::Sense::hover());
 
             // Background
-            ui.painter()
-                .rect_filled(rect, 4.0, Color32::from_gray(50));
+            ui.painter().rect_filled(rect, 4.0, Color32::from_gray(50));
 
             // Center line
             let center_x = rect.min.x + bar_width * 0.5;
             ui.painter().line_segment(
-                [egui::Pos2::new(center_x, rect.min.y), egui::Pos2::new(center_x, rect.max.y)],
+                [
+                    egui::Pos2::new(center_x, rect.min.y),
+                    egui::Pos2::new(center_x, rect.max.y),
+                ],
                 egui::Stroke::new(1.0, Color32::from_gray(100)),
             );
 
@@ -370,11 +360,17 @@ impl PowerProfileScreen {
             let bar_rect = if score >= 0.0 {
                 egui::Rect::from_min_max(
                     egui::Pos2::new(center_x, rect.min.y + 2.0),
-                    egui::Pos2::new(center_x + (bar_width * 0.5 * (score / 30.0).min(1.0) as f32), rect.max.y - 2.0),
+                    egui::Pos2::new(
+                        center_x + (bar_width * 0.5 * (score / 30.0).min(1.0) as f32),
+                        rect.max.y - 2.0,
+                    ),
                 )
             } else {
                 egui::Rect::from_min_max(
-                    egui::Pos2::new(center_x + (bar_width * 0.5 * (score / 30.0).max(-1.0) as f32), rect.min.y + 2.0),
+                    egui::Pos2::new(
+                        center_x + (bar_width * 0.5 * (score / 30.0).max(-1.0) as f32),
+                        rect.min.y + 2.0,
+                    ),
                     egui::Pos2::new(center_x, rect.max.y - 2.0),
                 )
             };
@@ -411,7 +407,10 @@ impl PowerProfileScreen {
                     .show_ui(ui, |ui| {
                         for level in ReferenceLevel::all() {
                             if ui
-                                .selectable_label(self.reference_level == *level, level.display_name())
+                                .selectable_label(
+                                    self.reference_level == *level,
+                                    level.display_name(),
+                                )
                                 .clicked()
                             {
                                 self.reference_level = *level;
@@ -433,7 +432,8 @@ impl PowerProfileScreen {
         let chart_height = (available.y - 50.0).max(200.0);
         let chart_width = available.x.min(800.0);
 
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(chart_width, chart_height), egui::Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(chart_width, chart_height), egui::Sense::hover());
 
         // Background
         ui.painter().rect_filled(rect, 4.0, Color32::from_gray(30));
@@ -455,11 +455,23 @@ impl PowerProfileScreen {
 
         // Draw lifetime profile if enabled
         if self.show_lifetime {
-            self.draw_profile_curve(ui, chart_rect, &self.lifetime_profile, Color32::from_rgb(100, 100, 200), true);
+            self.draw_profile_curve(
+                ui,
+                chart_rect,
+                &self.lifetime_profile,
+                Color32::from_rgb(100, 100, 200),
+                true,
+            );
         }
 
         // Draw rolling profile
-        self.draw_profile_curve(ui, chart_rect, &self.rolling_profile, Color32::from_rgb(100, 200, 255), false);
+        self.draw_profile_curve(
+            ui,
+            chart_rect,
+            &self.rolling_profile,
+            Color32::from_rgb(100, 200, 255),
+            false,
+        );
 
         // Legend
         self.draw_chart_legend(ui, rect);
@@ -477,7 +489,10 @@ impl PowerProfileScreen {
             if power as u16 <= max_power {
                 let y = chart_rect.max.y - (power as f32 / max_power as f32) * chart_rect.height();
                 painter.line_segment(
-                    [egui::Pos2::new(chart_rect.min.x, y), egui::Pos2::new(chart_rect.max.x, y)],
+                    [
+                        egui::Pos2::new(chart_rect.min.x, y),
+                        egui::Pos2::new(chart_rect.max.x, y),
+                    ],
                     egui::Stroke::new(1.0, Color32::from_gray(50)),
                 );
                 painter.text(
@@ -494,7 +509,10 @@ impl PowerProfileScreen {
         for &duration in &PROFILE_DURATIONS {
             let x = self.duration_to_x(duration, chart_rect);
             painter.line_segment(
-                [egui::Pos2::new(x, chart_rect.min.y), egui::Pos2::new(x, chart_rect.max.y)],
+                [
+                    egui::Pos2::new(x, chart_rect.min.y),
+                    egui::Pos2::new(x, chart_rect.max.y),
+                ],
                 egui::Stroke::new(1.0, Color32::from_gray(50)),
             );
             painter.text(
@@ -581,7 +599,11 @@ impl PowerProfileScreen {
         let mut x = rect.max.x - 200.0;
 
         // Rolling
-        painter.circle_filled(egui::Pos2::new(x, legend_y), 4.0, Color32::from_rgb(100, 200, 255));
+        painter.circle_filled(
+            egui::Pos2::new(x, legend_y),
+            4.0,
+            Color32::from_rgb(100, 200, 255),
+        );
         painter.text(
             egui::Pos2::new(x + 8.0, legend_y),
             egui::Align2::LEFT_CENTER,
@@ -592,7 +614,11 @@ impl PowerProfileScreen {
         x += 80.0;
 
         if self.show_lifetime {
-            painter.circle_filled(egui::Pos2::new(x, legend_y), 3.0, Color32::from_rgb(100, 100, 200));
+            painter.circle_filled(
+                egui::Pos2::new(x, legend_y),
+                3.0,
+                Color32::from_rgb(100, 100, 200),
+            );
             painter.text(
                 egui::Pos2::new(x + 8.0, legend_y),
                 egui::Align2::LEFT_CENTER,
@@ -629,7 +655,12 @@ impl PowerProfileScreen {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 // Strengths
-                ui.label(RichText::new("Strengths").strong().color(Color32::from_rgb(100, 200, 100)).size(16.0));
+                ui.label(
+                    RichText::new("Strengths")
+                        .strong()
+                        .color(Color32::from_rgb(100, 200, 100))
+                        .size(16.0),
+                );
                 ui.add_space(8.0);
 
                 let strengths = self.analysis.get_strengths();
@@ -644,7 +675,12 @@ impl PowerProfileScreen {
                 ui.add_space(16.0);
 
                 // Weaknesses
-                ui.label(RichText::new("Weaknesses").strong().color(Color32::from_rgb(200, 100, 100)).size(16.0));
+                ui.label(
+                    RichText::new("Weaknesses")
+                        .strong()
+                        .color(Color32::from_rgb(200, 100, 100))
+                        .size(16.0),
+                );
                 ui.add_space(8.0);
 
                 let weaknesses = self.analysis.get_weaknesses();
@@ -659,7 +695,12 @@ impl PowerProfileScreen {
     }
 
     /// Show a duration analysis item.
-    fn show_duration_analysis(&self, ui: &mut Ui, analysis: &crate::power_profile::DurationStrength, is_strength: bool) {
+    fn show_duration_analysis(
+        &self,
+        ui: &mut Ui,
+        analysis: &crate::power_profile::DurationStrength,
+        is_strength: bool,
+    ) {
         let color = if is_strength {
             Color32::from_rgb(100, 200, 100)
         } else {

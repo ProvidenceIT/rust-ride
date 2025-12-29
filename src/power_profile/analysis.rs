@@ -149,12 +149,18 @@ pub struct DurationStrength {
 impl DurationStrength {
     /// Check if this is a strength (above average).
     pub fn is_strength(&self) -> bool {
-        matches!(self.strength_level, StrengthLevel::Strong | StrengthLevel::VeryStrong)
+        matches!(
+            self.strength_level,
+            StrengthLevel::Strong | StrengthLevel::VeryStrong
+        )
     }
 
     /// Check if this is a weakness (below average).
     pub fn is_weakness(&self) -> bool {
-        matches!(self.strength_level, StrengthLevel::Weak | StrengthLevel::VeryWeak)
+        matches!(
+            self.strength_level,
+            StrengthLevel::Weak | StrengthLevel::VeryWeak
+        )
     }
 }
 
@@ -218,7 +224,8 @@ impl ProfileAnalysis {
         }
 
         // Find primary strength and weakness by energy system
-        let (primary_strength, primary_weakness) = find_primary_strength_weakness(&duration_analyses);
+        let (primary_strength, primary_weakness) =
+            find_primary_strength_weakness(&duration_analyses);
 
         // Calculate fitness score (average deviation from balanced curve)
         let fitness_score = calculate_fitness_score(&duration_analyses);
@@ -235,22 +242,31 @@ impl ProfileAnalysis {
 
     /// Get strengths (durations significantly above average).
     pub fn get_strengths(&self) -> Vec<&DurationStrength> {
-        self.duration_analyses.iter().filter(|d| d.is_strength()).collect()
+        self.duration_analyses
+            .iter()
+            .filter(|d| d.is_strength())
+            .collect()
     }
 
     /// Get weaknesses (durations significantly below average).
     pub fn get_weaknesses(&self) -> Vec<&DurationStrength> {
-        self.duration_analyses.iter().filter(|d| d.is_weakness()).collect()
+        self.duration_analyses
+            .iter()
+            .filter(|d| d.is_weakness())
+            .collect()
     }
 
     /// Get analysis for a specific duration.
     pub fn get_duration(&self, duration_secs: u32) -> Option<&DurationStrength> {
-        self.duration_analyses.iter().find(|d| d.duration_secs == duration_secs)
+        self.duration_analyses
+            .iter()
+            .find(|d| d.duration_secs == duration_secs)
     }
 
     /// Get average deviation for an energy system.
     pub fn energy_system_score(&self, system: EnergySystem) -> Option<f64> {
-        let relevant: Vec<_> = self.duration_analyses
+        let relevant: Vec<_> = self
+            .duration_analyses
             .iter()
             .filter(|d| d.energy_system == system)
             .collect();
@@ -276,15 +292,15 @@ fn generate_balanced_curve(ftp: u16) -> Vec<(u32, u16)> {
         .iter()
         .map(|&duration| {
             let power = match duration {
-                5 => ftp_f * 2.8,        // ~280% FTP
-                15 => ftp_f * 2.2,       // ~220% FTP
-                30 => ftp_f * 1.8,       // ~180% FTP
-                60 => ftp_f * 1.5,       // ~150% FTP
-                180 => ftp_f * 1.25,     // ~125% FTP
-                300 => ftp_f * 1.15,     // ~115% FTP (VO2max)
-                600 => ftp_f * 1.08,     // ~108% FTP
-                1200 => ftp_f * 1.05,    // ~105% FTP (20-min gives FTP)
-                3600 => ftp_f * 0.95,    // ~95% FTP (hour power)
+                5 => ftp_f * 2.8,     // ~280% FTP
+                15 => ftp_f * 2.2,    // ~220% FTP
+                30 => ftp_f * 1.8,    // ~180% FTP
+                60 => ftp_f * 1.5,    // ~150% FTP
+                180 => ftp_f * 1.25,  // ~125% FTP
+                300 => ftp_f * 1.15,  // ~115% FTP (VO2max)
+                600 => ftp_f * 1.08,  // ~108% FTP
+                1200 => ftp_f * 1.05, // ~105% FTP (20-min gives FTP)
+                3600 => ftp_f * 0.95, // ~95% FTP (hour power)
                 _ => ftp_f,
             };
             (duration, power.round() as u16)
@@ -293,13 +309,19 @@ fn generate_balanced_curve(ftp: u16) -> Vec<(u32, u16)> {
 }
 
 /// Find primary strength and weakness energy systems.
-fn find_primary_strength_weakness(analyses: &[DurationStrength]) -> (Option<EnergySystem>, Option<EnergySystem>) {
+fn find_primary_strength_weakness(
+    analyses: &[DurationStrength],
+) -> (Option<EnergySystem>, Option<EnergySystem>) {
     let mut system_scores: Vec<(EnergySystem, f64)> = Vec::new();
 
     for system in EnergySystem::all() {
-        let relevant: Vec<_> = analyses.iter().filter(|d| d.energy_system == *system).collect();
+        let relevant: Vec<_> = analyses
+            .iter()
+            .filter(|d| d.energy_system == *system)
+            .collect();
         if !relevant.is_empty() {
-            let avg = relevant.iter().map(|d| d.deviation_percent).sum::<f64>() / relevant.len() as f64;
+            let avg =
+                relevant.iter().map(|d| d.deviation_percent).sum::<f64>() / relevant.len() as f64;
             system_scores.push((*system, avg));
         }
     }
@@ -323,7 +345,8 @@ fn calculate_fitness_score(analyses: &[DurationStrength]) -> f64 {
     }
 
     // Base score of 50, adjusted by average deviation
-    let avg_deviation = analyses.iter().map(|d| d.deviation_percent).sum::<f64>() / analyses.len() as f64;
+    let avg_deviation =
+        analyses.iter().map(|d| d.deviation_percent).sum::<f64>() / analyses.len() as f64;
 
     // Clamp between 0 and 100
     (50.0 + avg_deviation).clamp(0.0, 100.0)
@@ -348,11 +371,17 @@ mod tests {
 
     #[test]
     fn test_strength_level_from_deviation() {
-        assert_eq!(StrengthLevel::from_deviation(-20.0), StrengthLevel::VeryWeak);
+        assert_eq!(
+            StrengthLevel::from_deviation(-20.0),
+            StrengthLevel::VeryWeak
+        );
         assert_eq!(StrengthLevel::from_deviation(-10.0), StrengthLevel::Weak);
         assert_eq!(StrengthLevel::from_deviation(0.0), StrengthLevel::Average);
         assert_eq!(StrengthLevel::from_deviation(10.0), StrengthLevel::Strong);
-        assert_eq!(StrengthLevel::from_deviation(20.0), StrengthLevel::VeryStrong);
+        assert_eq!(
+            StrengthLevel::from_deviation(20.0),
+            StrengthLevel::VeryStrong
+        );
     }
 
     #[test]
@@ -360,14 +389,29 @@ mod tests {
         let curve = generate_balanced_curve(250);
 
         // Check 5-second power is highest
-        let p5 = curve.iter().find(|(d, _)| *d == 5).map(|(_, p)| *p).unwrap();
-        let p3600 = curve.iter().find(|(d, _)| *d == 3600).map(|(_, p)| *p).unwrap();
+        let p5 = curve
+            .iter()
+            .find(|(d, _)| *d == 5)
+            .map(|(_, p)| *p)
+            .unwrap();
+        let p3600 = curve
+            .iter()
+            .find(|(d, _)| *d == 3600)
+            .map(|(_, p)| *p)
+            .unwrap();
 
         assert!(p5 > p3600, "5s power should be higher than 60min power");
 
         // Check 20-min power is close to FTP
-        let p1200 = curve.iter().find(|(d, _)| *d == 1200).map(|(_, p)| *p).unwrap();
-        assert!((p1200 as i32 - 263).abs() < 10, "20-min should be ~105% of FTP");
+        let p1200 = curve
+            .iter()
+            .find(|(d, _)| *d == 1200)
+            .map(|(_, p)| *p)
+            .unwrap();
+        assert!(
+            (p1200 as i32 - 263).abs() < 10,
+            "20-min should be ~105% of FTP"
+        );
     }
 
     #[test]
@@ -376,10 +420,10 @@ mod tests {
         let mut profile = PowerProfile::new(user_id, super::super::types::ProfileType::Current);
 
         // Add points for a "sprinter" profile (strong short, weak long)
-        profile.update_point(PowerProfilePoint::new(5, 900));    // Very strong sprint
-        profile.update_point(PowerProfilePoint::new(15, 650));   // Strong
-        profile.update_point(PowerProfilePoint::new(60, 350));   // Average
-        profile.update_point(PowerProfilePoint::new(300, 280));  // Weak VO2max
+        profile.update_point(PowerProfilePoint::new(5, 900)); // Very strong sprint
+        profile.update_point(PowerProfilePoint::new(15, 650)); // Strong
+        profile.update_point(PowerProfilePoint::new(60, 350)); // Average
+        profile.update_point(PowerProfilePoint::new(300, 280)); // Weak VO2max
         profile.update_point(PowerProfilePoint::new(1200, 240)); // Weak FTP
 
         let analysis = ProfileAnalysis::from_profile(&profile, Some(70.0));

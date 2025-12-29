@@ -8,8 +8,8 @@ use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use uuid::Uuid;
 
 use crate::achievements::{
-    Achievement, AchievementCategory, AchievementProgress, AchievementTier,
-    AchievementTracker, DefaultAchievementTracker, XpStatus,
+    Achievement, AchievementCategory, AchievementProgress, AchievementTier, AchievementTracker,
+    DefaultAchievementTracker, XpStatus,
 };
 
 /// Filter options for achievements display.
@@ -203,7 +203,10 @@ impl AchievementsScreen {
         if self.earned_ids.contains(id) {
             1.0
         } else {
-            self.progress.get(id).map(|p| p.progress_percent).unwrap_or(0.0)
+            self.progress
+                .get(id)
+                .map(|p| p.progress_percent)
+                .unwrap_or(0.0)
         }
     }
 
@@ -283,7 +286,10 @@ impl AchievementsScreen {
                     }
                     for cat in AchievementCategory::all() {
                         if ui
-                            .selectable_label(self.category_filter == Some(*cat), cat.display_name())
+                            .selectable_label(
+                                self.category_filter == Some(*cat),
+                                cat.display_name(),
+                            )
                             .clicked()
                         {
                             self.category_filter = Some(*cat);
@@ -411,10 +417,7 @@ impl AchievementsScreen {
         ui.painter().rect_stroke(
             rect,
             8.0,
-            egui::Stroke::new(
-                if response.hovered() { 2.0 } else { 1.0 },
-                border_color,
-            ),
+            egui::Stroke::new(if response.hovered() { 2.0 } else { 1.0 }, border_color),
             egui::StrokeKind::Middle,
         );
 
@@ -438,7 +441,11 @@ impl AchievementsScreen {
                 );
 
                 if achievement.is_secret {
-                    ui.label(RichText::new("SECRET").color(Color32::from_rgb(186, 85, 211)).size(10.0));
+                    ui.label(
+                        RichText::new("SECRET")
+                            .color(Color32::from_rgb(186, 85, 211))
+                            .size(10.0),
+                    );
                 }
             });
 

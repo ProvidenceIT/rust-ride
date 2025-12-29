@@ -116,7 +116,13 @@ pub struct ReferenceCurve {
 
 impl ReferenceCurve {
     /// Create a new reference curve.
-    pub fn new(level: ReferenceLevel, wpk_5s: f64, wpk_60s: f64, wpk_300s: f64, wpk_1200s: f64) -> Self {
+    pub fn new(
+        level: ReferenceLevel,
+        wpk_5s: f64,
+        wpk_60s: f64,
+        wpk_300s: f64,
+        wpk_1200s: f64,
+    ) -> Self {
         Self {
             level,
             wpk_5s,
@@ -336,10 +342,10 @@ impl ProfileComparer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use uuid::Uuid;
     use super::super::profile::PowerProfilePoint;
     use super::super::types::ProfileType;
+    use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_reference_level_ordering() {
@@ -347,10 +353,7 @@ mod tests {
             ReferenceLevel::Untrained.next_level(),
             Some(ReferenceLevel::Recreational)
         );
-        assert_eq!(
-            ReferenceLevel::WorldClass.next_level(),
-            None
-        );
+        assert_eq!(ReferenceLevel::WorldClass.next_level(), None);
     }
 
     #[test]
@@ -397,9 +400,9 @@ mod tests {
 
         // Add data for a "trained" level rider at 70kg
         // Trained male: 5s=17W/kg, 60s=9W/kg, 300s=5W/kg, 1200s=4W/kg
-        profile.update_point(PowerProfilePoint::new(5, 1200));   // ~17 W/kg
-        profile.update_point(PowerProfilePoint::new(60, 630));   // ~9 W/kg
-        profile.update_point(PowerProfilePoint::new(300, 350));  // ~5 W/kg
+        profile.update_point(PowerProfilePoint::new(5, 1200)); // ~17 W/kg
+        profile.update_point(PowerProfilePoint::new(60, 630)); // ~9 W/kg
+        profile.update_point(PowerProfilePoint::new(300, 350)); // ~5 W/kg
         profile.update_point(PowerProfilePoint::new(1200, 280)); // ~4 W/kg
 
         let comparer = ProfileComparer::new(70.0, false);
@@ -453,8 +456,16 @@ mod tests {
         }
 
         // World class should have highest values
-        let world_class = &curves.iter().find(|(l, _)| *l == ReferenceLevel::WorldClass).unwrap().1;
-        let untrained = &curves.iter().find(|(l, _)| *l == ReferenceLevel::Untrained).unwrap().1;
+        let world_class = &curves
+            .iter()
+            .find(|(l, _)| *l == ReferenceLevel::WorldClass)
+            .unwrap()
+            .1;
+        let untrained = &curves
+            .iter()
+            .find(|(l, _)| *l == ReferenceLevel::Untrained)
+            .unwrap()
+            .1;
 
         assert!(world_class[0].1 > untrained[0].1);
     }

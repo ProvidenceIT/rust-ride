@@ -21,7 +21,11 @@ pub trait AchievementTracker {
     fn get_progress(&self, achievement_id: Uuid) -> Option<AchievementProgress>;
 
     /// Award an achievement.
-    fn award(&mut self, achievement: &Achievement, ride_id: Option<Uuid>) -> Option<EarnedAchievement>;
+    fn award(
+        &mut self,
+        achievement: &Achievement,
+        ride_id: Option<Uuid>,
+    ) -> Option<EarnedAchievement>;
 
     /// Process ride completion and check for achievements.
     fn process_ride(&mut self, metrics: &RideMetrics) -> Vec<EarnedAchievement>;
@@ -233,7 +237,11 @@ impl AchievementTracker for DefaultAchievementTracker {
         self.progress.get(&achievement_id).cloned()
     }
 
-    fn award(&mut self, achievement: &Achievement, ride_id: Option<Uuid>) -> Option<EarnedAchievement> {
+    fn award(
+        &mut self,
+        achievement: &Achievement,
+        ride_id: Option<Uuid>,
+    ) -> Option<EarnedAchievement> {
         // Check if already earned (unless repeatable)
         if !achievement.repeatable && self.is_earned(achievement.id) {
             return None;
@@ -249,8 +257,8 @@ impl AchievementTracker for DefaultAchievementTracker {
 
         // Store and add XP
         self.earned.insert(achievement.id, earned.clone());
-        let xp_gain = XpGain::new(xp_awarded, XpSource::Achievement)
-            .with_description(&achievement.title);
+        let xp_gain =
+            XpGain::new(xp_awarded, XpSource::Achievement).with_description(&achievement.title);
         self.add_xp(xp_gain);
 
         // Create notification
@@ -305,7 +313,8 @@ impl AchievementTracker for DefaultAchievementTracker {
         }
 
         // Find most recent
-        summary.most_recent = self.earned
+        summary.most_recent = self
+            .earned
             .values()
             .max_by_key(|e| e.earned_at)
             .map(|e| e.achievement_id);
@@ -316,8 +325,8 @@ impl AchievementTracker for DefaultAchievementTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{AchievementCategory, AchievementTier};
+    use super::*;
 
     fn test_achievement() -> Achievement {
         Achievement::new(
@@ -386,8 +395,7 @@ mod tests {
     fn test_cumulative_stats() {
         let mut stats = CumulativeStats::default();
 
-        let metrics = RideMetrics::new(Uuid::new_v4(), 50.0, 7200)
-            .with_elevation(500.0);
+        let metrics = RideMetrics::new(Uuid::new_v4(), 50.0, 7200).with_elevation(500.0);
 
         stats.update_from_ride(&metrics);
 

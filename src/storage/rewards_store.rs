@@ -30,7 +30,10 @@ impl RewardsStore {
                     user_id: row.get(0)?,
                     reward_type: row.get(1)?,
                     reward_id: row.get(2)?,
-                    unlocked_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    unlocked_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     unlocked_at_level: row.get::<_, i64>(4)? as u32,
                 })
             })?
@@ -68,13 +71,23 @@ impl RewardsStore {
             "INSERT OR IGNORE INTO user_rewards
              (user_id, reward_type, reward_id, unlocked_at, unlocked_at_level)
              VALUES (?, ?, ?, ?, ?)",
-            params![user_id, reward_type, reward_id, now.to_rfc3339(), level as i64],
+            params![
+                user_id,
+                reward_type,
+                reward_id,
+                now.to_rfc3339(),
+                level as i64
+            ],
         )?;
         Ok(())
     }
 
     /// Get rewards unlocked at a specific level.
-    pub fn get_for_level(conn: &Connection, user_id: i64, level: u32) -> Result<Vec<UserRewardRecord>> {
+    pub fn get_for_level(
+        conn: &Connection,
+        user_id: i64,
+        level: u32,
+    ) -> Result<Vec<UserRewardRecord>> {
         let mut stmt = conn.prepare(
             "SELECT user_id, reward_type, reward_id, unlocked_at, unlocked_at_level
              FROM user_rewards WHERE user_id = ? AND unlocked_at_level = ?",
@@ -86,7 +99,10 @@ impl RewardsStore {
                     user_id: row.get(0)?,
                     reward_type: row.get(1)?,
                     reward_id: row.get(2)?,
-                    unlocked_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    unlocked_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     unlocked_at_level: row.get::<_, i64>(4)? as u32,
                 })
             })?
@@ -112,7 +128,10 @@ impl RewardsStore {
                     user_id: row.get(0)?,
                     reward_type: row.get(1)?,
                     reward_id: row.get(2)?,
-                    unlocked_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    unlocked_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     unlocked_at_level: row.get::<_, i64>(4)? as u32,
                 })
             })?
@@ -148,7 +167,8 @@ mod tests {
                 PRIMARY KEY (user_id, reward_type, reward_id)
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 

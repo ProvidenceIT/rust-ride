@@ -316,7 +316,8 @@ impl RiderProfileScreen {
             ui.horizontal(|ui| {
                 // Level circle
                 let level_size = 80.0;
-                let (rect, _) = ui.allocate_exact_size(Vec2::splat(level_size), egui::Sense::hover());
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::splat(level_size), egui::Sense::hover());
 
                 // Draw outer circle (progress ring background)
                 ui.painter().circle_stroke(
@@ -369,7 +370,11 @@ impl RiderProfileScreen {
 
                 // XP details
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(format!("Level {}", status.level)).size(24.0).strong());
+                    ui.label(
+                        RichText::new(format!("Level {}", status.level))
+                            .size(24.0)
+                            .strong(),
+                    );
 
                     ui.add_space(5.0);
 

@@ -11,8 +11,8 @@ use eframe::egui;
 use crossbeam::channel::Receiver;
 use rustride::accessibility::FocusManager;
 use rustride::achievements::{
-    AchievementTracker, AllCheckers, CumulativeStats,
-    DefaultAchievementTracker, NotificationQueue, RideMetrics,
+    AchievementTracker, AllCheckers, CumulativeStats, DefaultAchievementTracker, NotificationQueue,
+    RideMetrics,
 };
 use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
 use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
@@ -36,8 +36,8 @@ use rustride::ui::screens::{
     AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
-use rustride::ui::widgets::AchievementNotificationWidget;
 use rustride::ui::theme::Theme;
+use rustride::ui::widgets::AchievementNotificationWidget;
 use rustride::workouts::WorkoutEngine;
 use rustride::world::physics::GradientController;
 use std::sync::Arc;
@@ -564,7 +564,8 @@ impl RustRideApp {
             avg_cadence: metrics.cadence,
             calories: Some(metrics.calories),
             workout_completed: self.ride_screen.workout.is_some()
-                && self.ride_screen.workout_status == rustride::workouts::types::WorkoutStatus::Completed,
+                && self.ride_screen.workout_status
+                    == rustride::workouts::types::WorkoutStatus::Completed,
             workout_id: self.ride_screen.workout.as_ref().map(|_| Uuid::new_v4()),
             tss: metrics.tss,
             intensity_factor: metrics.intensity_factor,
@@ -580,11 +581,15 @@ impl RustRideApp {
         }
 
         // Check for earned achievements
-        let earned = self.achievement_checker.check_all(&ride_metrics, &self.cumulative_stats);
+        let earned = self
+            .achievement_checker
+            .check_all(&ride_metrics, &self.cumulative_stats);
 
         // Award achievements and queue notifications
         for achievement in earned {
-            if let Some(earned_achievement) = self.achievement_tracker.award(&achievement, Some(ride_id)) {
+            if let Some(earned_achievement) =
+                self.achievement_tracker.award(&achievement, Some(ride_id))
+            {
                 tracing::info!(
                     "Achievement unlocked: {} (+{} XP)",
                     achievement.name,

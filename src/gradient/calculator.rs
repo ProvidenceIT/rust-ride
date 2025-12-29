@@ -39,10 +39,7 @@ impl GradientCalculator {
     /// Calculate gradient segments from a series of route points.
     ///
     /// Combines consecutive points with similar gradients to reduce segment count.
-    pub fn calculate_segments(
-        points: &[RoutePoint],
-        merge_threshold: f32,
-    ) -> Vec<GradientSegment> {
+    pub fn calculate_segments(points: &[RoutePoint], merge_threshold: f32) -> Vec<GradientSegment> {
         if points.len() < 2 {
             return Vec::new();
         }
@@ -74,7 +71,8 @@ impl GradientCalculator {
                     let start_point = &points[current_start];
                     let total_distance = curr.distance_m - start_point.distance_m;
                     let total_elevation = curr.elevation_m - start_point.elevation_m;
-                    last.gradient_percent = Self::calculate_gradient(total_elevation, total_distance);
+                    last.gradient_percent =
+                        Self::calculate_gradient(total_elevation, total_distance);
                 }
             } else {
                 // Start a new segment
@@ -125,7 +123,11 @@ impl GradientCalculator {
             .windows(2)
             .map(|pair| {
                 let diff = pair[1].elevation_m - pair[0].elevation_m;
-                if diff > 0.0 { diff as f64 } else { 0.0 }
+                if diff > 0.0 {
+                    diff as f64
+                } else {
+                    0.0
+                }
             })
             .sum()
     }
@@ -140,7 +142,11 @@ impl GradientCalculator {
             .windows(2)
             .map(|pair| {
                 let diff = pair[0].elevation_m - pair[1].elevation_m;
-                if diff > 0.0 { diff as f64 } else { 0.0 }
+                if diff > 0.0 {
+                    diff as f64
+                } else {
+                    0.0
+                }
             })
             .sum()
     }
@@ -174,10 +180,10 @@ mod tests {
     fn test_calculate_segments() {
         let points = vec![
             RoutePoint::new(0.0, 100.0),
-            RoutePoint::new(100.0, 110.0),   // 10% grade
-            RoutePoint::new(200.0, 120.0),   // 10% grade
-            RoutePoint::new(300.0, 115.0),   // -5% grade
-            RoutePoint::new(400.0, 110.0),   // -5% grade
+            RoutePoint::new(100.0, 110.0), // 10% grade
+            RoutePoint::new(200.0, 120.0), // 10% grade
+            RoutePoint::new(300.0, 115.0), // -5% grade
+            RoutePoint::new(400.0, 110.0), // -5% grade
         ];
 
         let segments = GradientCalculator::calculate_segments(&points, 1.0);
@@ -191,13 +197,13 @@ mod tests {
     fn test_total_elevation() {
         let points = vec![
             RoutePoint::new(0.0, 100.0),
-            RoutePoint::new(100.0, 150.0),   // +50m
-            RoutePoint::new(200.0, 120.0),   // -30m (descent)
-            RoutePoint::new(300.0, 180.0),   // +60m
+            RoutePoint::new(100.0, 150.0), // +50m
+            RoutePoint::new(200.0, 120.0), // -30m (descent)
+            RoutePoint::new(300.0, 180.0), // +60m
         ];
 
         let gain = GradientCalculator::total_elevation_gain(&points);
-        assert!((gain - 110.0).abs() < 0.1);  // 50 + 60 = 110m
+        assert!((gain - 110.0).abs() < 0.1); // 50 + 60 = 110m
 
         let descent = GradientCalculator::total_descent(&points);
         assert!((descent - 30.0).abs() < 0.1);

@@ -13,7 +13,9 @@ mod types;
 mod xp;
 
 pub use achievement::Achievement;
-pub use checks::{AchievementChecker, AllCheckers, ConsistencyChecker, CumulativeChecker, RideChecker};
+pub use checks::{
+    AchievementChecker, AllCheckers, ConsistencyChecker, CumulativeChecker, RideChecker,
+};
 pub use definitions::{
     achievement_by_name, achievement_count, achievements_by_category, achievements_by_tier,
     all_achievements, secret_achievements, total_possible_xp,

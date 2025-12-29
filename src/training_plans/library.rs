@@ -37,7 +37,10 @@ pub struct PlanLibrary {
 impl PlanLibrary {
     /// Get plans by difficulty level.
     pub fn by_difficulty(&self, level: DifficultyLevel) -> Vec<&TrainingPlan> {
-        self.plans.iter().filter(|p| p.difficulty == level).collect()
+        self.plans
+            .iter()
+            .filter(|p| p.difficulty == level)
+            .collect()
     }
 
     /// Get featured plans.
@@ -706,11 +709,7 @@ mod tests {
     #[test]
     fn test_plans_have_weeks() {
         for plan in all_plans() {
-            assert!(
-                plan.duration_weeks > 0,
-                "Plan {} has no weeks",
-                plan.name
-            );
+            assert!(plan.duration_weeks > 0, "Plan {} has no weeks", plan.name);
             assert!(
                 plan.total_workouts() > 0,
                 "Plan {} has no workouts",

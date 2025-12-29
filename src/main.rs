@@ -91,7 +91,9 @@ fn run_headless_daemon(foreground: bool) {
 
     // T032: Check if daemon is already running
     if is_daemon_running(&config) {
-        eprintln!("Error: Daemon is already running. Use --foreground or stop the existing daemon first.");
+        eprintln!(
+            "Error: Daemon is already running. Use --foreground or stop the existing daemon first."
+        );
         std::process::exit(1);
     }
 

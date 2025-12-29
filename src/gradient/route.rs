@@ -36,7 +36,10 @@ impl GpxRoute {
     /// Create a new route from points.
     ///
     /// Automatically calculates gradient segments and elevation statistics.
-    pub fn from_points(name: impl Into<String>, points: Vec<RoutePoint>) -> Result<Self, GradientError> {
+    pub fn from_points(
+        name: impl Into<String>,
+        points: Vec<RoutePoint>,
+    ) -> Result<Self, GradientError> {
         if points.len() < 2 {
             return Err(GradientError::InsufficientPoints {
                 found: points.len(),
@@ -72,7 +75,9 @@ impl GpxRoute {
         }
 
         let first_elevation = self.points[0].elevation_m;
-        self.points.iter().any(|p| (p.elevation_m - first_elevation).abs() > 0.1)
+        self.points
+            .iter()
+            .any(|p| (p.elevation_m - first_elevation).abs() > 0.1)
     }
 
     /// Get the gradient at a specific distance along the route.
@@ -122,7 +127,9 @@ impl GpxRoute {
     /// Get summary statistics for the route.
     pub fn summary(&self) -> RouteSummary {
         let avg_gradient = if !self.segments.is_empty() {
-            let total_weighted: f64 = self.segments.iter()
+            let total_weighted: f64 = self
+                .segments
+                .iter()
                 .map(|s| s.gradient_percent as f64 * s.length_m())
                 .sum();
             (total_weighted / self.total_distance_m) as f32
@@ -130,11 +137,15 @@ impl GpxRoute {
             0.0
         };
 
-        let max_gradient = self.segments.iter()
+        let max_gradient = self
+            .segments
+            .iter()
             .map(|s| s.gradient_percent)
             .fold(f32::NEG_INFINITY, f32::max);
 
-        let min_gradient = self.segments.iter()
+        let min_gradient = self
+            .segments
+            .iter()
             .map(|s| s.gradient_percent)
             .fold(f32::INFINITY, f32::min);
 
@@ -143,8 +154,16 @@ impl GpxRoute {
             total_elevation_m: self.total_elevation_m,
             total_descent_m: self.total_descent_m,
             avg_gradient,
-            max_gradient: if max_gradient.is_finite() { max_gradient } else { 0.0 },
-            min_gradient: if min_gradient.is_finite() { min_gradient } else { 0.0 },
+            max_gradient: if max_gradient.is_finite() {
+                max_gradient
+            } else {
+                0.0
+            },
+            min_gradient: if min_gradient.is_finite() {
+                min_gradient
+            } else {
+                0.0
+            },
             segment_count: self.segments.len(),
         }
     }
@@ -169,11 +188,11 @@ mod tests {
     fn create_test_route() -> GpxRoute {
         let points = vec![
             RoutePoint::new(0.0, 100.0),
-            RoutePoint::new(100.0, 110.0),   // 10% grade
-            RoutePoint::new(200.0, 120.0),   // 10% grade
-            RoutePoint::new(300.0, 115.0),   // -5% grade (descent)
-            RoutePoint::new(400.0, 110.0),   // -5% grade
-            RoutePoint::new(500.0, 110.0),   // flat
+            RoutePoint::new(100.0, 110.0), // 10% grade
+            RoutePoint::new(200.0, 120.0), // 10% grade
+            RoutePoint::new(300.0, 115.0), // -5% grade (descent)
+            RoutePoint::new(400.0, 110.0), // -5% grade
+            RoutePoint::new(500.0, 110.0), // flat
         ];
         GpxRoute::from_points("Test Route", points).unwrap()
     }
@@ -239,6 +258,9 @@ mod tests {
     #[test]
     fn test_insufficient_points() {
         let result = GpxRoute::from_points("Short", vec![RoutePoint::new(0.0, 100.0)]);
-        assert!(matches!(result, Err(GradientError::InsufficientPoints { .. })));
+        assert!(matches!(
+            result,
+            Err(GradientError::InsufficientPoints { .. })
+        ));
     }
 }

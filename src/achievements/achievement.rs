@@ -170,10 +170,22 @@ mod tests {
     #[test]
     fn test_achievement_equality() {
         let id = Uuid::new_v4();
-        let a1 = Achievement::new("test", "Test", "Test", AchievementCategory::Training, AchievementTier::Bronze)
-            .with_id(id);
-        let a2 = Achievement::new("test", "Test", "Test", AchievementCategory::Training, AchievementTier::Bronze)
-            .with_id(id);
+        let a1 = Achievement::new(
+            "test",
+            "Test",
+            "Test",
+            AchievementCategory::Training,
+            AchievementTier::Bronze,
+        )
+        .with_id(id);
+        let a2 = Achievement::new(
+            "test",
+            "Test",
+            "Test",
+            AchievementCategory::Training,
+            AchievementTier::Bronze,
+        )
+        .with_id(id);
 
         assert_eq!(a1, a2);
     }

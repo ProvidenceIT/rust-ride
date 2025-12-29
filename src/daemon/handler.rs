@@ -34,10 +34,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 /// Handle an incoming IPC request
-pub async fn handle_request(
-    request: IpcRequest,
-    state: Arc<RwLock<DaemonState>>,
-) -> IpcResponse {
+pub async fn handle_request(request: IpcRequest, state: Arc<RwLock<DaemonState>>) -> IpcResponse {
     debug!("Handling command: {}", request.command);
 
     match request.command.as_str() {
@@ -50,7 +47,9 @@ pub async fn handle_request(
         "ride.stop" | "RideStop" => handle_ride_stop(request.id, state).await,
 
         // Workout commands (T038-T042)
-        "workout.start" | "WorkoutStart" => handle_workout_start(request.id, request.params, state).await,
+        "workout.start" | "WorkoutStart" => {
+            handle_workout_start(request.id, request.params, state).await
+        }
         "workout.pause" | "WorkoutPause" => handle_workout_pause(request.id, state).await,
         "workout.resume" | "WorkoutResume" => handle_workout_resume(request.id, state).await,
         "workout.skip" | "WorkoutSkip" => handle_workout_skip(request.id, state).await,
@@ -76,9 +75,7 @@ pub async fn handle_request(
         "ride.recover" | "RideRecover" => {
             handle_ride_recover(request.id, request.params, state).await
         }
-        "rides.incomplete" | "RidesIncomplete" => {
-            handle_rides_incomplete(request.id, state).await
-        }
+        "rides.incomplete" | "RidesIncomplete" => handle_rides_incomplete(request.id, state).await,
 
         _ => {
             warn!("Unknown command: {}", request.command);
@@ -612,10 +609,7 @@ async fn handle_rides_list(
     params: serde_json::Value,
     _state: Arc<RwLock<DaemonState>>,
 ) -> IpcResponse {
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10) as usize;
+    let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
     // TODO: Actually query rides from database
     // For now, return empty list

@@ -15,10 +15,10 @@ mod workout_loader;
 
 pub use assignment::{days, PlanAssignment, PlanProgress, PlanStatus};
 pub use disciplines::{DifficultyLevel, Discipline};
-pub use library::{get_plan_by_id, get_plans_for_discipline, all_plans, PlanLibrary};
+pub use library::{all_plans, get_plan_by_id, get_plans_for_discipline, PlanLibrary};
 pub use manager::{TrainingPlanManager, TrainingPlanManagerBuilder};
-pub use plan::{PlanWeek, PlanWorkout, TrainingPlan, TrainingPhase, WorkoutType};
-pub use progress::{ProgressTracker, WeekSummary, PlanComplianceReport};
+pub use plan::{PlanWeek, PlanWorkout, TrainingPhase, TrainingPlan, WorkoutType};
+pub use progress::{PlanComplianceReport, ProgressTracker, WeekSummary};
 pub use scheduler::{PlanScheduler, ScheduleConfig};
 pub use workout::{ScheduledWorkout, UpcomingWorkout, UpcomingWorkoutList, WorkoutStatus};
 pub use workout_loader::WorkoutLoader;

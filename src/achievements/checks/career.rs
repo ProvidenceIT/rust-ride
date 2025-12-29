@@ -528,6 +528,8 @@ mod tests {
         let achievements = checker.check(&summary);
 
         assert!(achievements.iter().any(|a| a.name == "career_level_50"));
-        assert!(achievements.iter().any(|a| a.tier == AchievementTier::Legendary));
+        assert!(achievements
+            .iter()
+            .any(|a| a.tier == AchievementTier::Legendary));
     }
 }

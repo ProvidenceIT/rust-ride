@@ -30,7 +30,10 @@ impl AchievementsStore {
                 Ok(UserAchievementRecord {
                     user_id: row.get(0)?,
                     achievement_key: row.get(1)?,
-                    earned_at: row.get::<_, String>(2)?.parse().unwrap_or_else(|_| Utc::now()),
+                    earned_at: row
+                        .get::<_, String>(2)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     ride_id: row
                         .get::<_, Option<String>>(3)?
                         .and_then(|s| Uuid::parse_str(&s).ok()),
@@ -98,7 +101,10 @@ impl AchievementsStore {
                 Ok(UserAchievementRecord {
                     user_id: row.get(0)?,
                     achievement_key: row.get(1)?,
-                    earned_at: row.get::<_, String>(2)?.parse().unwrap_or_else(|_| Utc::now()),
+                    earned_at: row
+                        .get::<_, String>(2)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     ride_id: row
                         .get::<_, Option<String>>(3)?
                         .and_then(|s| Uuid::parse_str(&s).ok()),
@@ -136,7 +142,8 @@ mod tests {
                 PRIMARY KEY (user_id, achievement_key)
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 
@@ -156,7 +163,8 @@ mod tests {
         let conn = setup_test_db();
 
         AchievementsStore::record_achievement(&conn, 1, "first_ride", None, None).unwrap();
-        AchievementsStore::record_achievement(&conn, 1, "distance_100km", None, Some(100.0)).unwrap();
+        AchievementsStore::record_achievement(&conn, 1, "distance_100km", None, Some(100.0))
+            .unwrap();
 
         assert_eq!(AchievementsStore::count_earned(&conn, 1).unwrap(), 2);
     }

@@ -27,7 +27,10 @@ impl XpStore {
                     user_id: row.get(0)?,
                     total_xp: row.get::<_, i64>(1)? as u64,
                     current_level: row.get::<_, i64>(2)? as u32,
-                    updated_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    updated_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                 })
             },
         );
@@ -67,7 +70,12 @@ impl XpStore {
                 total_xp = excluded.total_xp,
                 current_level = excluded.current_level,
                 updated_at = excluded.updated_at",
-            params![user_id, total_xp as i64, current_level as i64, now.to_rfc3339()],
+            params![
+                user_id,
+                total_xp as i64,
+                current_level as i64,
+                now.to_rfc3339()
+            ],
         )?;
         Ok(())
     }
@@ -106,7 +114,8 @@ mod tests {
                 updated_at TEXT NOT NULL
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 

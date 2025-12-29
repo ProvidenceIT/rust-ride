@@ -103,12 +103,7 @@ impl GradientResult {
     }
 
     /// Create a result from raw gradient with transformations applied.
-    pub fn from_raw(
-        raw: f32,
-        capped: f32,
-        effective: f32,
-        smoothed: f32,
-    ) -> Self {
+    pub fn from_raw(raw: f32, capped: f32, effective: f32, smoothed: f32) -> Self {
         Self {
             raw_gradient: raw,
             capped_gradient: capped,

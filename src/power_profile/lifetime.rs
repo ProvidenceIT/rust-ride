@@ -52,9 +52,8 @@ impl LifetimeBest {
 
     /// Calculate improvement over previous best.
     pub fn improvement_watts(&self) -> Option<u16> {
-        self.previous_best.map(|prev| {
-            self.power_watts.saturating_sub(prev)
-        })
+        self.previous_best
+            .map(|prev| self.power_watts.saturating_sub(prev))
     }
 
     /// Calculate improvement percentage.
@@ -91,13 +90,13 @@ impl LifetimeCheckResult {
 
     /// Get the most significant new best (largest improvement percentage).
     pub fn best_improvement(&self) -> Option<&LifetimeBest> {
-        self.new_bests
-            .iter()
-            .max_by(|a, b| {
-                let a_pct = a.improvement_percent().unwrap_or(0.0);
-                let b_pct = b.improvement_percent().unwrap_or(0.0);
-                a_pct.partial_cmp(&b_pct).unwrap_or(std::cmp::Ordering::Equal)
-            })
+        self.new_bests.iter().max_by(|a, b| {
+            let a_pct = a.improvement_percent().unwrap_or(0.0);
+            let b_pct = b.improvement_percent().unwrap_or(0.0);
+            a_pct
+                .partial_cmp(&b_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 }
 
@@ -147,7 +146,8 @@ impl LifetimeBestTracker {
             let is_new_best = current_best.map_or(true, |best| power > best);
 
             if is_new_best {
-                let mut lifetime_best = LifetimeBest::new(duration, power, ride_date, Some(ride_id));
+                let mut lifetime_best =
+                    LifetimeBest::new(duration, power, ride_date, Some(ride_id));
 
                 if let Some(prev) = current_best {
                     lifetime_best = lifetime_best.with_previous(prev);
@@ -226,10 +226,7 @@ impl LifetimeBestTracker {
 /// Load lifetime bests from ride history.
 ///
 /// Processes all rides to build the lifetime best profile.
-pub fn build_lifetime_from_history(
-    user_id: Uuid,
-    rides: &[RideHistoryData],
-) -> PowerProfile {
+pub fn build_lifetime_from_history(user_id: Uuid, rides: &[RideHistoryData]) -> PowerProfile {
     let mut tracker = LifetimeBestTracker::new(user_id);
 
     for (ride_id, ride_date, mmp_values) in rides {
@@ -248,8 +245,7 @@ mod tests {
     #[test]
     fn test_lifetime_best_creation() {
         let now = Utc::now();
-        let best = LifetimeBest::new(300, 350, now, Some(Uuid::new_v4()))
-            .with_previous(320);
+        let best = LifetimeBest::new(300, 350, now, Some(Uuid::new_v4())).with_previous(320);
 
         assert_eq!(best.improvement_watts(), Some(30));
         assert!((best.improvement_percent().unwrap() - 9.375).abs() < 0.01);
@@ -263,11 +259,7 @@ mod tests {
         let now = Utc::now();
 
         // First ride establishes all bests
-        let result1 = tracker.check_ride(
-            ride_id,
-            now,
-            &[(5, 800), (60, 400), (1200, 250)],
-        );
+        let result1 = tracker.check_ride(ride_id, now, &[(5, 800), (60, 400), (1200, 250)]);
 
         assert!(result1.has_new_bests());
         assert_eq!(result1.new_pr_count(), 3);
@@ -284,7 +276,11 @@ mod tests {
         assert_eq!(result2.new_pr_count(), 2);
 
         // Check the improvements were recorded
-        let best_5s = result2.new_bests.iter().find(|b| b.duration_secs == 5).unwrap();
+        let best_5s = result2
+            .new_bests
+            .iter()
+            .find(|b| b.duration_secs == 5)
+            .unwrap();
         assert_eq!(best_5s.previous_best, Some(800));
         assert_eq!(best_5s.improvement_watts(), Some(50));
     }
@@ -296,11 +292,7 @@ mod tests {
         let now = Utc::now();
 
         // Establish bests
-        tracker.check_ride(
-            Uuid::new_v4(),
-            now,
-            &[(5, 800), (60, 400)],
-        );
+        tracker.check_ride(Uuid::new_v4(), now, &[(5, 800), (60, 400)]);
 
         // Ride with no improvements
         let result = tracker.check_ride(
@@ -323,11 +315,7 @@ mod tests {
         let mut tracker = LifetimeBestTracker::new(user_id);
         let now = Utc::now();
 
-        tracker.check_ride(
-            Uuid::new_v4(),
-            now,
-            &[(5, 1000), (60, 500), (1200, 250)],
-        );
+        tracker.check_ride(Uuid::new_v4(), now, &[(5, 1000), (60, 500), (1200, 250)]);
 
         let comparison = tracker.compare_to_lifetime(&[(5, 900), (60, 500), (1200, 275)]);
 
@@ -350,15 +338,27 @@ mod tests {
         let now = Utc::now();
 
         let rides = vec![
-            (Uuid::new_v4(), now - Duration::days(100), vec![(5, 800), (60, 400)]),
-            (Uuid::new_v4(), now - Duration::days(50), vec![(5, 900), (60, 380)]),
-            (Uuid::new_v4(), now - Duration::days(10), vec![(5, 850), (60, 420)]),
+            (
+                Uuid::new_v4(),
+                now - Duration::days(100),
+                vec![(5, 800), (60, 400)],
+            ),
+            (
+                Uuid::new_v4(),
+                now - Duration::days(50),
+                vec![(5, 900), (60, 380)],
+            ),
+            (
+                Uuid::new_v4(),
+                now - Duration::days(10),
+                vec![(5, 850), (60, 420)],
+            ),
         ];
 
         let profile = build_lifetime_from_history(user_id, &rides);
 
         // Should have best from across all rides
-        assert_eq!(profile.power_at_duration(5), Some(900));  // From 50-day ride
+        assert_eq!(profile.power_at_duration(5), Some(900)); // From 50-day ride
         assert_eq!(profile.power_at_duration(60), Some(420)); // From 10-day ride
     }
 

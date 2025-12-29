@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::sensors::{ConnectionState as BleConnectionState, SensorState as BleSensorState, SensorType as BleSensorType};
+use crate::sensors::{
+    ConnectionState as BleConnectionState, SensorState as BleSensorState,
+    SensorType as BleSensorType,
+};
 
 /// Daemon lifecycle states
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,7 +124,11 @@ impl DaemonState {
 
     /// T033: Update a sensor's connection status
     pub fn update_sensor_status(&mut self, sensor_id: &str, status: ConnectionStatus) {
-        if let Some(sensor) = self.connected_sensors.iter_mut().find(|s| s.id == sensor_id) {
+        if let Some(sensor) = self
+            .connected_sensors
+            .iter_mut()
+            .find(|s| s.id == sensor_id)
+        {
             sensor.connection_status = status.clone();
             sensor.last_seen = Utc::now();
         }

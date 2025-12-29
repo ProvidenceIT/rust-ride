@@ -2,12 +2,12 @@
 //!
 //! Provides length-prefixed JSON framing for Unix socket communication.
 
+use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::RwLock;
-use anyhow::Result;
 use tracing::{debug, error, info};
 
 use super::messages::{IpcRequest, IpcResponse};
@@ -101,10 +101,7 @@ impl IpcServer {
 }
 
 /// Handle a single client connection
-async fn handle_connection(
-    mut stream: UnixStream,
-    state: Arc<RwLock<DaemonState>>,
-) -> Result<()> {
+async fn handle_connection(mut stream: UnixStream, state: Arc<RwLock<DaemonState>>) -> Result<()> {
     debug!("New client connection");
 
     // Read request

@@ -15,10 +15,7 @@ use crate::recording::types::RideSample;
 ///
 /// Filters to valid power readings and returns as Vec<u16>.
 pub fn extract_power_samples(samples: &[RideSample]) -> Vec<u16> {
-    samples
-        .iter()
-        .filter_map(|s| s.power_watts)
-        .collect()
+    samples.iter().filter_map(|s| s.power_watts).collect()
 }
 
 /// Process a completed ride and update power profiles.
@@ -63,7 +60,11 @@ pub fn ride_samples_to_power_data(
         return None;
     }
 
-    Some(MmpAdapter::create_ride_data(ride_id, ride_date, &power_samples))
+    Some(MmpAdapter::create_ride_data(
+        ride_id,
+        ride_date,
+        &power_samples,
+    ))
 }
 
 /// Summary of power profile updates after a ride.
@@ -102,10 +103,17 @@ impl PowerProfileUpdateSummary {
         Self {
             rolling_pr_count: result.rolling_prs.len(),
             lifetime_pr_count: result.lifetime_prs.len(),
-            new_ftp: if current_ftp != previous_ftp { current_ftp } else { None },
+            new_ftp: if current_ftp != previous_ftp {
+                current_ftp
+            } else {
+                None
+            },
             previous_ftp,
             classification_changed: result.classification_changed,
-            rider_type_name: result.classification.as_ref().map(|c| c.rider_type.display_name().to_string()),
+            rider_type_name: result
+                .classification
+                .as_ref()
+                .map(|c| c.rider_type.display_name().to_string()),
             pr_durations,
         }
     }
@@ -292,10 +300,13 @@ mod tests {
         let now = Utc::now();
 
         let result = process_ride_for_profiles(&mut manager, ride_id, now, &samples);
-        let summary = PowerProfileUpdateSummary::from_result(&result, None, manager.estimated_ftp_rolling());
+        let summary =
+            PowerProfileUpdateSummary::from_result(&result, None, manager.estimated_ftp_rolling());
 
         assert!(summary.has_updates());
-        assert!(!summary.summary_message().contains("No power profile changes"));
+        assert!(!summary
+            .summary_message()
+            .contains("No power profile changes"));
     }
 
     #[test]

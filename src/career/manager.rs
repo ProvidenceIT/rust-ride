@@ -113,7 +113,12 @@ impl CareerManager {
 
     /// Save current state to database.
     pub fn save(&self, conn: &Connection) -> CareerResult<()> {
-        XpStore::update(conn, self.user_id, self.status.total_xp, self.status.current_level)?;
+        XpStore::update(
+            conn,
+            self.user_id,
+            self.status.total_xp,
+            self.status.current_level,
+        )?;
         Ok(())
     }
 
@@ -314,7 +319,8 @@ mod tests {
                 updated_at TEXT NOT NULL
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "CREATE TABLE user_rewards (
                 user_id INTEGER NOT NULL,
@@ -325,7 +331,8 @@ mod tests {
                 PRIMARY KEY (user_id, reward_type, reward_id)
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 
@@ -339,9 +346,7 @@ mod tests {
 
     #[test]
     fn test_builder() {
-        let manager = CareerManager::builder()
-            .user_id(42)
-            .build();
+        let manager = CareerManager::builder().user_id(42).build();
 
         assert_eq!(manager.user_id, 42);
     }

@@ -119,10 +119,8 @@ impl GradientController {
 
     /// Update smoothing parameters based on settings.
     pub fn update_smoothing(&mut self, settings: &GradientSettings) {
-        self.smoother = GradientSmoother::from_seconds(
-            settings.smoothing_secs,
-            self.update_rate_hz,
-        );
+        self.smoother =
+            GradientSmoother::from_seconds(settings.smoothing_secs, self.update_rate_hz);
     }
 
     /// Check if a route is loaded.
@@ -132,7 +130,10 @@ impl GradientController {
 
     /// Check if the loaded route has elevation data.
     pub fn has_elevation_data(&self) -> bool {
-        self.route.as_ref().map(|r| r.has_elevation_data()).unwrap_or(false)
+        self.route
+            .as_ref()
+            .map(|r| r.has_elevation_data())
+            .unwrap_or(false)
     }
 
     /// Get the total route distance.
@@ -250,7 +251,10 @@ mod tests {
         controller.load_route(route).unwrap();
 
         let result = controller.update(500.0, &settings);
-        assert!(matches!(result, Err(GradientError::PositionOutOfBounds { .. })));
+        assert!(matches!(
+            result,
+            Err(GradientError::PositionOutOfBounds { .. })
+        ));
     }
 
     #[test]

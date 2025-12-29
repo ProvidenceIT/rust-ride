@@ -991,10 +991,7 @@ impl DaemonSettings {
         if let Some(ref path) = self.socket_path {
             if let Some(parent) = path.parent() {
                 if !parent.exists() {
-                    tracing::warn!(
-                        "Socket path parent directory does not exist: {:?}",
-                        parent
-                    );
+                    tracing::warn!("Socket path parent directory does not exist: {:?}", parent);
                 }
             }
         }

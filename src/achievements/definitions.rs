@@ -967,7 +967,11 @@ mod tests {
     fn test_all_achievements_count() {
         let achievements = all_achievements();
         // We defined 62 achievements total
-        assert!(achievements.len() >= 50, "Expected at least 50 achievements, got {}", achievements.len());
+        assert!(
+            achievements.len() >= 50,
+            "Expected at least 50 achievements, got {}",
+            achievements.len()
+        );
     }
 
     #[test]
@@ -976,7 +980,11 @@ mod tests {
         let mut ids: Vec<_> = achievements.iter().map(|a| a.id).collect();
         ids.sort();
         ids.dedup();
-        assert_eq!(ids.len(), achievements.len(), "All achievement IDs must be unique");
+        assert_eq!(
+            ids.len(),
+            achievements.len(),
+            "All achievement IDs must be unique"
+        );
     }
 
     #[test]
@@ -985,7 +993,11 @@ mod tests {
         let mut names: Vec<_> = achievements.iter().map(|a| &a.name).collect();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), achievements.len(), "All achievement names must be unique");
+        assert_eq!(
+            names.len(),
+            achievements.len(),
+            "All achievement names must be unique"
+        );
     }
 
     #[test]
@@ -1000,7 +1012,9 @@ mod tests {
     fn test_by_category() {
         let distance = achievements_by_category(AchievementCategory::Distance);
         assert!(!distance.is_empty());
-        assert!(distance.iter().all(|a| a.category == AchievementCategory::Distance));
+        assert!(distance
+            .iter()
+            .all(|a| a.category == AchievementCategory::Distance));
     }
 
     #[test]
@@ -1038,7 +1052,11 @@ mod tests {
     fn test_all_categories_represented() {
         for category in AchievementCategory::all() {
             let achievements = achievements_by_category(*category);
-            assert!(!achievements.is_empty(), "Category {:?} should have achievements", category);
+            assert!(
+                !achievements.is_empty(),
+                "Category {:?} should have achievements",
+                category
+            );
         }
     }
 
@@ -1046,7 +1064,11 @@ mod tests {
     fn test_all_tiers_represented() {
         for tier in AchievementTier::all() {
             let achievements = achievements_by_tier(*tier);
-            assert!(!achievements.is_empty(), "Tier {:?} should have achievements", tier);
+            assert!(
+                !achievements.is_empty(),
+                "Tier {:?} should have achievements",
+                tier
+            );
         }
     }
 

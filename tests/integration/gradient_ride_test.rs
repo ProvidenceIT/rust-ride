@@ -3,7 +3,7 @@
 //! T083: Integration test for gradient ride simulation.
 
 use rustride::gradient::{
-    GradientController, GradientResult, GradientSettings, GradientSmoother, GpxRoute, RoutePoint,
+    GpxRoute, GradientController, GradientResult, GradientSettings, GradientSmoother, RoutePoint,
 };
 
 #[test]
@@ -84,9 +84,9 @@ fn test_gpx_route_creation() {
 fn test_gpx_route_get_gradient_at() {
     let points = vec![
         RoutePoint::new(0.0, 100.0),
-        RoutePoint::new(100.0, 105.0),  // 5% grade
-        RoutePoint::new(200.0, 115.0),  // 10% grade
-        RoutePoint::new(300.0, 112.5),  // -2.5% grade
+        RoutePoint::new(100.0, 105.0), // 5% grade
+        RoutePoint::new(200.0, 115.0), // 10% grade
+        RoutePoint::new(300.0, 112.5), // -2.5% grade
     ];
 
     let route = GpxRoute::from_points("test", points).unwrap();
@@ -120,8 +120,8 @@ fn test_gradient_controller_update() {
 
     let points = vec![
         RoutePoint::new(0.0, 100.0),
-        RoutePoint::new(1000.0, 180.0),  // 8% grade
-        RoutePoint::new(2000.0, 230.0),  // 5% grade
+        RoutePoint::new(1000.0, 180.0), // 8% grade
+        RoutePoint::new(2000.0, 230.0), // 5% grade
     ];
 
     let route = GpxRoute::from_points("test", points).unwrap();
@@ -144,11 +144,11 @@ fn test_gradient_simulation_full_ride() {
     // Create a route simulating a short hill climb then descent
     let points = vec![
         RoutePoint::new(0.0, 100.0),
-        RoutePoint::new(500.0, 140.0),    // 8% climb
-        RoutePoint::new(1000.0, 180.0),   // 8% climb
-        RoutePoint::new(1500.0, 200.0),   // 4% climb
-        RoutePoint::new(2000.0, 190.0),   // -2% descent
-        RoutePoint::new(2500.0, 170.0),   // -4% descent
+        RoutePoint::new(500.0, 140.0),  // 8% climb
+        RoutePoint::new(1000.0, 180.0), // 8% climb
+        RoutePoint::new(1500.0, 200.0), // 4% climb
+        RoutePoint::new(2000.0, 190.0), // -2% descent
+        RoutePoint::new(2500.0, 170.0), // -4% descent
     ];
 
     let route = GpxRoute::from_points("test", points).unwrap();

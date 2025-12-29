@@ -5,10 +5,10 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::metrics::analytics::pdc::{MmpCalculator, PdcPoint, PowerDurationCurve};
 use super::profile::{PowerProfile, PowerProfilePoint};
 use super::rolling::RidePowerData;
 use super::types::{ProfileType, PROFILE_DURATIONS};
+use crate::metrics::analytics::pdc::{MmpCalculator, PdcPoint, PowerDurationCurve};
 
 /// Adapter for converting between PDC module types and power profile types.
 pub struct MmpAdapter;
@@ -83,7 +83,11 @@ impl MmpAdapter {
     }
 
     /// Convert PowerDurationCurve to PowerProfile.
-    pub fn pdc_to_profile(pdc: &PowerDurationCurve, user_id: Uuid, profile_type: ProfileType) -> PowerProfile {
+    pub fn pdc_to_profile(
+        pdc: &PowerDurationCurve,
+        user_id: Uuid,
+        profile_type: ProfileType,
+    ) -> PowerProfile {
         let points: Vec<PowerProfilePoint> = pdc
             .points()
             .iter()
@@ -101,9 +105,7 @@ impl MmpAdapter {
     pub fn extract_profile_durations(pdc: &PowerDurationCurve) -> Vec<(u32, u16)> {
         PROFILE_DURATIONS
             .iter()
-            .filter_map(|&duration| {
-                pdc.power_at(duration).map(|power| (duration, power))
-            })
+            .filter_map(|&duration| pdc.power_at(duration).map(|power| (duration, power)))
             .collect()
     }
 }
@@ -138,10 +140,7 @@ impl RideMmpProcessor {
     }
 
     /// Process multiple rides in batch.
-    pub fn process_batch(
-        &self,
-        rides: &[(Uuid, DateTime<Utc>, Vec<u16>)],
-    ) -> Vec<RidePowerData> {
+    pub fn process_batch(&self, rides: &[(Uuid, DateTime<Utc>, Vec<u16>)]) -> Vec<RidePowerData> {
         rides
             .iter()
             .map(|(id, date, samples)| self.process_ride(*id, *date, samples))
@@ -214,9 +213,18 @@ mod tests {
     #[test]
     fn test_pdc_to_profile_conversion() {
         let points = vec![
-            PdcPoint { duration_secs: 5, power_watts: 800 },
-            PdcPoint { duration_secs: 10, power_watts: 700 }, // Not a standard duration
-            PdcPoint { duration_secs: 60, power_watts: 400 },
+            PdcPoint {
+                duration_secs: 5,
+                power_watts: 800,
+            },
+            PdcPoint {
+                duration_secs: 10,
+                power_watts: 700,
+            }, // Not a standard duration
+            PdcPoint {
+                duration_secs: 60,
+                power_watts: 400,
+            },
         ];
         let pdc = PowerDurationCurve::from_points(points);
 
@@ -250,11 +258,26 @@ mod tests {
     #[test]
     fn test_extract_profile_durations() {
         let points = vec![
-            PdcPoint { duration_secs: 1, power_watts: 1000 },  // Not standard
-            PdcPoint { duration_secs: 5, power_watts: 800 },   // Standard
-            PdcPoint { duration_secs: 10, power_watts: 700 },  // Not standard
-            PdcPoint { duration_secs: 60, power_watts: 400 },  // Standard
-            PdcPoint { duration_secs: 300, power_watts: 320 }, // Standard
+            PdcPoint {
+                duration_secs: 1,
+                power_watts: 1000,
+            }, // Not standard
+            PdcPoint {
+                duration_secs: 5,
+                power_watts: 800,
+            }, // Standard
+            PdcPoint {
+                duration_secs: 10,
+                power_watts: 700,
+            }, // Not standard
+            PdcPoint {
+                duration_secs: 60,
+                power_watts: 400,
+            }, // Standard
+            PdcPoint {
+                duration_secs: 300,
+                power_watts: 320,
+            }, // Standard
         ];
         let pdc = PowerDurationCurve::from_points(points);
 

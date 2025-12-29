@@ -5,8 +5,8 @@
 use rustride::career::{
     all_level_rewards, all_rewards, cumulative_xp_to_level, is_milestone_level, level_from_xp,
     level_title, next_milestone, rewards_for_level, rewards_up_to_level, xp_for_level,
-    CareerStatus, CosmeticInventory, CosmeticType, EquippedCosmetics, LevelUpEvent,
-    RewardType, MAX_LEVEL, XP_BASE, XP_GROWTH_RATE,
+    CareerStatus, CosmeticInventory, CosmeticType, EquippedCosmetics, LevelUpEvent, RewardType,
+    MAX_LEVEL, XP_BASE, XP_GROWTH_RATE,
 };
 
 // ============================================================================
@@ -17,7 +17,10 @@ use rustride::career::{
 fn test_xp_curve_constants() {
     // Verify base constants are sensible
     assert!((XP_BASE - 1000.0).abs() < 0.001, "Base XP should be 1000");
-    assert!((XP_GROWTH_RATE - 1.15).abs() < 0.001, "Growth rate should be 1.15");
+    assert!(
+        (XP_GROWTH_RATE - 1.15).abs() < 0.001,
+        "Growth rate should be 1.15"
+    );
     assert_eq!(MAX_LEVEL, 50, "Max level should be 50");
 }
 
@@ -32,8 +35,15 @@ fn test_xp_curve_progression() {
     // Later levels should require more
     let level_10_xp = xp_for_level(10);
     let level_50_xp = xp_for_level(50);
-    assert!(level_10_xp > 3000, "Level 10 should require significant XP, got {}", level_10_xp);
-    assert!(level_50_xp > level_10_xp, "Level 50 should require more than level 10");
+    assert!(
+        level_10_xp > 3000,
+        "Level 10 should require significant XP, got {}",
+        level_10_xp
+    );
+    assert!(
+        level_50_xp > level_10_xp,
+        "Level 50 should require more than level 10"
+    );
 }
 
 #[test]
@@ -73,9 +83,12 @@ fn test_cumulative_xp_round_trip() {
         let calculated_level = level_from_xp(cumulative);
         // At cumulative XP for level N, you're at level N-1
         assert_eq!(
-            calculated_level, level - 1,
+            calculated_level,
+            level - 1,
             "Cumulative XP {} for level {} should give level {}",
-            cumulative, level, level - 1
+            cumulative,
+            level,
+            level - 1
         );
     }
 
@@ -170,13 +183,34 @@ fn test_reward_types_coverage() {
     // Ensure we have at least one of each type
     let types: std::collections::HashSet<_> = rewards.iter().map(|r| r.reward_type).collect();
 
-    assert!(types.contains(&RewardType::JerseyColor), "Should have jersey rewards");
-    assert!(types.contains(&RewardType::BikeFrame), "Should have bike frame rewards");
-    assert!(types.contains(&RewardType::UiTheme), "Should have theme rewards");
-    assert!(types.contains(&RewardType::AccentColor), "Should have accent color rewards");
-    assert!(types.contains(&RewardType::ProfileBadge), "Should have badge rewards");
-    assert!(types.contains(&RewardType::WheelStyle), "Should have wheel style rewards");
-    assert!(types.contains(&RewardType::HelmetStyle), "Should have helmet style rewards");
+    assert!(
+        types.contains(&RewardType::JerseyColor),
+        "Should have jersey rewards"
+    );
+    assert!(
+        types.contains(&RewardType::BikeFrame),
+        "Should have bike frame rewards"
+    );
+    assert!(
+        types.contains(&RewardType::UiTheme),
+        "Should have theme rewards"
+    );
+    assert!(
+        types.contains(&RewardType::AccentColor),
+        "Should have accent color rewards"
+    );
+    assert!(
+        types.contains(&RewardType::ProfileBadge),
+        "Should have badge rewards"
+    );
+    assert!(
+        types.contains(&RewardType::WheelStyle),
+        "Should have wheel style rewards"
+    );
+    assert!(
+        types.contains(&RewardType::HelmetStyle),
+        "Should have helmet style rewards"
+    );
 }
 
 #[test]
@@ -195,7 +229,10 @@ fn test_rewards_for_level() {
 
     // Level 50 (max level) should have multiple rewards
     let level_50_rewards = rewards_for_level(50);
-    assert!(level_50_rewards.len() >= 3, "Level 50 should have many rewards");
+    assert!(
+        level_50_rewards.len() >= 3,
+        "Level 50 should have many rewards"
+    );
 }
 
 #[test]
@@ -204,7 +241,10 @@ fn test_rewards_up_to_level() {
     let level_10_rewards = rewards_up_to_level(10);
     let level_50_rewards = rewards_up_to_level(50);
 
-    assert!(!level_5_rewards.is_empty(), "Should have rewards by level 5");
+    assert!(
+        !level_5_rewards.is_empty(),
+        "Should have rewards by level 5"
+    );
     assert!(
         level_10_rewards.len() > level_5_rewards.len(),
         "Level 10 should have more rewards than level 5"
@@ -216,7 +256,11 @@ fn test_rewards_up_to_level() {
 
     // Level 50 rewards should include all rewards
     let all = all_rewards();
-    assert_eq!(level_50_rewards.len(), all.len(), "Level 50 should have all rewards");
+    assert_eq!(
+        level_50_rewards.len(),
+        all.len(),
+        "Level 50 should have all rewards"
+    );
 }
 
 // ============================================================================
@@ -238,10 +282,16 @@ fn test_career_status_creation() {
 fn test_career_status_with_xp() {
     let status = CareerStatus::new(1, 5000);
 
-    assert!(status.current_level > 1, "Should be above level 1 with 5000 XP");
+    assert!(
+        status.current_level > 1,
+        "Should be above level 1 with 5000 XP"
+    );
     // Progress can be > 1.0 in some edge cases, but should be clamped when displayed
     // Test that progress_bar() method clamps correctly
-    assert!(status.progress_bar() >= 0.0 && status.progress_bar() <= 1.0, "Progress bar should be 0-1");
+    assert!(
+        status.progress_bar() >= 0.0 && status.progress_bar() <= 1.0,
+        "Progress bar should be 0-1"
+    );
 }
 
 #[test]

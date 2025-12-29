@@ -9,7 +9,7 @@ use egui::{Color32, Response, RichText, Ui};
 use egui_plot::{Line, Plot, PlotPoints};
 
 use crate::power_profile::{
-    PowerProfile, ProfileComparer, ReferenceLevel, duration_label, PROFILE_DURATIONS,
+    duration_label, PowerProfile, ProfileComparer, ReferenceLevel, PROFILE_DURATIONS,
 };
 
 /// Configuration for power curve chart display.
@@ -120,15 +120,16 @@ impl<'a> PowerCurveChart<'a> {
         }
 
         // Build plot lines
-        let primary_line = self.build_profile_line(self.profile, "Current", self.config.primary_color);
+        let primary_line =
+            self.build_profile_line(self.profile, "Current", self.config.primary_color);
 
-        let secondary_line = self.secondary.map(|p| {
-            self.build_profile_line(p, "Lifetime", self.config.secondary_color)
-        });
+        let secondary_line = self
+            .secondary
+            .map(|p| self.build_profile_line(p, "Lifetime", self.config.secondary_color));
 
-        let reference_line = self.reference_level.map(|level| {
-            self.build_reference_line(level)
-        });
+        let reference_line = self
+            .reference_level
+            .map(|level| self.build_reference_line(level));
 
         // Configure plot
         let mut plot = Plot::new("power_curve_chart")
@@ -140,9 +141,7 @@ impl<'a> PowerCurveChart<'a> {
             .show_y(true)
             .x_axis_label("Duration")
             .y_axis_label("Power (W)")
-            .label_formatter(|name, value| {
-                self.format_tooltip(name, value.x, value.y)
-            });
+            .label_formatter(|name, value| self.format_tooltip(name, value.x, value.y));
 
         if self.config.log_x {
             plot = plot.x_axis_formatter(|mark, _range| self.format_duration_axis(mark.value));
@@ -166,7 +165,12 @@ impl<'a> PowerCurveChart<'a> {
     }
 
     /// Build a line from a power profile.
-    fn build_profile_line(&self, profile: &PowerProfile, name: &str, color: Color32) -> Line<'static> {
+    fn build_profile_line(
+        &self,
+        profile: &PowerProfile,
+        name: &str,
+        color: Color32,
+    ) -> Line<'static> {
         let coords: Vec<[f64; 2]> = profile
             .points
             .iter()
@@ -204,9 +208,12 @@ impl<'a> PowerCurveChart<'a> {
             })
             .collect();
 
-        Line::new(format!("Ref: {}", level.display_name()), PlotPoints::new(coords))
-            .color(self.config.reference_color)
-            .width(1.5)
+        Line::new(
+            format!("Ref: {}", level.display_name()),
+            PlotPoints::new(coords),
+        )
+        .color(self.config.reference_color)
+        .width(1.5)
     }
 
     /// Format tooltip.
@@ -326,11 +333,14 @@ impl PowerImprovement {
             ui.label(&self.label);
             ui.label(format!("{} → {}", self.previous, self.current));
 
-            let arrow = if diff > 0 { "↑" } else if diff < 0 { "↓" } else { "=" };
-            ui.label(
-                RichText::new(format!("{} {:+}W ({:+.1}%)", arrow, diff, pct))
-                    .color(color),
-            );
+            let arrow = if diff > 0 {
+                "↑"
+            } else if diff < 0 {
+                "↓"
+            } else {
+                "="
+            };
+            ui.label(RichText::new(format!("{} {:+}W ({:+.1}%)", arrow, diff, pct)).color(color));
         });
     }
 }
@@ -338,7 +348,7 @@ impl PowerImprovement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::power_profile::{ProfileType, PowerProfilePoint};
+    use crate::power_profile::{PowerProfilePoint, ProfileType};
     use uuid::Uuid;
 
     fn create_test_profile() -> PowerProfile {
@@ -371,8 +381,7 @@ mod tests {
         let profile = create_test_profile();
         let lifetime = create_test_profile();
 
-        let chart = PowerCurveChart::new(&profile, 70.0)
-            .with_secondary(&lifetime);
+        let chart = PowerCurveChart::new(&profile, 70.0).with_secondary(&lifetime);
 
         assert!(chart.secondary.is_some());
     }
@@ -381,8 +390,7 @@ mod tests {
     fn test_chart_with_reference() {
         let profile = create_test_profile();
 
-        let chart = PowerCurveChart::new(&profile, 70.0)
-            .with_reference(ReferenceLevel::Trained);
+        let chart = PowerCurveChart::new(&profile, 70.0).with_reference(ReferenceLevel::Trained);
 
         assert_eq!(chart.reference_level, Some(ReferenceLevel::Trained));
     }

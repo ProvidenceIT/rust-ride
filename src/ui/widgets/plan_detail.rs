@@ -107,7 +107,11 @@ impl PlanDetailWidget {
                 // Metadata badges
                 ui.horizontal(|ui| {
                     // Discipline
-                    self.show_badge(ui, discipline_emoji(plan.discipline), plan.discipline.display_name());
+                    self.show_badge(
+                        ui,
+                        discipline_emoji(plan.discipline),
+                        plan.discipline.display_name(),
+                    );
 
                     // Difficulty
                     self.show_difficulty_badge(ui, plan.difficulty);
@@ -155,21 +159,15 @@ impl PlanDetailWidget {
                 ui.add_space(8.0);
 
                 // Weekly breakdown
-                ui.label(
-                    RichText::new("Weekly Breakdown")
-                        .strong()
-                        .size(14.0),
-                );
+                ui.label(RichText::new("Weekly Breakdown").strong().size(14.0));
 
                 ui.add_space(8.0);
 
-                ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        for (idx, week) in plan.weeks.iter().enumerate() {
-                            self.show_week_row(ui, week, idx as u8 + 1);
-                        }
-                    });
+                ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    for (idx, week) in plan.weeks.iter().enumerate() {
+                        self.show_week_row(ui, week, idx as u8 + 1);
+                    }
+                });
 
                 ui.add_space(12.0);
 
@@ -177,11 +175,12 @@ impl PlanDetailWidget {
                 if self.config.show_start_button {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
-                            .add(egui::Button::new(
-                                RichText::new("Start Plan")
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            ).fill(Color32::from_rgb(0, 100, 180)))
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("Start Plan").strong().color(Color32::WHITE),
+                                )
+                                .fill(Color32::from_rgb(0, 100, 180)),
+                            )
                             .clicked()
                         {
                             action = Some(PlanDetailAction::StartPlan(plan.id.to_string()));
@@ -243,53 +242,51 @@ impl PlanDetailWidget {
             .inner_margin(8.0)
             .show(ui, |ui| {
                 // Header row (clickable to expand)
-                let response = ui.horizontal(|ui| {
-                    // Week number with phase indicator
-                    egui::Frame::new()
-                        .fill(phase_color)
-                        .corner_radius(4.0)
-                        .inner_margin(egui::vec2(6.0, 2.0))
-                        .show(ui, |ui| {
+                let response = ui
+                    .horizontal(|ui| {
+                        // Week number with phase indicator
+                        egui::Frame::new()
+                            .fill(phase_color)
+                            .corner_radius(4.0)
+                            .inner_margin(egui::vec2(6.0, 2.0))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(format!("Week {}", week_num))
+                                        .color(Color32::WHITE)
+                                        .strong()
+                                        .size(11.0),
+                                );
+                            });
+
+                        ui.add_space(8.0);
+
+                        // Week name
+                        ui.label(RichText::new(&week.title).color(Color32::WHITE).size(12.0));
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            // Expand indicator
                             ui.label(
-                                RichText::new(format!("Week {}", week_num))
-                                    .color(Color32::WHITE)
-                                    .strong()
+                                RichText::new(if is_expanded { "\u{25BC}" } else { "\u{25B6}" })
+                                    .color(Color32::from_gray(150))
+                                    .size(10.0),
+                            );
+
+                            // Workout count
+                            ui.label(
+                                RichText::new(format!("{} workouts", week.workouts.len()))
+                                    .color(Color32::from_gray(150))
                                     .size(11.0),
                             );
+
+                            // Phase name
+                            ui.label(
+                                RichText::new(week.phase.display_name())
+                                    .color(phase_color)
+                                    .size(10.0),
+                            );
                         });
-
-                    ui.add_space(8.0);
-
-                    // Week name
-                    ui.label(
-                        RichText::new(&week.title)
-                            .color(Color32::WHITE)
-                            .size(12.0),
-                    );
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        // Expand indicator
-                        ui.label(
-                            RichText::new(if is_expanded { "\u{25BC}" } else { "\u{25B6}" })
-                                .color(Color32::from_gray(150))
-                                .size(10.0),
-                        );
-
-                        // Workout count
-                        ui.label(
-                            RichText::new(format!("{} workouts", week.workouts.len()))
-                                .color(Color32::from_gray(150))
-                                .size(11.0),
-                        );
-
-                        // Phase name
-                        ui.label(
-                            RichText::new(week.phase.display_name())
-                                .color(phase_color)
-                                .size(10.0),
-                        );
-                    });
-                }).response;
+                    })
+                    .response;
 
                 if response.interact(egui::Sense::click()).clicked() {
                     if is_expanded {
@@ -328,8 +325,7 @@ impl PlanDetailWidget {
 
                             // Workout type icon
                             ui.label(
-                                RichText::new(workout_type_emoji(workout.workout_type))
-                                    .size(12.0),
+                                RichText::new(workout_type_emoji(workout.workout_type)).size(12.0),
                             );
 
                             // Workout name
@@ -392,16 +388,16 @@ fn discipline_emoji(discipline: Discipline) -> &'static str {
 /// Get emoji for workout type.
 fn workout_type_emoji(workout_type: WorkoutType) -> &'static str {
     match workout_type {
-        WorkoutType::Endurance => "\u{1F6B4}",       // Biking
-        WorkoutType::Tempo => "\u{23F1}",            // Stopwatch
-        WorkoutType::Threshold => "\u{1F525}",       // Fire
-        WorkoutType::Vo2Max => "\u{1F4A8}",          // Dash
-        WorkoutType::Sprint => "\u{26A1}",           // Lightning
-        WorkoutType::Recovery => "\u{1F49A}",        // Green heart
-        WorkoutType::Anaerobic => "\u{1F4A5}",       // Collision
+        WorkoutType::Endurance => "\u{1F6B4}",      // Biking
+        WorkoutType::Tempo => "\u{23F1}",           // Stopwatch
+        WorkoutType::Threshold => "\u{1F525}",      // Fire
+        WorkoutType::Vo2Max => "\u{1F4A8}",         // Dash
+        WorkoutType::Sprint => "\u{26A1}",          // Lightning
+        WorkoutType::Recovery => "\u{1F49A}",       // Green heart
+        WorkoutType::Anaerobic => "\u{1F4A5}",      // Collision
         WorkoutType::RaceSimulation => "\u{1F3C1}", // Checkered flag
-        WorkoutType::Test => "\u{1F4CA}",            // Bar chart
-        WorkoutType::Mixed => "\u{1F500}",           // Shuffle
+        WorkoutType::Test => "\u{1F4CA}",           // Bar chart
+        WorkoutType::Mixed => "\u{1F500}",          // Shuffle
     }
 }
 

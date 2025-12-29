@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use egui::{Color32, Pos2, Rect, RichText, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::career::{CareerEventQueue, LevelUpEvent, RewardType, is_milestone_level, level_title};
+use crate::career::{is_milestone_level, level_title, CareerEventQueue, LevelUpEvent, RewardType};
 
 /// Configuration for level up notification display.
 #[derive(Debug, Clone)]
@@ -140,28 +140,39 @@ impl LevelUpNotificationWidget {
         let is_milestone = is_milestone_level(event.new_level);
         let (bg_color, border_color, title_color) = if is_milestone {
             (
-                Color32::from_rgba_unmultiplied(139, 117, 0, 240),   // Gold background
-                Color32::from_rgb(255, 215, 0),                      // Gold border
-                Color32::from_rgb(255, 255, 200),                    // Light gold text
+                Color32::from_rgba_unmultiplied(139, 117, 0, 240), // Gold background
+                Color32::from_rgb(255, 215, 0),                    // Gold border
+                Color32::from_rgb(255, 255, 200),                  // Light gold text
             )
         } else {
             (
-                Color32::from_rgba_unmultiplied(30, 60, 100, 240),   // Blue background
-                Color32::from_rgb(100, 149, 237),                    // Cornflower blue
+                Color32::from_rgba_unmultiplied(30, 60, 100, 240), // Blue background
+                Color32::from_rgb(100, 149, 237),                  // Cornflower blue
                 Color32::WHITE,
             )
         };
 
         // Draw notification panel
         ui.painter().rect_filled(rect, 12.0, bg_color);
-        ui.painter().rect_stroke(rect, 12.0, Stroke::new(3.0, border_color), StrokeKind::Middle);
+        ui.painter().rect_stroke(
+            rect,
+            12.0,
+            Stroke::new(3.0, border_color),
+            StrokeKind::Middle,
+        );
 
         // Draw content if animation is past threshold
         if self.animation_progress > 0.3 {
             let content_rect = rect.shrink(16.0);
             let mut ui_child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
 
-            self.draw_content(&mut ui_child, &event, is_milestone, title_color, border_color);
+            self.draw_content(
+                &mut ui_child,
+                &event,
+                is_milestone,
+                title_color,
+                border_color,
+            );
         }
 
         // Request repaint for animation
@@ -217,11 +228,7 @@ impl LevelUpNotificationWidget {
 
             // Level title
             let title = level_title(event.new_level);
-            ui.label(
-                RichText::new(title)
-                    .color(accent_color)
-                    .size(18.0),
-            );
+            ui.label(RichText::new(title).color(accent_color).size(18.0));
 
             ui.add_space(8.0);
 
@@ -235,11 +242,7 @@ impl LevelUpNotificationWidget {
             // Celebration message
             let msg = event.celebration_message();
             ui.add_space(4.0);
-            ui.label(
-                RichText::new(msg)
-                    .italics()
-                    .color(Color32::from_gray(200)),
-            );
+            ui.label(RichText::new(msg).italics().color(Color32::from_gray(200)));
 
             // Unlocked rewards
             if !event.unlocked_rewards.is_empty() {
@@ -271,13 +274,13 @@ impl LevelUpNotificationWidget {
 /// Get emoji for reward type.
 fn reward_type_emoji(reward_type: RewardType) -> &'static str {
     match reward_type {
-        RewardType::JerseyColor => "\u{1F455}",    // T-shirt
-        RewardType::BikeFrame => "\u{1F6B2}",       // Bicycle
-        RewardType::UiTheme => "\u{1F3A8}",         // Palette
-        RewardType::AccentColor => "\u{1F308}",    // Rainbow
-        RewardType::ProfileBadge => "\u{1F396}",   // Medal
-        RewardType::WheelStyle => "\u{26AA}",       // Circle
-        RewardType::HelmetStyle => "\u{26D1}",     // Helmet
+        RewardType::JerseyColor => "\u{1F455}",  // T-shirt
+        RewardType::BikeFrame => "\u{1F6B2}",    // Bicycle
+        RewardType::UiTheme => "\u{1F3A8}",      // Palette
+        RewardType::AccentColor => "\u{1F308}",  // Rainbow
+        RewardType::ProfileBadge => "\u{1F396}", // Medal
+        RewardType::WheelStyle => "\u{26AA}",    // Circle
+        RewardType::HelmetStyle => "\u{26D1}",   // Helmet
     }
 }
 
@@ -305,10 +308,8 @@ impl LevelProgressBar {
             );
 
             // Progress bar
-            let (rect, _) = ui.allocate_exact_size(
-                Vec2::new(available_width - 80.0, 8.0),
-                egui::Sense::hover(),
-            );
+            let (rect, _) = ui
+                .allocate_exact_size(Vec2::new(available_width - 80.0, 8.0), egui::Sense::hover());
 
             // Background
             ui.painter().rect_filled(rect, 4.0, Color32::from_gray(60));
@@ -316,14 +317,11 @@ impl LevelProgressBar {
             // Fill
             let filled_width = rect.width() * progress;
             let filled_rect = Rect::from_min_size(rect.min, Vec2::new(filled_width, rect.height()));
-            ui.painter().rect_filled(filled_rect, 4.0, Color32::from_rgb(100, 149, 237));
+            ui.painter()
+                .rect_filled(filled_rect, 4.0, Color32::from_rgb(100, 149, 237));
 
             // XP to next
-            ui.label(
-                RichText::new(format!("{} XP", xp_to_next))
-                    .small()
-                    .weak(),
-            );
+            ui.label(RichText::new(format!("{} XP", xp_to_next)).small().weak());
         });
     }
 }
@@ -335,9 +333,15 @@ impl LevelBadge {
     /// Show a mini level badge.
     pub fn show(ui: &mut Ui, level: u32, is_milestone: bool) {
         let (bg_color, text_color) = if is_milestone {
-            (Color32::from_rgb(139, 117, 0), Color32::from_rgb(255, 215, 0))
+            (
+                Color32::from_rgb(139, 117, 0),
+                Color32::from_rgb(255, 215, 0),
+            )
         } else {
-            (Color32::from_rgb(30, 60, 100), Color32::from_rgb(100, 149, 237))
+            (
+                Color32::from_rgb(30, 60, 100),
+                Color32::from_rgb(100, 149, 237),
+            )
         };
 
         egui::Frame::new()

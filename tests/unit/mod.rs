@@ -2,8 +2,8 @@
 
 mod achievements_tests;
 mod ant_profiles_test;
-mod career_tests;
 mod audio_test;
+mod career_tests;
 mod dynamics_test;
 mod elevation_test;
 mod ftms_parser_test;

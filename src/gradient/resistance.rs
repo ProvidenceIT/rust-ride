@@ -32,12 +32,12 @@ pub fn build_simulation_command(grade_percent: f32, crr: f32, cw: f32) -> Vec<u8
 
     vec![
         FTMS_SET_SIMULATION,
-        0x00, // Wind speed low byte (0)
-        0x00, // Wind speed high byte (0)
-        (grade_raw & 0xFF) as u8,         // Grade low byte
-        ((grade_raw >> 8) & 0xFF) as u8,  // Grade high byte
-        crr_raw,                           // Rolling resistance
-        cw_raw,                            // Wind coefficient
+        0x00,                            // Wind speed low byte (0)
+        0x00,                            // Wind speed high byte (0)
+        (grade_raw & 0xFF) as u8,        // Grade low byte
+        ((grade_raw >> 8) & 0xFF) as u8, // Grade high byte
+        crr_raw,                         // Rolling resistance
+        cw_raw,                          // Wind coefficient
     ]
 }
 
@@ -83,11 +83,7 @@ impl ResistanceController {
     ///
     /// Returns `Some(command)` if the gradient has changed enough to warrant
     /// sending a new command, `None` otherwise.
-    pub fn update(
-        &mut self,
-        gradient: f32,
-        settings: &GradientSettings,
-    ) -> Option<Vec<u8>> {
+    pub fn update(&mut self, gradient: f32, settings: &GradientSettings) -> Option<Vec<u8>> {
         let effective = settings.effective_gradient(gradient);
 
         // Check if change is significant enough

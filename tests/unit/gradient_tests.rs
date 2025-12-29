@@ -3,8 +3,8 @@
 //! T031: Unit tests for gradient calculator and related functionality.
 
 use rustride::gradient::{
-    GradientCalculator, GradientController, GradientResult, GradientSettings, GradientSmoother,
-    GpxRoute, RoutePoint, GradientSegment,
+    GpxRoute, GradientCalculator, GradientController, GradientResult, GradientSegment,
+    GradientSettings, GradientSmoother, RoutePoint,
 };
 
 // ========== GradientSettings Tests ==========
@@ -154,9 +154,9 @@ fn test_gradient_segment_length() {
 fn test_gradient_segment_contains() {
     let segment = GradientSegment::new(100.0, 200.0, 5.0);
 
-    assert!(!segment.contains(50.0));  // Before start
-    assert!(segment.contains(100.0));   // At start
-    assert!(segment.contains(150.0));   // In middle
+    assert!(!segment.contains(50.0)); // Before start
+    assert!(segment.contains(100.0)); // At start
+    assert!(segment.contains(150.0)); // In middle
     assert!(!segment.contains(200.0)); // At end (exclusive)
     assert!(!segment.contains(250.0)); // After end
 }
@@ -166,10 +166,10 @@ fn test_gradient_segment_contains() {
 fn create_test_route() -> GpxRoute {
     let points = vec![
         RoutePoint::new(0.0, 100.0),
-        RoutePoint::new(100.0, 110.0),   // 10% grade
-        RoutePoint::new(200.0, 120.0),   // 10% grade
-        RoutePoint::new(300.0, 115.0),   // -5% grade (descent)
-        RoutePoint::new(400.0, 110.0),   // -5% grade
+        RoutePoint::new(100.0, 110.0), // 10% grade
+        RoutePoint::new(200.0, 120.0), // 10% grade
+        RoutePoint::new(300.0, 115.0), // -5% grade (descent)
+        RoutePoint::new(400.0, 110.0), // -5% grade
     ];
     GpxRoute::from_points("Test Route", points).unwrap()
 }
@@ -215,11 +215,19 @@ fn test_gpx_route_get_gradient_at() {
 
     // Should be positive (uphill) at start
     let gradient_50 = route.get_gradient_at(50.0);
-    assert!(gradient_50 > 5.0, "Expected uphill gradient, got {}", gradient_50);
+    assert!(
+        gradient_50 > 5.0,
+        "Expected uphill gradient, got {}",
+        gradient_50
+    );
 
     // Should be negative (downhill) in descent section
     let gradient_350 = route.get_gradient_at(350.0);
-    assert!(gradient_350 < 0.0, "Expected downhill gradient, got {}", gradient_350);
+    assert!(
+        gradient_350 < 0.0,
+        "Expected downhill gradient, got {}",
+        gradient_350
+    );
 }
 
 #[test]
@@ -234,8 +242,11 @@ fn test_gpx_route_get_elevation_at() {
 
     // Interpolated value at midpoint of first segment
     let mid_elevation = route.get_elevation_at(50.0).unwrap();
-    assert!(mid_elevation > 100.0 && mid_elevation < 110.0,
-        "Expected interpolated elevation between 100 and 110, got {}", mid_elevation);
+    assert!(
+        mid_elevation > 100.0 && mid_elevation < 110.0,
+        "Expected interpolated elevation between 100 and 110, got {}",
+        mid_elevation
+    );
 }
 
 #[test]
@@ -473,10 +484,10 @@ fn test_full_gradient_simulation_flow() {
     // Create a route with hills
     let points = vec![
         RoutePoint::new(0.0, 100.0),
-        RoutePoint::new(50.0, 105.0),     // 10% uphill
-        RoutePoint::new(100.0, 115.0),    // 20% uphill
-        RoutePoint::new(150.0, 110.0),    // 10% downhill
-        RoutePoint::new(200.0, 100.0),    // 20% downhill
+        RoutePoint::new(50.0, 105.0),  // 10% uphill
+        RoutePoint::new(100.0, 115.0), // 20% uphill
+        RoutePoint::new(150.0, 110.0), // 10% downhill
+        RoutePoint::new(200.0, 100.0), // 20% downhill
     ];
 
     let route = GpxRoute::from_points("Hill Climb", points).unwrap();
@@ -498,8 +509,16 @@ fn test_full_gradient_simulation_flow() {
     }
 
     // Should have detected both uphill and downhill sections
-    assert!(max_gradient > 5.0, "Should have positive gradients, got {}", max_gradient);
-    assert!(min_gradient < -5.0, "Should have negative gradients, got {}", min_gradient);
+    assert!(
+        max_gradient > 5.0,
+        "Should have positive gradients, got {}",
+        max_gradient
+    );
+    assert!(
+        min_gradient < -5.0,
+        "Should have negative gradients, got {}",
+        min_gradient
+    );
 }
 
 #[test]
@@ -527,9 +546,13 @@ fn test_gradient_with_different_difficulty_levels() {
 
     // The effective gradient at 50% difficulty should be half
     let ratio = result_50.0.effective_gradient / result_100.0.effective_gradient;
-    assert!((ratio - 0.5).abs() < 0.1,
+    assert!(
+        (ratio - 0.5).abs() < 0.1,
         "Expected 50% ratio, got {} (100%: {}, 50%: {})",
-        ratio, result_100.0.effective_gradient, result_50.0.effective_gradient);
+        ratio,
+        result_100.0.effective_gradient,
+        result_50.0.effective_gradient
+    );
 }
 
 #[test]
@@ -551,6 +574,9 @@ fn test_gradient_capping() {
     assert!(result.raw_gradient > 20.0, "Expected high raw gradient");
 
     // Capped should be within limits
-    assert!(result.capped_gradient <= 15.0,
-        "Expected capped gradient <= 15%, got {}", result.capped_gradient);
+    assert!(
+        result.capped_gradient <= 15.0,
+        "Expected capped gradient <= 15%, got {}",
+        result.capped_gradient
+    );
 }

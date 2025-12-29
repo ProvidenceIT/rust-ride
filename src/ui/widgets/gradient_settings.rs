@@ -85,11 +85,7 @@ impl GradientSettingsPanel {
         {
             settings.difficulty = difficulty_pct / 100.0;
         }
-        ui.label(
-            RichText::new("Higher = harder climbs")
-                .weak()
-                .size(11.0),
-        );
+        ui.label(RichText::new("Higher = harder climbs").weak().size(11.0));
 
         ui.add_space(8.0);
 
@@ -151,9 +147,10 @@ impl GradientSettingsPanel {
             || settings.min_gradient != original_settings.min_gradient
             || settings.smoothing_secs != original_settings.smoothing_secs
             || (settings.rolling_resistance - original_settings.rolling_resistance).abs() > 0.00001)
-            && response.action.is_none() {
-                response.action = Some(GradientSettingsAction::SettingsChanged(settings.clone()));
-            }
+            && response.action.is_none()
+        {
+            response.action = Some(GradientSettingsAction::SettingsChanged(settings.clone()));
+        }
 
         response
     }
@@ -204,8 +201,14 @@ mod tests {
         let action2 = GradientSettingsAction::SettingsChanged(settings);
         assert_eq!(action1, action2);
 
-        assert_eq!(GradientSettingsAction::LoadRoute, GradientSettingsAction::LoadRoute);
-        assert_eq!(GradientSettingsAction::ClearRoute, GradientSettingsAction::ClearRoute);
+        assert_eq!(
+            GradientSettingsAction::LoadRoute,
+            GradientSettingsAction::LoadRoute
+        );
+        assert_eq!(
+            GradientSettingsAction::ClearRoute,
+            GradientSettingsAction::ClearRoute
+        );
     }
 
     #[test]

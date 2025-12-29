@@ -36,17 +36,26 @@ async fn execute_start() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
-                        let session_id = result.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let session_id = result
+                            .get("session_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
                         println!("Started free ride session: {}", session_id);
                     }
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -77,11 +86,17 @@ async fn execute_stop() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
-                        let elapsed = result.get("elapsed_seconds").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let elapsed = result
+                            .get("elapsed_seconds")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         let hours = elapsed / 3600;
                         let minutes = (elapsed % 3600) / 60;
                         let seconds = elapsed % 60;
@@ -89,10 +104,13 @@ async fn execute_stop() -> i32 {
                         println!("Duration: {}h {}m {}s", hours, minutes, seconds);
 
                         if let Some(metrics) = result.get("metrics") {
-                            if let Some(distance) = metrics.get("distance_km").and_then(|v| v.as_f64()) {
+                            if let Some(distance) =
+                                metrics.get("distance_km").and_then(|v| v.as_f64())
+                            {
                                 println!("Distance: {:.2} km", distance);
                             }
-                            if let Some(calories) = metrics.get("calories").and_then(|v| v.as_u64()) {
+                            if let Some(calories) = metrics.get("calories").and_then(|v| v.as_u64())
+                            {
                                 println!("Calories: {}", calories);
                             }
                         }
@@ -100,7 +118,10 @@ async fn execute_stop() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {

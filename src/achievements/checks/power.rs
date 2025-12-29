@@ -19,7 +19,11 @@ impl PowerProfileChecker {
     }
 
     /// Check achievements based on power profile updates.
-    pub fn check(&self, result: &RideProcessResult, summary: &PowerProfileUpdateSummary) -> Vec<Achievement> {
+    pub fn check(
+        &self,
+        result: &RideProcessResult,
+        summary: &PowerProfileUpdateSummary,
+    ) -> Vec<Achievement> {
         let mut achievements = Vec::new();
 
         // PR achievements
@@ -28,7 +32,8 @@ impl PowerProfileChecker {
         // Classification achievements
         if result.classification_changed {
             if let Some(ref classification) = result.classification {
-                achievements.extend(self.check_classification_achievements(classification.rider_type));
+                achievements
+                    .extend(self.check_classification_achievements(classification.rider_type));
             }
         }
 
@@ -36,7 +41,11 @@ impl PowerProfileChecker {
     }
 
     /// Check PR-related achievements.
-    fn check_pr_achievements(&self, result: &RideProcessResult, summary: &PowerProfileUpdateSummary) -> Vec<Achievement> {
+    fn check_pr_achievements(
+        &self,
+        result: &RideProcessResult,
+        summary: &PowerProfileUpdateSummary,
+    ) -> Vec<Achievement> {
         let mut achievements = Vec::new();
 
         // First PR
@@ -325,7 +334,8 @@ pub fn climber_badge() -> Achievement {
         id: uuid::Uuid::parse_str("00000001-0000-4000-8000-000000000014").unwrap(),
         name: "power_climber".to_string(),
         title: "Climber".to_string(),
-        description: "Classified as a Climber - excellent power-to-weight for long efforts".to_string(),
+        description: "Classified as a Climber - excellent power-to-weight for long efforts"
+            .to_string(),
         category: AchievementCategory::Power,
         tier: AchievementTier::Diamond,
         xp_value: 200,
@@ -415,7 +425,11 @@ mod tests {
             previous_ftp: None,
             classification_changed: false,
             rider_type_name: None,
-            pr_durations: vec!["5 sec".to_string(), "1 min".to_string(), "5 min".to_string()],
+            pr_durations: vec![
+                "5 sec".to_string(),
+                "1 min".to_string(),
+                "5 min".to_string(),
+            ],
         };
 
         let achievements = checker.check(&result, &summary);

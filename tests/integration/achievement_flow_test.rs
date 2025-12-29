@@ -2,12 +2,11 @@
 //!
 //! T084: Integration test for achievement flow.
 
-use uuid::Uuid;
 use rustride::achievements::{
-    Achievement, AchievementCategory, AchievementTier, AchievementTracker,
-    CumulativeStats, DefaultAchievementTracker, RideMetrics,
-    XpGain, XpSource, XpStatus,
+    Achievement, AchievementCategory, AchievementTier, AchievementTracker, CumulativeStats,
+    DefaultAchievementTracker, RideMetrics, XpGain, XpSource, XpStatus,
 };
+use uuid::Uuid;
 
 #[test]
 fn test_achievement_tracker_creation() {
@@ -141,8 +140,7 @@ fn test_xp_status_max_level_check() {
 fn test_ride_metrics_with_workout() {
     let ride_id = Uuid::new_v4();
     let workout_id = Uuid::new_v4();
-    let metrics = RideMetrics::new(ride_id, 20.0, 3600)
-        .with_workout(workout_id, true);
+    let metrics = RideMetrics::new(ride_id, 20.0, 3600).with_workout(workout_id, true);
 
     assert!(metrics.workout_completed);
     assert!(metrics.workout_id.is_some());
@@ -242,8 +240,7 @@ fn test_full_achievement_flow() {
 #[test]
 fn test_ride_with_race() {
     let ride_id = Uuid::new_v4();
-    let metrics = RideMetrics::new(ride_id, 40.0, 3600)
-        .with_race(5, 20); // 5th place out of 20
+    let metrics = RideMetrics::new(ride_id, 40.0, 3600).with_race(5, 20); // 5th place out of 20
 
     assert!(metrics.is_race);
     assert_eq!(metrics.race_position, Some(5));

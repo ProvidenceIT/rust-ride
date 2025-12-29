@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use super::assignment::{PlanAssignment, PlanProgress, PlanStatus};
-use super::library::{get_plan_by_id, all_plans};
+use super::library::{all_plans, get_plan_by_id};
 use super::plan::TrainingPlan;
 use super::progress::ProgressTracker;
 use super::scheduler::{PlanScheduler, ScheduleConfig};
@@ -142,8 +142,7 @@ impl TrainingPlanManager {
         }
 
         // Find the plan
-        let plan = get_plan_by_id(plan_id)
-            .ok_or(PlanError::PlanNotFound(plan_id))?;
+        let plan = get_plan_by_id(plan_id).ok_or(PlanError::PlanNotFound(plan_id))?;
 
         // Create assignment
         let assignment = PlanAssignment::new(self.user_id, plan_id)
@@ -168,11 +167,17 @@ impl TrainingPlanManager {
         workout_id: Uuid,
         ride_id: Option<Uuid>,
     ) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
         // Find and update the scheduled workout
-        if let Some(workout) = self.scheduled_workouts.iter_mut().find(|w| w.id == workout_id) {
+        if let Some(workout) = self
+            .scheduled_workouts
+            .iter_mut()
+            .find(|w| w.id == workout_id)
+        {
             workout.complete(ride_id);
         }
 
@@ -192,11 +197,17 @@ impl TrainingPlanManager {
         workout_id: Uuid,
         reason: Option<String>,
     ) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
         // Find and update the scheduled workout
-        if let Some(workout) = self.scheduled_workouts.iter_mut().find(|w| w.id == workout_id) {
+        if let Some(workout) = self
+            .scheduled_workouts
+            .iter_mut()
+            .find(|w| w.id == workout_id)
+        {
             workout.skip(reason);
         }
 
@@ -211,11 +222,12 @@ impl TrainingPlanManager {
 
     /// Advance to the next week.
     pub fn advance_week(&mut self, conn: &Connection) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
-        let plan = self.current_plan.as_ref()
-            .ok_or(PlanError::NoActivePlan)?;
+        let plan = self.current_plan.as_ref().ok_or(PlanError::NoActivePlan)?;
 
         if assignment.current_week >= plan.duration_weeks {
             // Plan is complete
@@ -231,11 +243,15 @@ impl TrainingPlanManager {
 
     /// Pause the current plan.
     pub fn pause_plan(&mut self, conn: &Connection) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
         if !assignment.is_active() {
-            return Err(PlanError::InvalidOperation("Plan is not active".to_string()));
+            return Err(PlanError::InvalidOperation(
+                "Plan is not active".to_string(),
+            ));
         }
 
         assignment.pause();
@@ -246,11 +262,15 @@ impl TrainingPlanManager {
 
     /// Resume the current plan.
     pub fn resume_plan(&mut self, conn: &Connection) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
         if !assignment.is_paused() {
-            return Err(PlanError::InvalidOperation("Plan is not paused".to_string()));
+            return Err(PlanError::InvalidOperation(
+                "Plan is not paused".to_string(),
+            ));
         }
 
         assignment.resume();
@@ -261,7 +281,9 @@ impl TrainingPlanManager {
 
     /// Abandon the current plan.
     pub fn abandon_plan(&mut self, conn: &Connection) -> PlanResult<()> {
-        let assignment = self.current_assignment.as_mut()
+        let assignment = self
+            .current_assignment
+            .as_mut()
             .ok_or(PlanError::NoActivePlan)?;
 
         assignment.abandon();
@@ -308,7 +330,9 @@ impl TrainingPlanManager {
             }
 
             let week = plan.get_week(workout.week_number);
-            let phase = week.map(|w| w.phase).unwrap_or(super::plan::TrainingPhase::Base);
+            let phase = week
+                .map(|w| w.phase)
+                .unwrap_or(super::plan::TrainingPhase::Base);
             let week_title = week.map(|w| w.title.as_str()).unwrap_or("Week");
 
             let upcoming = UpcomingWorkout::from_scheduled(
@@ -409,8 +433,8 @@ impl TrainingPlanManagerBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
     use crate::training_plans::{DifficultyLevel, Discipline};
+    use chrono::NaiveDate;
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -426,7 +450,8 @@ mod tests {
                 available_days INTEGER NOT NULL DEFAULT 127
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 
@@ -439,9 +464,7 @@ mod tests {
 
     #[test]
     fn test_builder() {
-        let manager = TrainingPlanManager::builder()
-            .user_id(42)
-            .build();
+        let manager = TrainingPlanManager::builder().user_id(42).build();
 
         assert_eq!(manager.user_id, 42);
     }

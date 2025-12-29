@@ -4,7 +4,7 @@
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 
-use super::plan::{TrainingPlan, TrainingPhase};
+use super::plan::{TrainingPhase, TrainingPlan};
 use super::workout::ScheduledWorkout;
 
 /// Configuration for scheduling a plan.
@@ -278,10 +278,7 @@ pub struct ScheduleAnalysis {
 #[allow(dead_code)]
 impl ScheduleAnalysis {
     /// Create an analysis from scheduled workouts.
-    pub fn from_schedule(
-        workouts: &[ScheduledWorkout],
-        plan: &TrainingPlan,
-    ) -> Self {
+    pub fn from_schedule(workouts: &[ScheduledWorkout], plan: &TrainingPlan) -> Self {
         let total_hours: f32 = workouts
             .iter()
             .map(|w| w.duration_minutes as f32 / 60.0)
@@ -304,8 +301,7 @@ impl ScheduleAnalysis {
         workout_type_distribution.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Find peak weeks (by TSS)
-        let mut week_tss: std::collections::HashMap<u8, f32> =
-            std::collections::HashMap::new();
+        let mut week_tss: std::collections::HashMap<u8, f32> = std::collections::HashMap::new();
         for workout in workouts {
             *week_tss.entry(workout.week_number).or_default() += workout.estimated_tss;
         }
@@ -349,8 +345,8 @@ impl ScheduleAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::training_plans::{DifficultyLevel, Discipline};
     use crate::training_plans::plan::{PlanWeek, PlanWorkout, WorkoutType};
+    use crate::training_plans::{DifficultyLevel, Discipline};
 
     fn create_test_plan() -> TrainingPlan {
         let mut plan = TrainingPlan::new(
@@ -361,18 +357,16 @@ mod tests {
             "Test",
         );
 
-        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base)
-            .with_workouts(vec![
-                PlanWorkout::new(1, "Monday Workout", 60), // Monday
-                PlanWorkout::new(3, "Wednesday Workout", 60), // Wednesday
-                PlanWorkout::new(6, "Saturday Workout", 90), // Saturday
-            ]);
+        let week1 = PlanWeek::new(1, "Week 1", TrainingPhase::Base).with_workouts(vec![
+            PlanWorkout::new(1, "Monday Workout", 60),    // Monday
+            PlanWorkout::new(3, "Wednesday Workout", 60), // Wednesday
+            PlanWorkout::new(6, "Saturday Workout", 90),  // Saturday
+        ]);
 
-        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Build)
-            .with_workouts(vec![
-                PlanWorkout::new(2, "Tuesday Workout", 60), // Tuesday
-                PlanWorkout::new(4, "Thursday Workout", 60), // Thursday
-            ]);
+        let week2 = PlanWeek::new(2, "Week 2", TrainingPhase::Build).with_workouts(vec![
+            PlanWorkout::new(2, "Tuesday Workout", 60),  // Tuesday
+            PlanWorkout::new(4, "Thursday Workout", 60), // Thursday
+        ]);
 
         plan.add_week(week1);
         plan.add_week(week2);
@@ -440,8 +434,7 @@ mod tests {
     #[test]
     fn test_find_nearest_available_day() {
         let start = NaiveDate::from_ymd_opt(2025, 1, 6).unwrap();
-        let config = ScheduleConfig::new(start)
-            .with_available_days(0b0100010); // Tue and Sat only
+        let config = ScheduleConfig::new(start).with_available_days(0b0100010); // Tue and Sat only
 
         let scheduler = PlanScheduler::new(config);
 

@@ -32,7 +32,10 @@ impl PlanStore {
                 Ok(PlanAssignmentRecord {
                     user_id: row.get(0)?,
                     plan_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    started_at: row.get::<_, String>(2)?.parse().unwrap_or_else(|_| Utc::now()),
+                    started_at: row
+                        .get::<_, String>(2)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     current_week: row.get::<_, i64>(3)? as u8,
                     completed_workouts: row.get::<_, i64>(4)? as u32,
                     skipped_workouts: row.get::<_, i64>(5)? as u32,
@@ -70,7 +73,12 @@ impl PlanStore {
                 skipped_workouts = 0,
                 status = 'active',
                 available_days = excluded.available_days",
-            params![user_id, plan_id.to_string(), now.to_rfc3339(), available_days as i64],
+            params![
+                user_id,
+                plan_id.to_string(),
+                now.to_rfc3339(),
+                available_days as i64
+            ],
         )?;
         Ok(())
     }
@@ -176,7 +184,8 @@ mod tests {
                 available_days INTEGER NOT NULL DEFAULT 127
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 

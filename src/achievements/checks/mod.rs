@@ -10,12 +10,12 @@ pub mod power;
 pub mod ride;
 pub mod training;
 
-pub use career::{CareerChecker, CareerSummary, all_career_achievements};
+pub use career::{all_career_achievements, CareerChecker, CareerSummary};
 pub use consistency::ConsistencyChecker;
 pub use cumulative::CumulativeChecker;
-pub use power::{PowerProfileChecker, all_power_achievements};
+pub use power::{all_power_achievements, PowerProfileChecker};
 pub use ride::RideChecker;
-pub use training::{TrainingChecker, TrainingPlanSummary, all_training_achievements};
+pub use training::{all_training_achievements, TrainingChecker, TrainingPlanSummary};
 
 use super::achievement::Achievement;
 use super::earned::RideMetrics;

@@ -2,8 +2,8 @@
 //!
 //! T076: Define cosmetic rewards (jerseys, frames, themes).
 
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use super::rewards::RewardType;
 
@@ -318,7 +318,10 @@ mod tests {
         let mut equipped = EquippedCosmetics::default();
 
         equipped.equip(CosmeticType::Jersey, "test_jersey");
-        assert_eq!(equipped.get(CosmeticType::Jersey), Some(&"test_jersey".to_string()));
+        assert_eq!(
+            equipped.get(CosmeticType::Jersey),
+            Some(&"test_jersey".to_string())
+        );
 
         equipped.unequip(CosmeticType::Jersey);
         assert!(equipped.get(CosmeticType::Jersey).is_none());

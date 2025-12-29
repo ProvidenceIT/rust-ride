@@ -45,7 +45,9 @@ impl Database {
         // T075: Enable WAL mode for crash safety
         // WAL provides better crash recovery and allows concurrent reads during writes
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
-            .map_err(|e| DatabaseError::MigrationFailed(format!("Failed to enable WAL mode: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::MigrationFailed(format!("Failed to enable WAL mode: {}", e))
+            })?;
 
         let db = Self { conn };
         db.initialize()?;

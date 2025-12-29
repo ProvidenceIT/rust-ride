@@ -7,8 +7,8 @@
 use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::career::{
-    CareerManager, CareerStatus, CosmeticType, MilestoneProgress, Reward, RewardType,
-    all_level_rewards, is_milestone_level, level_title, next_milestone,
+    all_level_rewards, is_milestone_level, level_title, next_milestone, CareerManager,
+    CareerStatus, CosmeticType, MilestoneProgress, Reward, RewardType,
 };
 
 /// Career screen state.
@@ -125,7 +125,8 @@ impl CareerScreen {
                 Color32::from_rgb(30, 60, 100)
             };
             ui.painter().circle_filled(center, 38.0, bg_color);
-            ui.painter().circle_stroke(center, 38.0, Stroke::new(3.0, level_color));
+            ui.painter()
+                .circle_stroke(center, 38.0, Stroke::new(3.0, level_color));
 
             // Level number
             ui.painter().text(
@@ -169,12 +170,9 @@ impl CareerScreen {
                 // Stats summary
                 let unlocked_count = status.unlocked_rewards.len();
                 ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(format!("{} rewards", unlocked_count))
-                            .size(14.0),
-                    );
-                    if let Some(milestone_progress) = next_milestone(status.current_level)
-                        .map(|target| {
+                    ui.label(RichText::new(format!("{} rewards", unlocked_count)).size(14.0));
+                    if let Some(milestone_progress) =
+                        next_milestone(status.current_level).map(|target| {
                             let remaining = target.saturating_sub(status.current_level);
                             format!("{} levels to milestone", remaining)
                         })
@@ -207,12 +205,10 @@ impl CareerScreen {
             // Fill
             let filled_width = rect.width() * progress;
             let filled_rect = Rect::from_min_size(rect.min, Vec2::new(filled_width, rect.height()));
-            ui.painter().rect_filled(filled_rect, 6.0, Color32::from_rgb(100, 149, 237));
+            ui.painter()
+                .rect_filled(filled_rect, 6.0, Color32::from_rgb(100, 149, 237));
 
-            ui.label(
-                RichText::new(format!("{} / {}", xp_into, xp_needed))
-                    .size(12.0),
-            );
+            ui.label(RichText::new(format!("{} / {}", xp_into, xp_needed)).size(12.0));
         });
     }
 
@@ -299,8 +295,10 @@ impl CareerScreen {
                 ui.painter().rect_filled(rect, 8.0, Color32::from_gray(50));
 
                 let filled_width = rect.width() * progress.progress;
-                let filled_rect = Rect::from_min_size(rect.min, Vec2::new(filled_width, rect.height()));
-                ui.painter().rect_filled(filled_rect, 8.0, Color32::from_rgb(255, 215, 0));
+                let filled_rect =
+                    Rect::from_min_size(rect.min, Vec2::new(filled_width, rect.height()));
+                ui.painter()
+                    .rect_filled(filled_rect, 8.0, Color32::from_rgb(255, 215, 0));
 
                 ui.add_space(4.0);
                 ui.label(
@@ -318,13 +316,22 @@ impl CareerScreen {
             egui::ComboBox::from_label("Filter")
                 .selected_text(self.reward_filter.label())
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.reward_filter == RewardFilter::All, "All").clicked() {
+                    if ui
+                        .selectable_label(self.reward_filter == RewardFilter::All, "All")
+                        .clicked()
+                    {
                         self.reward_filter = RewardFilter::All;
                     }
-                    if ui.selectable_label(self.reward_filter == RewardFilter::Unlocked, "Unlocked").clicked() {
+                    if ui
+                        .selectable_label(self.reward_filter == RewardFilter::Unlocked, "Unlocked")
+                        .clicked()
+                    {
                         self.reward_filter = RewardFilter::Unlocked;
                     }
-                    if ui.selectable_label(self.reward_filter == RewardFilter::Locked, "Locked").clicked() {
+                    if ui
+                        .selectable_label(self.reward_filter == RewardFilter::Locked, "Locked")
+                        .clicked()
+                    {
                         self.reward_filter = RewardFilter::Locked;
                     }
                     ui.separator();
@@ -337,10 +344,13 @@ impl CareerScreen {
                         RewardType::AccentColor,
                         RewardType::ProfileBadge,
                     ] {
-                        if ui.selectable_label(
-                            self.reward_filter == RewardFilter::Type(reward_type),
-                            reward_type.display_name(),
-                        ).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.reward_filter == RewardFilter::Type(reward_type),
+                                reward_type.display_name(),
+                            )
+                            .clicked()
+                        {
                             self.reward_filter = RewardFilter::Type(reward_type);
                         }
                     }
@@ -417,10 +427,7 @@ impl CareerScreen {
         child_ui.vertical(|ui| {
             // Type icon/label
             let type_text = reward_type_emoji(reward.reward_type);
-            ui.label(
-                RichText::new(type_text)
-                    .size(20.0),
-            );
+            ui.label(RichText::new(type_text).size(20.0));
 
             // Name
             let name_color = if unlocked {
@@ -525,7 +532,10 @@ impl CareerScreen {
 
         egui::Frame::new()
             .fill(bg_color)
-            .stroke(Stroke::new(if is_milestone { 2.0 } else { 0.0 }, border_color))
+            .stroke(Stroke::new(
+                if is_milestone { 2.0 } else { 0.0 },
+                border_color,
+            ))
             .corner_radius(4.0)
             .inner_margin(8.0)
             .show(ui, |ui| {
@@ -542,13 +552,15 @@ impl CareerScreen {
                     };
 
                     // Level badge
-                    let (badge_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
+                    let (badge_rect, _) =
+                        ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
                     let badge_bg = if is_milestone {
                         Color32::from_rgb(139, 117, 0)
                     } else {
                         Color32::from_gray(40)
                     };
-                    ui.painter().circle_filled(badge_rect.center(), 14.0, badge_bg);
+                    ui.painter()
+                        .circle_filled(badge_rect.center(), 14.0, badge_bg);
                     ui.painter().text(
                         badge_rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -562,15 +574,13 @@ impl CareerScreen {
                     // Title and status
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(title)
-                                    .strong()
-                                    .color(if is_completed || is_current {
-                                        Color32::WHITE
-                                    } else {
-                                        Color32::from_gray(150)
-                                    }),
-                            );
+                            ui.label(RichText::new(title).strong().color(
+                                if is_completed || is_current {
+                                    Color32::WHITE
+                                } else {
+                                    Color32::from_gray(150)
+                                },
+                            ));
 
                             if is_current {
                                 ui.label(
@@ -635,13 +645,13 @@ fn format_xp(xp: u64) -> String {
 /// Get emoji for reward type.
 fn reward_type_emoji(reward_type: RewardType) -> &'static str {
     match reward_type {
-        RewardType::JerseyColor => "\u{1F455}",    // T-shirt
-        RewardType::BikeFrame => "\u{1F6B2}",       // Bicycle
-        RewardType::UiTheme => "\u{1F3A8}",         // Palette
-        RewardType::AccentColor => "\u{1F308}",    // Rainbow
-        RewardType::ProfileBadge => "\u{1F396}",   // Medal
-        RewardType::WheelStyle => "\u{26AA}",       // Circle
-        RewardType::HelmetStyle => "\u{26D1}",     // Helmet
+        RewardType::JerseyColor => "\u{1F455}",  // T-shirt
+        RewardType::BikeFrame => "\u{1F6B2}",    // Bicycle
+        RewardType::UiTheme => "\u{1F3A8}",      // Palette
+        RewardType::AccentColor => "\u{1F308}",  // Rainbow
+        RewardType::ProfileBadge => "\u{1F396}", // Medal
+        RewardType::WheelStyle => "\u{26AA}",    // Circle
+        RewardType::HelmetStyle => "\u{26D1}",   // Helmet
     }
 }
 

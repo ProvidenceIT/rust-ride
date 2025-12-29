@@ -72,7 +72,11 @@ impl UpcomingWorkoutsWidget {
     }
 
     /// Show the upcoming workouts widget.
-    pub fn show(&self, ui: &mut Ui, workouts: &UpcomingWorkoutList) -> Option<UpcomingWorkoutsAction> {
+    pub fn show(
+        &self,
+        ui: &mut Ui,
+        workouts: &UpcomingWorkoutList,
+    ) -> Option<UpcomingWorkoutsAction> {
         let mut action = None;
 
         egui::Frame::new()
@@ -103,7 +107,11 @@ impl UpcomingWorkoutsWidget {
                 if workouts.is_empty() {
                     self.show_empty_state(ui);
                 } else {
-                    let items: Vec<_> = workouts.workouts.iter().take(self.config.max_items).collect();
+                    let items: Vec<_> = workouts
+                        .workouts
+                        .iter()
+                        .take(self.config.max_items)
+                        .collect();
                     for workout in items {
                         if let Some(a) = self.show_workout_row(ui, workout) {
                             action = Some(a);
@@ -134,10 +142,7 @@ impl UpcomingWorkoutsWidget {
     fn show_empty_state(&self, ui: &mut Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(12.0);
-            ui.label(
-                RichText::new("\u{1F3C6}")
-                    .size(24.0),
-            );
+            ui.label(RichText::new("\u{1F3C6}").size(24.0));
             ui.add_space(4.0);
             ui.label(
                 RichText::new("No upcoming workouts")
@@ -154,7 +159,11 @@ impl UpcomingWorkoutsWidget {
     }
 
     /// Show a single workout row.
-    fn show_workout_row(&self, ui: &mut Ui, workout: &UpcomingWorkout) -> Option<UpcomingWorkoutsAction> {
+    fn show_workout_row(
+        &self,
+        ui: &mut Ui,
+        workout: &UpcomingWorkout,
+    ) -> Option<UpcomingWorkoutsAction> {
         let mut action = None;
         let is_today = workout.is_today;
         let is_overdue = workout.days_until < 0;
@@ -223,9 +232,12 @@ impl UpcomingWorkoutsWidget {
                             // Duration
                             if workout.workout.duration_minutes > 0 {
                                 ui.label(
-                                    RichText::new(format!("{}min", workout.workout.duration_minutes))
-                                        .color(Color32::from_gray(150))
-                                        .size(if self.config.compact { 10.0 } else { 11.0 }),
+                                    RichText::new(format!(
+                                        "{}min",
+                                        workout.workout.duration_minutes
+                                    ))
+                                    .color(Color32::from_gray(150))
+                                    .size(if self.config.compact { 10.0 } else { 11.0 }),
                                 );
                             }
 
@@ -249,25 +261,27 @@ impl UpcomingWorkoutsWidget {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if self.config.show_start_button
                             && ui
-                                .add(egui::Button::new(
-                                    RichText::new(if is_overdue { "Make Up" } else { "Start" })
-                                        .color(Color32::WHITE)
-                                        .size(11.0),
-                                ).min_size(Vec2::new(50.0, 24.0)))
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(if is_overdue { "Make Up" } else { "Start" })
+                                            .color(Color32::WHITE)
+                                            .size(11.0),
+                                    )
+                                    .min_size(Vec2::new(50.0, 24.0)),
+                                )
                                 .clicked()
-                            {
-                                action = Some(UpcomingWorkoutsAction::StartWorkout(
-                                    workout.workout.id.to_string(),
-                                ));
-                            }
+                        {
+                            action = Some(UpcomingWorkoutsAction::StartWorkout(
+                                workout.workout.id.to_string(),
+                            ));
+                        }
 
                         // Skip button (only for overdue)
-                        if is_overdue
-                            && ui.small_button("Skip").clicked() {
-                                action = Some(UpcomingWorkoutsAction::SkipWorkout(
-                                    workout.workout.id.to_string(),
-                                ));
-                            }
+                        if is_overdue && ui.small_button("Skip").clicked() {
+                            action = Some(UpcomingWorkoutsAction::SkipWorkout(
+                                workout.workout.id.to_string(),
+                            ));
+                        }
                     });
                 });
             });
@@ -295,15 +309,15 @@ impl UpcomingWorkoutsCompact {
     }
 
     /// Show a single-line indicator for header bars.
-    pub fn show_inline(ui: &mut Ui, workouts: &UpcomingWorkoutList) -> Option<UpcomingWorkoutsAction> {
+    pub fn show_inline(
+        ui: &mut Ui,
+        workouts: &UpcomingWorkoutList,
+    ) -> Option<UpcomingWorkoutsAction> {
         let mut action = None;
 
         if let Some(next) = workouts.workouts.first() {
             ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(workout_type_emoji(next.workout.workout_type))
-                        .size(14.0),
-                );
+                ui.label(RichText::new(workout_type_emoji(next.workout.workout_type)).size(14.0));
 
                 let label = if next.is_today {
                     format!("Today: {}", next.workout.workout_name)
@@ -312,14 +326,19 @@ impl UpcomingWorkoutsCompact {
                 };
 
                 if ui
-                    .add(egui::Label::new(
-                        RichText::new(label)
-                            .color(Color32::from_gray(200))
-                            .size(12.0),
-                    ).sense(egui::Sense::click()))
+                    .add(
+                        egui::Label::new(
+                            RichText::new(label)
+                                .color(Color32::from_gray(200))
+                                .size(12.0),
+                        )
+                        .sense(egui::Sense::click()),
+                    )
                     .clicked()
                 {
-                    action = Some(UpcomingWorkoutsAction::ViewWorkout(next.workout.id.to_string()));
+                    action = Some(UpcomingWorkoutsAction::ViewWorkout(
+                        next.workout.id.to_string(),
+                    ));
                 }
             });
         }
@@ -331,16 +350,16 @@ impl UpcomingWorkoutsCompact {
 /// Get emoji for workout type.
 fn workout_type_emoji(workout_type: WorkoutType) -> &'static str {
     match workout_type {
-        WorkoutType::Endurance => "\u{1F6B4}",       // Biking
-        WorkoutType::Tempo => "\u{23F1}",            // Stopwatch
-        WorkoutType::Threshold => "\u{1F525}",       // Fire
-        WorkoutType::Vo2Max => "\u{1F4A8}",          // Dash
-        WorkoutType::Sprint => "\u{26A1}",           // Lightning
-        WorkoutType::Recovery => "\u{1F49A}",        // Green heart
-        WorkoutType::Anaerobic => "\u{1F4A5}",       // Collision
+        WorkoutType::Endurance => "\u{1F6B4}",      // Biking
+        WorkoutType::Tempo => "\u{23F1}",           // Stopwatch
+        WorkoutType::Threshold => "\u{1F525}",      // Fire
+        WorkoutType::Vo2Max => "\u{1F4A8}",         // Dash
+        WorkoutType::Sprint => "\u{26A1}",          // Lightning
+        WorkoutType::Recovery => "\u{1F49A}",       // Green heart
+        WorkoutType::Anaerobic => "\u{1F4A5}",      // Collision
         WorkoutType::RaceSimulation => "\u{1F3C1}", // Checkered flag
-        WorkoutType::Test => "\u{1F4CA}",            // Bar chart
-        WorkoutType::Mixed => "\u{1F500}",           // Shuffle
+        WorkoutType::Test => "\u{1F4CA}",           // Bar chart
+        WorkoutType::Mixed => "\u{1F500}",          // Shuffle
     }
 }
 

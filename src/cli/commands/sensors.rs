@@ -48,12 +48,16 @@ async fn execute_list() -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     if let Some(result) = &response.result {
                         // Connected sensors
-                        if let Some(connected) = result.get("connected").and_then(|v| v.as_array()) {
+                        if let Some(connected) = result.get("connected").and_then(|v| v.as_array())
+                        {
                             println!("Connected Sensors ({}):", connected.len());
                             println!("------------------------");
                             if connected.is_empty() {
@@ -68,7 +72,9 @@ async fn execute_list() -> i32 {
                         println!();
 
                         // Discovered sensors
-                        if let Some(discovered) = result.get("discovered").and_then(|v| v.as_array()) {
+                        if let Some(discovered) =
+                            result.get("discovered").and_then(|v| v.as_array())
+                        {
                             println!("Discovered Sensors ({}):", discovered.len());
                             println!("--------------------------");
                             if discovered.is_empty() {
@@ -83,7 +89,10 @@ async fn execute_list() -> i32 {
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -106,9 +115,18 @@ async fn execute_list() -> i32 {
 /// Helper to print a sensor in human-readable format
 fn print_sensor(sensor: &serde_json::Value) {
     let id = sensor.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-    let name = sensor.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
-    let sensor_type = sensor.get("sensor_type").and_then(|v| v.as_str()).unwrap_or("?");
-    let status = sensor.get("connection_status").and_then(|v| v.as_str()).unwrap_or("?");
+    let name = sensor
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+    let sensor_type = sensor
+        .get("sensor_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+    let status = sensor
+        .get("connection_status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
 
     print!("  {} ({}) - {} [{}]", name, sensor_type, id, status);
 
@@ -141,14 +159,20 @@ async fn execute_connect(sensor_id: String) -> i32 {
             if response.success {
                 if is_json_output() {
                     if let Some(result) = response.result {
-                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_default()
+                        );
                     }
                 } else {
                     println!("Connected to sensor: {}", sensor_id);
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {
@@ -183,13 +207,19 @@ async fn execute_disconnect(sensor_id: String) -> i32 {
         Ok(response) => {
             if response.success {
                 if is_json_output() {
-                    println!(r#"{{"status": "disconnected", "sensor_id": "{}"}}"#, sensor_id);
+                    println!(
+                        r#"{{"status": "disconnected", "sensor_id": "{}"}}"#,
+                        sensor_id
+                    );
                 } else {
                     println!("Disconnected from sensor: {}", sensor_id);
                 }
                 exit_codes::SUCCESS
             } else {
-                let error_msg = response.error.map(|e| e.message).unwrap_or_else(|| "Unknown error".into());
+                let error_msg = response
+                    .error
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Unknown error".into());
                 if is_json_output() {
                     println!(r#"{{"error": "{}"}}"#, error_msg);
                 } else {

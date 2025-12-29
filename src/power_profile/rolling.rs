@@ -105,10 +105,7 @@ impl RollingWindowCalculator {
         let cutoff = self.config.cutoff_date();
 
         // Filter to rides within the window
-        let window_rides: Vec<_> = rides
-            .iter()
-            .filter(|r| r.ride_date >= cutoff)
-            .collect();
+        let window_rides: Vec<_> = rides.iter().filter(|r| r.ride_date >= cutoff).collect();
 
         let mut profile = PowerProfile::new(user_id, ProfileType::Current);
 
@@ -280,7 +277,9 @@ impl RollingWindowUpdater {
         // Find expired points (were in old profile but not in new)
         let mut expired_points = Vec::new();
         for old_point in &old_profile.points {
-            let new_power = self.current_profile.power_at_duration(old_point.duration_secs);
+            let new_power = self
+                .current_profile
+                .power_at_duration(old_point.duration_secs);
             if new_power.is_none() || new_power < Some(old_point.power_watts) {
                 expired_points.push(old_point.duration_secs);
             }
@@ -335,16 +334,17 @@ impl RollingWindowUpdater {
 mod tests {
     use super::*;
 
-    fn create_test_ride(days_ago: i64, power_5s: u16, power_60s: u16, power_1200s: u16) -> RidePowerData {
+    fn create_test_ride(
+        days_ago: i64,
+        power_5s: u16,
+        power_60s: u16,
+        power_1200s: u16,
+    ) -> RidePowerData {
         let ride_date = Utc::now() - Duration::days(days_ago);
         RidePowerData::new(
             Uuid::new_v4(),
             ride_date,
-            vec![
-                (5, power_5s),
-                (60, power_60s),
-                (1200, power_1200s),
-            ],
+            vec![(5, power_5s), (60, power_60s), (1200, power_1200s)],
         )
     }
 
@@ -364,16 +364,16 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         let rides = vec![
-            create_test_ride(10, 800, 400, 250),  // Recent, good power
-            create_test_ride(30, 900, 350, 240),  // Older, best sprint
+            create_test_ride(10, 800, 400, 250),   // Recent, good power
+            create_test_ride(30, 900, 350, 240),   // Older, best sprint
             create_test_ride(100, 1000, 500, 300), // Too old, should be excluded
         ];
 
         let profile = calculator.calculate(user_id, &rides);
 
         // Should have the best from rides within 90 days
-        assert_eq!(profile.power_at_duration(5), Some(900));   // From 30-day-old ride
-        assert_eq!(profile.power_at_duration(60), Some(400));  // From 10-day-old ride
+        assert_eq!(profile.power_at_duration(5), Some(900)); // From 30-day-old ride
+        assert_eq!(profile.power_at_duration(60), Some(400)); // From 10-day-old ride
         assert_eq!(profile.power_at_duration(1200), Some(250)); // From 10-day-old ride
 
         // 100-day-old ride should be excluded

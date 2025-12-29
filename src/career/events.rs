@@ -269,7 +269,13 @@ mod tests {
 
     #[test]
     fn test_celebration_messages() {
-        assert_eq!(LevelUpEvent::new(49, 50, 1000, 500000).celebration_message(), "MAXIMUM LEVEL! You are a LEGEND!");
-        assert_eq!(LevelUpEvent::new(9, 10, 1000, 10000).celebration_message(), "Double digits! You're getting serious!");
+        assert_eq!(
+            LevelUpEvent::new(49, 50, 1000, 500000).celebration_message(),
+            "MAXIMUM LEVEL! You are a LEGEND!"
+        );
+        assert_eq!(
+            LevelUpEvent::new(9, 10, 1000, 10000).celebration_message(),
+            "Double digits! You're getting serious!"
+        );
     }
 }

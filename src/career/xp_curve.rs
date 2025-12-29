@@ -88,7 +88,11 @@ mod tests {
 
         // Level 10: 1000 * 1.15^9 ≈ 3518
         let level_10 = xp_for_level(10);
-        assert!(level_10 > 3000 && level_10 < 4000, "Level 10 XP: {}", level_10);
+        assert!(
+            level_10 > 3000 && level_10 < 4000,
+            "Level 10 XP: {}",
+            level_10
+        );
     }
 
     #[test]
@@ -125,13 +129,21 @@ mod tests {
         // At start of level 2, progress should be near 0
         let xp_at_level_2 = cumulative_xp_to_level(2);
         let progress_at_level_2 = level_progress(xp_at_level_2);
-        assert!(progress_at_level_2 < 0.01, "Progress at level 2 start: {}", progress_at_level_2);
+        assert!(
+            progress_at_level_2 < 0.01,
+            "Progress at level 2 start: {}",
+            progress_at_level_2
+        );
 
         // Halfway through level 2
         let xp_for_level_2 = xp_for_level(2);
         let halfway = xp_at_level_2 + xp_for_level_2 / 2;
         let progress = level_progress(halfway);
-        assert!((progress - 0.5).abs() < 0.1, "Halfway progress: {}", progress);
+        assert!(
+            (progress - 0.5).abs() < 0.1,
+            "Halfway progress: {}",
+            progress
+        );
     }
 
     #[test]

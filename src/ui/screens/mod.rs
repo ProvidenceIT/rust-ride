@@ -24,23 +24,25 @@ pub mod route_import;
 pub mod sensor_setup;
 pub mod settings;
 pub mod streaming;
-pub mod workout_library;
 pub mod training_plans;
+pub mod workout_library;
 pub mod world_select;
 
-pub use achievements::{AchievementFilter, AchievementSort, AchievementsAction, AchievementsScreen};
 pub use crate::recording::types::ExportFormat;
+pub use achievements::{
+    AchievementFilter, AchievementSort, AchievementsAction, AchievementsScreen,
+};
 pub use activity_feed::{ActivityFeedAction, ActivityFeedScreen};
-pub use career::{CareerAction, CareerScreen, CareerTab, RewardFilter};
-pub use power_profile::{PowerProfileAction, PowerProfileScreen, PowerProfileTab};
 pub use analytics::{AnalyticsScreen, AnalyticsTab};
 pub use avatar::AvatarScreen;
+pub use career::{CareerAction, CareerScreen, CareerTab, RewardFilter};
 pub use challenges::{ChallengesAction, ChallengesScreen};
 pub use clubs::{ClubsAction, ClubsScreen};
 pub use group_ride::{GroupRideAction, GroupRideScreen};
 pub use home::HomeScreen;
 pub use leaderboard::{LeaderboardAction, LeaderboardScreen};
 pub use onboarding::{OnboardingProfileData, OnboardingScreen};
+pub use power_profile::{PowerProfileAction, PowerProfileScreen, PowerProfileTab};
 pub use race_lobby::{RaceLobbyAction, RaceLobbyScreen};
 pub use rewards::{RewardsAction, RewardsScreen};
 pub use ride::RideScreen;

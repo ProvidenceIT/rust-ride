@@ -8,7 +8,9 @@ use std::time::Instant;
 
 use egui::{Color32, Pos2, Rect, RichText, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::achievements::{AchievementCategory, AchievementNotification, AchievementTier, NotificationQueue};
+use crate::achievements::{
+    AchievementCategory, AchievementNotification, AchievementTier, NotificationQueue,
+};
 
 /// Configuration for achievement notification display.
 #[derive(Debug, Clone)]
@@ -114,7 +116,12 @@ impl AchievementNotificationWidget {
         let border_color = tier_accent_color(notification.tier);
 
         ui.painter().rect_filled(rect, 8.0, bg_color);
-        ui.painter().rect_stroke(rect, 8.0, Stroke::new(2.0, border_color), StrokeKind::Middle);
+        ui.painter().rect_stroke(
+            rect,
+            8.0,
+            Stroke::new(2.0, border_color),
+            StrokeKind::Middle,
+        );
 
         // Draw content
         let content_rect = rect.shrink(12.0);
@@ -149,7 +156,12 @@ impl AchievementNotificationWidget {
     }
 
     /// Draw notification content.
-    fn draw_content(&self, ui: &mut Ui, notification: &AchievementNotification, queue: &mut NotificationQueue) {
+    fn draw_content(
+        &self,
+        ui: &mut Ui,
+        notification: &AchievementNotification,
+        queue: &mut NotificationQueue,
+    ) {
         ui.vertical(|ui| {
             // Header row: tier badge + category
             ui.horizontal(|ui| {
@@ -167,11 +179,7 @@ impl AchievementNotificationWidget {
 
                 // Category
                 let category_text = category_label(notification.category);
-                ui.label(
-                    RichText::new(category_text)
-                        .weak()
-                        .size(11.0),
-                );
+                ui.label(RichText::new(category_text).weak().size(11.0));
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Dismiss button
@@ -184,18 +192,10 @@ impl AchievementNotificationWidget {
             ui.add_space(4.0);
 
             // Title
-            ui.label(
-                RichText::new(&notification.title)
-                    .strong()
-                    .size(18.0),
-            );
+            ui.label(RichText::new(&notification.title).strong().size(18.0));
 
             // Description
-            ui.label(
-                RichText::new(&notification.description)
-                    .weak()
-                    .size(12.0),
-            );
+            ui.label(RichText::new(&notification.description).weak().size(12.0));
 
             ui.add_space(4.0);
 
@@ -214,10 +214,8 @@ impl AchievementNotificationWidget {
 
                 ui.add_space(8.0);
 
-                let (rect, _) = ui.allocate_exact_size(
-                    Vec2::new(bar_width, 4.0),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::new(bar_width, 4.0), egui::Sense::hover());
 
                 // Background
                 ui.painter().rect_filled(rect, 2.0, Color32::from_gray(60));
@@ -227,7 +225,8 @@ impl AchievementNotificationWidget {
                     rect.min,
                     Vec2::new(rect.width() * remaining, rect.height()),
                 );
-                ui.painter().rect_filled(filled_rect, 2.0, tier_accent_color(notification.tier));
+                ui.painter()
+                    .rect_filled(filled_rect, 2.0, tier_accent_color(notification.tier));
             });
 
             // Queue indicator
@@ -315,7 +314,9 @@ impl AchievementBadge {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tier_label(tier)).color(accent).small());
                     ui.label(RichText::new(title).strong());
-                    ui.label(RichText::new(format!("+{} XP", xp)).color(Color32::from_rgb(255, 215, 0)));
+                    ui.label(
+                        RichText::new(format!("+{} XP", xp)).color(Color32::from_rgb(255, 215, 0)),
+                    );
                 });
             });
     }

@@ -225,8 +225,8 @@ mod tests {
 
     #[test]
     fn test_xp_gain() {
-        let gain = XpGain::new(100, XpSource::Achievement)
-            .with_multiplier(XpMultiplier::FirstRideOfDay);
+        let gain =
+            XpGain::new(100, XpSource::Achievement).with_multiplier(XpMultiplier::FirstRideOfDay);
 
         assert_eq!(gain.base_xp, 100);
         assert_eq!(gain.final_xp, 125);

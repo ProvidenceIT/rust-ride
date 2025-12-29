@@ -44,7 +44,10 @@ impl PowerProfileStore {
                     id: row.get(0)?,
                     user_id: row.get(1)?,
                     profile_type: row.get(2)?,
-                    recorded_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    recorded_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     is_current: row.get::<_, i64>(4)? != 0,
                 })
             },
@@ -58,11 +61,7 @@ impl PowerProfileStore {
     }
 
     /// Create a new profile and mark it as current.
-    pub fn create_profile(
-        conn: &Connection,
-        user_id: i64,
-        profile_type: &str,
-    ) -> Result<i64> {
+    pub fn create_profile(conn: &Connection, user_id: i64, profile_type: &str) -> Result<i64> {
         let now = Utc::now();
 
         // Mark existing current profile as not current
@@ -95,7 +94,10 @@ impl PowerProfileStore {
                     profile_id: row.get(0)?,
                     duration_secs: row.get::<_, i64>(1)? as u32,
                     power_watts: row.get::<_, i64>(2)? as u16,
-                    achieved_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    achieved_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     ride_id: row
                         .get::<_, Option<String>>(4)?
                         .and_then(|s| Uuid::parse_str(&s).ok()),
@@ -153,7 +155,10 @@ impl PowerProfileStore {
                     id: row.get(0)?,
                     user_id: row.get(1)?,
                     profile_type: row.get(2)?,
-                    recorded_at: row.get::<_, String>(3)?.parse().unwrap_or_else(|_| Utc::now()),
+                    recorded_at: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or_else(|_| Utc::now()),
                     is_current: row.get::<_, i64>(4)? != 0,
                 })
             })?
@@ -204,7 +209,8 @@ mod tests {
                 is_current INTEGER NOT NULL DEFAULT 0
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "CREATE TABLE power_profile_points (
                 profile_id INTEGER NOT NULL,
@@ -216,7 +222,8 @@ mod tests {
                 FOREIGN KEY (profile_id) REFERENCES power_profiles(id) ON DELETE CASCADE
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 
