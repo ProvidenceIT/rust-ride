@@ -148,7 +148,7 @@ impl AchievementsScreen {
                 achievements.sort_by(|a, b| b.tier.cmp(&a.tier));
             }
             AchievementSort::XpDesc => {
-                achievements.sort_by(|a, b| b.effective_xp().cmp(&a.effective_xp()));
+                achievements.sort_by_key(|a| std::cmp::Reverse(a.effective_xp()));
             }
             AchievementSort::RecentlyEarned => {
                 // Earned first, then by tier

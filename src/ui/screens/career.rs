@@ -496,6 +496,7 @@ impl CareerScreen {
     }
 
     /// Show a level row in the roadmap.
+    #[allow(clippy::too_many_arguments)]
     fn show_level_row(
         &self,
         ui: &mut Ui,

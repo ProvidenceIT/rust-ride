@@ -5027,6 +5027,7 @@ dependencies = [
  "mdns-sd",
  "noise",
  "oauth2",
+ "once_cell",
  "qrcode",
  "quick-xml 0.31.0",
  "reqwest",

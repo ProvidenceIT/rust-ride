@@ -94,7 +94,7 @@ impl ExponentialSmoother {
     ///
     /// # Arguments
     /// * `alpha` - Smoothing factor (0.0-1.0). Lower values = smoother, slower response.
-    ///            Typical values: 0.1 (very smooth) to 0.5 (responsive)
+    ///   Typical values: 0.1 (very smooth) to 0.5 (responsive)
     pub fn new(alpha: f32) -> Self {
         Self {
             alpha: alpha.clamp(0.01, 1.0),

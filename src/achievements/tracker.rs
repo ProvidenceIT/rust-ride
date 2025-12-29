@@ -290,9 +290,11 @@ impl AchievementTracker for DefaultAchievementTracker {
     }
 
     fn summary(&self) -> AchievementSummary {
-        let mut summary = AchievementSummary::default();
-        summary.total_earned = self.earned.len() as u32;
-        summary.total_xp = self.total_xp;
+        let mut summary = AchievementSummary {
+            total_earned: self.earned.len() as u32,
+            total_xp: self.total_xp,
+            ..Default::default()
+        };
 
         // Count by category and tier
         for earned in self.earned.values() {

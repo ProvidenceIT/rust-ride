@@ -199,9 +199,7 @@ pub async fn run_daemon(config: DaemonConfig) -> anyhow::Result<()> {
 
     // T076: Start auto-save checkpoint task
     let autosave_state = state.clone();
-    let autosave_interval = load_daemon_config()
-        .map(|c| c.autosave_interval_secs)
-        .unwrap_or(30);
+    let autosave_interval = load_daemon_config().autosave_interval_secs;
     let autosave_task = tokio::spawn(async move {
         run_autosave_loop(autosave_state, autosave_interval).await;
     });
@@ -242,8 +240,6 @@ pub async fn run_daemon(config: DaemonConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Re-export directories crate for path resolution
-use directories as dirs;
 
 /// T076: Run the auto-save checkpoint loop.
 ///
@@ -284,17 +280,14 @@ pub fn configure_tracing_from_config() {
     let daemon_config = load_daemon_config();
 
     // Determine log level (from config or default to info)
-    let log_level = daemon_config
-        .as_ref()
-        .map(|c| c.log_level.to_string())
-        .unwrap_or_else(|| "info".to_string());
+    let log_level = daemon_config.log_level.to_string();
 
     // Build the filter, preferring env var RUST_LOG if set
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(&log_level));
 
     // Check if we need to log to a file
-    let log_path = daemon_config.as_ref().and_then(|c| c.log_path.clone());
+    let log_path = daemon_config.log_path.clone();
 
     if let Some(path) = log_path {
         // Ensure log directory exists
@@ -348,13 +341,7 @@ pub async fn auto_connect_preferred_sensors(
     state: Arc<RwLock<DaemonState>>,
 ) {
     // Load daemon config to get preferred sensors
-    let config = match load_daemon_config() {
-        Some(c) => c,
-        None => {
-            info!("No daemon config found, skipping sensor auto-connect");
-            return;
-        }
-    };
+    let config = load_daemon_config();
 
     if config.preferred_sensors.is_empty() {
         info!("No preferred sensors configured");

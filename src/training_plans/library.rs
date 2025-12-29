@@ -2,7 +2,7 @@
 //!
 //! T063: Define initial training plan library (8 plans: 2 per discipline).
 
-use std::sync::LazyLock;
+use once_cell::sync::Lazy;
 use uuid::Uuid;
 
 use super::disciplines::{DifficultyLevel, Discipline};
@@ -59,7 +59,7 @@ impl PlanLibrary {
 }
 
 /// The global plan library.
-static PLAN_LIBRARY: LazyLock<PlanLibrary> = LazyLock::new(|| {
+static PLAN_LIBRARY: Lazy<PlanLibrary> = Lazy::new(|| {
     PlanLibrary {
         plans: vec![
             // Road Racing Plans

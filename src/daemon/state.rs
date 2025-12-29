@@ -255,6 +255,10 @@ pub enum SensorType {
     SpeedSensor,
     /// Combined speed/cadence sensor
     SpeedCadenceSensor,
+    /// Muscle oxygen sensor (SmO2)
+    SmO2,
+    /// Inertial measurement unit (motion tracking)
+    Imu,
 }
 
 /// Sensor connection states
@@ -292,9 +296,11 @@ impl From<BleSensorType> for SensorType {
             BleSensorType::Trainer | BleSensorType::SmartTrainer => SensorType::SmartTrainer,
             BleSensorType::PowerMeter => SensorType::PowerMeter,
             BleSensorType::HeartRate => SensorType::HeartRateMonitor,
-            BleSensorType::Cadence => SensorType::CadenceSensor,
+            BleSensorType::Cadence | BleSensorType::CadenceSensor => SensorType::CadenceSensor,
             BleSensorType::Speed => SensorType::SpeedSensor,
             BleSensorType::SpeedCadence => SensorType::SpeedCadenceSensor,
+            BleSensorType::SmO2 => SensorType::SmO2,
+            BleSensorType::Imu => SensorType::Imu,
         }
     }
 }

@@ -566,7 +566,9 @@ async fn handle_ride_export(
         PathBuf::from(path)
     } else {
         // Default to user's home directory
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        let home = directories::UserDirs::new()
+            .map(|d| d.home_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
         let filename = format!("ride_{}.{}", ride_id, format);
         home.join("RustRide").join("exports").join(filename)
     };

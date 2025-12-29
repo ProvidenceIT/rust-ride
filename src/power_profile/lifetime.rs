@@ -8,6 +8,10 @@ use uuid::Uuid;
 use super::profile::{PowerProfile, PowerProfilePoint};
 use super::types::{ProfileType, PROFILE_DURATIONS};
 
+/// Type alias for ride history data: (ride_id, ride_date, mmp_values).
+/// MMP values are pairs of (duration_secs, power_watts).
+pub type RideHistoryData = (Uuid, DateTime<Utc>, Vec<(u32, u16)>);
+
 /// A lifetime best record at a specific duration.
 #[derive(Debug, Clone)]
 pub struct LifetimeBest {
@@ -224,7 +228,7 @@ impl LifetimeBestTracker {
 /// Processes all rides to build the lifetime best profile.
 pub fn build_lifetime_from_history(
     user_id: Uuid,
-    rides: &[(Uuid, DateTime<Utc>, Vec<(u32, u16)>)],
+    rides: &[RideHistoryData],
 ) -> PowerProfile {
     let mut tracker = LifetimeBestTracker::new(user_id);
 
