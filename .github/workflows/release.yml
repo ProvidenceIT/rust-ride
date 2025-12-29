@@ -119,37 +119,38 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc
 
-      # Code signing is optional - only runs if Azure secrets are configured
-      - name: Azure Login
-        if: env.AZURE_CLIENT_ID != ''
-        uses: azure/login@v2
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        with:
-          creds: |
-            {
-              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
-            }
-
-      - name: Sign with Azure Trusted Signing
-        if: env.AZURE_CLIENT_ID != ''
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        uses: azure/trusted-signing-action@v0.5.0
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: https://weu.codesigning.azure.net/
-          trusted-signing-account-name: providence-it
-          certificate-profile-name: ProvidenceIT
-          files-folder: ${{ github.workspace }}/target/x86_64-pc-windows-msvc/release
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
+      # NOTE: Azure Trusted Signing for Windows binaries is disabled.
+      # To enable code signing, configure the following repository secrets:
+      # - AZURE_CLIENT_ID
+      # - AZURE_CLIENT_SECRET
+      # - AZURE_TENANT_ID
+      # Then uncomment the Azure Login and Sign steps below.
+      #
+      # - name: Azure Login
+      #   uses: azure/login@v2
+      #   with:
+      #     creds: |
+      #       {
+      #         "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+      #         "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+      #         "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+      #       }
+      #     allow-no-subscriptions: true
+      #
+      # - name: Sign with Azure Trusted Signing
+      #   uses: azure/trusted-signing-action@v0.5.0
+      #   with:
+      #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      #     endpoint: https://weu.codesigning.azure.net/
+      #     trusted-signing-account-name: providence-it
+      #     certificate-profile-name: ProvidenceIT
+      #     files-folder: ${{ github.workspace }}/target/x86_64-pc-windows-msvc/release
+      #     files-folder-filter: exe
+      #     file-digest: SHA256
+      #     timestamp-rfc3161: http://timestamp.acs.microsoft.com
+      #     timestamp-digest: SHA256
 
       - name: Prepare release directory
         shell: pwsh
