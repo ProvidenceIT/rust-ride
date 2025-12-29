@@ -99,35 +99,32 @@ async fn execute_list(limit: usize) -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        if let Some(rides) = result.get("rides").and_then(|v| v.as_array()) {
-                            if rides.is_empty() {
-                                println!("No rides recorded yet.");
-                            } else {
-                                println!("Recorded Rides");
-                                println!("==============");
-                                for ride in rides {
-                                    let id = ride.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let date =
-                                        ride.get("date").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let duration = ride
-                                        .get("duration_seconds")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(0);
-                                    let distance = ride
-                                        .get("distance_km")
-                                        .and_then(|v| v.as_f64())
-                                        .unwrap_or(0.0);
+                } else if let Some(result) = &response.result {
+                    if let Some(rides) = result.get("rides").and_then(|v| v.as_array()) {
+                        if rides.is_empty() {
+                            println!("No rides recorded yet.");
+                        } else {
+                            println!("Recorded Rides");
+                            println!("==============");
+                            for ride in rides {
+                                let id = ride.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                                let date = ride.get("date").and_then(|v| v.as_str()).unwrap_or("?");
+                                let duration = ride
+                                    .get("duration_seconds")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let distance = ride
+                                    .get("distance_km")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0);
 
-                                    let hours = duration / 3600;
-                                    let minutes = (duration % 3600) / 60;
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
 
-                                    println!(
-                                        "{} | {} | {}h {}m | {:.1} km",
-                                        id, date, hours, minutes, distance
-                                    );
-                                }
+                                println!(
+                                    "{} | {} | {}h {}m | {:.1} km",
+                                    id, date, hours, minutes, distance
+                                );
                             }
                         }
                     }
@@ -180,11 +177,9 @@ async fn execute_export(ride_id: String, format: ExportFormat, output: Option<Pa
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let path = result.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-                        println!("Exported ride to: {}", path);
-                    }
+                } else if let Some(result) = &response.result {
+                    let path = result.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                    println!("Exported ride to: {}", path);
                 }
                 exit_codes::SUCCESS
             } else {

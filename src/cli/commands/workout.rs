@@ -82,19 +82,17 @@ async fn execute_start(path: PathBuf, wait: bool) -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let name = result
-                            .get("workout_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Unknown");
-                        let session_id = result
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        println!("Started workout: {}", name);
-                        println!("Session ID: {}", session_id);
-                    }
+                } else if let Some(result) = &response.result {
+                    let name = result
+                        .get("workout_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let session_id = result
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    println!("Started workout: {}", name);
+                    println!("Session ID: {}", session_id);
                 }
 
                 // T049/T050: Wait for workout completion if --wait flag is set
@@ -255,18 +253,16 @@ async fn execute_skip() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let index = result
-                            .get("current_interval_index")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let total = result
-                            .get("total_intervals")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        println!("Skipped to interval {} of {}", index + 1, total);
-                    }
+                } else if let Some(result) = &response.result {
+                    let index = result
+                        .get("current_interval_index")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let total = result
+                        .get("total_intervals")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    println!("Skipped to interval {} of {}", index + 1, total);
                 }
                 exit_codes::SUCCESS
             } else {
@@ -308,18 +304,16 @@ async fn execute_stop() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let elapsed = result
-                            .get("elapsed_seconds")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let hours = elapsed / 3600;
-                        let minutes = (elapsed % 3600) / 60;
-                        let seconds = elapsed % 60;
-                        println!("Workout stopped");
-                        println!("Duration: {}h {}m {}s", hours, minutes, seconds);
-                    }
+                } else if let Some(result) = &response.result {
+                    let elapsed = result
+                        .get("elapsed_seconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let hours = elapsed / 3600;
+                    let minutes = (elapsed % 3600) / 60;
+                    let seconds = elapsed % 60;
+                    println!("Workout stopped");
+                    println!("Duration: {}h {}m {}s", hours, minutes, seconds);
                 }
                 exit_codes::SUCCESS
             } else {
@@ -361,76 +355,68 @@ async fn execute_status() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        println!("Live Status");
-                        println!("===========");
+                } else if let Some(result) = &response.result {
+                    println!("Live Status");
+                    println!("===========");
 
-                        let session_type = result
-                            .get("session_type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        println!("Session: {}", session_type);
+                    let session_type = result
+                        .get("session_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    println!("Session: {}", session_type);
 
-                        let elapsed = result
-                            .get("elapsed_seconds")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let hours = elapsed / 3600;
-                        let minutes = (elapsed % 3600) / 60;
-                        let seconds = elapsed % 60;
-                        println!("Elapsed: {}h {}m {}s", hours, minutes, seconds);
+                    let elapsed = result
+                        .get("elapsed_seconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let hours = elapsed / 3600;
+                    let minutes = (elapsed % 3600) / 60;
+                    let seconds = elapsed % 60;
+                    println!("Elapsed: {}h {}m {}s", hours, minutes, seconds);
 
-                        let is_paused = result
-                            .get("is_paused")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if is_paused {
-                            println!("Status: PAUSED");
-                        } else {
-                            println!("Status: RUNNING");
+                    let is_paused = result
+                        .get("is_paused")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if is_paused {
+                        println!("Status: PAUSED");
+                    } else {
+                        println!("Status: RUNNING");
+                    }
+
+                    if let Some(metrics) = result.get("metrics") {
+                        println!("\nMetrics:");
+                        if let Some(power) = metrics.get("power_watts").and_then(|v| v.as_u64()) {
+                            println!("  Power: {}W", power);
                         }
-
-                        if let Some(metrics) = result.get("metrics") {
-                            println!("\nMetrics:");
-                            if let Some(power) = metrics.get("power_watts").and_then(|v| v.as_u64())
-                            {
-                                println!("  Power: {}W", power);
-                            }
-                            if let Some(hr) = metrics.get("heart_rate_bpm").and_then(|v| v.as_u64())
-                            {
-                                println!("  Heart Rate: {} bpm", hr);
-                            }
-                            if let Some(cadence) =
-                                metrics.get("cadence_rpm").and_then(|v| v.as_u64())
-                            {
-                                println!("  Cadence: {} rpm", cadence);
-                            }
-                            if let Some(speed) = metrics.get("speed_kmh").and_then(|v| v.as_f64()) {
-                                println!("  Speed: {:.1} km/h", speed);
-                            }
+                        if let Some(hr) = metrics.get("heart_rate_bpm").and_then(|v| v.as_u64()) {
+                            println!("  Heart Rate: {} bpm", hr);
                         }
+                        if let Some(cadence) = metrics.get("cadence_rpm").and_then(|v| v.as_u64()) {
+                            println!("  Cadence: {} rpm", cadence);
+                        }
+                        if let Some(speed) = metrics.get("speed_kmh").and_then(|v| v.as_f64()) {
+                            println!("  Speed: {:.1} km/h", speed);
+                        }
+                    }
 
-                        if let Some(workout_info) = result.get("workout_info") {
-                            if !workout_info.is_null() {
-                                println!("\nWorkout:");
-                                if let Some(name) =
-                                    workout_info.get("name").and_then(|v| v.as_str())
-                                {
-                                    println!("  Name: {}", name);
-                                }
-                                if let Some(interval_name) = workout_info
-                                    .get("current_interval_name")
-                                    .and_then(|v| v.as_str())
-                                {
-                                    println!("  Current Interval: {}", interval_name);
-                                }
-                                if let Some(target) = workout_info
-                                    .get("target_power_watts")
-                                    .and_then(|v| v.as_u64())
-                                {
-                                    println!("  Target Power: {}W", target);
-                                }
+                    if let Some(workout_info) = result.get("workout_info") {
+                        if !workout_info.is_null() {
+                            println!("\nWorkout:");
+                            if let Some(name) = workout_info.get("name").and_then(|v| v.as_str()) {
+                                println!("  Name: {}", name);
+                            }
+                            if let Some(interval_name) = workout_info
+                                .get("current_interval_name")
+                                .and_then(|v| v.as_str())
+                            {
+                                println!("  Current Interval: {}", interval_name);
+                            }
+                            if let Some(target) = workout_info
+                                .get("target_power_watts")
+                                .and_then(|v| v.as_u64())
+                            {
+                                println!("  Target Power: {}W", target);
                             }
                         }
                     }

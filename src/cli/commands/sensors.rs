@@ -53,36 +53,31 @@ async fn execute_list() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        // Connected sensors
-                        if let Some(connected) = result.get("connected").and_then(|v| v.as_array())
-                        {
-                            println!("Connected Sensors ({}):", connected.len());
-                            println!("------------------------");
-                            if connected.is_empty() {
-                                println!("  (none)");
-                            } else {
-                                for sensor in connected {
-                                    print_sensor(sensor);
-                                }
+                } else if let Some(result) = &response.result {
+                    // Connected sensors
+                    if let Some(connected) = result.get("connected").and_then(|v| v.as_array()) {
+                        println!("Connected Sensors ({}):", connected.len());
+                        println!("------------------------");
+                        if connected.is_empty() {
+                            println!("  (none)");
+                        } else {
+                            for sensor in connected {
+                                print_sensor(sensor);
                             }
                         }
+                    }
 
-                        println!();
+                    println!();
 
-                        // Discovered sensors
-                        if let Some(discovered) =
-                            result.get("discovered").and_then(|v| v.as_array())
-                        {
-                            println!("Discovered Sensors ({}):", discovered.len());
-                            println!("--------------------------");
-                            if discovered.is_empty() {
-                                println!("  (none - try scanning first)");
-                            } else {
-                                for sensor in discovered {
-                                    print_sensor(sensor);
-                                }
+                    // Discovered sensors
+                    if let Some(discovered) = result.get("discovered").and_then(|v| v.as_array()) {
+                        println!("Discovered Sensors ({}):", discovered.len());
+                        println!("--------------------------");
+                        if discovered.is_empty() {
+                            println!("  (none - try scanning first)");
+                        } else {
+                            for sensor in discovered {
+                                print_sensor(sensor);
                             }
                         }
                     }

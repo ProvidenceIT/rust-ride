@@ -41,14 +41,12 @@ async fn execute_start() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let session_id = result
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        println!("Started free ride session: {}", session_id);
-                    }
+                } else if let Some(result) = &response.result {
+                    let session_id = result
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    println!("Started free ride session: {}", session_id);
                 }
                 exit_codes::SUCCESS
             } else {
@@ -91,28 +89,24 @@ async fn execute_stop() -> i32 {
                             serde_json::to_string_pretty(&result).unwrap_or_default()
                         );
                     }
-                } else {
-                    if let Some(result) = &response.result {
-                        let elapsed = result
-                            .get("elapsed_seconds")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let hours = elapsed / 3600;
-                        let minutes = (elapsed % 3600) / 60;
-                        let seconds = elapsed % 60;
-                        println!("Ride stopped");
-                        println!("Duration: {}h {}m {}s", hours, minutes, seconds);
+                } else if let Some(result) = &response.result {
+                    let elapsed = result
+                        .get("elapsed_seconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let hours = elapsed / 3600;
+                    let minutes = (elapsed % 3600) / 60;
+                    let seconds = elapsed % 60;
+                    println!("Ride stopped");
+                    println!("Duration: {}h {}m {}s", hours, minutes, seconds);
 
-                        if let Some(metrics) = result.get("metrics") {
-                            if let Some(distance) =
-                                metrics.get("distance_km").and_then(|v| v.as_f64())
-                            {
-                                println!("Distance: {:.2} km", distance);
-                            }
-                            if let Some(calories) = metrics.get("calories").and_then(|v| v.as_u64())
-                            {
-                                println!("Calories: {}", calories);
-                            }
+                    if let Some(metrics) = result.get("metrics") {
+                        if let Some(distance) = metrics.get("distance_km").and_then(|v| v.as_f64())
+                        {
+                            println!("Distance: {:.2} km", distance);
+                        }
+                        if let Some(calories) = metrics.get("calories").and_then(|v| v.as_u64()) {
+                            println!("Calories: {}", calories);
                         }
                     }
                 }

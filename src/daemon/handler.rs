@@ -625,9 +625,6 @@ async fn handle_rides_list(
     )
 }
 
-// Re-export directories crate for path resolution
-use directories as dirs;
-
 // =============================================================================
 // T057: SensorsList command handler
 // =============================================================================

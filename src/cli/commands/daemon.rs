@@ -8,7 +8,7 @@ use std::process::Command;
 
 use crate::cli::client::{is_daemon_running, send_command};
 use crate::cli::{exit_codes, is_json_output};
-use crate::daemon::{default_pid_path, default_socket_path, stop_daemon, DaemonConfig};
+use crate::daemon::{default_socket_path, stop_daemon, DaemonConfig};
 use crate::ipc::messages::IpcRequest;
 
 /// Daemon control subcommands
