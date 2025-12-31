@@ -42,6 +42,7 @@ use rustride::workouts::WorkoutEngine;
 use rustride::world::physics::GradientController;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
 
 /// Crash recovery dialog state.
@@ -75,8 +76,10 @@ pub struct RustRideApp {
     profile: UserProfile,
     /// Application configuration
     _config: AppConfig,
-    /// Sensor manager
-    _sensor_manager: SensorManager,
+    /// Sensor manager (wrapped for async access)
+    sensor_manager: Arc<TokioMutex<SensorManager>>,
+    /// Tokio runtime for async operations
+    tokio_runtime: Arc<tokio::runtime::Runtime>,
     /// Workout engine
     _workout_engine: WorkoutEngine,
     /// Ride recorder
@@ -172,9 +175,40 @@ impl RustRideApp {
         // Note: Using default egui fonts for now
         // Custom fonts can be configured later if needed
 
-        // Create managers
+        // Create tokio runtime for async operations (BLE, ANT+, etc.)
+        let tokio_runtime = Arc::new(
+            tokio::runtime::Runtime::new()
+                .expect("Failed to create tokio runtime for async operations"),
+        );
+
+        // Create and initialize sensor manager
         let mut sensor_manager = SensorManager::with_defaults();
         let sensor_event_rx = Some(sensor_manager.event_receiver());
+
+        // Initialize BLE adapter asynchronously
+        let rt = tokio_runtime.clone();
+        let init_result = rt.block_on(async { sensor_manager.initialize().await });
+
+        if let Err(e) = init_result {
+            tracing::error!(
+                "Failed to initialize BLE adapter: {}. Bluetooth sensors will not be available.",
+                e
+            );
+            tracing::info!("Please check that Bluetooth is enabled on your system and that the application has permission to access it.");
+        } else {
+            tracing::info!("BLE adapter initialized successfully");
+
+            // Try to initialize ANT+ support (optional)
+            if let Err(e) = rt.block_on(async { sensor_manager.initialize_ant().await }) {
+                tracing::warn!(
+                    "Failed to initialize ANT+ support: {}. ANT+ sensors will not be available.",
+                    e
+                );
+            }
+        }
+
+        let sensor_manager = Arc::new(TokioMutex::new(sensor_manager));
+
         let workout_engine = WorkoutEngine::new();
         let ride_recorder = RideRecorder::with_defaults();
         let metrics_calculator = MetricsCalculator::new(profile.ftp);
@@ -258,7 +292,8 @@ impl RustRideApp {
             theme,
             profile,
             _config: config,
-            _sensor_manager: sensor_manager,
+            sensor_manager,
+            tokio_runtime,
             _workout_engine: workout_engine,
             _ride_recorder: ride_recorder,
             metrics_calculator,
@@ -296,6 +331,72 @@ impl RustRideApp {
             cumulative_stats: CumulativeStats::default(),
             user_id,
         }
+    }
+
+    /// Start sensor discovery (BLE and ANT+).
+    fn start_sensor_discovery(&mut self) {
+        let sensor_manager = self.sensor_manager.clone();
+        let rt = self.tokio_runtime.clone();
+
+        rt.spawn(async move {
+            let mut sm = sensor_manager.lock().await;
+            if let Err(e) = sm.start_discovery().await {
+                tracing::error!("Failed to start sensor discovery: {}", e);
+            } else {
+                tracing::info!("Sensor discovery started");
+            }
+        });
+
+        self.sensor_setup_screen.set_scanning(true);
+    }
+
+    /// Stop sensor discovery.
+    fn stop_sensor_discovery(&mut self) {
+        let sensor_manager = self.sensor_manager.clone();
+        let rt = self.tokio_runtime.clone();
+
+        rt.spawn(async move {
+            let mut sm = sensor_manager.lock().await;
+            if let Err(e) = sm.stop_discovery().await {
+                tracing::error!("Failed to stop sensor discovery: {}", e);
+            } else {
+                tracing::info!("Sensor discovery stopped");
+            }
+        });
+
+        self.sensor_setup_screen.set_scanning(false);
+    }
+
+    /// Connect to a sensor by device ID.
+    #[allow(dead_code)]
+    fn connect_to_sensor(&mut self, device_id: String) {
+        let sensor_manager = self.sensor_manager.clone();
+        let rt = self.tokio_runtime.clone();
+
+        rt.spawn(async move {
+            let mut sm = sensor_manager.lock().await;
+            if let Err(e) = sm.connect(&device_id).await {
+                tracing::error!("Failed to connect to sensor {}: {}", device_id, e);
+            } else {
+                tracing::info!("Connected to sensor: {}", device_id);
+            }
+        });
+    }
+
+    /// Disconnect from a sensor by device ID.
+    #[allow(dead_code)]
+    fn disconnect_from_sensor(&mut self, device_id: String) {
+        let sensor_manager = self.sensor_manager.clone();
+        let rt = self.tokio_runtime.clone();
+
+        rt.spawn(async move {
+            let mut sm = sensor_manager.lock().await;
+            if let Err(e) = sm.disconnect(&device_id).await {
+                tracing::error!("Failed to disconnect from sensor {}: {}", device_id, e);
+            } else {
+                tracing::info!("Disconnected from sensor: {}", device_id);
+            }
+        });
     }
 
     /// Process pending sensor events from the channel.
@@ -834,7 +935,24 @@ impl eframe::App for RustRideApp {
                     }
                 }
                 Screen::SensorSetup => {
-                    if let Some(next) = self.sensor_setup_screen.show(ui) {
+                    // Store previous scanning state to detect changes
+                    let was_scanning = self.sensor_setup_screen.is_scanning;
+
+                    // Show the sensor setup screen and handle navigation
+                    let should_navigate = self.sensor_setup_screen.show(ui);
+
+                    // Check if scanning state changed via UI
+                    let is_scanning_now = self.sensor_setup_screen.is_scanning;
+                    if !was_scanning && is_scanning_now {
+                        // User clicked "Start Scanning"
+                        self.start_sensor_discovery();
+                    } else if was_scanning && !is_scanning_now {
+                        // User clicked "Stop Scanning"
+                        self.stop_sensor_discovery();
+                    }
+
+                    // Handle navigation after processing scanning state
+                    if let Some(next) = should_navigate {
                         self.navigate(next);
                     }
                 }
