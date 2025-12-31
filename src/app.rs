@@ -187,19 +187,23 @@ impl RustRideApp {
 
         // Initialize BLE adapter asynchronously
         let rt = tokio_runtime.clone();
-        let init_result = rt.block_on(async {
-            sensor_manager.initialize().await
-        });
+        let init_result = rt.block_on(async { sensor_manager.initialize().await });
 
         if let Err(e) = init_result {
-            tracing::error!("Failed to initialize BLE adapter: {}. Bluetooth sensors will not be available.", e);
+            tracing::error!(
+                "Failed to initialize BLE adapter: {}. Bluetooth sensors will not be available.",
+                e
+            );
             tracing::info!("Please check that Bluetooth is enabled on your system and that the application has permission to access it.");
         } else {
             tracing::info!("BLE adapter initialized successfully");
 
             // Try to initialize ANT+ support (optional)
             if let Err(e) = rt.block_on(async { sensor_manager.initialize_ant().await }) {
-                tracing::warn!("Failed to initialize ANT+ support: {}. ANT+ sensors will not be available.", e);
+                tracing::warn!(
+                    "Failed to initialize ANT+ support: {}. ANT+ sensors will not be available.",
+                    e
+                );
             }
         }
 
@@ -364,6 +368,7 @@ impl RustRideApp {
     }
 
     /// Connect to a sensor by device ID.
+    #[allow(dead_code)]
     fn connect_to_sensor(&mut self, device_id: String) {
         let sensor_manager = self.sensor_manager.clone();
         let rt = self.tokio_runtime.clone();
@@ -379,6 +384,7 @@ impl RustRideApp {
     }
 
     /// Disconnect from a sensor by device ID.
+    #[allow(dead_code)]
     fn disconnect_from_sensor(&mut self, device_id: String) {
         let sensor_manager = self.sensor_manager.clone();
         let rt = self.tokio_runtime.clone();
@@ -932,10 +938,8 @@ impl eframe::App for RustRideApp {
                     // Store previous scanning state to detect changes
                     let was_scanning = self.sensor_setup_screen.is_scanning;
 
-                    // Show the sensor setup screen
-                    if let Some(next) = self.sensor_setup_screen.show(ui) {
-                        self.navigate(next);
-                    }
+                    // Show the sensor setup screen and handle navigation
+                    let should_navigate = self.sensor_setup_screen.show(ui);
 
                     // Check if scanning state changed via UI
                     let is_scanning_now = self.sensor_setup_screen.is_scanning;
@@ -945,6 +949,11 @@ impl eframe::App for RustRideApp {
                     } else if was_scanning && !is_scanning_now {
                         // User clicked "Stop Scanning"
                         self.stop_sensor_discovery();
+                    }
+
+                    // Handle navigation after processing scanning state
+                    if let Some(next) = should_navigate {
+                        self.navigate(next);
                     }
                 }
                 Screen::WorkoutLibrary => {
