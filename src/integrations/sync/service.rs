@@ -99,6 +99,13 @@ pub enum SyncEvent {
         retry_count: i32,
         will_retry: bool,
     },
+    /// Manual retry queued for a failed upload
+    UploadRetryQueued {
+        record_id: Uuid,
+        ride_id: Uuid,
+        platform: SyncPlatform,
+        retry_count: i32,
+    },
     /// Connectivity changed
     ConnectivityChanged {
         is_online: bool,
@@ -1522,13 +1529,28 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         Ok(record)
     }
 
-    /// Handle retry upload request
+    /// Handle retry upload request.
+    ///
+    /// Allows manual retry of a failed upload. This resets the upload status to pending
+    /// and clears the next_retry delay so it will be processed immediately.
+    /// The retry_count is incremented to track manual retries.
     async fn handle_retry_upload(&mut self, record_id: Uuid) -> Result<SyncRecord, SyncError> {
-        // Find the record
-        let record = self
-            .sync_records
-            .get_mut(&record_id)
-            .ok_or_else(|| SyncError::ApiError("Record not found".to_string()))?;
+        // First, try to find the record in memory
+        let record_opt = self.sync_records.get(&record_id).cloned();
+
+        let record = if let Some(record) = record_opt {
+            record
+        } else {
+            // Try to load from database if not in memory
+            if let Some(entry) = self.load_queue_entry_from_db(&record_id) {
+                // Add to in-memory structures
+                self.sync_records.insert(record_id, entry.record.clone());
+                self.upload_queue.push(entry.clone());
+                entry.record
+            } else {
+                return Err(SyncError::ApiError("Record not found".to_string()));
+            }
+        };
 
         // Check if it can be retried
         if record.status != SyncRecordStatus::Failed {
@@ -1537,26 +1559,92 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             ));
         }
 
-        // Reset status
-        record.status = SyncRecordStatus::Pending;
-        record.error_message = None;
-        record.retry_count += 1;
-
-        // Find and update in queue or re-add
-        let queue_entry = self
-            .upload_queue
-            .iter_mut()
-            .find(|e| e.record.id == record_id);
-
-        if let Some(entry) = queue_entry {
-            entry.record.status = SyncRecordStatus::Pending;
-            entry.record.retry_count = record.retry_count;
-            entry.next_retry = None;
+        // Check if max retries exceeded - for manual retry we allow one more attempt
+        // but warn if we've exceeded the automatic retry limit
+        let current_retry_count = record.retry_count as i32;
+        if current_retry_count >= MAX_UPLOAD_RETRIES * 2 {
+            // Even manual retries have a limit (double the automatic limit)
+            return Err(SyncError::ApiError(format!(
+                "Maximum retry attempts ({}) exceeded. Upload permanently failed.",
+                MAX_UPLOAD_RETRIES * 2
+            )));
         }
 
-        tracing::info!("Queued retry for upload {}", record_id);
+        // Update the in-memory record
+        if let Some(mem_record) = self.sync_records.get_mut(&record_id) {
+            mem_record.status = SyncRecordStatus::Pending;
+            mem_record.error_message = None;
+            mem_record.retry_count += 1;
+        }
 
-        Ok(record.clone())
+        // Find and update in queue
+        if let Some(entry) = self.upload_queue.iter_mut().find(|e| e.record.id == record_id) {
+            entry.record.status = SyncRecordStatus::Pending;
+            entry.record.error_message = None;
+            entry.record.retry_count += 1;
+            entry.next_retry = None; // Clear retry delay for immediate processing
+        }
+
+        // Persist retry reset to database
+        self.persist_retry_reset(record_id);
+
+        let updated_record = self.sync_records.get(&record_id).cloned().unwrap_or(record);
+
+        tracing::info!(
+            "Manual retry queued for upload {} (attempt {})",
+            record_id,
+            updated_record.retry_count
+        );
+
+        // Emit event for retry
+        self.emit_event(SyncEvent::UploadRetryQueued {
+            record_id,
+            ride_id: updated_record.ride_id,
+            platform: updated_record.platform,
+            retry_count: updated_record.retry_count as i32,
+        });
+
+        // Trigger immediate queue processing if online
+        if self.is_online {
+            if let Err(e) = self.sender.try_send(SyncMessage::ProcessQueue) {
+                tracing::debug!("Failed to trigger immediate queue processing for retry: {:?}", e);
+            }
+        }
+
+        Ok(updated_record)
+    }
+
+    /// Load a queue entry from the database by record ID.
+    fn load_queue_entry_from_db(&self, record_id: &Uuid) -> Option<UploadQueueEntry> {
+        let db_path = self.db_path.as_ref()?;
+
+        let db = Database::open(db_path).ok()?;
+        let store = SyncStore::new(db.connection());
+        let stored = store.get_queue_entry(record_id).ok()??;
+
+        self.stored_entry_to_queue_entry(&stored)
+    }
+
+    /// Persist a retry reset to the database.
+    fn persist_retry_reset(&self, record_id: Uuid) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+
+            // First reset the status
+            if let Err(e) = store.reset_for_retry(&record_id) {
+                tracing::warn!("Failed to reset entry for retry in database: {}", e);
+            }
+
+            // Then increment the retry count
+            if let Err(e) = store.increment_retry_count(&record_id) {
+                tracing::warn!("Failed to increment retry count in database: {}", e);
+            }
+        }
     }
 
     /// Handle cancel upload request
@@ -1824,5 +1912,85 @@ mod tests {
             }
             _ => panic!("Clone produced different variant"),
         }
+    }
+
+    // ========== Retry Functionality Tests ==========
+
+    #[test]
+    fn test_upload_retry_constants() {
+        // Verify retry constants are reasonable
+        assert!(MAX_UPLOAD_RETRIES >= 1);
+        assert!(MAX_UPLOAD_RETRIES <= 10);
+
+        assert!(BASE_RETRY_DELAY_SECS > 0);
+        assert!(BASE_RETRY_DELAY_SECS <= 120); // At most 2 minutes base delay
+    }
+
+    #[test]
+    fn test_exponential_backoff_formula() {
+        // Test the exponential backoff formula used in process_single_upload
+        let base = BASE_RETRY_DELAY_SECS;
+
+        // Verify formula produces expected delays
+        for retry in 0..MAX_UPLOAD_RETRIES {
+            let backoff = base * (2_i64.pow(retry as u32));
+            // Backoff should be reasonable (not overflow and stay under 1 hour)
+            assert!(backoff > 0);
+            assert!(backoff <= 3600, "Backoff {} at retry {} exceeds 1 hour", backoff, retry);
+        }
+    }
+
+    #[test]
+    fn test_upload_retry_queued_event_debug() {
+        let event = SyncEvent::UploadRetryQueued {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::Strava,
+            retry_count: 3,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadRetryQueued"));
+        assert!(debug_str.contains("Strava"));
+        assert!(debug_str.contains("retry_count: 3"));
+    }
+
+    #[test]
+    fn test_upload_failed_event_with_retry_info() {
+        let event = SyncEvent::UploadFailed {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::Strava,
+            error: "Network timeout".to_string(),
+            retry_count: 2,
+            will_retry: true,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadFailed"));
+        assert!(debug_str.contains("will_retry: true"));
+        assert!(debug_str.contains("retry_count: 2"));
+    }
+
+    #[tokio::test]
+    async fn test_retry_upload_not_found() {
+        let oauth_handler = DefaultOAuthHandler::new(8895);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        // Try to retry a non-existent upload
+        let result = handle.retry_upload(Uuid::new_v4()).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Record not found"));
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn test_manual_retry_limit() {
+        // Manual retries are allowed up to 2x the automatic limit
+        let max_manual_retries = MAX_UPLOAD_RETRIES * 2;
+        assert!(max_manual_retries >= 10);
+        assert!(max_manual_retries <= 20);
     }
 }

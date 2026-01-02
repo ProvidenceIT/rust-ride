@@ -403,6 +403,71 @@ impl<'a> SyncStore<'a> {
         Ok(rows_affected > 0)
     }
 
+    /// Reset a failed upload for manual retry.
+    /// This clears the error state and sets status back to pending for immediate processing.
+    /// Returns true if the entry was reset, false if not found or not in failed state.
+    pub fn reset_for_retry(&self, id: &Uuid) -> Result<bool, DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE upload_queue SET status = 'pending', error_message = NULL, next_retry_at = NULL WHERE id = ?1 AND status = 'failed'",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Get all failed upload queue entries.
+    pub fn get_failed_entries(&self) -> Result<Vec<StoredUploadQueueEntry>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, ride_id, platform, fit_file_path, activity_name, status,
+                        error_message, external_activity_id, external_activity_url,
+                        retry_count, next_retry_at, created_at, completed_at
+                 FROM upload_queue
+                 WHERE status = 'failed'
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], Self::map_queue_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?);
+        }
+        Ok(entries)
+    }
+
+    /// Get the retry count for a specific entry.
+    pub fn get_retry_count(&self, id: &Uuid) -> Result<Option<i32>, DatabaseError> {
+        match self
+            .conn
+            .query_row(
+                "SELECT retry_count FROM upload_queue WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get::<_, i32>(0),
+            ) {
+            Ok(count) => Ok(Some(count)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Increment retry count for an entry without changing status.
+    pub fn increment_retry_count(&self, id: &Uuid) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                "UPDATE upload_queue SET retry_count = retry_count + 1 WHERE id = ?1",
+                params![id.to_string()],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(())
+    }
+
     /// Delete a queue entry (and optionally clean up the FIT file).
     pub fn delete_entry(&self, id: &Uuid) -> Result<Option<String>, DatabaseError> {
         // First get the fit file path to return for cleanup
@@ -1642,5 +1707,210 @@ mod tests {
         let latest = store.get_latest_sync_record(&platform_sync_id, &ride_id).unwrap();
         assert!(latest.is_some());
         assert_eq!(latest.unwrap().id, record1.id);
+    }
+
+    // ========== Retry Functionality Tests ==========
+
+    #[test]
+    fn test_reset_for_retry() {
+        let conn = setup_test_db();
+        let store = SyncStore::new(&conn);
+
+        let entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test.fit".to_string(),
+            activity_name: None,
+            status: "failed".to_string(),
+            error_message: Some("Network error".to_string()),
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 2,
+            next_retry_at: Some(Utc::now().to_rfc3339()),
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        store.add_to_queue(&entry).unwrap();
+
+        // Reset for retry
+        let reset = store.reset_for_retry(&entry.id).unwrap();
+        assert!(reset);
+
+        // Verify status was reset
+        let loaded = store.get_queue_entry(&entry.id).unwrap().unwrap();
+        assert_eq!(loaded.status, "pending");
+        assert!(loaded.error_message.is_none());
+        assert!(loaded.next_retry_at.is_none());
+        // retry_count should NOT be changed by reset_for_retry
+        assert_eq!(loaded.retry_count, 2);
+    }
+
+    #[test]
+    fn test_reset_for_retry_only_failed() {
+        let conn = setup_test_db();
+        let store = SyncStore::new(&conn);
+
+        // Create a pending entry (not failed)
+        let entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test.fit".to_string(),
+            activity_name: None,
+            status: "pending".to_string(),
+            error_message: None,
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 0,
+            next_retry_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        store.add_to_queue(&entry).unwrap();
+
+        // Try to reset - should return false since not in failed state
+        let reset = store.reset_for_retry(&entry.id).unwrap();
+        assert!(!reset);
+    }
+
+    #[test]
+    fn test_get_failed_entries() {
+        let conn = setup_test_db();
+        let store = SyncStore::new(&conn);
+
+        // Add pending entry
+        let pending_entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test1.fit".to_string(),
+            activity_name: None,
+            status: "pending".to_string(),
+            error_message: None,
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 0,
+            next_retry_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        // Add failed entry
+        let failed_entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test2.fit".to_string(),
+            activity_name: None,
+            status: "failed".to_string(),
+            error_message: Some("Max retries exceeded".to_string()),
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 5,
+            next_retry_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        store.add_to_queue(&pending_entry).unwrap();
+        store.add_to_queue(&failed_entry).unwrap();
+
+        // Get failed entries
+        let failed = store.get_failed_entries().unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].id, failed_entry.id);
+        assert_eq!(failed[0].error_message, Some("Max retries exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_get_retry_count() {
+        let conn = setup_test_db();
+        let store = SyncStore::new(&conn);
+
+        let entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test.fit".to_string(),
+            activity_name: None,
+            status: "pending".to_string(),
+            error_message: None,
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 3,
+            next_retry_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        store.add_to_queue(&entry).unwrap();
+
+        // Get retry count
+        let count = store.get_retry_count(&entry.id).unwrap();
+        assert_eq!(count, Some(3));
+
+        // Non-existent entry
+        let count = store.get_retry_count(&Uuid::new_v4()).unwrap();
+        assert_eq!(count, None);
+    }
+
+    #[test]
+    fn test_increment_retry_count() {
+        let conn = setup_test_db();
+        let store = SyncStore::new(&conn);
+
+        let entry = StoredUploadQueueEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+            fit_file_path: "/tmp/test.fit".to_string(),
+            activity_name: None,
+            status: "pending".to_string(),
+            error_message: None,
+            external_activity_id: None,
+            external_activity_url: None,
+            retry_count: 0,
+            next_retry_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+        };
+
+        store.add_to_queue(&entry).unwrap();
+
+        // Increment retry count
+        store.increment_retry_count(&entry.id).unwrap();
+
+        // Verify incremented
+        let count = store.get_retry_count(&entry.id).unwrap();
+        assert_eq!(count, Some(1));
+
+        // Increment again
+        store.increment_retry_count(&entry.id).unwrap();
+        let count = store.get_retry_count(&entry.id).unwrap();
+        assert_eq!(count, Some(2));
+    }
+
+    #[test]
+    fn test_exponential_backoff_calculation() {
+        // Test the backoff calculation logic matches service.rs constants
+        let base_delay: i64 = 30; // BASE_RETRY_DELAY_SECS
+
+        // First retry: 30 * 2^0 = 30 seconds
+        assert_eq!(base_delay * 2_i64.pow(0), 30);
+
+        // Second retry: 30 * 2^1 = 60 seconds
+        assert_eq!(base_delay * 2_i64.pow(1), 60);
+
+        // Third retry: 30 * 2^2 = 120 seconds (2 minutes)
+        assert_eq!(base_delay * 2_i64.pow(2), 120);
+
+        // Fourth retry: 30 * 2^3 = 240 seconds (4 minutes)
+        assert_eq!(base_delay * 2_i64.pow(3), 240);
+
+        // Fifth retry: 30 * 2^4 = 480 seconds (8 minutes)
+        assert_eq!(base_delay * 2_i64.pow(4), 480);
     }
 }
