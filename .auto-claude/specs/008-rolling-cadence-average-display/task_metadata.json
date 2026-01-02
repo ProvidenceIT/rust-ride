@@ -1,0 +1,13 @@
+{
+  "sourceType": "ideation",
+  "ideationType": "code_improvements",
+  "ideaId": "ci-005",
+  "rationale": "The smoothing.rs module has a well-tested RollingAverage struct with three_second() and thirty_second() factory methods used for power smoothing. MetricsCalculator applies this to power but shows raw cadence. The same pattern can smooth cadence display for better user experience.",
+  "category": "feature",
+  "estimatedEffort": "trivial",
+  "complexity": "trivial",
+  "affectedFiles": [
+    "src/metrics/calculator.rs",
+    "src/metrics/smoothing.rs"
+  ]
+}

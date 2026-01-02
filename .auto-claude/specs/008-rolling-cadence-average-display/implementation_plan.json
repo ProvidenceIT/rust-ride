@@ -1,0 +1,200 @@
+{
+  "feature": "Rolling Cadence Average Display",
+  "description": "Add 3-second and 10-second rolling cadence averages to the metrics display, matching the existing power averaging functionality for smoother, more readable cadence values.",
+  "created_at": "2026-01-02T22:52:59.811Z",
+  "updated_at": "2026-01-02T23:00:00.000Z",
+  "status": "in_progress",
+  "planStatus": "planned",
+  "spec_file": "spec.md",
+  "workflow_type": "development",
+  "services_involved": ["metrics", "ui"],
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Extend RollingAverage with 10-second factory method",
+      "description": "Add a ten_second() factory method to RollingAverage to support the 10-second cadence smoothing window",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Add ten_second() factory method to RollingAverage",
+          "file": "src/metrics/smoothing.rs",
+          "description": "Add a new factory method `ten_second()` that creates a RollingAverage with window_size=10, matching the pattern of three_second() and thirty_second()",
+          "status": "pending",
+          "tests": ["test_rolling_average_10s"],
+          "notes": "Simple addition following existing pattern"
+        },
+        {
+          "id": "1.2",
+          "title": "Add test for 10-second rolling average",
+          "file": "src/metrics/smoothing.rs",
+          "description": "Add unit test for ten_second() rolling average to verify correct window size and averaging behavior",
+          "status": "pending",
+          "tests": ["test_rolling_average_10s"],
+          "notes": "Follow pattern of test_rolling_average_3s"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Add cadence fields to AggregatedMetrics",
+      "description": "Extend AggregatedMetrics struct with 3-second and 10-second cadence average fields",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Add cadence_3s_avg and cadence_10s_avg to AggregatedMetrics",
+          "file": "src/metrics/calculator.rs",
+          "description": "Add `cadence_3s_avg: Option<u8>` and `cadence_10s_avg: Option<u8>` fields to AggregatedMetrics struct",
+          "status": "pending",
+          "tests": [],
+          "notes": "Matches existing power averaging field pattern; cadence uses u8 (0-255 rpm is sufficient)"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Extend MetricsCalculator with cadence smoothing",
+      "description": "Add RollingAverage instances for cadence and wire them into the process() method",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Add cadence RollingAverage fields to MetricsCalculator",
+          "file": "src/metrics/calculator.rs",
+          "description": "Add `cadence_3s: RollingAverage` and `cadence_10s: RollingAverage` fields to MetricsCalculator struct, initialized in new() and reset()",
+          "status": "pending",
+          "tests": [],
+          "notes": "RollingAverage uses u16 internally; cadence (u8) will need conversion"
+        },
+        {
+          "id": "3.2",
+          "title": "Process cadence through rolling averages",
+          "file": "src/metrics/calculator.rs",
+          "description": "Update process() method to calculate cadence_3s_avg and cadence_10s_avg when cadence is available, converting between u8 and u16 as needed",
+          "status": "pending",
+          "tests": ["test_cadence_smoothing"],
+          "notes": "Mirror the power processing pattern on lines 146-172"
+        },
+        {
+          "id": "3.3",
+          "title": "Add cadence smoothing tests to calculator",
+          "file": "src/metrics/calculator.rs",
+          "description": "Add unit tests verifying that cadence rolling averages are calculated correctly when processing sensor readings with cadence data",
+          "status": "pending",
+          "tests": ["test_cadence_smoothing"],
+          "notes": "Follow pattern of test_metrics_calculator_basic"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Add UI metric types for cadence averages",
+      "description": "Extend MetricType enum and add display support for smoothed cadence values",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Add Cadence3s and Cadence10s to MetricType enum",
+          "file": "src/storage/config.rs",
+          "description": "Add `Cadence3s` and `Cadence10s` variants to the MetricType enum with proper Display impl",
+          "status": "pending",
+          "tests": [],
+          "notes": "Follows pattern of Power3s; add variants near Cadence"
+        },
+        {
+          "id": "4.2",
+          "title": "Add cadence_3s and cadence_10s helper methods to MetricDisplay",
+          "file": "src/ui/widgets/metric_display.rs",
+          "description": "Add `cadence_3s(rpm: Option<u8>)` and `cadence_10s(rpm: Option<u8>)` helper methods following the pattern of cadence()",
+          "status": "pending",
+          "tests": [],
+          "notes": "Simple constructors with appropriate labels like '3s Cad' and '10s Cad'"
+        },
+        {
+          "id": "4.3",
+          "title": "Add Cadence3s and Cadence10s cases to render_metric",
+          "file": "src/ui/screens/ride.rs",
+          "description": "Handle MetricType::Cadence3s and MetricType::Cadence10s in the render_metric() method of RideScreen",
+          "status": "pending",
+          "tests": [],
+          "notes": "Mirror Power3s handling pattern"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Update default display to show smoothed cadence",
+      "description": "Update the main ride screen to display a smoothed cadence value by default (3s avg) for better user experience",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Update render_main_metrics to use smoothed cadence",
+          "file": "src/ui/screens/ride.rs",
+          "description": "Change the main cadence display (line 508) to use cadence_3s_avg with fallback to raw cadence for smoother display",
+          "status": "pending",
+          "tests": [],
+          "notes": "User sees smoothed value but raw is still available via MetricType::Cadence"
+        },
+        {
+          "id": "5.2",
+          "title": "Update render_full_screen_mode to use smoothed cadence",
+          "file": "src/ui/screens/ride.rs",
+          "description": "Update full-screen mode cadence display (lines 926-937) to use cadence_3s_avg with fallback to raw",
+          "status": "pending",
+          "tests": [],
+          "notes": "Consistent with normal mode behavior"
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Integration verification",
+      "description": "Verify the feature works correctly end-to-end",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Run cargo check and clippy",
+          "file": null,
+          "description": "Ensure no compilation errors or warnings",
+          "status": "pending",
+          "tests": [],
+          "notes": "cargo check && cargo clippy"
+        },
+        {
+          "id": "6.2",
+          "title": "Run all tests",
+          "file": null,
+          "description": "Run cargo test to ensure all existing and new tests pass",
+          "status": "pending",
+          "tests": [],
+          "notes": "cargo test --lib"
+        }
+      ]
+    }
+  ],
+  "files_to_modify": [
+    "src/metrics/smoothing.rs",
+    "src/metrics/calculator.rs",
+    "src/storage/config.rs",
+    "src/ui/widgets/metric_display.rs",
+    "src/ui/screens/ride.rs"
+  ],
+  "files_to_create": [],
+  "dependencies": [],
+  "estimated_complexity": "low",
+  "final_acceptance": [
+    "Cadence display shows 3-second smoothed values by default",
+    "10-second cadence average is available as a configurable metric",
+    "Rolling averages calculate correctly based on incoming cadence samples",
+    "All existing tests continue to pass",
+    "No new clippy warnings"
+  ],
+  "qa_status": {
+    "signed_off": false,
+    "issues": [],
+    "tests_passed": []
+  }
+}

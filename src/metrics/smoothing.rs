@@ -36,6 +36,11 @@ impl RollingAverage {
         Self::new(30)
     }
 
+    /// Create a 10-second rolling average (for cadence smoothing).
+    pub fn ten_second() -> Self {
+        Self::new(10)
+    }
+
     /// Add a new value and return the current average.
     pub fn add(&mut self, value: u16) -> Option<u16> {
         // Add new value
