@@ -290,6 +290,17 @@ impl Default for ImmersionSettings {
     }
 }
 
+/// Settings for testing voice preview.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestVoiceSettings {
+    /// The voice ID to use (None = system default)
+    pub voice_id: Option<String>,
+    /// Volume level (0.0-1.0)
+    pub volume: f32,
+    /// Speech rate (0.5-2.0, 1.0 is normal)
+    pub rate: f32,
+}
+
 /// Actions that can result from the settings screen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
@@ -299,6 +310,8 @@ pub enum SettingsAction {
     Save,
     /// Cancel changes and go back
     Cancel,
+    /// Test/preview the current voice settings
+    TestVoice(TestVoiceSettings),
 }
 
 impl SettingsScreen {
@@ -1374,6 +1387,20 @@ impl SettingsScreen {
                     // Show hint if no voices available
                     if self.available_voices.is_empty() {
                         ui.label(RichText::new("(Loading voices...)").weak().italics());
+                    }
+
+                    // Test/Preview button
+                    ui.add_space(8.0);
+                    if ui
+                        .button("🔊 Test")
+                        .on_hover_text("Preview how the selected voice sounds")
+                        .clicked()
+                    {
+                        action = SettingsAction::TestVoice(TestVoiceSettings {
+                            voice_id: self.audio_alert_settings.preferred_voice.clone(),
+                            volume: self.audio_alert_settings.voice_volume,
+                            rate: self.audio_alert_settings.speech_rate,
+                        });
                     }
                 });
 

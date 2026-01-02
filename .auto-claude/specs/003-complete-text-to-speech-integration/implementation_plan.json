@@ -161,10 +161,10 @@
           "title": "Add voice preview button",
           "description": "Add a 'Test' or 'Preview' button next to the voice selection that speaks a sample phrase ('This is how your voice alerts will sound') so users can preview voices before selecting.",
           "file_paths": ["src/ui/screens/settings.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["4.1"],
-          "notes": "Should use the currently selected voice settings."
+          "notes": "COMPLETED: Added voice preview button to Voice Alerts section. Changes: 1) Added TestVoiceSettings struct with voice_id, volume, and rate fields, 2) Added TestVoice(TestVoiceSettings) variant to SettingsAction enum, 3) Added '🔊 Test' button next to voice selection dropdown that triggers TTS preview, 4) Updated app.rs to handle TestVoice action - sets voice/volume/rate and speaks 'This is how your voice alerts will sound.' The button allows users to preview voices before selecting."
         },
         {
           "subtask_id": "4.3",

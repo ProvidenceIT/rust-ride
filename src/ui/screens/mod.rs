@@ -53,7 +53,7 @@ pub use rider_profile::{RiderProfileAction, RiderProfileScreen};
 pub use route_browser::{RouteBrowserAction, RouteBrowserScreen, RouteSortOrder};
 pub use route_import::{RouteImportAction, RouteImportScreen};
 pub use sensor_setup::SensorSetupScreen;
-pub use settings::{SettingsAction, SettingsScreen};
+pub use settings::{SettingsAction, SettingsScreen, TestVoiceSettings};
 pub use streaming::{StreamingAction, StreamingScreen};
 pub use training_plans::{PlanSortOrder, TrainingPlansAction, TrainingPlansScreen};
 pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};

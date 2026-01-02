@@ -84,7 +84,7 @@ pub struct RustRideApp {
     /// Metrics calculator
     metrics_calculator: MetricsCalculator,
     /// Audio engine for voice alerts and sound effects (Hardware Integration)
-    _audio_engine: Arc<DefaultAudioEngine>,
+    audio_engine: Arc<DefaultAudioEngine>,
     /// Sensor setup screen state
     sensor_setup_screen: SensorSetupScreen,
     /// Ride screen state
@@ -262,7 +262,7 @@ impl RustRideApp {
             _workout_engine: workout_engine,
             _ride_recorder: ride_recorder,
             metrics_calculator,
-            _audio_engine: audio_engine,
+            audio_engine,
             sensor_setup_screen: SensorSetupScreen::new(),
             ride_screen: RideScreen::new(),
             world_select_screen: WorldSelectScreen::new(),
@@ -925,6 +925,25 @@ impl eframe::App for RustRideApp {
                             // Reset settings screen to original values
                             self.settings_screen.reset();
                             self.navigate(Screen::Home);
+                        }
+                        SettingsAction::TestVoice(settings) => {
+                            // Preview the selected voice with current settings
+                            let tts = self.audio_engine.tts_provider();
+
+                            // Apply the test settings
+                            if let Some(ref voice_id) = settings.voice_id {
+                                if let Err(e) = tts.set_voice(voice_id) {
+                                    tracing::warn!("Failed to set voice for preview: {}", e);
+                                }
+                            }
+                            tts.set_volume(settings.volume);
+                            tts.set_rate(settings.rate);
+
+                            // Speak the preview phrase
+                            const PREVIEW_PHRASE: &str = "This is how your voice alerts will sound.";
+                            if let Err(e) = tts.speak(PREVIEW_PHRASE) {
+                                tracing::warn!("Failed to preview voice: {}", e);
+                            }
                         }
                         SettingsAction::None => {}
                     }
