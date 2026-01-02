@@ -91,6 +91,44 @@ impl PdcExport {
     pub fn len(&self) -> usize {
         self.points.len()
     }
+
+    /// Export the PDC data to CSV format.
+    ///
+    /// Returns a CSV string with headers: `duration_secs,power_watts,achieved_at`
+    ///
+    /// The `achieved_at` column contains ISO 8601 timestamps when available,
+    /// or is empty when the timestamp is not tracked.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let pdc = PdcExport::from_points(vec![
+    ///     PdcPointExport::new(60, 350),
+    ///     PdcPointExport::new(300, 280),
+    /// ]);
+    /// let csv = pdc.to_csv();
+    /// // csv contains:
+    /// // duration_secs,power_watts,achieved_at
+    /// // 60,350,
+    /// // 300,280,
+    /// ```
+    pub fn to_csv(&self) -> String {
+        let mut csv = String::new();
+        csv.push_str("duration_secs,power_watts,achieved_at\n");
+
+        for point in &self.points {
+            csv.push_str(&format!(
+                "{},{},{}\n",
+                point.duration_secs,
+                point.power_watts,
+                point
+                    .achieved_at
+                    .map_or(String::new(), |ts| ts.to_rfc3339()),
+            ));
+        }
+
+        csv
+    }
 }
 
 /// A single day's training load values for export.
@@ -689,6 +727,55 @@ impl AnalyticsExporter {
         let export = self.build_export(user_id)?;
         export.export_json()
     }
+
+    /// Export Power Duration Curve data for a user to CSV format.
+    ///
+    /// Returns a CSV string with headers: `duration_secs,power_watts,achieved_at`
+    ///
+    /// The CSV format is suitable for import into spreadsheet applications
+    /// or analysis tools. Timestamps are in ISO 8601 format (RFC 3339).
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export PDC data for
+    ///
+    /// # Returns
+    ///
+    /// Returns a CSV string containing the PDC data, or an error if:
+    /// - A database error occurs during data retrieval
+    /// - No PDC data is available for the user
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let exporter = AnalyticsExporter::new(db);
+    /// let csv = exporter.export_pdc_csv(user_id)?;
+    /// std::fs::write("pdc_export.csv", csv)?;
+    /// ```
+    pub fn export_pdc_csv(&self, user_id: Uuid) -> Result<String, ExportError> {
+        let conn = self.db.connection();
+        let store = AnalyticsStore::new(conn);
+
+        // Load PDC data
+        let pdc = store
+            .load_pdc(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+        if pdc.is_empty() {
+            return Err(ExportError::InsufficientData(
+                "No PDC data available for user".to_string(),
+            ));
+        }
+
+        // Convert to export format
+        let pdc_points: Vec<PdcPointExport> = pdc
+            .points()
+            .map(|p| PdcPointExport::from(p.clone()))
+            .collect();
+        let pdc_export = PdcExport::from_points(pdc_points);
+
+        Ok(pdc_export.to_csv())
+    }
 }
 
 /// Errors that can occur during analytics export operations.
@@ -856,6 +943,118 @@ mod tests {
         assert_eq!(deserialized.points[0].power_watts, 350);
         assert_eq!(deserialized.points[1].duration_secs, 300);
         assert_eq!(deserialized.points[1].power_watts, 280);
+    }
+
+    // ============ PdcExport CSV Tests ============
+
+    #[test]
+    fn test_pdc_export_to_csv_empty() {
+        let pdc = PdcExport::new();
+        let csv = pdc.to_csv();
+
+        // Should only contain the header
+        assert_eq!(csv, "duration_secs,power_watts,achieved_at\n");
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_single_point() {
+        let pdc = PdcExport::from_points(vec![PdcPointExport::new(60, 350)]);
+        let csv = pdc.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "duration_secs,power_watts,achieved_at");
+        assert_eq!(lines[1], "60,350,");
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_multiple_points() {
+        let points = vec![
+            PdcPointExport::new(60, 350),
+            PdcPointExport::new(180, 310),
+            PdcPointExport::new(300, 280),
+        ];
+        let pdc = PdcExport::from_points(points);
+        let csv = pdc.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "duration_secs,power_watts,achieved_at");
+        assert_eq!(lines[1], "60,350,");
+        assert_eq!(lines[2], "180,310,");
+        assert_eq!(lines[3], "300,280,");
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_with_timestamps() {
+        let timestamp1 = DateTime::parse_from_rfc3339("2024-06-15T10:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let timestamp2 = DateTime::parse_from_rfc3339("2024-06-16T14:45:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let points = vec![
+            PdcPointExport::with_timestamp(60, 350, timestamp1),
+            PdcPointExport::new(180, 310), // No timestamp
+            PdcPointExport::with_timestamp(300, 280, timestamp2),
+        ];
+        let pdc = PdcExport::from_points(points);
+        let csv = pdc.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "duration_secs,power_watts,achieved_at");
+        // First point has timestamp
+        assert!(lines[1].starts_with("60,350,2024-06-15T10:30:00"));
+        // Second point has no timestamp
+        assert_eq!(lines[2], "180,310,");
+        // Third point has timestamp
+        assert!(lines[3].starts_with("300,280,2024-06-16T14:45:00"));
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_header_format() {
+        let pdc = PdcExport::new();
+        let csv = pdc.to_csv();
+
+        // Verify header is exactly as expected
+        assert!(csv.starts_with("duration_secs,power_watts,achieved_at\n"));
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_sorted_by_duration() {
+        // Points added out of order
+        let points = vec![
+            PdcPointExport::new(300, 280),
+            PdcPointExport::new(60, 350),
+            PdcPointExport::new(180, 310),
+        ];
+        let pdc = PdcExport::from_points(points);
+        let csv = pdc.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Points should be sorted by duration in the CSV
+        assert!(lines[1].starts_with("60,"));
+        assert!(lines[2].starts_with("180,"));
+        assert!(lines[3].starts_with("300,"));
+    }
+
+    #[test]
+    fn test_pdc_export_to_csv_timestamp_rfc3339_format() {
+        let timestamp = DateTime::parse_from_rfc3339("2024-06-15T10:30:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let points = vec![PdcPointExport::with_timestamp(60, 350, timestamp)];
+        let pdc = PdcExport::from_points(points);
+        let csv = pdc.to_csv();
+
+        // Verify the timestamp is in RFC 3339 format
+        let lines: Vec<&str> = csv.lines().collect();
+        assert!(lines[1].contains("2024-06-15T10:30:00"));
+        // Should end with Z for UTC
+        assert!(lines[1].ends_with("+00:00") || lines[1].ends_with("Z"));
     }
 
     #[test]
