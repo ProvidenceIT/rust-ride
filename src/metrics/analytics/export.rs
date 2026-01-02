@@ -6,6 +6,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::critical_power::CpModel;
 use super::pdc::PdcPoint;
 use super::training_load::DailyLoad;
 
@@ -190,6 +191,65 @@ impl TrainingLoadExport {
     }
 }
 
+/// Export format for Critical Power model data.
+///
+/// Contains the CP model parameters (CP, W') and fit quality metrics.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CpModelExport {
+    /// Critical Power in watts.
+    pub cp_watts: u16,
+    /// W' (anaerobic work capacity) in joules.
+    pub w_prime_joules: u32,
+    /// Model fit quality (R² value, 0.0-1.0).
+    pub r_squared: f32,
+    /// When this model was calculated (if tracked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calculated_at: Option<DateTime<Utc>>,
+}
+
+impl CpModelExport {
+    /// Create a new CP model export.
+    pub fn new(cp_watts: u16, w_prime_joules: u32, r_squared: f32) -> Self {
+        Self {
+            cp_watts,
+            w_prime_joules,
+            r_squared,
+            calculated_at: None,
+        }
+    }
+
+    /// Create a new CP model export with timestamp.
+    pub fn with_timestamp(
+        cp_watts: u16,
+        w_prime_joules: u32,
+        r_squared: f32,
+        calculated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            cp_watts,
+            w_prime_joules,
+            r_squared,
+            calculated_at: Some(calculated_at),
+        }
+    }
+
+    /// Check if the model fit is considered good (R² >= 0.9).
+    pub fn is_good_fit(&self) -> bool {
+        self.r_squared >= 0.9
+    }
+}
+
+impl From<CpModel> for CpModelExport {
+    fn from(model: CpModel) -> Self {
+        Self {
+            cp_watts: model.cp,
+            w_prime_joules: model.w_prime,
+            r_squared: model.r_squared,
+            calculated_at: None,
+        }
+    }
+}
+
 /// Export format for analytics data.
 ///
 /// Contains all analytics data for a user with metadata for portability
@@ -208,6 +268,9 @@ pub struct AnalyticsExport {
     /// Training load history data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub training_load: Option<TrainingLoadExport>,
+    /// Critical Power model data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cp_model: Option<CpModelExport>,
 }
 
 impl AnalyticsExport {
@@ -222,6 +285,7 @@ impl AnalyticsExport {
             user_id: user_id.into(),
             pdc: None,
             training_load: None,
+            cp_model: None,
         }
     }
 
@@ -234,6 +298,12 @@ impl AnalyticsExport {
     /// Set the training load data for export.
     pub fn with_training_load(mut self, training_load: TrainingLoadExport) -> Self {
         self.training_load = Some(training_load);
+        self
+    }
+
+    /// Set the CP model data for export.
+    pub fn with_cp_model(mut self, cp_model: CpModelExport) -> Self {
+        self.cp_model = Some(cp_model);
         self
     }
 }
@@ -761,5 +831,201 @@ mod tests {
         let json = serde_json::to_string(&export).expect("should serialize");
         assert!(json.contains("\"pdc\""));
         assert!(json.contains("\"training_load\""));
+    }
+
+    // ============ CpModelExport Tests ============
+
+    #[test]
+    fn test_cp_model_export_new() {
+        let cp_export = CpModelExport::new(250, 20000, 0.98);
+
+        assert_eq!(cp_export.cp_watts, 250);
+        assert_eq!(cp_export.w_prime_joules, 20000);
+        assert_eq!(cp_export.r_squared, 0.98);
+        assert!(cp_export.calculated_at.is_none());
+    }
+
+    #[test]
+    fn test_cp_model_export_with_timestamp() {
+        let timestamp = Utc::now();
+        let cp_export = CpModelExport::with_timestamp(280, 18000, 0.95, timestamp);
+
+        assert_eq!(cp_export.cp_watts, 280);
+        assert_eq!(cp_export.w_prime_joules, 18000);
+        assert_eq!(cp_export.r_squared, 0.95);
+        assert_eq!(cp_export.calculated_at, Some(timestamp));
+    }
+
+    #[test]
+    fn test_cp_model_export_from_cp_model() {
+        let cp_model = CpModel {
+            cp: 260,
+            w_prime: 22000,
+            r_squared: 0.97,
+        };
+        let export: CpModelExport = cp_model.into();
+
+        assert_eq!(export.cp_watts, 260);
+        assert_eq!(export.w_prime_joules, 22000);
+        assert_eq!(export.r_squared, 0.97);
+        assert!(export.calculated_at.is_none());
+    }
+
+    #[test]
+    fn test_cp_model_export_is_good_fit() {
+        let good_fit = CpModelExport::new(250, 20000, 0.95);
+        let exactly_good = CpModelExport::new(250, 20000, 0.9);
+        let poor_fit = CpModelExport::new(250, 20000, 0.85);
+
+        assert!(good_fit.is_good_fit());
+        assert!(exactly_good.is_good_fit());
+        assert!(!poor_fit.is_good_fit());
+    }
+
+    #[test]
+    fn test_cp_model_export_serialize_without_timestamp() {
+        let cp_export = CpModelExport::new(250, 20000, 0.98);
+        let json = serde_json::to_string(&cp_export).expect("should serialize");
+
+        // Should not include calculated_at when None
+        assert!(!json.contains("calculated_at"));
+        assert!(json.contains("cp_watts"));
+        assert!(json.contains("w_prime_joules"));
+        assert!(json.contains("r_squared"));
+    }
+
+    #[test]
+    fn test_cp_model_export_serialize_with_timestamp() {
+        let timestamp = Utc::now();
+        let cp_export = CpModelExport::with_timestamp(250, 20000, 0.98, timestamp);
+        let json = serde_json::to_string(&cp_export).expect("should serialize");
+
+        // Should include calculated_at when Some
+        assert!(json.contains("calculated_at"));
+        assert!(json.contains("cp_watts"));
+        assert!(json.contains("w_prime_joules"));
+        assert!(json.contains("r_squared"));
+    }
+
+    #[test]
+    fn test_cp_model_export_serialize_deserialize() {
+        let cp_export = CpModelExport::new(250, 20000, 0.98);
+
+        // Serialize to JSON
+        let json = serde_json::to_string_pretty(&cp_export).expect("should serialize");
+
+        // Deserialize back
+        let deserialized: CpModelExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.cp_watts, 250);
+        assert_eq!(deserialized.w_prime_joules, 20000);
+        assert!((deserialized.r_squared - 0.98).abs() < 0.001);
+        assert!(deserialized.calculated_at.is_none());
+    }
+
+    #[test]
+    fn test_cp_model_export_roundtrip_with_timestamp() {
+        let timestamp = Utc::now();
+        let cp_export = CpModelExport::with_timestamp(275, 19500, 0.96, timestamp);
+
+        // Serialize and deserialize
+        let json = serde_json::to_string_pretty(&cp_export).expect("should serialize");
+        let deserialized: CpModelExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.cp_watts, cp_export.cp_watts);
+        assert_eq!(deserialized.w_prime_joules, cp_export.w_prime_joules);
+        assert_eq!(deserialized.r_squared, cp_export.r_squared);
+        assert_eq!(deserialized.calculated_at, Some(timestamp));
+    }
+
+    #[test]
+    fn test_analytics_export_with_cp_model() {
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+
+        let export = AnalyticsExport::new("test-user").with_cp_model(cp_model);
+
+        assert!(export.cp_model.is_some());
+        let cp_export = export.cp_model.as_ref().unwrap();
+        assert_eq!(cp_export.cp_watts, 250);
+        assert_eq!(cp_export.w_prime_joules, 20000);
+    }
+
+    #[test]
+    fn test_analytics_export_without_cp_model_skips_field() {
+        let export = AnalyticsExport::new("test-user");
+        let json = serde_json::to_string(&export).expect("should serialize");
+
+        // cp_model should not be in JSON when None
+        assert!(!json.contains("\"cp_model\""));
+    }
+
+    #[test]
+    fn test_analytics_export_with_cp_model_includes_field() {
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+        let export = AnalyticsExport::new("test-user").with_cp_model(cp_model);
+        let json = serde_json::to_string(&export).expect("should serialize");
+
+        // cp_model should be in JSON when Some
+        assert!(json.contains("\"cp_model\""));
+        assert!(json.contains("\"cp_watts\""));
+        assert!(json.contains("\"w_prime_joules\""));
+        assert!(json.contains("\"r_squared\""));
+    }
+
+    #[test]
+    fn test_analytics_export_with_cp_model_roundtrip() {
+        let timestamp = Utc::now();
+        let cp_model = CpModelExport::with_timestamp(260, 21000, 0.97, timestamp);
+        let export = AnalyticsExport::new("test-user").with_cp_model(cp_model);
+
+        // Serialize and deserialize
+        let json = serde_json::to_string_pretty(&export).expect("should serialize");
+        let deserialized: AnalyticsExport =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.user_id, export.user_id);
+        assert!(deserialized.cp_model.is_some());
+
+        let cp = deserialized.cp_model.unwrap();
+        assert_eq!(cp.cp_watts, 260);
+        assert_eq!(cp.w_prime_joules, 21000);
+        assert!(cp.calculated_at.is_some());
+    }
+
+    #[test]
+    fn test_analytics_export_with_all_data_types() {
+        let pdc = PdcExport::from_points(vec![PdcPointExport::new(60, 350)]);
+        let training_load = TrainingLoadExport::from_days(vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            100.0,
+            75.0,
+            80.0,
+            5.0,
+        )]);
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+
+        let export = AnalyticsExport::new("test-user")
+            .with_pdc(pdc)
+            .with_training_load(training_load)
+            .with_cp_model(cp_model);
+
+        assert!(export.pdc.is_some());
+        assert!(export.training_load.is_some());
+        assert!(export.cp_model.is_some());
+
+        let json = serde_json::to_string(&export).expect("should serialize");
+        assert!(json.contains("\"pdc\""));
+        assert!(json.contains("\"training_load\""));
+        assert!(json.contains("\"cp_model\""));
+    }
+
+    #[test]
+    fn test_cp_model_export_equality() {
+        let model1 = CpModelExport::new(250, 20000, 0.98);
+        let model2 = CpModelExport::new(250, 20000, 0.98);
+        let model3 = CpModelExport::new(260, 20000, 0.98);
+
+        assert_eq!(model1, model2);
+        assert_ne!(model1, model3);
     }
 }
