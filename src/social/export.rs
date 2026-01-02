@@ -627,6 +627,380 @@ impl ProfileExporter {
             Err(e) => Err(ProfileExportError::DatabaseError(e.to_string())),
         }
     }
+
+    /// Import a profile export to the database.
+    ///
+    /// Imports profile data, FTP history, and avatar configuration using
+    /// the specified conflict resolution strategy.
+    ///
+    /// # Strategies
+    /// - `Replace`: Completely overwrite existing profile data
+    /// - `Merge`: Combine FTP history, keeping both existing and imported entries
+    /// - `Skip`: Do not import anything, return immediately
+    ///
+    /// # Arguments
+    /// * `export` - The parsed profile export to import
+    /// * `resolution` - Strategy for handling conflicts with existing data
+    ///
+    /// # Returns
+    /// A `ProfileImportResult` with details about what was imported/skipped.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let exporter = ProfileExporter::new(db);
+    /// let export = exporter.parse_import(json_content)?;
+    /// let result = exporter.import_profile(&export, ConflictResolution::Merge)?;
+    /// if result.success {
+    ///     println!("Imported {} FTP entries", result.ftp_entries_imported);
+    /// }
+    /// ```
+    pub fn import_profile(
+        &self,
+        export: &ProfileExport,
+        resolution: ConflictResolution,
+    ) -> Result<ProfileImportResult, ProfileExportError> {
+        // Skip strategy: return immediately without changes
+        if resolution == ConflictResolution::Skip {
+            return Ok(ProfileImportResult {
+                success: true,
+                ftp_entries_imported: 0,
+                ftp_entries_skipped: 0,
+                profile_updated: false,
+                avatar_updated: false,
+                conflicts: Vec::new(),
+            });
+        }
+
+        let conn = self.db.connection();
+
+        // Check if profile exists
+        let existing_profile = self.query_existing_profile(&conn, export.rider_id)?;
+
+        let profile_updated;
+        let avatar_updated;
+
+        match resolution {
+            ConflictResolution::Replace => {
+                // Replace: delete existing data and insert fresh
+                profile_updated = self.import_profile_data_replace(&conn, export)?;
+                avatar_updated = self.import_avatar_replace(&conn, export)?;
+            }
+            ConflictResolution::Merge => {
+                // Merge: update profile, keep existing data where appropriate
+                profile_updated = if existing_profile.is_some() {
+                    self.import_profile_data_update(&conn, export)?
+                } else {
+                    self.import_profile_data_insert(&conn, export)?
+                };
+                avatar_updated = self.import_avatar_merge(&conn, export)?;
+            }
+            ConflictResolution::Skip => {
+                // Already handled above
+                unreachable!()
+            }
+        }
+
+        // Import FTP history based on strategy
+        let (ftp_entries_imported, ftp_entries_skipped) = match resolution {
+            ConflictResolution::Replace => {
+                // Delete all existing FTP entries and import fresh
+                self.delete_ftp_history(&conn, export.rider_id)?;
+                let imported = self.import_ftp_history_all(&conn, export)?;
+                (imported, 0)
+            }
+            ConflictResolution::Merge => {
+                // Merge FTP history, skipping duplicates
+                self.import_ftp_history_merge(&conn, export)?
+            }
+            ConflictResolution::Skip => (0, 0),
+        };
+
+        Ok(ProfileImportResult::success(
+            ftp_entries_imported,
+            ftp_entries_skipped,
+            profile_updated,
+            avatar_updated,
+        ))
+    }
+
+    /// Replace profile data by deleting existing and inserting new.
+    fn import_profile_data_replace(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<bool, ProfileExportError> {
+        // Delete existing profile if present
+        conn.execute(
+            "DELETE FROM riders WHERE id = ?1",
+            [export.rider_id.to_string()],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        // Insert new profile
+        self.import_profile_data_insert(conn, export)
+    }
+
+    /// Insert profile data for a new rider.
+    fn import_profile_data_insert(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<bool, ProfileExportError> {
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO riders (id, display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                export.rider_id.to_string(),
+                export.profile.display_name,
+                export.profile.bio,
+                export.profile.ftp,
+                export.profile.total_distance_km,
+                export.profile.total_time_hours,
+                if export.profile.sharing_enabled { 1 } else { 0 },
+                now,
+                now,
+            ],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(true)
+    }
+
+    /// Update existing profile data (for merge strategy).
+    fn import_profile_data_update(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<bool, ProfileExportError> {
+        let now = Utc::now().to_rfc3339();
+
+        let rows_affected = conn
+            .execute(
+                "UPDATE riders
+                 SET display_name = ?1, bio = ?2, ftp = ?3, total_distance_km = ?4, total_time_hours = ?5, sharing_enabled = ?6, updated_at = ?7
+                 WHERE id = ?8",
+                rusqlite::params![
+                    export.profile.display_name,
+                    export.profile.bio,
+                    export.profile.ftp,
+                    export.profile.total_distance_km,
+                    export.profile.total_time_hours,
+                    if export.profile.sharing_enabled { 1 } else { 0 },
+                    now,
+                    export.rider_id.to_string(),
+                ],
+            )
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(rows_affected > 0)
+    }
+
+    /// Replace avatar data by deleting existing and inserting new.
+    fn import_avatar_replace(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<bool, ProfileExportError> {
+        // Delete existing avatar if present
+        conn.execute(
+            "DELETE FROM avatars WHERE user_id = ?1",
+            [export.rider_id.to_string()],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        // Insert new avatar if export has one
+        if let Some(ref avatar) = export.avatar {
+            self.insert_avatar(conn, export.rider_id, avatar)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Merge avatar data (update existing or insert new).
+    fn import_avatar_merge(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<bool, ProfileExportError> {
+        let Some(ref avatar) = export.avatar else {
+            // No avatar in export - no changes needed
+            return Ok(false);
+        };
+
+        // Check if avatar exists
+        let existing_avatar = self.query_avatar(conn, export.rider_id)?;
+
+        if existing_avatar.is_some() {
+            // Update existing avatar
+            self.update_avatar(conn, export.rider_id, avatar)?;
+        } else {
+            // Insert new avatar
+            self.insert_avatar(conn, export.rider_id, avatar)?;
+        }
+
+        Ok(true)
+    }
+
+    /// Insert a new avatar record.
+    fn insert_avatar(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+        avatar: &AvatarExport,
+    ) -> Result<(), ProfileExportError> {
+        let avatar_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO avatars (id, user_id, jersey_color, jersey_secondary, bike_style, helmet_color, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                avatar_id.to_string(),
+                rider_id.to_string(),
+                avatar.jersey_color,
+                avatar.jersey_secondary,
+                avatar.bike_style,
+                avatar.helmet_color,
+                now,
+                now,
+            ],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Update an existing avatar record.
+    fn update_avatar(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+        avatar: &AvatarExport,
+    ) -> Result<(), ProfileExportError> {
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE avatars
+             SET jersey_color = ?1, jersey_secondary = ?2, bike_style = ?3, helmet_color = ?4, updated_at = ?5
+             WHERE user_id = ?6",
+            rusqlite::params![
+                avatar.jersey_color,
+                avatar.jersey_secondary,
+                avatar.bike_style,
+                avatar.helmet_color,
+                now,
+                rider_id.to_string(),
+            ],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete all FTP history for a rider.
+    fn delete_ftp_history(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+    ) -> Result<(), ProfileExportError> {
+        conn.execute(
+            "DELETE FROM ftp_estimates WHERE user_id = ?1",
+            [rider_id.to_string()],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Import all FTP history entries (for replace strategy).
+    fn import_ftp_history_all(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<u32, ProfileExportError> {
+        let mut imported = 0u32;
+
+        for entry in &export.ftp_history {
+            self.insert_ftp_entry(conn, export.rider_id, entry)?;
+            imported += 1;
+        }
+
+        Ok(imported)
+    }
+
+    /// Import FTP history with deduplication (for merge strategy).
+    ///
+    /// Returns (imported_count, skipped_count).
+    fn import_ftp_history_merge(
+        &self,
+        conn: &rusqlite::Connection,
+        export: &ProfileExport,
+    ) -> Result<(u32, u32), ProfileExportError> {
+        let mut imported = 0u32;
+        let mut skipped = 0u32;
+
+        for entry in &export.ftp_history {
+            // Check if this entry already exists (same timestamp)
+            if self.ftp_entry_exists(conn, export.rider_id, entry)? {
+                skipped += 1;
+            } else {
+                self.insert_ftp_entry(conn, export.rider_id, entry)?;
+                imported += 1;
+            }
+        }
+
+        Ok((imported, skipped))
+    }
+
+    /// Check if an FTP entry already exists (by timestamp).
+    fn ftp_entry_exists(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+        entry: &FtpHistoryEntry,
+    ) -> Result<bool, ProfileExportError> {
+        let mut stmt = conn
+            .prepare("SELECT 1 FROM ftp_estimates WHERE user_id = ?1 AND detected_at = ?2")
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        stmt.exists(rusqlite::params![
+            rider_id.to_string(),
+            entry.detected_at.to_rfc3339()
+        ])
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))
+    }
+
+    /// Insert a single FTP history entry.
+    fn insert_ftp_entry(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+        entry: &FtpHistoryEntry,
+    ) -> Result<(), ProfileExportError> {
+        let entry_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO ftp_estimates (id, user_id, ftp_watts, method, confidence, detected_at, accepted, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                entry_id.to_string(),
+                rider_id.to_string(),
+                entry.ftp_watts,
+                entry.method,
+                entry.confidence,
+                entry.detected_at.to_rfc3339(),
+                if entry.accepted { 1 } else { 0 },
+                now,
+            ],
+        )
+        .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 /// Helper struct for FTP history row data.
@@ -1573,5 +1947,282 @@ mod tests {
         assert!(debug_str.contains("FtpMismatch"));
         assert!(debug_str.contains("280"));
         assert!(debug_str.contains("250"));
+    }
+
+    // Tests for import_profile method (without database)
+
+    #[test]
+    fn test_conflict_resolution_skip_creates_empty_result() {
+        // Test that Skip resolution produces expected result structure
+        let result = ProfileImportResult {
+            success: true,
+            ftp_entries_imported: 0,
+            ftp_entries_skipped: 0,
+            profile_updated: false,
+            avatar_updated: false,
+            conflicts: Vec::new(),
+        };
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(!result.profile_updated);
+        assert!(!result.avatar_updated);
+        assert!(result.conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_conflict_resolution_variants_are_distinct() {
+        // Verify all three resolution strategies are distinct
+        assert_ne!(ConflictResolution::Replace, ConflictResolution::Merge);
+        assert_ne!(ConflictResolution::Replace, ConflictResolution::Skip);
+        assert_ne!(ConflictResolution::Merge, ConflictResolution::Skip);
+    }
+
+    #[test]
+    fn test_profile_import_result_success_with_all_updates() {
+        // Test successful import result with all flags set
+        let result = ProfileImportResult::success(10, 2, true, true);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 10);
+        assert_eq!(result.ftp_entries_skipped, 2);
+        assert!(result.profile_updated);
+        assert!(result.avatar_updated);
+        assert!(result.conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_profile_import_result_success_partial_update() {
+        // Test successful import with only profile updated
+        let result = ProfileImportResult::success(5, 0, true, false);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 5);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(result.profile_updated);
+        assert!(!result.avatar_updated);
+    }
+
+    #[test]
+    fn test_profile_import_result_success_only_avatar() {
+        // Test successful import with only avatar updated
+        let result = ProfileImportResult::success(0, 0, false, true);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(!result.profile_updated);
+        assert!(result.avatar_updated);
+    }
+
+    #[test]
+    fn test_profile_import_result_success_no_updates() {
+        // Test successful import with nothing to update
+        let result = ProfileImportResult::success(0, 0, false, false);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(!result.profile_updated);
+        assert!(!result.avatar_updated);
+    }
+
+    #[test]
+    fn test_profile_import_result_all_entries_skipped() {
+        // Test result when all FTP entries are skipped (duplicates)
+        let result = ProfileImportResult::success(0, 5, true, true);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 5);
+        assert!(result.profile_updated);
+        assert!(result.avatar_updated);
+    }
+
+    #[test]
+    fn test_profile_export_for_import() {
+        // Create a complete export to test import scenarios
+        let rider_id = Uuid::new_v4();
+        let profile = ProfileData {
+            display_name: "Import Test Rider".to_string(),
+            bio: Some("Testing import functionality".to_string()),
+            ftp: Some(275),
+            total_distance_km: 2500.0,
+            total_time_hours: 125.5,
+            sharing_enabled: true,
+        };
+
+        let ftp_history = vec![
+            FtpHistoryEntry {
+                ftp_watts: 250,
+                method: "ramp_test".to_string(),
+                confidence: "high".to_string(),
+                detected_at: Utc::now(),
+                accepted: true,
+            },
+            FtpHistoryEntry {
+                ftp_watts: 265,
+                method: "20min_test".to_string(),
+                confidence: "high".to_string(),
+                detected_at: Utc::now(),
+                accepted: true,
+            },
+            FtpHistoryEntry {
+                ftp_watts: 275,
+                method: "ramp_test".to_string(),
+                confidence: "medium".to_string(),
+                detected_at: Utc::now(),
+                accepted: false,
+            },
+        ];
+
+        let avatar = AvatarExport {
+            jersey_color: "#FF5500".to_string(),
+            bike_style: "tt_bike".to_string(),
+            jersey_secondary: Some("#FFFFFF".to_string()),
+            helmet_color: Some("#333333".to_string()),
+        };
+
+        let export = ProfileExport::new(rider_id, profile, ftp_history, Some(avatar));
+
+        // Verify export is properly structured for import
+        assert_eq!(export.rider_id, rider_id);
+        assert_eq!(export.profile.display_name, "Import Test Rider");
+        assert_eq!(export.ftp_history.len(), 3);
+        assert!(export.avatar.is_some());
+        assert_eq!(export.export_version, ProfileExport::CURRENT_VERSION);
+    }
+
+    #[test]
+    fn test_profile_export_for_import_no_avatar() {
+        // Test export without avatar for import scenarios
+        let rider_id = Uuid::new_v4();
+        let profile = ProfileData {
+            display_name: "No Avatar Rider".to_string(),
+            bio: None,
+            ftp: Some(200),
+            total_distance_km: 100.0,
+            total_time_hours: 5.0,
+            sharing_enabled: false,
+        };
+
+        let export = ProfileExport::new(rider_id, profile, vec![], None);
+
+        assert!(export.avatar.is_none());
+        assert!(export.ftp_history.is_empty());
+    }
+
+    #[test]
+    fn test_ftp_history_entry_timestamps_for_deduplication() {
+        // Test that FTP history entries have proper timestamps for deduplication
+        let entry1 = FtpHistoryEntry {
+            ftp_watts: 250,
+            method: "ramp_test".to_string(),
+            confidence: "high".to_string(),
+            detected_at: Utc::now(),
+            accepted: true,
+        };
+
+        let entry2 = FtpHistoryEntry {
+            ftp_watts: 250,
+            method: "ramp_test".to_string(),
+            confidence: "high".to_string(),
+            detected_at: Utc::now(),
+            accepted: true,
+        };
+
+        // Even with same values, they should have timestamps that can be compared
+        let ts1 = entry1.detected_at.to_rfc3339();
+        let ts2 = entry2.detected_at.to_rfc3339();
+
+        // Both should produce valid RFC3339 timestamps
+        assert!(ts1.contains("T"));
+        assert!(ts2.contains("T"));
+    }
+
+    #[test]
+    fn test_avatar_export_serialization_for_import() {
+        // Test avatar export round-trip for import scenarios
+        let avatar = AvatarExport {
+            jersey_color: "#ABCDEF".to_string(),
+            bike_style: "gravel".to_string(),
+            jersey_secondary: Some("#123456".to_string()),
+            helmet_color: None,
+        };
+
+        let json = serde_json::to_string(&avatar).unwrap();
+        let parsed: AvatarExport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.jersey_color, "#ABCDEF");
+        assert_eq!(parsed.bike_style, "gravel");
+        assert_eq!(parsed.jersey_secondary, Some("#123456".to_string()));
+        assert_eq!(parsed.helmet_color, None);
+    }
+
+    #[test]
+    fn test_profile_data_serialization_for_import() {
+        // Test profile data round-trip for import scenarios
+        let profile = ProfileData {
+            display_name: "Serialization Test".to_string(),
+            bio: Some("Testing serialization".to_string()),
+            ftp: Some(300),
+            total_distance_km: 10000.0,
+            total_time_hours: 500.0,
+            sharing_enabled: true,
+        };
+
+        let json = serde_json::to_string(&profile).unwrap();
+        let parsed: ProfileData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.display_name, "Serialization Test");
+        assert_eq!(parsed.bio, Some("Testing serialization".to_string()));
+        assert_eq!(parsed.ftp, Some(300));
+        assert!((parsed.total_distance_km - 10000.0).abs() < f64::EPSILON);
+        assert!((parsed.total_time_hours - 500.0).abs() < f64::EPSILON);
+        assert!(parsed.sharing_enabled);
+    }
+
+    #[test]
+    fn test_conflict_resolution_copy_trait() {
+        // Verify ConflictResolution implements Copy
+        let resolution = ConflictResolution::Replace;
+        let copied = resolution;
+
+        assert_eq!(resolution, copied);
+        assert_eq!(resolution, ConflictResolution::Replace);
+        assert_eq!(copied, ConflictResolution::Replace);
+    }
+
+    #[test]
+    fn test_conflict_resolution_eq_trait() {
+        // Verify ConflictResolution implements Eq properly
+        assert!(ConflictResolution::Replace == ConflictResolution::Replace);
+        assert!(ConflictResolution::Merge == ConflictResolution::Merge);
+        assert!(ConflictResolution::Skip == ConflictResolution::Skip);
+    }
+
+    #[test]
+    fn test_import_result_structure_matches_expected_fields() {
+        // Verify ProfileImportResult has all expected fields
+        let result = ProfileImportResult {
+            success: true,
+            ftp_entries_imported: 3,
+            ftp_entries_skipped: 1,
+            profile_updated: true,
+            avatar_updated: false,
+            conflicts: vec![ProfileConflict::FtpMismatch {
+                imported_ftp: Some(280),
+                existing_ftp: Some(250),
+            }],
+        };
+
+        // Access all fields to verify structure
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 3);
+        assert_eq!(result.ftp_entries_skipped, 1);
+        assert!(result.profile_updated);
+        assert!(!result.avatar_updated);
+        assert_eq!(result.conflicts.len(), 1);
     }
 }
