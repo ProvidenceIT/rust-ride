@@ -8,8 +8,10 @@
 //! - Activity, session, lap, and record messages
 //! - Cycling dynamics (L/R balance, torque effectiveness, pedal smoothness)
 //! - Multiple laps based on workout segments/intervals
+//! - Workout structure integration for automatic lap boundaries
 
 use crate::recording::types::{ExportError, Ride, RideSample};
+use crate::workouts::Workout;
 use chrono::{DateTime, Duration, Utc};
 use std::io::{Cursor, Write};
 
@@ -605,6 +607,71 @@ pub fn export_fit_with_segments(
     }
 
     export_fit_with_laps(ride, samples, &laps)
+}
+
+/// Export a ride to FIT format using workout structure for lap boundaries.
+///
+/// If a workout is provided and has segments, each workout segment becomes
+/// a lap in the FIT file. This preserves interval structure when uploading
+/// to platforms like Garmin Connect or TrainingPeaks.
+///
+/// # Arguments
+/// * `ride` - The ride metadata
+/// * `samples` - All ride samples
+/// * `workout` - Optional workout structure to use for lap boundaries
+///
+/// # Returns
+/// The FIT file as a byte vector
+///
+/// # Example
+/// ```ignore
+/// // With workout structure
+/// let fit_data = export_fit_with_workout(&ride, &samples, Some(&workout))?;
+///
+/// // Without workout (falls back to single lap)
+/// let fit_data = export_fit_with_workout(&ride, &samples, None)?;
+/// ```
+pub fn export_fit_with_workout(
+    ride: &Ride,
+    samples: &[RideSample],
+    workout: Option<&Workout>,
+) -> Result<Vec<u8>, ExportError> {
+    if samples.is_empty() {
+        return Err(ExportError::NoData);
+    }
+
+    // If no workout provided, fall back to single lap export
+    let Some(workout) = workout else {
+        return export_fit(ride, samples);
+    };
+
+    // Extract segment durations from workout
+    let segment_durations = extract_workout_segment_durations(workout);
+
+    // If workout has no segments, fall back to single lap export
+    if segment_durations.is_empty() {
+        return export_fit(ride, samples);
+    }
+
+    export_fit_with_segments(ride, samples, &segment_durations)
+}
+
+/// Extract segment durations from a workout structure.
+///
+/// This helper function extracts the duration of each segment in a workout,
+/// which can then be used to create lap boundaries in the FIT file.
+///
+/// # Arguments
+/// * `workout` - The workout to extract durations from
+///
+/// # Returns
+/// A vector of segment durations in seconds
+pub fn extract_workout_segment_durations(workout: &Workout) -> Vec<u32> {
+    workout
+        .segments
+        .iter()
+        .map(|segment| segment.duration_seconds)
+        .collect()
 }
 
 /// Write File ID message
@@ -1280,6 +1347,137 @@ mod tests {
         ];
 
         let result = export_fit_with_laps(&ride, &samples, &laps);
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+
+        // Verify FIT header structure
+        assert_eq!(data[0], 14); // Header size
+        assert_eq!(data[1], 0x20); // Protocol version 2.0
+
+        // Profile version (bytes 2-3, little endian)
+        let profile_version = u16::from_le_bytes([data[2], data[3]]);
+        assert_eq!(profile_version, 2100); // 21.00
+
+        // Data type signature
+        assert_eq!(&data[8..12], b".FIT");
+    }
+
+    fn create_test_workout() -> Workout {
+        use crate::workouts::{PowerTarget, SegmentType, WorkoutSegment};
+
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Warm up!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 60,
+                power_target: PowerTarget::percent_ftp(90),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: Some("Push!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(40),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        Workout::new("Test Workout".to_string(), segments)
+    }
+
+    #[test]
+    fn test_extract_workout_segment_durations() {
+        let workout = create_test_workout();
+        let durations = extract_workout_segment_durations(&workout);
+
+        assert_eq!(durations.len(), 4);
+        assert_eq!(durations[0], 30); // Warmup
+        assert_eq!(durations[1], 60); // Steady state
+        assert_eq!(durations[2], 30); // Intervals
+        assert_eq!(durations[3], 30); // Cooldown
+    }
+
+    #[test]
+    fn test_extract_workout_segment_durations_empty() {
+        let workout = Workout::new("Empty Workout".to_string(), vec![]);
+        let durations = extract_workout_segment_durations(&workout);
+
+        assert!(durations.is_empty());
+    }
+
+    #[test]
+    fn test_export_fit_with_workout() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(150); // 2.5 minutes of samples
+        let workout = create_test_workout();
+
+        let result = export_fit_with_workout(&ride, &samples, Some(&workout));
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+        // Check valid FIT header
+        assert_eq!(data[0], 14);
+        assert_eq!(data[1], 0x20);
+        assert_eq!(&data[8..12], b".FIT");
+
+        // File should be larger than single-lap export due to multiple lap messages
+        let single_lap_result = export_fit(&ride, &samples).unwrap();
+        assert!(data.len() > single_lap_result.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_workout_none_fallback() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(60);
+
+        // None workout should fall back to single-lap export
+        let result = export_fit_with_workout(&ride, &samples, None);
+        assert!(result.is_ok());
+
+        // Should produce the same result as export_fit
+        let expected = export_fit(&ride, &samples).unwrap();
+        let actual = result.unwrap();
+        assert_eq!(actual.len(), expected.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_workout_empty_segments_fallback() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(60);
+        let workout = Workout::new("Empty Workout".to_string(), vec![]);
+
+        // Workout with no segments should fall back to single-lap export
+        let result = export_fit_with_workout(&ride, &samples, Some(&workout));
+        assert!(result.is_ok());
+
+        // Should produce the same result as export_fit
+        let expected = export_fit(&ride, &samples).unwrap();
+        let actual = result.unwrap();
+        assert_eq!(actual.len(), expected.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_workout_preserves_header() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(150);
+        let workout = create_test_workout();
+
+        let result = export_fit_with_workout(&ride, &samples, Some(&workout));
         assert!(result.is_ok());
 
         let data = result.unwrap();
