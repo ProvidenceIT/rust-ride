@@ -30,6 +30,22 @@ struct StravaUploadResponse {
     error: Option<String>,
 }
 
+/// Strava athlete API response
+#[derive(Debug, Deserialize)]
+struct StravaAthleteResponse {
+    /// Athlete ID
+    id: u64,
+    /// Username (optional, can be null)
+    username: Option<String>,
+    /// First name
+    firstname: String,
+    /// Last name
+    lastname: String,
+    /// Medium profile image URL (optional)
+    #[serde(rename = "profile_medium")]
+    profile_medium: Option<String>,
+}
+
 /// Strava API error response
 #[derive(Debug, Deserialize)]
 struct StravaApiError {
@@ -370,22 +386,94 @@ impl StravaClient {
     }
 
     /// Get athlete profile
+    ///
+    /// Fetches the authenticated athlete's profile from Strava.
+    ///
+    /// # Returns
+    /// The athlete profile including id, name, username, and profile image URL
     pub async fn get_athlete(&self) -> Result<AthleteProfile, SyncError> {
-        let _token = self
+        let token = self
             .access_token
             .read()
             .await
             .clone()
             .ok_or(SyncError::NotConfigured(SyncPlatform::Strava))?;
 
-        // TODO: GET https://www.strava.com/api/v3/athlete
+        tracing::debug!("Fetching Strava athlete profile");
 
+        let url = format!("{}/athlete", self.base_url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to fetch athlete profile: {}", e))
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("Strava API rate limit exceeded");
+            return Err(SyncError::ApiError(
+                "Rate limit exceeded. Please try again later.".to_string(),
+            ));
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired");
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<StravaApiError>(&body) {
+                tracing::error!("Strava athlete fetch failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Strava error: {}",
+                    error_response
+                )));
+            }
+            tracing::error!(
+                "Strava athlete fetch failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::ApiError(format!(
+                "Failed to fetch athlete with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response
+        let athlete_response: StravaAthleteResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::ApiError(format!("Failed to parse athlete response: {}", e))
+        })?;
+
+        tracing::info!(
+            "Fetched Strava athlete profile: {} (id: {})",
+            athlete_response
+                .username
+                .as_deref()
+                .unwrap_or(&format!("{} {}", athlete_response.firstname, athlete_response.lastname)),
+            athlete_response.id
+        );
+
+        // Convert to AthleteProfile
         Ok(AthleteProfile {
-            id: 0,
-            username: None,
-            firstname: "Test".to_string(),
-            lastname: "User".to_string(),
-            profile_medium: None,
+            id: athlete_response.id,
+            username: athlete_response.username,
+            firstname: athlete_response.firstname,
+            lastname: athlete_response.lastname,
+            profile_medium: athlete_response.profile_medium,
         })
     }
 
@@ -630,5 +718,86 @@ mod tests {
         // Test they are not equal to each other
         assert_ne!(processing, ready);
         assert_ne!(ready, error);
+    }
+
+    #[tokio::test]
+    async fn test_get_athlete_without_token_returns_not_configured() {
+        let client = StravaClient::new();
+
+        let result = client.get_athlete().await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[test]
+    fn test_strava_athlete_response_deserialization() {
+        // Full response with all fields
+        let json = r#"{
+            "id": 12345678,
+            "username": "cyclist123",
+            "firstname": "John",
+            "lastname": "Doe",
+            "profile_medium": "https://dgalywyr863hv.cloudfront.net/pictures/athletes/12345678/medium.jpg"
+        }"#;
+
+        let response: StravaAthleteResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.id, 12345678);
+        assert_eq!(response.username, Some("cyclist123".to_string()));
+        assert_eq!(response.firstname, "John");
+        assert_eq!(response.lastname, "Doe");
+        assert_eq!(
+            response.profile_medium,
+            Some("https://dgalywyr863hv.cloudfront.net/pictures/athletes/12345678/medium.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_strava_athlete_response_minimal() {
+        // Response with optional fields as null
+        let json = r#"{
+            "id": 12345678,
+            "username": null,
+            "firstname": "Jane",
+            "lastname": "Smith",
+            "profile_medium": null
+        }"#;
+
+        let response: StravaAthleteResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.id, 12345678);
+        assert!(response.username.is_none());
+        assert_eq!(response.firstname, "Jane");
+        assert_eq!(response.lastname, "Smith");
+        assert!(response.profile_medium.is_none());
+    }
+
+    #[test]
+    fn test_strava_athlete_response_ignores_extra_fields() {
+        // Strava API returns many more fields - ensure we ignore them gracefully
+        let json = r#"{
+            "id": 12345678,
+            "username": "cyclist123",
+            "firstname": "John",
+            "lastname": "Doe",
+            "profile_medium": "https://example.com/image.jpg",
+            "profile": "https://example.com/large.jpg",
+            "city": "San Francisco",
+            "state": "California",
+            "country": "United States",
+            "sex": "M",
+            "premium": true,
+            "summit": true,
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let response: StravaAthleteResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed with extra fields");
+
+        assert_eq!(response.id, 12345678);
+        assert_eq!(response.username, Some("cyclist123".to_string()));
     }
 }
