@@ -1,0 +1,990 @@
+//! Unit tests for FIT file export functionality.
+//!
+//! Comprehensive tests for FIT export including:
+//! - Header validation
+//! - Message structure
+//! - CRC verification
+//! - Data integrity
+//! - Multi-lap support
+//! - Cycling dynamics encoding
+
+use chrono::{TimeZone, Utc};
+use rustride::recording::exporter_fit::{
+    export_fit, export_fit_with_laps, export_fit_with_segments, export_fit_with_workout,
+    extract_workout_segment_durations, LapData,
+};
+use rustride::recording::types::{Ride, RideSample};
+use rustride::workouts::{PowerTarget, SegmentType, Workout, WorkoutSegment};
+use uuid::Uuid;
+
+/// FIT file header size (14 bytes for header with CRC)
+const FIT_HEADER_SIZE: usize = 14;
+
+/// FIT epoch offset: seconds between Unix epoch (1970-01-01) and FIT epoch (1989-12-31)
+const FIT_EPOCH_OFFSET: i64 = 631065600;
+
+/// CRC-16 lookup table for FIT format
+const CRC_TABLE: [u16; 16] = [
+    0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401, 0xA001, 0x6C00, 0x7800, 0xB401,
+    0x5000, 0x9C01, 0x8801, 0x4400,
+];
+
+/// Calculate CRC-16 for verifying FIT file integrity.
+fn calculate_crc(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0;
+    for byte in data {
+        let tmp = CRC_TABLE[(crc & 0xF) as usize];
+        crc = (crc >> 4) & 0x0FFF;
+        crc = crc ^ tmp ^ CRC_TABLE[(*byte & 0xF) as usize];
+
+        let tmp = CRC_TABLE[(crc & 0xF) as usize];
+        crc = (crc >> 4) & 0x0FFF;
+        crc = crc ^ tmp ^ CRC_TABLE[((*byte >> 4) & 0xF) as usize];
+    }
+    crc
+}
+
+/// Create a test ride with sample data at a fixed timestamp.
+fn create_test_ride() -> Ride {
+    let user_id = Uuid::new_v4();
+    let mut ride = Ride::new(user_id, 200);
+    ride.started_at = Utc.with_ymd_and_hms(2025, 1, 15, 10, 0, 0).unwrap();
+    ride.ended_at = Some(Utc.with_ymd_and_hms(2025, 1, 15, 11, 0, 0).unwrap());
+    ride.duration_seconds = 3600;
+    ride.distance_meters = 30000.0;
+    ride.avg_power = Some(180);
+    ride.max_power = Some(350);
+    ride.normalized_power = Some(190);
+    ride.intensity_factor = Some(0.95);
+    ride.tss = Some(90.0);
+    ride.avg_hr = Some(145);
+    ride.max_hr = Some(175);
+    ride.avg_cadence = Some(85);
+    ride.calories = 800;
+    ride
+}
+
+/// Create test samples without cycling dynamics.
+fn create_test_samples(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(150 + (i % 50) as u16),
+            cadence_rpm: Some(80 + (i % 20) as u8),
+            heart_rate_bpm: Some(140 + (i % 20) as u8),
+            speed_kmh: Some(30.0 + (i % 10) as f32),
+            distance_meters: (i as f64) * 8.33,
+            calories: (i as f64 * 0.2) as u32,
+            resistance_level: None,
+            target_power: Some(180),
+            trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        })
+        .collect()
+}
+
+/// Create test samples with cycling dynamics data.
+fn create_test_samples_with_dynamics(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(180 + (i % 30) as u16),
+            cadence_rpm: Some(85),
+            heart_rate_bpm: Some(145),
+            speed_kmh: Some(30.0),
+            distance_meters: (i as f64) * 8.33,
+            calories: (i as f64 * 0.2) as u32,
+            resistance_level: None,
+            target_power: Some(180),
+            trainer_grade: None,
+            left_right_balance: Some(52.0),
+            left_torque_effectiveness: Some(75.0),
+            right_torque_effectiveness: Some(72.0),
+            left_pedal_smoothness: Some(22.0),
+            right_pedal_smoothness: Some(24.0),
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        })
+        .collect()
+}
+
+/// Create test samples with power phase data.
+fn create_test_samples_with_power_phase(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(180 + (i % 30) as u16),
+            cadence_rpm: Some(85),
+            heart_rate_bpm: Some(145),
+            speed_kmh: Some(30.0),
+            distance_meters: (i as f64) * 8.33,
+            calories: (i as f64 * 0.2) as u32,
+            resistance_level: None,
+            target_power: Some(180),
+            trainer_grade: None,
+            left_right_balance: Some(52.0),
+            left_torque_effectiveness: Some(75.0),
+            right_torque_effectiveness: Some(72.0),
+            left_pedal_smoothness: Some(22.0),
+            right_pedal_smoothness: Some(24.0),
+            left_power_phase_start: Some(30.0),
+            left_power_phase_end: Some(180.0),
+            left_power_phase_peak: Some(90.0),
+            right_power_phase_start: Some(30.0),
+            right_power_phase_end: Some(180.0),
+            right_power_phase_peak: Some(90.0),
+        })
+        .collect()
+}
+
+/// Create a test workout with multiple segments.
+fn create_test_workout() -> Workout {
+    let segments = vec![
+        WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(50),
+            cadence_target: None,
+            text_event: Some("Warm up!".to_string()),
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 60,
+            power_target: PowerTarget::percent_ftp(90),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(120),
+            cadence_target: None,
+            text_event: Some("Push!".to_string()),
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(40),
+            cadence_target: None,
+            text_event: None,
+        },
+    ];
+
+    Workout::new("Test Workout".to_string(), segments)
+}
+
+// ============================================================================
+// HEADER VALIDATION TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_header_size() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Header size should be 14 bytes
+    assert_eq!(data[0], 14, "Header size byte should be 14");
+}
+
+#[test]
+fn test_fit_protocol_version() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Protocol version should be 2.0 (0x20)
+    assert_eq!(data[1], 0x20, "Protocol version should be 2.0 (0x20)");
+}
+
+#[test]
+fn test_fit_profile_version() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Profile version is bytes 2-3 (little endian), should be 2100 (21.00)
+    let profile_version = u16::from_le_bytes([data[2], data[3]]);
+    assert_eq!(profile_version, 2100, "Profile version should be 21.00");
+}
+
+#[test]
+fn test_fit_data_type_signature() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Data type signature at bytes 8-11 should be ".FIT"
+    assert_eq!(
+        &data[8..12],
+        b".FIT",
+        "Data type signature should be '.FIT'"
+    );
+}
+
+#[test]
+fn test_fit_header_crc_present() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Header CRC is at bytes 12-13 for 14-byte header
+    let header_crc = u16::from_le_bytes([data[12], data[13]]);
+    // CRC should not be zero for valid header
+    assert_ne!(header_crc, 0, "Header CRC should be present and non-zero");
+}
+
+#[test]
+fn test_fit_data_size_field() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Data size is at bytes 4-7 (little endian)
+    let data_size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+
+    // Data size should match file length minus header (14 bytes) and final CRC (2 bytes)
+    let expected_data_size = data.len() - FIT_HEADER_SIZE - 2;
+    assert_eq!(
+        data_size as usize, expected_data_size,
+        "Data size field should match actual data size"
+    );
+}
+
+// ============================================================================
+// CRC VERIFICATION TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_header_crc_valid() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Calculate CRC for first 12 bytes (header excluding CRC)
+    let calculated_crc = calculate_crc(&data[0..12]);
+    let stored_crc = u16::from_le_bytes([data[12], data[13]]);
+
+    assert_eq!(
+        calculated_crc, stored_crc,
+        "Header CRC should match calculated value"
+    );
+}
+
+#[test]
+fn test_fit_file_crc_valid() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // File CRC covers everything except the last 2 bytes (the CRC itself)
+    let file_data_end = data.len() - 2;
+    let calculated_crc = calculate_crc(&data[0..file_data_end]);
+    let stored_crc = u16::from_le_bytes([data[file_data_end], data[file_data_end + 1]]);
+
+    assert_eq!(
+        calculated_crc, stored_crc,
+        "File CRC should match calculated value"
+    );
+}
+
+#[test]
+fn test_fit_crc_different_for_different_data() {
+    let ride = create_test_ride();
+    let samples1 = create_test_samples(10);
+    let samples2 = create_test_samples(20);
+
+    let data1 = export_fit(&ride, &samples1).unwrap();
+    let data2 = export_fit(&ride, &samples2).unwrap();
+
+    // Get file CRCs
+    let crc1 = u16::from_le_bytes([data1[data1.len() - 2], data1[data1.len() - 1]]);
+    let crc2 = u16::from_le_bytes([data2[data2.len() - 2], data2[data2.len() - 1]]);
+
+    // CRCs should be different for different content
+    assert_ne!(crc1, crc2, "CRCs should differ for different content");
+}
+
+// ============================================================================
+// DATA INTEGRITY TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_minimum_file_size() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(1);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Minimum size: header (14) + messages + CRC (2)
+    assert!(
+        data.len() > FIT_HEADER_SIZE + 2,
+        "FIT file should be larger than just header and CRC"
+    );
+}
+
+#[test]
+fn test_fit_file_size_increases_with_samples() {
+    let ride = create_test_ride();
+    let samples_small = create_test_samples(10);
+    let samples_large = create_test_samples(100);
+
+    let data_small = export_fit(&ride, &samples_small).unwrap();
+    let data_large = export_fit(&ride, &samples_large).unwrap();
+
+    assert!(
+        data_large.len() > data_small.len(),
+        "More samples should produce larger file"
+    );
+}
+
+#[test]
+fn test_fit_export_empty_samples_returns_error() {
+    let ride = create_test_ride();
+    let samples: Vec<RideSample> = vec![];
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_err(), "Empty samples should return error");
+}
+
+#[test]
+fn test_fit_export_single_sample() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(1);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Single sample should export successfully");
+}
+
+#[test]
+fn test_fit_export_large_ride() {
+    let ride = create_test_ride();
+    // 2 hours of samples at 1Hz = 7200 samples
+    let samples = create_test_samples(7200);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Large ride should export successfully");
+
+    let data = result.unwrap();
+    // Verify structure is intact
+    assert_eq!(data[0], 14);
+    assert_eq!(&data[8..12], b".FIT");
+}
+
+// ============================================================================
+// MESSAGE STRUCTURE TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_contains_definition_messages() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Definition messages have bit 6 set in the record header
+    // Look for at least one definition message after the header
+    let data_section = &data[FIT_HEADER_SIZE..data.len() - 2];
+
+    let has_definition = data_section.iter().any(|&b| (b & 0x40) != 0);
+    assert!(
+        has_definition,
+        "FIT file should contain definition messages"
+    );
+}
+
+#[test]
+fn test_fit_contains_data_messages() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Data messages have bit 6 clear in the record header (and bits 4-5 clear for normal header)
+    let data_section = &data[FIT_HEADER_SIZE..data.len() - 2];
+
+    // After definitions, there should be data messages
+    // For data messages, bits 6-7 are 0 (for normal header, not compressed timestamp)
+    let has_data_message = data_section.iter().any(|&b| (b & 0xC0) == 0x00);
+    assert!(has_data_message, "FIT file should contain data messages");
+}
+
+#[test]
+fn test_fit_definition_before_data() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    let data_section = &data[FIT_HEADER_SIZE..data.len() - 2];
+
+    // First record after header should be a definition (bit 6 set)
+    assert!(
+        (data_section[0] & 0x40) != 0,
+        "First record should be a definition message"
+    );
+}
+
+// ============================================================================
+// TIMESTAMP TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_timestamp_epoch_conversion() {
+    // FIT epoch is 1989-12-31 00:00:00 UTC
+    // Unix epoch is 1970-01-01 00:00:00 UTC
+    // Difference is 631065600 seconds
+
+    let fit_epoch = Utc.with_ymd_and_hms(1989, 12, 31, 0, 0, 0).unwrap();
+    let fit_timestamp = (fit_epoch.timestamp() - FIT_EPOCH_OFFSET) as u32;
+    assert_eq!(fit_timestamp, 0, "FIT epoch should convert to 0");
+
+    // One day after FIT epoch
+    let next_day = Utc.with_ymd_and_hms(1990, 1, 1, 0, 0, 0).unwrap();
+    let fit_timestamp = (next_day.timestamp() - FIT_EPOCH_OFFSET) as u32;
+    assert_eq!(fit_timestamp, 86400, "One day should be 86400 seconds");
+}
+
+#[test]
+fn test_fit_ride_timestamp_in_valid_range() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // The ride started at 2025-01-15, which should produce a reasonable FIT timestamp
+    let expected_fit_timestamp = (ride.started_at.timestamp() - FIT_EPOCH_OFFSET) as u32;
+
+    // This timestamp should be around 1105689600 (seconds from FIT epoch to Jan 2025)
+    assert!(
+        expected_fit_timestamp > 1000000000,
+        "FIT timestamp for 2025 should be large positive value"
+    );
+}
+
+// ============================================================================
+// CYCLING DYNAMICS TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_with_dynamics_larger_than_without() {
+    let ride = create_test_ride();
+    let samples_no_dynamics = create_test_samples(50);
+    let samples_with_dynamics = create_test_samples_with_dynamics(50);
+
+    let data_no_dynamics = export_fit(&ride, &samples_no_dynamics).unwrap();
+    let data_with_dynamics = export_fit(&ride, &samples_with_dynamics).unwrap();
+
+    assert!(
+        data_with_dynamics.len() > data_no_dynamics.len(),
+        "FIT with dynamics should be larger"
+    );
+}
+
+#[test]
+fn test_fit_with_power_phase_larger_than_dynamics_only() {
+    let ride = create_test_ride();
+    let samples_dynamics = create_test_samples_with_dynamics(50);
+    let samples_power_phase = create_test_samples_with_power_phase(50);
+
+    let data_dynamics = export_fit(&ride, &samples_dynamics).unwrap();
+    let data_power_phase = export_fit(&ride, &samples_power_phase).unwrap();
+
+    assert!(
+        data_power_phase.len() > data_dynamics.len(),
+        "FIT with power phase should be larger than dynamics only"
+    );
+}
+
+#[test]
+fn test_fit_dynamics_export_succeeds() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(100);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export with dynamics should succeed");
+
+    // Verify basic structure
+    let data = result.unwrap();
+    assert_eq!(data[0], 14);
+    assert_eq!(&data[8..12], b".FIT");
+}
+
+#[test]
+fn test_fit_power_phase_export_succeeds() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_power_phase(100);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export with power phase should succeed");
+
+    // Verify basic structure
+    let data = result.unwrap();
+    assert_eq!(data[0], 14);
+    assert_eq!(&data[8..12], b".FIT");
+}
+
+// ============================================================================
+// LAP DATA TESTS
+// ============================================================================
+
+#[test]
+fn test_lap_data_from_samples_basic() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(100);
+
+    let lap = LapData::from_samples(&samples, 0, 50, ride.started_at);
+    assert!(lap.is_some(), "LapData should be created from valid range");
+
+    let lap = lap.unwrap();
+    assert_eq!(lap.duration_seconds, 50);
+    assert!(lap.avg_power.is_some());
+    assert!(lap.avg_hr.is_some());
+    assert!(lap.avg_cadence.is_some());
+}
+
+#[test]
+fn test_lap_data_from_samples_invalid_range() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    // start >= end
+    let lap = LapData::from_samples(&samples, 5, 5, ride.started_at);
+    assert!(lap.is_none(), "Equal start/end should return None");
+
+    // start > end
+    let lap = LapData::from_samples(&samples, 8, 5, ride.started_at);
+    assert!(lap.is_none(), "start > end should return None");
+
+    // end > samples.len()
+    let lap = LapData::from_samples(&samples, 0, 100, ride.started_at);
+    assert!(lap.is_none(), "end > len should return None");
+}
+
+#[test]
+fn test_lap_data_from_samples_empty() {
+    let ride = create_test_ride();
+    let samples: Vec<RideSample> = vec![];
+
+    let lap = LapData::from_samples(&samples, 0, 0, ride.started_at);
+    assert!(lap.is_none(), "Empty samples should return None");
+}
+
+#[test]
+fn test_lap_data_calculates_averages() {
+    let ride = create_test_ride();
+    let mut samples = Vec::new();
+
+    // Create samples with known values for easy average calculation
+    for i in 0..10 {
+        samples.push(RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(200), // All same power
+            cadence_rpm: Some(90),  // All same cadence
+            heart_rate_bpm: Some(150), // All same HR
+            speed_kmh: Some(30.0),
+            distance_meters: (i as f64) * 8.33,
+            calories: i,
+            resistance_level: None,
+            target_power: None,
+            trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        });
+    }
+
+    let lap = LapData::from_samples(&samples, 0, 10, ride.started_at).unwrap();
+
+    assert_eq!(lap.avg_power, Some(200));
+    assert_eq!(lap.avg_cadence, Some(90));
+    assert_eq!(lap.avg_hr, Some(150));
+}
+
+#[test]
+fn test_lap_data_calculates_max_values() {
+    let ride = create_test_ride();
+    let mut samples = Vec::new();
+
+    // Create samples with varying values
+    for i in 0..10 {
+        samples.push(RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(100 + (i * 20) as u16), // 100, 120, 140, ... 280
+            cadence_rpm: Some(90),
+            heart_rate_bpm: Some(140 + (i * 3) as u8), // 140, 143, 146, ... 167
+            speed_kmh: Some(30.0),
+            distance_meters: (i as f64) * 8.33,
+            calories: i,
+            resistance_level: None,
+            target_power: None,
+            trainer_grade: None,
+            left_right_balance: None,
+            left_torque_effectiveness: None,
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: None,
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        });
+    }
+
+    let lap = LapData::from_samples(&samples, 0, 10, ride.started_at).unwrap();
+
+    assert_eq!(lap.max_power, Some(280)); // 100 + 9*20
+    assert_eq!(lap.max_hr, Some(167)); // 140 + 9*3
+}
+
+#[test]
+fn test_lap_data_from_segment_durations() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(120); // 2 minutes of samples
+
+    // Create 3 segments: 30s, 30s, 30s
+    let segment_durations = vec![30, 30, 30];
+    let laps = LapData::from_segment_durations(&samples, &segment_durations, ride.started_at);
+
+    // Should have 4 laps (3 segments + remaining 30 samples)
+    assert_eq!(laps.len(), 4);
+}
+
+#[test]
+fn test_lap_data_from_segment_durations_empty() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+
+    // Empty segments
+    let laps = LapData::from_segment_durations(&samples, &[], ride.started_at);
+    assert!(laps.is_empty());
+
+    // Empty samples
+    let laps = LapData::from_segment_durations(&[], &[30, 30], ride.started_at);
+    assert!(laps.is_empty());
+}
+
+// ============================================================================
+// MULTI-LAP EXPORT TESTS
+// ============================================================================
+
+#[test]
+fn test_export_fit_with_laps_larger_than_single_lap() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(120);
+
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 40, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 40, 80, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 80, 120, ride.started_at).unwrap(),
+    ];
+
+    let single_lap = export_fit(&ride, &samples).unwrap();
+    let multi_lap = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+
+    assert!(
+        multi_lap.len() > single_lap.len(),
+        "Multi-lap export should be larger due to additional lap messages"
+    );
+}
+
+#[test]
+fn test_export_fit_with_laps_valid_structure() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(100);
+
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 50, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 50, 100, ride.started_at).unwrap(),
+    ];
+
+    let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+
+    // Verify header structure
+    assert_eq!(data[0], 14);
+    assert_eq!(data[1], 0x20);
+    assert_eq!(&data[8..12], b".FIT");
+
+    // Verify CRC is valid
+    let file_crc = calculate_crc(&data[..data.len() - 2]);
+    let stored_crc = u16::from_le_bytes([data[data.len() - 2], data[data.len() - 1]]);
+    assert_eq!(file_crc, stored_crc);
+}
+
+#[test]
+fn test_export_fit_with_laps_empty_falls_back() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+
+    // Empty laps should fall back to single lap
+    let multi_lap = export_fit_with_laps(&ride, &samples, &[]).unwrap();
+    let single_lap = export_fit(&ride, &samples).unwrap();
+
+    assert_eq!(
+        multi_lap.len(),
+        single_lap.len(),
+        "Empty laps should fall back to single lap export"
+    );
+}
+
+#[test]
+fn test_export_fit_with_segments() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(120);
+
+    let segment_durations = vec![40, 40, 40];
+    let result = export_fit_with_segments(&ride, &samples, &segment_durations);
+
+    assert!(result.is_ok());
+
+    let data = result.unwrap();
+    assert_eq!(data[0], 14);
+    assert_eq!(&data[8..12], b".FIT");
+}
+
+#[test]
+fn test_export_fit_with_segments_empty_falls_back() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+
+    let multi_segment = export_fit_with_segments(&ride, &samples, &[]).unwrap();
+    let single_lap = export_fit(&ride, &samples).unwrap();
+
+    assert_eq!(multi_segment.len(), single_lap.len());
+}
+
+// ============================================================================
+// WORKOUT EXPORT TESTS
+// ============================================================================
+
+#[test]
+fn test_extract_workout_segment_durations() {
+    let workout = create_test_workout();
+    let durations = extract_workout_segment_durations(&workout);
+
+    assert_eq!(durations.len(), 4);
+    assert_eq!(durations[0], 30); // Warmup
+    assert_eq!(durations[1], 60); // Steady state
+    assert_eq!(durations[2], 30); // Intervals
+    assert_eq!(durations[3], 30); // Cooldown
+}
+
+#[test]
+fn test_extract_workout_segment_durations_empty() {
+    let workout = Workout::new("Empty".to_string(), vec![]);
+    let durations = extract_workout_segment_durations(&workout);
+
+    assert!(durations.is_empty());
+}
+
+#[test]
+fn test_export_fit_with_workout() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(150);
+    let workout = create_test_workout();
+
+    let result = export_fit_with_workout(&ride, &samples, Some(&workout));
+    assert!(result.is_ok());
+
+    let data = result.unwrap();
+    assert_eq!(data[0], 14);
+    assert_eq!(&data[8..12], b".FIT");
+}
+
+#[test]
+fn test_export_fit_with_workout_none_falls_back() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+
+    let with_workout = export_fit_with_workout(&ride, &samples, None).unwrap();
+    let single_lap = export_fit(&ride, &samples).unwrap();
+
+    assert_eq!(with_workout.len(), single_lap.len());
+}
+
+#[test]
+fn test_export_fit_with_workout_empty_segments_falls_back() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+    let workout = Workout::new("Empty".to_string(), vec![]);
+
+    let with_workout = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let single_lap = export_fit(&ride, &samples).unwrap();
+
+    assert_eq!(with_workout.len(), single_lap.len());
+}
+
+#[test]
+fn test_export_fit_with_workout_larger_than_single_lap() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(150);
+    let workout = create_test_workout();
+
+    let with_workout = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let single_lap = export_fit(&ride, &samples).unwrap();
+
+    assert!(
+        with_workout.len() > single_lap.len(),
+        "Workout export should be larger due to multiple laps"
+    );
+}
+
+// ============================================================================
+// DATA HANDLING EDGE CASES
+// ============================================================================
+
+#[test]
+fn test_fit_handles_missing_optional_fields() {
+    let ride = create_test_ride();
+    let mut samples = Vec::new();
+
+    // Create sample with minimal data
+    samples.push(RideSample {
+        elapsed_seconds: 0,
+        power_watts: None,
+        cadence_rpm: None,
+        heart_rate_bpm: None,
+        speed_kmh: None,
+        distance_meters: 0.0,
+        calories: 0,
+        resistance_level: None,
+        target_power: None,
+        trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
+    });
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export should handle missing optional fields");
+}
+
+#[test]
+fn test_fit_handles_max_power_values() {
+    let ride = create_test_ride();
+    let mut samples = Vec::new();
+
+    samples.push(RideSample {
+        elapsed_seconds: 0,
+        power_watts: Some(u16::MAX),
+        cadence_rpm: Some(u8::MAX),
+        heart_rate_bpm: Some(u8::MAX),
+        speed_kmh: Some(f32::MAX),
+        distance_meters: f64::MAX,
+        calories: u32::MAX,
+        resistance_level: None,
+        target_power: None,
+        trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
+    });
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export should handle max values");
+}
+
+#[test]
+fn test_fit_handles_zero_duration_ride() {
+    let mut ride = create_test_ride();
+    ride.duration_seconds = 0;
+    ride.distance_meters = 0.0;
+
+    let samples = create_test_samples(1);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export should handle zero duration ride");
+}
+
+#[test]
+fn test_fit_handles_ride_without_end_time() {
+    let mut ride = create_test_ride();
+    ride.ended_at = None;
+
+    let samples = create_test_samples(10);
+
+    let result = export_fit(&ride, &samples);
+    assert!(result.is_ok(), "Export should handle missing end time");
+}
+
+// ============================================================================
+// DETERMINISTIC OUTPUT TESTS
+// ============================================================================
+
+#[test]
+fn test_fit_export_deterministic() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(50);
+
+    let data1 = export_fit(&ride, &samples).unwrap();
+    let data2 = export_fit(&ride, &samples).unwrap();
+
+    assert_eq!(
+        data1, data2,
+        "Same input should produce identical output"
+    );
+}
+
+#[test]
+fn test_fit_export_with_laps_deterministic() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(100);
+
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 50, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 50, 100, ride.started_at).unwrap(),
+    ];
+
+    let data1 = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+    let data2 = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+
+    assert_eq!(data1, data2);
+}

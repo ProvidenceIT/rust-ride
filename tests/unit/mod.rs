@@ -6,6 +6,7 @@ mod audio_test;
 mod career_tests;
 mod dynamics_test;
 mod elevation_test;
+mod fit_export_test;
 mod ftms_parser_test;
 mod fusion_test;
 mod gradient_tests;
