@@ -48,7 +48,7 @@ pub use race_lobby::{RaceLobbyAction, RaceLobbyScreen};
 pub use rewards::{RewardsAction, RewardsScreen};
 pub use ride::RideScreen;
 pub use ride_detail::{ExportFormat as DetailExportFormat, RideDetailAction, RideDetailScreen};
-pub use ride_history::{DateFilter, RideHistoryScreen, SortOrder};
+pub use ride_history::{DateFilter, RideHistoryScreen, RideSyncStatus, SortOrder};
 pub use ride_summary::{RideSummaryAction, RideSummaryScreen};
 pub use rider_profile::{RiderProfileAction, RiderProfileScreen};
 pub use route_browser::{RouteBrowserAction, RouteBrowserScreen, RouteSortOrder};
