@@ -11,6 +11,7 @@ use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleMana
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::cache::SensorCache;
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
     CYCLING_POWER_MEASUREMENT_UUID, CYCLING_POWER_SERVICE_UUID, FTMS_SERVICE_UUID,
@@ -37,9 +38,10 @@ struct NotificationContext {
     event_tx: Option<Sender<SensorEvent>>,
     sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
     device_id: String,
-    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
-    max_reconnect_attempts: u32,
-    reconnect_delay_secs: u64,
+    /// Per-device exponential backoff state for reconnection attempts.
+    reconnection_backoff: Arc<Mutex<HashMap<String, ExponentialBackoff>>>,
+    /// Configuration for exponential backoff reconnection.
+    backoff_config: ExponentialBackoffConfig,
     auto_reconnect: bool,
 }
 
@@ -67,8 +69,11 @@ pub struct SensorManager {
     is_scanning: Arc<Mutex<bool>>,
     /// Discovery timeout handle (for cancellation)
     discovery_timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Reconnection attempts (device_id -> attempt count)
-    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
+    /// Per-device exponential backoff state for reconnection attempts.
+    /// Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped).
+    reconnection_backoff: Arc<Mutex<HashMap<String, ExponentialBackoff>>>,
+    /// Configuration for exponential backoff reconnection.
+    backoff_config: ExponentialBackoffConfig,
     /// Cache of previously connected sensors for fast reconnection
     sensor_cache: Arc<Mutex<SensorCache>>,
     /// Progressive timeout state for current discovery
@@ -87,6 +92,16 @@ impl SensorManager {
             sensor_cache.len()
         );
 
+        // Create exponential backoff config from sensor config
+        // Uses the max_reconnect_attempts from config
+        let backoff_config = ExponentialBackoffConfig {
+            initial_delay: std::time::Duration::from_secs(1),
+            max_delay: std::time::Duration::from_secs(30),
+            multiplier: 2.0,
+            max_attempts: config.max_reconnect_attempts,
+            jitter_factor: 0.0,
+        };
+
         Self {
             config,
             adapter: None,
@@ -99,7 +114,8 @@ impl SensorManager {
             sensor_states: Arc::new(Mutex::new(HashMap::new())),
             is_scanning: Arc::new(Mutex::new(false)),
             discovery_timeout_handle: Arc::new(Mutex::new(None)),
-            reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
+            reconnection_backoff: Arc::new(Mutex::new(HashMap::new())),
+            backoff_config,
             sensor_cache: Arc::new(Mutex::new(sensor_cache)),
             progressive_timeout_state: Arc::new(Mutex::new(None)),
             connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
@@ -1016,13 +1032,13 @@ impl SensorManager {
         });
 
         // Start notification handler with auto-reconnect support (T029)
+        // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
         let ctx = NotificationContext {
             event_tx: self.event_tx.clone(),
             sensor_states: self.sensor_states.clone(),
             device_id: device_id.to_string(),
-            reconnect_attempts: self.reconnect_attempts.clone(),
-            max_reconnect_attempts: self.config.max_reconnect_attempts,
-            reconnect_delay_secs: self.config.reconnect_delay_secs,
+            reconnection_backoff: self.reconnection_backoff.clone(),
+            backoff_config: self.backoff_config.clone(),
             auto_reconnect: self.config.auto_reconnect,
         };
 
@@ -1095,8 +1111,10 @@ impl SensorManager {
                     state.last_data_at = Some(Instant::now());
                 }
 
-                // Reset reconnect attempts on successful data
-                ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
+                // Reset exponential backoff on successful data
+                if let Some(backoff) = ctx.reconnection_backoff.lock().await.get_mut(&ctx.device_id) {
+                    backoff.reset();
+                }
 
                 // Send data event
                 if let Some(tx) = &ctx.event_tx {
@@ -1117,20 +1135,32 @@ impl SensorManager {
         }
 
         // Check if we should attempt auto-reconnect (T029)
+        // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
         if ctx.auto_reconnect {
-            let mut attempts = ctx.reconnect_attempts.lock().await;
-            let attempt_count = attempts.entry(ctx.device_id.clone()).or_insert(0);
+            // Get or create backoff state for this device
+            let (delay, current_attempt, is_exhausted, max_attempts) = {
+                let mut backoffs = ctx.reconnection_backoff.lock().await;
+                let backoff = backoffs
+                    .entry(ctx.device_id.clone())
+                    .or_insert_with(|| ExponentialBackoff::with_config(ctx.backoff_config.clone()));
 
-            if *attempt_count < ctx.max_reconnect_attempts {
-                *attempt_count += 1;
-                let current_attempt = *attempt_count;
-                drop(attempts);
+                // Check if exhausted before recording attempt
+                if backoff.is_exhausted() {
+                    (std::time::Duration::ZERO, backoff.current_attempt(), true, ctx.backoff_config.max_attempts)
+                } else {
+                    // Record attempt and get delay with exponential backoff
+                    let delay = backoff.record_attempt();
+                    (delay, backoff.current_attempt(), false, ctx.backoff_config.max_attempts)
+                }
+            };
 
+            if !is_exhausted {
                 tracing::info!(
-                    "Auto-reconnect attempt {}/{} for sensor {}",
+                    "Auto-reconnect attempt {}/{} for sensor {} (waiting {:?})",
                     current_attempt,
-                    ctx.max_reconnect_attempts,
-                    ctx.device_id
+                    max_attempts,
+                    ctx.device_id,
+                    delay
                 );
 
                 // Send reconnecting state
@@ -1146,15 +1176,21 @@ impl SensorManager {
                     state.connection_state = ConnectionState::Reconnecting;
                 }
 
-                // Wait before reconnect attempt
-                tokio::time::sleep(std::time::Duration::from_secs(ctx.reconnect_delay_secs)).await;
+                // Wait with exponential backoff delay before reconnect attempt
+                tokio::time::sleep(delay).await;
 
                 // Try to reconnect
                 if let Err(e) = peripheral.connect().await {
                     tracing::warn!("Reconnection failed for {}: {}", ctx.device_id, e);
 
+                    // Check if we're now exhausted after this failed attempt
+                    let now_exhausted = {
+                        let backoffs = ctx.reconnection_backoff.lock().await;
+                        backoffs.get(&ctx.device_id).map_or(false, |b| b.is_exhausted())
+                    };
+
                     // Send final disconnected state if all attempts exhausted
-                    if current_attempt >= ctx.max_reconnect_attempts {
+                    if now_exhausted {
                         if let Some(tx) = &ctx.event_tx {
                             let _ = tx.send(SensorEvent::ConnectionChanged {
                                 device_id: ctx.device_id.clone(),
@@ -1162,7 +1198,7 @@ impl SensorManager {
                             });
                             let _ = tx.send(SensorEvent::Error(format!(
                                 "Failed to reconnect to {} after {} attempts",
-                                ctx.device_id, ctx.max_reconnect_attempts
+                                ctx.device_id, max_attempts
                             )));
                         }
                     }
@@ -1200,8 +1236,10 @@ impl SensorManager {
                         });
                     }
 
-                    // Reset attempts on successful reconnect
-                    ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
+                    // Reset backoff on successful reconnect
+                    if let Some(backoff) = ctx.reconnection_backoff.lock().await.get_mut(&ctx.device_id) {
+                        backoff.reset();
+                    }
 
                     // Recursively handle notifications again
                     Box::pin(Self::handle_notifications(peripheral, ctx)).await;
@@ -1211,7 +1249,7 @@ impl SensorManager {
                 // Max attempts reached
                 tracing::warn!(
                     "Max reconnect attempts ({}) reached for sensor {}",
-                    ctx.max_reconnect_attempts,
+                    max_attempts,
                     ctx.device_id
                 );
             }

@@ -9,6 +9,7 @@ pub mod fusion;
 pub mod imu;
 pub mod incline;
 pub mod manager;
+pub mod reconnection;
 pub mod smo2;
 pub mod types;
 
@@ -28,6 +29,9 @@ pub use incline::{
 };
 pub use cache::{CacheError, CachedSensor, SensorCache};
 pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+pub use reconnection::{
+    ExponentialBackoff, ExponentialBackoffConfig, ReconnectionManager, ReconnectionStats,
+};
 pub use manager::SensorManager;
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,
