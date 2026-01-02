@@ -11,10 +11,10 @@
       "discovered_at": "2026-01-02T23:06:15.750221+00:00"
     },
     "src/ui/screens/ride.rs": {
-      "description": "Main cadence display in render_main_metrics() uses cadence_3s_avg.or(cadence) pattern for smooth display with raw fallback. Uses .or() method on Option types to prefer smoothed value when available.",
-      "category": "ui",
-      "discovered_at": "2026-01-02T23:16:42.465839+00:00"
+      "description": "Full-screen mode cadence display in render_full_screen_mode() now uses cadence_3s_avg.or(self.metrics.cadence) pattern, consistent with main metrics display. Both use .or() for smoothed with raw fallback.",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T23:18:12.847539+00:00"
     }
   },
-  "last_updated": "2026-01-02T23:16:42.465839+00:00"
+  "last_updated": "2026-01-02T23:18:12.847539+00:00"
 }
