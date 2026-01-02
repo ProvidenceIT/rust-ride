@@ -234,6 +234,47 @@ impl TrainingLoadExport {
             Some((self.days[0].date, self.days[self.days.len() - 1].date))
         }
     }
+
+    /// Export the training load data to CSV format.
+    ///
+    /// Returns a CSV string with headers: `date,tss,atl,ctl,tsb,acwr`
+    ///
+    /// The `acwr` column contains the Acute:Chronic Workload Ratio when available,
+    /// or is empty when CTL is zero (division by zero).
+    ///
+    /// Dates are formatted as ISO 8601 (YYYY-MM-DD).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let training_load = TrainingLoadExport::from_days(vec![
+    ///     DailyLoadExport::new(NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(), 100.0, 75.0, 80.0, 5.0),
+    ///     DailyLoadExport::with_acwr(NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(), 80.0, 78.0, 81.0, 3.0, 0.96),
+    /// ]);
+    /// let csv = training_load.to_csv();
+    /// // csv contains:
+    /// // date,tss,atl,ctl,tsb,acwr
+    /// // 2024-06-15,100.00,75.00,80.00,5.00,
+    /// // 2024-06-16,80.00,78.00,81.00,3.00,0.96
+    /// ```
+    pub fn to_csv(&self) -> String {
+        let mut csv = String::new();
+        csv.push_str("date,tss,atl,ctl,tsb,acwr\n");
+
+        for day in &self.days {
+            csv.push_str(&format!(
+                "{},{:.2},{:.2},{:.2},{:.2},{}\n",
+                day.date,
+                day.tss,
+                day.atl,
+                day.ctl,
+                day.tsb,
+                day.acwr.map_or(String::new(), |v| format!("{:.2}", v)),
+            ));
+        }
+
+        csv
+    }
 }
 
 /// Export format for Critical Power model data.
@@ -775,6 +816,66 @@ impl AnalyticsExporter {
         let pdc_export = PdcExport::from_points(pdc_points);
 
         Ok(pdc_export.to_csv())
+    }
+
+    /// Export training load history for a user to CSV format.
+    ///
+    /// Returns a CSV string with headers: `date,tss,atl,ctl,tsb,acwr`
+    ///
+    /// The CSV format is suitable for import into spreadsheet applications
+    /// or analysis tools. Dates are in ISO 8601 format (YYYY-MM-DD).
+    /// Floating point values are formatted with 2 decimal places.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export training load data for
+    /// * `start_date` - The start date of the export range (inclusive)
+    /// * `end_date` - The end date of the export range (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// Returns a CSV string containing the training load data ordered
+    /// chronologically, or an error if:
+    /// - A database error occurs during data retrieval
+    /// - No training load data is available for the user in the date range
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let exporter = AnalyticsExporter::new(db);
+    /// let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    /// let end = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+    /// let csv = exporter.export_training_load_csv(user_id, start, end)?;
+    /// std::fs::write("training_load_export.csv", csv)?;
+    /// ```
+    pub fn export_training_load_csv(
+        &self,
+        user_id: Uuid,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<String, ExportError> {
+        let conn = self.db.connection();
+        let store = AnalyticsStore::new(conn);
+
+        // Load training load history for the specified date range
+        let load_history = store
+            .load_training_load_history(&user_id, start_date, end_date)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+        if load_history.is_empty() {
+            return Err(ExportError::InsufficientData(
+                "No training load data available for user in the specified date range".to_string(),
+            ));
+        }
+
+        // Convert to export format
+        let daily_loads: Vec<DailyLoadExport> = load_history
+            .into_iter()
+            .map(|(date, load)| DailyLoadExport::from_daily_load(date, load))
+            .collect();
+        let training_load_export = TrainingLoadExport::from_days(daily_loads);
+
+        Ok(training_load_export.to_csv())
     }
 }
 
@@ -1433,6 +1534,219 @@ mod tests {
         let json = serde_json::to_string(&export).expect("should serialize");
         assert!(json.contains("\"pdc\""));
         assert!(json.contains("\"training_load\""));
+    }
+
+    // ============ TrainingLoadExport CSV Tests ============
+
+    #[test]
+    fn test_training_load_export_to_csv_empty() {
+        let training_load = TrainingLoadExport::new();
+        let csv = training_load.to_csv();
+
+        // Should only contain the header
+        assert_eq!(csv, "date,tss,atl,ctl,tsb,acwr\n");
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_single_day() {
+        let days = vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            100.0,
+            75.0,
+            80.0,
+            5.0,
+        )];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "date,tss,atl,ctl,tsb,acwr");
+        assert_eq!(lines[1], "2024-06-15,100.00,75.00,80.00,5.00,");
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_multiple_days() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                80.0,
+                78.0,
+                81.0,
+                3.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                120.0,
+                85.0,
+                82.0,
+                -3.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "date,tss,atl,ctl,tsb,acwr");
+        assert_eq!(lines[1], "2024-06-15,100.00,75.00,80.00,5.00,");
+        assert_eq!(lines[2], "2024-06-16,80.00,78.00,81.00,3.00,");
+        assert_eq!(lines[3], "2024-06-17,120.00,85.00,82.00,-3.00,");
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_with_acwr() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ), // No ACWR (will be None)
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                80.0,
+                78.0,
+                81.0,
+                3.0,
+                0.96,
+            ), // With ACWR
+            DailyLoadExport::from_daily_load(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                DailyLoad {
+                    tss: 100.0,
+                    atl: 90.0,
+                    ctl: 85.0,
+                    tsb: -5.0,
+                },
+            ), // ACWR calculated: 90/85 = 1.058...
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "date,tss,atl,ctl,tsb,acwr");
+        // First day has no ACWR
+        assert_eq!(lines[1], "2024-06-15,100.00,75.00,80.00,5.00,");
+        // Second day has explicit ACWR
+        assert_eq!(lines[2], "2024-06-16,80.00,78.00,81.00,3.00,0.96");
+        // Third day has calculated ACWR
+        assert!(lines[3].starts_with("2024-06-17,100.00,90.00,85.00,-5.00,1.0"));
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_header_format() {
+        let training_load = TrainingLoadExport::new();
+        let csv = training_load.to_csv();
+
+        // Verify header is exactly as expected
+        assert!(csv.starts_with("date,tss,atl,ctl,tsb,acwr\n"));
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_sorted_chronologically() {
+        // Days added out of order
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                120.0,
+                85.0,
+                82.0,
+                -3.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                80.0,
+                78.0,
+                81.0,
+                3.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Days should be sorted chronologically in the CSV
+        assert!(lines[1].starts_with("2024-06-15,"));
+        assert!(lines[2].starts_with("2024-06-16,"));
+        assert!(lines[3].starts_with("2024-06-17,"));
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_decimal_precision() {
+        let days = vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            100.123456,  // Should be rounded to 2 decimal places
+            75.5,        // Should show as 75.50
+            80.999,      // Should be rounded to 81.00
+            5.0,         // Should show as 5.00
+        )];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Values should have exactly 2 decimal places
+        assert_eq!(lines[1], "2024-06-15,100.12,75.50,81.00,5.00,");
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_negative_tsb() {
+        let days = vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            150.0,
+            110.0,
+            85.0,
+            -25.0,  // Negative TSB indicates fatigue
+        )];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Negative TSB should be formatted correctly
+        assert_eq!(lines[1], "2024-06-15,150.00,110.00,85.00,-25.00,");
+    }
+
+    #[test]
+    fn test_training_load_export_to_csv_iso8601_date_format() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),  // Single digit day
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 12, 25).unwrap(),  // December
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Dates should be in ISO 8601 format (YYYY-MM-DD) with zero-padding
+        assert!(lines[1].starts_with("2024-01-05,"));
+        assert!(lines[2].starts_with("2024-12-25,"));
     }
 
     // ============ CpModelExport Tests ============
