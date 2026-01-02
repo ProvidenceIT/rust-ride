@@ -3,14 +3,19 @@
 //! Provides JSON and CSV export for analytics data including PDC,
 //! training load, CP model, and fitness profile.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::critical_power::CpModel;
 use super::pdc::PdcPoint;
 use super::rider_type::{PowerProfile, RiderType};
 use super::training_load::DailyLoad;
 use super::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
+use crate::storage::analytics_store::AnalyticsStore;
+use crate::storage::Database;
 
 /// A single point on the power duration curve for export.
 ///
@@ -527,6 +532,137 @@ impl AnalyticsExport {
         self.fitness_profile = Some(fitness_profile);
         self
     }
+}
+
+/// Analytics data exporter.
+///
+/// Provides methods for exporting analytics data to JSON and CSV formats.
+/// Follows the same pattern as [`crate::leaderboards::export::LeaderboardExporter`].
+pub struct AnalyticsExporter {
+    db: Arc<Database>,
+}
+
+impl AnalyticsExporter {
+    /// Create a new analytics exporter.
+    pub fn new(db: Arc<Database>) -> Self {
+        Self { db }
+    }
+
+    /// Build a full analytics export for a user.
+    ///
+    /// Retrieves all available analytics data for the user including:
+    /// - Power Duration Curve (PDC)
+    /// - Training load history (last 365 days)
+    /// - Current CP model
+    /// - Fitness profile (VO2max, FTP, rider type, power profile)
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export analytics for
+    ///
+    /// # Returns
+    ///
+    /// Returns an [`AnalyticsExport`] containing all available analytics data,
+    /// or an error if the export fails.
+    pub fn build_export(&self, user_id: Uuid) -> Result<AnalyticsExport, ExportError> {
+        let conn = self.db.connection();
+        let store = AnalyticsStore::new(conn);
+
+        let mut export = AnalyticsExport::new(user_id.to_string());
+
+        // Load PDC data
+        let pdc = store
+            .load_pdc(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+        if !pdc.is_empty() {
+            let pdc_points: Vec<PdcPointExport> = pdc
+                .points()
+                .map(|p| PdcPointExport::from(p.clone()))
+                .collect();
+            export = export.with_pdc(PdcExport::from_points(pdc_points));
+        }
+
+        // Load training load history (last 365 days)
+        let end_date = Utc::now().date_naive();
+        let start_date = end_date - chrono::Duration::days(365);
+
+        let load_history = store
+            .load_training_load_history(&user_id, start_date, end_date)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+        if !load_history.is_empty() {
+            let daily_loads: Vec<DailyLoadExport> = load_history
+                .into_iter()
+                .map(|(date, load)| DailyLoadExport::from_daily_load(date, load))
+                .collect();
+            export = export.with_training_load(TrainingLoadExport::from_days(daily_loads));
+        }
+
+        // Load current CP model
+        if let Some(cp_model) = store
+            .load_current_cp_model(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+        {
+            export = export.with_cp_model(CpModelExport::from(cp_model));
+        }
+
+        // Build fitness profile from available data
+        let mut fitness_profile = FitnessProfileExport::new();
+
+        // Load FTP
+        if let Some(ftp) = store
+            .load_accepted_ftp(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+        {
+            fitness_profile = fitness_profile.with_ftp(ftp);
+        }
+
+        // Load VO2max
+        if let Some(vo2max) = store
+            .load_current_vo2max(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+        {
+            fitness_profile = fitness_profile.with_vo2max(Vo2maxExport::from(vo2max));
+        }
+
+        // Load rider profile (type and power profile)
+        if let Some((rider_type, power_profile)) = store
+            .load_rider_profile(&user_id)
+            .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+        {
+            fitness_profile = fitness_profile
+                .with_rider_type(rider_type)
+                .with_power_profile(PowerProfileExport::from(power_profile));
+        }
+
+        // Only add fitness profile if it has any data
+        if fitness_profile.has_data() {
+            export = export.with_fitness_profile(fitness_profile);
+        }
+
+        Ok(export)
+    }
+}
+
+/// Errors that can occur during analytics export operations.
+#[derive(Debug, thiserror::Error)]
+pub enum ExportError {
+    /// User was not found in the database.
+    #[error("User not found: {0}")]
+    UserNotFound(Uuid),
+
+    /// Serialization of export data failed.
+    #[error("Serialization failed: {0}")]
+    SerializationFailed(String),
+
+    /// A database error occurred during export.
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    /// Not enough data available to perform the export.
+    #[error("Insufficient data: {0}")]
+    InsufficientData(String),
 }
 
 #[cfg(test)]
