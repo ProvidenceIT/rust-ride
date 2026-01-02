@@ -1,0 +1,14 @@
+{
+  "sourceType": "ideation",
+  "ideationType": "code_improvements",
+  "ideaId": "ci-003",
+  "rationale": "The leaderboards/export.rs module demonstrates a complete export pattern with LeaderboardExporter that exports to JSON and CSV. The analytics module has rich data structures (PowerDurationCurve, DailyLoad, CpModel) stored via AnalyticsStore. Applying the leaderboard export pattern to analytics enables data portability.",
+  "category": "feature",
+  "estimatedEffort": "medium",
+  "complexity": "medium",
+  "affectedFiles": [
+    "src/metrics/analytics/export.rs",
+    "src/metrics/analytics/mod.rs",
+    "src/storage/analytics_store.rs"
+  ]
+}
