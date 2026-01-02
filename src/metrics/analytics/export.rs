@@ -3046,4 +3046,374 @@ mod tests {
         assert_eq!(options.start_date, Some(start));
         assert_eq!(options.end_date, Some(end));
     }
+
+    // ============ P3.1: Comprehensive JSON Serialization Tests ============
+
+    #[test]
+    fn test_json_export_full_roundtrip_with_all_data_types() {
+        // Create a comprehensive export with ALL data types including training load
+        let timestamp = Utc::now();
+
+        // PDC with timestamps
+        let pdc = PdcExport::from_points(vec![
+            PdcPointExport::with_timestamp(5, 1200, timestamp),
+            PdcPointExport::new(60, 350),
+            PdcPointExport::with_timestamp(300, 280, timestamp),
+            PdcPointExport::new(1200, 250),
+        ]);
+
+        // Training load with ACWR
+        let training_load = TrainingLoadExport::from_days(vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 13).unwrap(),
+                0.0,
+                50.0,
+                60.0,
+                10.0,
+            ),
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 6, 14).unwrap(),
+                120.0,
+                65.0,
+                62.0,
+                -3.0,
+                1.05,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                80.0,
+                70.0,
+                65.0,
+                -5.0,
+            ),
+        ]);
+
+        // CP model with timestamp
+        let cp_model = CpModelExport::with_timestamp(250, 20000, 0.98, timestamp);
+
+        // Comprehensive fitness profile
+        let vo2max = Vo2maxExport::with_timestamp(55.0, "Well-Trained", "FTP-based", timestamp);
+        let power_profile = PowerProfileExport::new(175.0, 128.0, 94.0);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(275)
+            .with_rider_type(RiderType::TimeTrialist)
+            .with_vo2max(vo2max)
+            .with_power_profile(power_profile)
+            .with_updated_at(timestamp);
+
+        let export = AnalyticsExport::new("comprehensive-test-user")
+            .with_pdc(pdc)
+            .with_training_load(training_load)
+            .with_cp_model(cp_model)
+            .with_fitness_profile(fitness_profile);
+
+        // Export to JSON
+        let json = export.export_json().expect("should export to JSON");
+
+        // Deserialize back
+        let deserialized: AnalyticsExport =
+            serde_json::from_str(&json).expect("should deserialize from JSON");
+
+        // Verify metadata
+        assert_eq!(deserialized.user_id, "comprehensive-test-user");
+        assert_eq!(deserialized.export_version, AnalyticsExport::CURRENT_VERSION);
+
+        // Verify PDC roundtrip
+        let pdc = deserialized.pdc.expect("should have PDC data");
+        assert_eq!(pdc.len(), 4);
+        assert_eq!(pdc.points[0].duration_secs, 5);
+        assert_eq!(pdc.points[0].power_watts, 1200);
+        assert!(pdc.points[0].achieved_at.is_some());
+        assert_eq!(pdc.points[1].duration_secs, 60);
+        assert!(pdc.points[1].achieved_at.is_none());
+
+        // Verify training load roundtrip
+        let tl = deserialized.training_load.expect("should have training load data");
+        assert_eq!(tl.len(), 3);
+        assert_eq!(tl.days[0].date, NaiveDate::from_ymd_opt(2024, 6, 13).unwrap());
+        assert!(tl.days[0].acwr.is_none());
+        assert_eq!(tl.days[1].date, NaiveDate::from_ymd_opt(2024, 6, 14).unwrap());
+        assert!((tl.days[1].tss - 120.0).abs() < 0.001);
+        assert!(tl.days[1].acwr.is_some());
+        assert!((tl.days[1].acwr.unwrap() - 1.05).abs() < 0.001);
+
+        // Verify CP model roundtrip
+        let cp = deserialized.cp_model.expect("should have CP model data");
+        assert_eq!(cp.cp_watts, 250);
+        assert_eq!(cp.w_prime_joules, 20000);
+        assert!((cp.r_squared - 0.98).abs() < 0.001);
+        assert!(cp.calculated_at.is_some());
+
+        // Verify fitness profile roundtrip
+        let fp = deserialized.fitness_profile.expect("should have fitness profile");
+        assert_eq!(fp.ftp_watts, Some(275));
+        assert_eq!(fp.rider_type, Some("Time Trialist".to_string()));
+        assert!(fp.updated_at.is_some());
+
+        let vo2max = fp.vo2max.expect("should have VO2max");
+        assert!((vo2max.vo2max - 55.0).abs() < 0.001);
+        assert_eq!(vo2max.classification, "Well-Trained");
+        assert_eq!(vo2max.method, "FTP-based");
+        assert!(vo2max.calculated_at.is_some());
+
+        let pp = fp.power_profile.expect("should have power profile");
+        assert!((pp.neuromuscular_pct - 175.0).abs() < 0.001);
+        assert!((pp.anaerobic_pct - 128.0).abs() < 0.001);
+        assert!((pp.vo2max_pct - 94.0).abs() < 0.001);
+        assert!((pp.threshold_pct - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_json_export_validates_export_version() {
+        let export = AnalyticsExport::new("version-test-user");
+        let json = export.export_json().expect("should export");
+
+        // Parse as raw JSON to verify version format
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        let version = parsed["export_version"]
+            .as_str()
+            .expect("export_version should be a string");
+        assert_eq!(version, "1.0");
+
+        // Verify roundtrip preserves version
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.export_version, "1.0");
+    }
+
+    #[test]
+    fn test_json_export_validates_timestamp_format() {
+        let export = AnalyticsExport::new("timestamp-test-user");
+        let json = export.export_json().expect("should export");
+
+        // Parse as raw JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        let exported_at = parsed["exported_at"]
+            .as_str()
+            .expect("exported_at should be a string");
+
+        // Verify it's a valid ISO 8601 / RFC 3339 timestamp
+        let parsed_ts: Result<DateTime<Utc>, _> = exported_at.parse();
+        assert!(parsed_ts.is_ok(), "exported_at should be valid RFC3339");
+
+        // Timestamp should be recent (within last minute)
+        let ts = parsed_ts.unwrap();
+        let diff = Utc::now() - ts;
+        assert!(diff.num_seconds() < 60, "timestamp should be recent");
+    }
+
+    #[test]
+    fn test_json_export_nested_structures_with_all_timestamps() {
+        let timestamp = Utc::now();
+
+        // Create export with timestamps on all nested structures
+        let pdc = PdcExport::from_points(vec![
+            PdcPointExport::with_timestamp(60, 350, timestamp),
+        ]);
+        let cp_model = CpModelExport::with_timestamp(250, 20000, 0.95, timestamp);
+        let vo2max = Vo2maxExport::with_timestamp(52.0, "Trained", "Critical Power-based", timestamp);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_vo2max(vo2max)
+            .with_ftp(280)
+            .with_updated_at(timestamp);
+
+        let export = AnalyticsExport::new("nested-timestamps-user")
+            .with_pdc(pdc)
+            .with_cp_model(cp_model)
+            .with_fitness_profile(fitness_profile);
+
+        let json = export.export_json().expect("should export");
+
+        // Parse and verify all timestamp fields are present
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        // Check PDC point timestamp
+        assert!(parsed["pdc"]["points"][0]["achieved_at"].is_string());
+
+        // Check CP model timestamp
+        assert!(parsed["cp_model"]["calculated_at"].is_string());
+
+        // Check fitness profile timestamps
+        assert!(parsed["fitness_profile"]["updated_at"].is_string());
+        assert!(parsed["fitness_profile"]["vo2max"]["calculated_at"].is_string());
+    }
+
+    #[test]
+    fn test_json_export_omits_none_optional_fields() {
+        // Create minimal export without optional data
+        let export = AnalyticsExport::new("minimal-user");
+        let json = export.export_json().expect("should export");
+
+        // Parse as raw JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        // Optional fields should be absent (not null)
+        assert!(parsed.get("pdc").is_none());
+        assert!(parsed.get("training_load").is_none());
+        assert!(parsed.get("cp_model").is_none());
+        assert!(parsed.get("fitness_profile").is_none());
+    }
+
+    #[test]
+    fn test_json_export_pdc_points_sorted_by_duration() {
+        // Create PDC with unsorted points
+        let pdc = PdcExport::from_points(vec![
+            PdcPointExport::new(300, 280),
+            PdcPointExport::new(5, 1200),
+            PdcPointExport::new(60, 400),
+            PdcPointExport::new(1200, 250),
+        ]);
+        let export = AnalyticsExport::new("pdc-sort-test").with_pdc(pdc);
+
+        let json = export.export_json().expect("should export");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+
+        let pdc = deserialized.pdc.unwrap();
+        let durations: Vec<u32> = pdc.points.iter().map(|p| p.duration_secs).collect();
+
+        // Verify sorted ascending
+        assert_eq!(durations, vec![5, 60, 300, 1200]);
+    }
+
+    #[test]
+    fn test_json_export_training_load_sorted_chronologically() {
+        // Create training load with unsorted days
+        let training_load = TrainingLoadExport::from_days(vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                90.0,
+                75.0,
+                70.0,
+                -5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                65.0,
+                60.0,
+                -5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                80.0,
+                70.0,
+                65.0,
+                -5.0,
+            ),
+        ]);
+        let export = AnalyticsExport::new("tl-sort-test").with_training_load(training_load);
+
+        let json = export.export_json().expect("should export");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+
+        let tl = deserialized.training_load.unwrap();
+        let dates: Vec<NaiveDate> = tl.days.iter().map(|d| d.date).collect();
+
+        // Verify sorted chronologically
+        assert_eq!(
+            dates,
+            vec![
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_json_export_fitness_profile_rider_type_string() {
+        // Test that rider type is exported as human-readable string, not enum variant
+        let fitness_profile = FitnessProfileExport::new()
+            .with_rider_type(RiderType::Pursuiter);
+
+        let export = AnalyticsExport::new("rider-type-test")
+            .with_fitness_profile(fitness_profile);
+
+        let json = export.export_json().expect("should export");
+
+        // Should contain human-readable string, not "Pursuiter" raw enum name
+        assert!(json.contains("\"Pursuiter\""));
+
+        // Verify roundtrip
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+        let fp = deserialized.fitness_profile.unwrap();
+        assert_eq!(fp.rider_type, Some("Pursuiter".to_string()));
+    }
+
+    #[test]
+    fn test_json_export_preserves_floating_point_precision() {
+        let training_load = TrainingLoadExport::from_days(vec![DailyLoadExport::with_acwr(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            123.456,
+            78.901,
+            82.345,
+            -3.444,
+            0.958,
+        )]);
+
+        let export = AnalyticsExport::new("precision-test")
+            .with_training_load(training_load);
+
+        let json = export.export_json().expect("should export");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+
+        let tl = deserialized.training_load.unwrap();
+        let day = &tl.days[0];
+
+        // Verify floating point values are preserved within f32 precision
+        assert!((day.tss - 123.456).abs() < 0.001);
+        assert!((day.atl - 78.901).abs() < 0.001);
+        assert!((day.ctl - 82.345).abs() < 0.001);
+        assert!((day.tsb - (-3.444)).abs() < 0.001);
+        assert!((day.acwr.unwrap() - 0.958).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_json_export_handles_negative_values() {
+        // Negative TSB is common (fatigue > fitness)
+        let training_load = TrainingLoadExport::from_days(vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                150.0,
+                95.0,
+                70.0,
+                -25.0, // Very fatigued
+            ),
+        ]);
+
+        let export = AnalyticsExport::new("negative-test")
+            .with_training_load(training_load);
+
+        let json = export.export_json().expect("should export");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+
+        let tl = deserialized.training_load.unwrap();
+        assert!((tl.days[0].tsb - (-25.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_json_export_large_values() {
+        // Test with realistic large values
+        let pdc = PdcExport::from_points(vec![
+            PdcPointExport::new(1, 2000), // Very high sprint power
+            PdcPointExport::new(3600, 200), // 1-hour power
+        ]);
+
+        let cp_model = CpModelExport::new(280, 35000, 0.99);
+
+        let export = AnalyticsExport::new("large-values-test")
+            .with_pdc(pdc)
+            .with_cp_model(cp_model);
+
+        let json = export.export_json().expect("should export");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).unwrap();
+
+        let pdc = deserialized.pdc.unwrap();
+        assert_eq!(pdc.points[0].power_watts, 2000);
+        assert_eq!(pdc.points[1].duration_secs, 3600);
+
+        let cp = deserialized.cp_model.unwrap();
+        assert_eq!(cp.w_prime_joules, 35000);
+    }
 }
