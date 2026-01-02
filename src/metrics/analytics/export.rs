@@ -4047,4 +4047,190 @@ mod tests {
         // Verify negative values
         assert!(lines[2].contains("-13.00"));
     }
+
+    // ============ P3.4: Export Error Handling Tests ============
+
+    #[test]
+    fn test_export_error_user_not_found_contains_uuid() {
+        let user_id = Uuid::new_v4();
+        let error = ExportError::UserNotFound(user_id);
+
+        // Error message should contain the user ID
+        let error_msg = error.to_string();
+        assert!(error_msg.contains(&user_id.to_string()));
+        assert!(error_msg.contains("User not found"));
+    }
+
+    #[test]
+    fn test_export_error_user_not_found_display_format() {
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let error = ExportError::UserNotFound(user_id);
+
+        let error_msg = format!("{}", error);
+        assert_eq!(
+            error_msg,
+            "User not found: 550e8400-e29b-41d4-a716-446655440000"
+        );
+    }
+
+    #[test]
+    fn test_export_error_insufficient_data_with_descriptive_message() {
+        let error = ExportError::InsufficientData("No PDC data available for user".to_string());
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Insufficient data"));
+        assert!(error_msg.contains("No PDC data available for user"));
+    }
+
+    #[test]
+    fn test_export_error_insufficient_data_for_training_load() {
+        let error = ExportError::InsufficientData(
+            "No training load data available for user in the specified date range".to_string(),
+        );
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Insufficient data"));
+        assert!(error_msg.contains("training load"));
+        assert!(error_msg.contains("date range"));
+    }
+
+    #[test]
+    fn test_export_error_serialization_failed_contains_details() {
+        let error = ExportError::SerializationFailed(
+            "invalid type: expected map, found string".to_string(),
+        );
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Serialization failed"));
+        assert!(error_msg.contains("invalid type"));
+    }
+
+    #[test]
+    fn test_export_error_database_error_contains_message() {
+        let error = ExportError::DatabaseError("Connection refused".to_string());
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Database error"));
+        assert!(error_msg.contains("Connection refused"));
+    }
+
+    #[test]
+    fn test_export_error_debug_format() {
+        let user_id = Uuid::new_v4();
+        let error = ExportError::UserNotFound(user_id);
+
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("UserNotFound"));
+    }
+
+    #[test]
+    fn test_export_error_is_std_error() {
+        // Verify that ExportError implements std::error::Error
+        fn assert_error<E: std::error::Error>(_: &E) {}
+
+        let error = ExportError::UserNotFound(Uuid::new_v4());
+        assert_error(&error);
+
+        let error = ExportError::InsufficientData("test".to_string());
+        assert_error(&error);
+
+        let error = ExportError::SerializationFailed("test".to_string());
+        assert_error(&error);
+
+        let error = ExportError::DatabaseError("test".to_string());
+        assert_error(&error);
+    }
+
+    #[test]
+    fn test_export_error_distinct_variants() {
+        // Test that each error variant produces distinct messages
+        let user_id = Uuid::new_v4();
+        let errors = vec![
+            ExportError::UserNotFound(user_id),
+            ExportError::InsufficientData("test message".to_string()),
+            ExportError::SerializationFailed("test message".to_string()),
+            ExportError::DatabaseError("test message".to_string()),
+        ];
+
+        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+
+        // All error messages should be unique (different prefixes)
+        assert!(messages[0].starts_with("User not found"));
+        assert!(messages[1].starts_with("Insufficient data"));
+        assert!(messages[2].starts_with("Serialization failed"));
+        assert!(messages[3].starts_with("Database error"));
+    }
+
+    #[test]
+    fn test_export_error_empty_message_handling() {
+        // Ensure errors handle empty messages gracefully
+        let error = ExportError::InsufficientData(String::new());
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Insufficient data"));
+        // Should still be valid even with empty inner message
+        assert!(!error_msg.is_empty());
+    }
+
+    #[test]
+    fn test_export_error_long_message_handling() {
+        // Ensure errors handle long messages correctly
+        let long_message = "a".repeat(1000);
+        let error = ExportError::DatabaseError(long_message.clone());
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains(&long_message));
+        assert!(error_msg.len() > 1000);
+    }
+
+    #[test]
+    fn test_export_error_special_characters_in_message() {
+        // Test that error messages handle special characters
+        let message = "Error: Connection failed (code: 42) - user's data \"corrupted\"";
+        let error = ExportError::DatabaseError(message.to_string());
+
+        let error_msg = error.to_string();
+        assert!(error_msg.contains(message));
+        assert!(error_msg.contains("user's"));
+        assert!(error_msg.contains("\"corrupted\""));
+    }
+
+    #[test]
+    fn test_export_error_user_not_found_different_uuids() {
+        // Test that different UUIDs produce different error messages
+        let uuid1 = Uuid::new_v4();
+        let uuid2 = Uuid::new_v4();
+
+        let error1 = ExportError::UserNotFound(uuid1);
+        let error2 = ExportError::UserNotFound(uuid2);
+
+        assert_ne!(error1.to_string(), error2.to_string());
+        assert!(error1.to_string().contains(&uuid1.to_string()));
+        assert!(error2.to_string().contains(&uuid2.to_string()));
+    }
+
+    #[test]
+    fn test_export_error_informative_pdc_error() {
+        // Test the actual error message used in export_pdc_csv
+        let error = ExportError::InsufficientData("No PDC data available for user".to_string());
+
+        let msg = error.to_string();
+        // Message should be informative enough to understand the problem
+        assert!(msg.contains("PDC"));
+        assert!(msg.contains("data"));
+        assert!(msg.contains("user"));
+    }
+
+    #[test]
+    fn test_export_error_informative_training_load_error() {
+        // Test the actual error message used in export_training_load_csv
+        let error = ExportError::InsufficientData(
+            "No training load data available for user in the specified date range".to_string(),
+        );
+
+        let msg = error.to_string();
+        // Message should explain what's missing and why
+        assert!(msg.contains("training load"));
+        assert!(msg.contains("date range"));
+        assert!(msg.contains("user"));
+    }
 }
