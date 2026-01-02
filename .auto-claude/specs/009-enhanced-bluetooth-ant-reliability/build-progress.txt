@@ -14,6 +14,52 @@
 - Added unit tests in `tests/unit/parallel_discovery_test.rs`
 - Updated `tests/unit/mod.rs` with new test module
 
+### 1.2 - Implement device caching for fast reconnection (COMPLETED)
+- Created `src/sensors/cache.rs` with SensorCache and CachedSensor structs
+- CachedSensor stores device_id, name, sensor_type, protocol, last_connected, connection_count
+- SensorCache provides JSON-based persistence at {data_dir}/sensor_cache.json
+- Added priority-based reconnection (preferred sensors first, then by usage count)
+- Integrated cache into SensorManager:
+  - Cache loaded on initialization
+  - Sensors cached on successful connection
+  - `fast_reconnect_cached()` for quick device lookup
+  - `connect_preferred_sensors()` for auto-reconnection
+  - Cache saved on shutdown
+- Added stale sensor pruning (sensors not seen in 7+ days)
+- Added nickname and preferred sensor designation support
+- Created comprehensive unit tests in `tests/unit/sensor_cache_test.rs`
+- Updated `src/sensors/mod.rs` with cache exports
+- Updated `tests/unit/mod.rs` with new test module
+
+### 1.3 - Add progressive discovery timeout (COMPLETED)
+- Added progressive timeout types to `src/sensors/types.rs`:
+  - `ProgressiveTimeoutConfig` - configuration for timeout behavior
+    - `initial_scan_secs: 10` - aggressive initial scan period
+    - `extension_period_secs: 5` - extension when sensors still being found
+    - `max_total_secs: 30` - maximum total discovery time
+    - `activity_window_secs: 3` - window for detecting recent activity
+    - `idle_threshold_secs: 5` - time before stopping for idle
+    - Preset configurations: `fast()`, `thorough()`, `disabled()`
+  - `ProgressiveTimeoutState` - tracks discovery progress
+  - `DiscoveryPhase` - Initial/Extended/Completed phases
+  - `TimeoutDecision` - Continue/Extend/Stop decisions
+  - `StopReason` - MaxTimeReached/IdleTimeout/Completed/UserRequested
+  - `DiscoveryProgress` - summary struct for UI display with status_text() and progress_percent()
+- Updated `src/sensors/manager.rs`:
+  - Added `progressive_timeout_state` field to SensorManager
+  - Replaced fixed timeout with progressive timeout in `start_discovery_timeout()`
+  - Added `run_progressive_timeout()` async method that:
+    - Monitors sensor discovery activity every 500ms
+    - Extends scan when sensors are still being discovered
+    - Stops early when idle for too long after finding sensors
+    - Respects maximum total scan time (30s default)
+  - Added `stop_discovery_internal()` helper method
+  - Added public methods: `get_discovery_phase()`, `get_discovery_progress()`,
+    `get_progressive_timeout_config()`, `set_progressive_timeout_config()`
+- Updated `src/sensors/mod.rs` with new type exports
+- Created comprehensive unit tests in `tests/unit/progressive_timeout_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
 ## Status: Planning Complete
 
 ## Implementation Plan Created

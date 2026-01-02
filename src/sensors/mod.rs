@@ -32,6 +32,7 @@ pub use smo2::{
     SmO2Status,
 };
 pub use types::{
-    ConnectionState, DiscoveredSensor, ParallelDiscoveryResult, Protocol, SensorConfig,
-    SensorError, SensorEvent, SensorReading, SensorState, SensorType,
+    ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress, ParallelDiscoveryResult,
+    ProgressiveTimeoutConfig, ProgressiveTimeoutState, Protocol, SensorConfig, SensorError,
+    SensorEvent, SensorReading, SensorState, SensorType, StopReason, TimeoutDecision,
 };

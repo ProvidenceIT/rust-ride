@@ -1,0 +1,443 @@
+{
+  "feature": "Enhanced Bluetooth/ANT+ Reliability",
+  "description": "Improve sensor connection reliability with automatic reconnection, connection quality monitoring, and multi-sensor management. Reduce sensor discovery time and handle disconnections gracefully.",
+  "created_at": "2026-01-02T22:57:19.779Z",
+  "updated_at": "2026-01-03T00:00:00.000Z",
+  "status": "in_progress",
+  "planStatus": "ready",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Enhanced Discovery & Fast Connection",
+      "description": "Optimize sensor discovery to complete within 30 seconds with improved device detection",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Add parallel BLE/ANT+ discovery",
+          "description": "Implement concurrent scanning for BLE and ANT+ sensors to reduce total discovery time. Both protocols should scan simultaneously rather than sequentially.",
+          "status": "completed",
+          "files": [
+            "src/sensors/manager.rs"
+          ],
+          "tests": [
+            "tests/unit/parallel_discovery_test.rs"
+          ],
+          "acceptance": "BLE and ANT+ discovery run concurrently when both are enabled",
+          "notes": "Implemented concurrent BLE/ANT+ discovery using tokio::join! for true parallelism. Added ParallelDiscoveryResult struct, start_concurrent_discovery() method, and comprehensive unit tests.",
+          "updated_at": "2026-01-02T23:09:20.457524+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Implement device caching for fast reconnection",
+          "description": "Cache previously connected device information to enable faster reconnection without full discovery. Store device addresses, names, and protocols for known sensors.",
+          "status": "completed",
+          "files": [
+            "src/sensors/cache.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/sensor_cache_test.rs"
+          ],
+          "acceptance": "Known sensors reconnect within 5 seconds without full discovery",
+          "notes": "Implemented SensorCache module with CachedSensor struct for storing device information. Cache persists to JSON file and integrates with SensorManager for fast reconnection. Added fast_reconnect_cached() method and cache management APIs. Comprehensive unit tests added.",
+          "updated_at": "2026-01-02T23:18:31.945786+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Add progressive discovery timeout",
+          "description": "Implement progressive timeout that starts aggressive scanning then extends if needed. Initial 10s aggressive scan, then continue if sensors still being found.",
+          "status": "completed",
+          "files": [
+            "src/sensors/manager.rs",
+            "src/sensors/types.rs"
+          ],
+          "tests": [
+            "tests/unit/progressive_timeout_test.rs"
+          ],
+          "acceptance": "Discovery completes in 10-30 seconds based on sensor activity",
+          "notes": "Implemented progressive timeout for sensor discovery. Added ProgressiveTimeoutConfig with configurable initial scan (10s), extension periods (5s), and max time (30s). Added ProgressiveTimeoutState to track discovery progress. Integrated with SensorManager to automatically extend scanning when sensors are being discovered and stop early when idle. Added preset configurations (fast, thorough, disabled). Created comprehensive unit tests.",
+          "updated_at": "2026-01-02T23:26:52.409763+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Implement priority-based connection queue",
+          "description": "When multiple sensors discovered, connect to primary sensors first (trainers, power meters) before secondary (HR, cadence).",
+          "status": "pending",
+          "files": [
+            "src/sensors/connection_queue.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/connection_queue_test.rs"
+          ],
+          "acceptance": "Trainer and power meter connect before heart rate sensor"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Robust Automatic Reconnection",
+      "description": "Improve automatic reconnection with exponential backoff and intelligent retry logic",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Implement exponential backoff for reconnection",
+          "description": "Replace fixed delay reconnection with exponential backoff. Start at 1s, double each attempt up to 30s max. Reset on successful connection.",
+          "status": "pending",
+          "files": [
+            "src/sensors/reconnection.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/reconnection_backoff_test.rs"
+          ],
+          "acceptance": "Reconnection delays follow exponential pattern: 1s, 2s, 4s, 8s, 16s, 30s"
+        },
+        {
+          "id": "2.2",
+          "title": "Add connection health monitoring",
+          "description": "Track connection health based on data reception rate. Trigger proactive reconnection if data stops arriving before BLE disconnect notification.",
+          "status": "pending",
+          "files": [
+            "src/sensors/health.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/connection_health_test.rs"
+          ],
+          "acceptance": "Stale connections (no data for 5s) trigger reconnection before BLE timeout"
+        },
+        {
+          "id": "2.3",
+          "title": "Implement reconnection state machine",
+          "description": "Create proper state machine for connection lifecycle: Disconnected -> Connecting -> Connected -> Reconnecting. Handle edge cases and transitions cleanly.",
+          "status": "pending",
+          "files": [
+            "src/sensors/connection_state.rs",
+            "src/sensors/types.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/connection_state_test.rs"
+          ],
+          "acceptance": "All state transitions handled correctly, no invalid state combinations"
+        },
+        {
+          "id": "2.4",
+          "title": "Add persistent reconnection across app restarts",
+          "description": "Save connection state to enable reconnection to last-known sensors on app restart. Automatically attempt to reconnect to previously connected sensors.",
+          "status": "pending",
+          "files": [
+            "src/sensors/persistence.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/persistence_test.rs"
+          ],
+          "acceptance": "App restarts automatically reconnect to previously connected sensors"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Connection Quality Monitoring & UI",
+      "description": "Implement connection quality indicators and expose them in the UI",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Create ConnectionQuality tracking module",
+          "description": "Track RSSI, data rate, packet loss rate, and latency for each connected sensor. Calculate overall connection quality score (0-100).",
+          "status": "pending",
+          "files": [
+            "src/sensors/quality.rs",
+            "src/sensors/types.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/connection_quality_test.rs"
+          ],
+          "acceptance": "ConnectionQuality struct tracks RSSI, data rate, and computes quality score"
+        },
+        {
+          "id": "3.2",
+          "title": "Add RSSI polling for connected sensors",
+          "description": "Periodically poll RSSI values for connected BLE sensors. Update connection quality metrics every 2 seconds.",
+          "status": "pending",
+          "files": [
+            "src/sensors/manager.rs",
+            "src/sensors/quality.rs"
+          ],
+          "tests": [
+            "tests/unit/rssi_polling_test.rs"
+          ],
+          "acceptance": "RSSI values updated every 2 seconds for connected BLE sensors"
+        },
+        {
+          "id": "3.3",
+          "title": "Create ConnectionQualityIndicator UI widget",
+          "description": "Visual indicator showing connection quality with signal bars (1-4 bars), color coding (green/yellow/red), and tooltip with details.",
+          "status": "pending",
+          "files": [
+            "src/ui/widgets/connection_quality.rs",
+            "src/ui/widgets/mod.rs"
+          ],
+          "tests": [],
+          "acceptance": "Connection quality displayed as signal bars with appropriate colors"
+        },
+        {
+          "id": "3.4",
+          "title": "Integrate quality indicators into sensor setup screen",
+          "description": "Add connection quality indicators to the sensor setup screen for each connected sensor. Show warnings for poor connections.",
+          "status": "pending",
+          "files": [
+            "src/ui/screens/sensor_setup.rs",
+            "src/ui/widgets/sensor_status.rs"
+          ],
+          "tests": [],
+          "acceptance": "Sensor setup screen shows quality indicators and warns on poor connections"
+        },
+        {
+          "id": "3.5",
+          "title": "Add quality indicator to ride HUD",
+          "description": "Show minimal connection quality indicator during active rides. Flash warning when connection quality degrades.",
+          "status": "pending",
+          "files": [
+            "src/ui/widgets/hud.rs"
+          ],
+          "tests": [],
+          "acceptance": "HUD shows sensor connection quality with visual warning on degradation"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Sensor Conflict Resolution",
+      "description": "Handle dual-protocol sensors and multi-sensor conflicts gracefully",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Implement DualProtocolDetector",
+          "description": "Detect when a sensor is available on both BLE and ANT+ by matching device names and serial numbers. Create bindings between dual-protocol instances.",
+          "status": "pending",
+          "files": [
+            "src/sensors/dual_protocol.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/dual_protocol_test.rs"
+          ],
+          "acceptance": "Sensors with same name on BLE and ANT+ are detected as dual-protocol"
+        },
+        {
+          "id": "4.2",
+          "title": "Add protocol preference storage",
+          "description": "Store user's preferred protocol (BLE vs ANT+) for each dual-protocol sensor. Persist preference and use on reconnection.",
+          "status": "pending",
+          "files": [
+            "src/sensors/dual_protocol.rs",
+            "src/sensors/persistence.rs"
+          ],
+          "tests": [
+            "tests/unit/protocol_preference_test.rs"
+          ],
+          "acceptance": "Protocol preference saved and used automatically on reconnection"
+        },
+        {
+          "id": "4.3",
+          "title": "Implement sensor conflict detector",
+          "description": "Detect when multiple sensors provide the same data type (e.g., two power meters). Alert user and allow selection of primary sensor.",
+          "status": "pending",
+          "files": [
+            "src/sensors/conflict.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/sensor_conflict_test.rs"
+          ],
+          "acceptance": "Conflicts detected when multiple sensors provide same data type"
+        },
+        {
+          "id": "4.4",
+          "title": "Create conflict resolution dialog UI",
+          "description": "UI dialog to resolve sensor conflicts. Show both sensors, allow user to select primary, with option to remember choice.",
+          "status": "pending",
+          "files": [
+            "src/ui/dialogs/sensor_conflict.rs",
+            "src/ui/dialogs/mod.rs",
+            "src/ui/screens/sensor_setup.rs"
+          ],
+          "tests": [],
+          "acceptance": "Conflict dialog allows selection of primary sensor"
+        },
+        {
+          "id": "4.5",
+          "title": "Add automatic primary sensor failover",
+          "description": "When primary sensor disconnects, automatically promote secondary sensor if available. Notify user of failover.",
+          "status": "pending",
+          "files": [
+            "src/sensors/manager.rs",
+            "src/sensors/conflict.rs"
+          ],
+          "tests": [
+            "tests/unit/failover_test.rs"
+          ],
+          "acceptance": "Secondary sensor automatically becomes primary on disconnect"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Power Meter Pairing Improvements",
+      "description": "Improve power meter discovery and pairing consistency",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Add power meter wake-up detection",
+          "description": "Power meters often need pedaling to wake up. Detect this and prompt user to pedal if power meter not found but expected.",
+          "status": "pending",
+          "files": [
+            "src/sensors/power_meter.rs",
+            "src/sensors/manager.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/power_meter_test.rs"
+          ],
+          "acceptance": "User prompted to pedal if saved power meter not discovered"
+        },
+        {
+          "id": "5.2",
+          "title": "Implement extended discovery for power meters",
+          "description": "Power meters may take longer to advertise. Extend discovery time specifically for power meters if user has one saved.",
+          "status": "pending",
+          "files": [
+            "src/sensors/manager.rs",
+            "src/sensors/power_meter.rs"
+          ],
+          "tests": [
+            "tests/unit/extended_power_discovery_test.rs"
+          ],
+          "acceptance": "Discovery extends up to 45s when looking for saved power meter"
+        },
+        {
+          "id": "5.3",
+          "title": "Add calibration reminder system",
+          "description": "Track last calibration date for power meters. Remind user to calibrate if not done recently (configurable, default 7 days).",
+          "status": "pending",
+          "files": [
+            "src/sensors/calibration.rs",
+            "src/sensors/mod.rs"
+          ],
+          "tests": [
+            "tests/unit/calibration_reminder_test.rs"
+          ],
+          "acceptance": "Calibration reminder shown if power meter not calibrated in 7+ days"
+        },
+        {
+          "id": "5.4",
+          "title": "Implement zero-offset calibration flow",
+          "description": "Guided UI flow for power meter zero-offset calibration. Support both manual and automatic calibration commands.",
+          "status": "pending",
+          "files": [
+            "src/ui/dialogs/calibration.rs",
+            "src/ui/dialogs/mod.rs",
+            "src/sensors/calibration.rs"
+          ],
+          "tests": [],
+          "acceptance": "User can perform zero-offset calibration through guided UI"
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Integration & Testing",
+      "description": "Integration testing and final polish",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Create integration test for full discovery flow",
+          "description": "End-to-end test covering discovery, connection, data reception, and graceful disconnection.",
+          "status": "pending",
+          "files": [
+            "tests/integration/sensor_flow_test.rs"
+          ],
+          "tests": [],
+          "acceptance": "Integration test passes for full sensor lifecycle"
+        },
+        {
+          "id": "6.2",
+          "title": "Add reconnection stress test",
+          "description": "Test rapid connect/disconnect cycles to ensure stability. Verify no resource leaks or crashes.",
+          "status": "pending",
+          "files": [
+            "tests/integration/reconnection_stress_test.rs"
+          ],
+          "tests": [],
+          "acceptance": "100 rapid reconnection cycles complete without errors"
+        },
+        {
+          "id": "6.3",
+          "title": "Update sensor CLI commands",
+          "description": "Add CLI commands for testing connection quality, forcing reconnection, and viewing sensor diagnostics.",
+          "status": "pending",
+          "files": [
+            "src/cli/commands/sensors.rs"
+          ],
+          "tests": [],
+          "acceptance": "CLI commands available for sensor diagnostics and testing"
+        },
+        {
+          "id": "6.4",
+          "title": "Add troubleshooting documentation",
+          "description": "Document common connection issues and resolutions. Add in-app troubleshooting tips.",
+          "status": "pending",
+          "files": [
+            "src/ui/screens/sensor_setup.rs"
+          ],
+          "tests": [],
+          "acceptance": "Troubleshooting tips displayed when connection issues detected"
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "external": [
+      "btleplug (BLE communication)",
+      "rusb (ANT+ USB dongle)",
+      "tokio (async runtime)",
+      "crossbeam (channel communication)"
+    ],
+    "internal": [
+      "src/sensors/ (existing sensor module)",
+      "src/ui/widgets/ (existing UI widgets)",
+      "src/ui/screens/sensor_setup.rs (existing setup screen)"
+    ]
+  },
+  "acceptance_criteria": [
+    "Sensor discovery completes in under 30 seconds",
+    "Automatic reconnection on temporary disconnection",
+    "Connection quality indicator in UI",
+    "Graceful handling of sensor conflicts",
+    "Improved power meter pairing consistency"
+  ],
+  "qa_status": {
+    "status": "pending",
+    "tests_passed": "",
+    "issues": ""
+  },
+  "estimated_effort": "3-4 days",
+  "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
+  "last_updated": "2026-01-02T23:26:52.409763+00:00"
+}

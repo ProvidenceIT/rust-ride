@@ -16,8 +16,9 @@ use crate::sensors::ftms::{
     HEART_RATE_MEASUREMENT_UUID, HEART_RATE_SERVICE_UUID, INDOOR_BIKE_DATA_UUID,
 };
 use crate::sensors::types::{
-    ConnectionState, DiscoveredSensor, ParallelDiscoveryResult, Protocol, SensorConfig,
-    SensorError, SensorEvent, SensorReading, SensorState, SensorType,
+    ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress, ParallelDiscoveryResult,
+    ProgressiveTimeoutConfig, ProgressiveTimeoutState, Protocol, SensorConfig, SensorError,
+    SensorEvent, SensorReading, SensorState, SensorType, StopReason, TimeoutDecision,
 };
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -69,6 +70,8 @@ pub struct SensorManager {
     reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
     /// Cache of previously connected sensors for fast reconnection
     sensor_cache: Arc<Mutex<SensorCache>>,
+    /// Progressive timeout state for current discovery
+    progressive_timeout_state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
 }
 
 impl SensorManager {
@@ -95,6 +98,7 @@ impl SensorManager {
             discovery_timeout_handle: Arc::new(Mutex::new(None)),
             reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
             sensor_cache: Arc::new(Mutex::new(sensor_cache)),
+            progressive_timeout_state: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -401,39 +405,163 @@ impl SensorManager {
         self.start_ant_discovery().await
     }
 
-    /// Start discovery timeout task.
+    /// Start discovery timeout task with progressive timeout support.
     async fn start_discovery_timeout(&self, adapter: Adapter) {
         let timeout_secs = self.config.discovery_timeout_secs;
+        let progressive_config = self.config.progressive_timeout.clone();
         let is_scanning_timeout = self.is_scanning.clone();
         let event_tx_timeout = self.event_tx.clone();
         let timeout_handle = self.discovery_timeout_handle.clone();
+        let progressive_state = self.progressive_timeout_state.clone();
+        let discovered = self.discovered.clone();
+
+        // Initialize progressive timeout state
+        *progressive_state.lock().await = Some(ProgressiveTimeoutState::new());
 
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
-
-            // Check if still scanning
-            let mut is_scanning = is_scanning_timeout.lock().await;
-            if *is_scanning {
-                tracing::info!(
-                    "Discovery timeout reached ({}s), stopping scan",
-                    timeout_secs
-                );
-                *is_scanning = false;
-                drop(is_scanning);
-
-                // Stop the scan
-                if let Err(e) = adapter.stop_scan().await {
-                    tracing::warn!("Failed to stop scan on timeout: {}", e);
-                }
-
-                // Send scan stopped event
-                if let Some(tx) = &event_tx_timeout {
-                    let _ = tx.send(SensorEvent::ScanStopped);
-                }
-            }
+            Self::run_progressive_timeout(
+                adapter,
+                progressive_config,
+                timeout_secs,
+                is_scanning_timeout,
+                event_tx_timeout,
+                progressive_state,
+                discovered,
+            )
+            .await;
         });
 
         *timeout_handle.lock().await = Some(handle);
+    }
+
+    /// Run the progressive timeout logic.
+    ///
+    /// This monitors sensor discovery activity and adjusts the timeout:
+    /// - Initial aggressive 10s scan
+    /// - Extends if sensors are still being found
+    /// - Stops early if idle for too long
+    /// - Maximum 30s total scan time
+    async fn run_progressive_timeout(
+        adapter: Adapter,
+        config: ProgressiveTimeoutConfig,
+        fallback_timeout_secs: u64,
+        is_scanning: Arc<Mutex<bool>>,
+        event_tx: Option<Sender<SensorEvent>>,
+        state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
+        discovered: Arc<Mutex<HashMap<String, DiscoveredSensor>>>,
+    ) {
+        // Check interval for progressive timeout decisions
+        const CHECK_INTERVAL_MS: u64 = 500;
+
+        let mut last_discovered_count = 0usize;
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(CHECK_INTERVAL_MS)).await;
+
+            // Check if still scanning
+            if !*is_scanning.lock().await {
+                tracing::debug!("Progressive timeout: scanning stopped externally");
+                break;
+            }
+
+            // Update state with new discoveries
+            {
+                let current_count = discovered.lock().await.len();
+                let mut state_guard = state.lock().await;
+
+                if let Some(ref mut timeout_state) = *state_guard {
+                    // Record new discoveries
+                    while last_discovered_count < current_count {
+                        timeout_state.record_discovery();
+                        last_discovered_count += 1;
+                        tracing::debug!(
+                            "Progressive timeout: recorded discovery #{}, phase: {}",
+                            timeout_state.sensors_discovered,
+                            timeout_state.phase
+                        );
+                    }
+
+                    // Calculate decision
+                    let decision = timeout_state.calculate_decision(&config);
+
+                    match decision {
+                        TimeoutDecision::Continue => {
+                            // Keep scanning
+                            continue;
+                        }
+                        TimeoutDecision::Extend => {
+                            timeout_state.apply_extension();
+                            tracing::info!(
+                                "Progressive timeout: extending scan (extension #{}, {} sensors found)",
+                                timeout_state.extensions_count,
+                                timeout_state.sensors_discovered
+                            );
+                        }
+                        TimeoutDecision::Stop { reason } => {
+                            timeout_state.mark_completed();
+                            let elapsed = timeout_state.elapsed();
+                            let sensors = timeout_state.sensors_discovered;
+
+                            tracing::info!(
+                                "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors",
+                                reason,
+                                elapsed,
+                                sensors
+                            );
+
+                            // Stop scanning
+                            drop(state_guard);
+                            Self::stop_discovery_internal(
+                                &adapter,
+                                &is_scanning,
+                                &event_tx,
+                                reason,
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                } else {
+                    // No progressive state - use fallback timeout
+                    let elapsed = std::time::Instant::now();
+                    if elapsed.elapsed() >= std::time::Duration::from_secs(fallback_timeout_secs) {
+                        drop(state_guard);
+                        Self::stop_discovery_internal(
+                            &adapter,
+                            &is_scanning,
+                            &event_tx,
+                            StopReason::MaxTimeReached,
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Internal helper to stop discovery.
+    async fn stop_discovery_internal(
+        adapter: &Adapter,
+        is_scanning: &Arc<Mutex<bool>>,
+        event_tx: &Option<Sender<SensorEvent>>,
+        reason: StopReason,
+    ) {
+        let mut scanning = is_scanning.lock().await;
+        if *scanning {
+            *scanning = false;
+            drop(scanning);
+
+            tracing::info!("Discovery stopped: {:?}", reason);
+
+            if let Err(e) = adapter.stop_scan().await {
+                tracing::warn!("Failed to stop scan: {}", e);
+            }
+
+            if let Some(tx) = event_tx {
+                let _ = tx.send(SensorEvent::ScanStopped);
+            }
+        }
     }
 
     /// Process discovery events from the adapter.
@@ -1217,6 +1345,39 @@ impl SensorManager {
     /// Check if currently scanning.
     pub async fn is_scanning(&self) -> bool {
         *self.is_scanning.lock().await
+    }
+
+    /// Get the current discovery phase.
+    pub async fn get_discovery_phase(&self) -> Option<DiscoveryPhase> {
+        self.progressive_timeout_state
+            .lock()
+            .await
+            .as_ref()
+            .map(|s| s.phase)
+    }
+
+    /// Get detailed discovery progress information.
+    pub async fn get_discovery_progress(&self) -> Option<DiscoveryProgress> {
+        let state = self.progressive_timeout_state.lock().await;
+        state.as_ref().map(|s| DiscoveryProgress {
+            phase: s.phase,
+            elapsed: s.elapsed(),
+            sensors_discovered: s.sensors_discovered,
+            extensions_count: s.extensions_count,
+            is_active: s.phase != DiscoveryPhase::Completed,
+        })
+    }
+
+    /// Get the progressive timeout configuration.
+    pub fn get_progressive_timeout_config(&self) -> &ProgressiveTimeoutConfig {
+        &self.config.progressive_timeout
+    }
+
+    /// Set the progressive timeout configuration.
+    ///
+    /// Note: This only affects future discovery scans, not the current one.
+    pub fn set_progressive_timeout_config(&mut self, config: ProgressiveTimeoutConfig) {
+        self.config.progressive_timeout = config;
     }
 
     /// Get all sensor states (connected and recently seen).
