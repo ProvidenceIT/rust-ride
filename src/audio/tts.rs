@@ -210,44 +210,105 @@ impl TtsProvider for DefaultTtsProvider {
     }
 
     fn get_voices(&self) -> Vec<VoiceInfo> {
-        // TODO: Get actual voices from TTS engine
-        // For now, return placeholder voices
-        vec![
-            VoiceInfo {
-                id: "default".to_string(),
-                name: "System Default".to_string(),
-                language: "en-US".to_string(),
-                is_default: true,
-            },
-            #[cfg(target_os = "macos")]
-            VoiceInfo {
-                id: "samantha".to_string(),
-                name: "Samantha".to_string(),
-                language: "en-US".to_string(),
-                is_default: false,
-            },
-            #[cfg(target_os = "windows")]
-            VoiceInfo {
-                id: "david".to_string(),
-                name: "Microsoft David".to_string(),
-                language: "en-US".to_string(),
-                is_default: false,
-            },
-        ]
+        // Ensure TTS is initialized before enumerating voices
+        if let Err(e) = self.ensure_initialized() {
+            tracing::warn!("Failed to initialize TTS for voice enumeration: {}", e);
+            return Vec::new();
+        }
+
+        let engine_guard = self.engine.lock().unwrap();
+        let Some(ref tts) = *engine_guard else {
+            tracing::warn!("TTS engine not available for voice enumeration");
+            return Vec::new();
+        };
+
+        // Get voices from the TTS engine
+        match tts.voices() {
+            Ok(voices) => {
+                // Get the current voice to determine which is default
+                let current_voice_id = tts.voice().ok().flatten().map(|v| v.id().to_string());
+
+                voices
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, voice)| {
+                        let id = voice.id().to_string();
+                        let name = voice.name().to_string();
+                        // Get language from the voice's language tag
+                        let language = voice
+                            .language()
+                            .map(|lang| lang.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        // Mark as default if it matches the current voice, or if it's the first voice
+                        let is_default = current_voice_id
+                            .as_ref()
+                            .map(|current| current == &id)
+                            .unwrap_or(idx == 0);
+
+                        VoiceInfo {
+                            id,
+                            name,
+                            language,
+                            is_default,
+                        }
+                    })
+                    .collect()
+            }
+            Err(e) => {
+                tracing::warn!("Failed to enumerate TTS voices: {}", e);
+                Vec::new()
+            }
+        }
     }
 
     fn set_voice(&self, voice_id: &str) -> Result<(), AudioError> {
-        // Verify voice exists
-        let voices = self.get_voices();
-        if !voices.iter().any(|v| v.id == voice_id) {
-            return Err(AudioError::VoiceNotAvailable(voice_id.to_string()));
+        // Ensure TTS is initialized
+        self.ensure_initialized()?;
+
+        let mut engine_guard = self.engine.lock().unwrap();
+        let Some(ref mut tts) = *engine_guard else {
+            return Err(AudioError::TtsInitFailed(
+                "TTS engine not available".to_string(),
+            ));
+        };
+
+        // Get the list of voices from the engine and find the matching one
+        let voices = match tts.voices() {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(AudioError::VoiceNotAvailable(format!(
+                    "Failed to enumerate voices: {}",
+                    e
+                )));
+            }
+        };
+
+        // Find the voice with matching ID
+        let voice = voices.into_iter().find(|v| v.id() == voice_id);
+
+        match voice {
+            Some(v) => {
+                // Actually set the voice in the TTS engine
+                if let Err(e) = tts.set_voice(&v) {
+                    tracing::error!("Failed to set TTS voice '{}': {}", voice_id, e);
+                    return Err(AudioError::VoiceNotAvailable(format!(
+                        "Failed to set voice: {}",
+                        e
+                    )));
+                }
+
+                tracing::info!("TTS voice set to: {} ({})", v.name(), voice_id);
+
+                // Store the voice ID for tracking
+                *self.current_voice.lock().unwrap() = Some(voice_id.to_string());
+
+                Ok(())
+            }
+            None => {
+                tracing::warn!("Voice not found: {}", voice_id);
+                Err(AudioError::VoiceNotAvailable(voice_id.to_string()))
+            }
         }
-
-        *self.current_voice.lock().unwrap() = Some(voice_id.to_string());
-
-        // TODO: Actually set the voice in TTS engine
-
-        Ok(())
     }
 
     fn get_current_voice(&self) -> Option<String> {
@@ -592,14 +653,57 @@ mod tests {
         // Initially no voice is set
         assert!(provider.get_current_voice().is_none());
 
-        // Set a valid voice (from the placeholder list)
-        let result = provider.set_voice("default");
-        assert!(result.is_ok());
-        assert_eq!(provider.get_current_voice(), Some("default".to_string()));
+        // Get available voices (this also initializes TTS)
+        let voices = provider.get_voices();
 
-        // Invalid voice should fail
-        let result = provider.set_voice("nonexistent_voice");
-        assert!(result.is_err());
+        // If TTS is available and has voices, test setting one
+        if !voices.is_empty() {
+            let first_voice_id = voices[0].id.clone();
+
+            // Set a valid voice from the enumerated list
+            let result = provider.set_voice(&first_voice_id);
+            assert!(result.is_ok(), "Should be able to set an available voice");
+            assert_eq!(provider.get_current_voice(), Some(first_voice_id.clone()));
+
+            // Invalid voice should fail
+            let result = provider.set_voice("nonexistent_voice_id_12345");
+            assert!(result.is_err(), "Should fail for non-existent voice");
+
+            // Voice should still be the previously set one after failed attempt
+            assert_eq!(provider.get_current_voice(), Some(first_voice_id));
+        } else {
+            // TTS not available or no voices - just verify invalid voice fails
+            // This may fail to initialize, which is acceptable in CI environments
+            let result = provider.set_voice("nonexistent_voice");
+            // Either fails because TTS not available or because voice doesn't exist
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_voice_enumeration() {
+        let provider = DefaultTtsProvider::new();
+
+        // Get available voices
+        let voices = provider.get_voices();
+
+        // If TTS is available, we should have at least one voice
+        // Skip validation if TTS is not available (e.g., in CI)
+        if provider.initialized.load(Ordering::Acquire) {
+            // All voices should have non-empty IDs and names
+            for voice in &voices {
+                assert!(!voice.id.is_empty(), "Voice ID should not be empty");
+                assert!(!voice.name.is_empty(), "Voice name should not be empty");
+            }
+
+            // There should be at most one default voice
+            let default_count = voices.iter().filter(|v| v.is_default).count();
+            assert!(
+                default_count <= 1,
+                "Should have at most one default voice, found {}",
+                default_count
+            );
+        }
     }
 
     #[test]
