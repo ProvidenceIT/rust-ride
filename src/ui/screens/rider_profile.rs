@@ -17,6 +17,8 @@ pub enum RiderProfileAction {
     ChangeAvatar,
     /// Export profile to JSON file.
     ExportProfile,
+    /// Import profile from JSON file (opens file picker).
+    ImportProfile,
     /// Navigate back.
     Back,
 }
@@ -105,6 +107,9 @@ impl RiderProfileScreen {
             ui.horizontal(|ui| {
                 if ui.button("Export Profile").clicked() {
                     action = Some(RiderProfileAction::ExportProfile);
+                }
+                if ui.button("Import Profile").clicked() {
+                    action = Some(RiderProfileAction::ImportProfile);
                 }
             });
             ui.add_space(10.0);
