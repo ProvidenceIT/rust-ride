@@ -880,6 +880,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 if let Some(PlatformClient::Strava(client)) = self.clients.get(&platform) {
                     client
                         .upload_activity(
+                            &entry.record.ride_id,
                             &entry.fit_data,
                             entry.activity_name.as_deref(),
                             None, // description
