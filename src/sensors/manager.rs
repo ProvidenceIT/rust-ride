@@ -11,6 +11,7 @@ use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleMana
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::cache::SensorCache;
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
 use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
@@ -43,6 +44,8 @@ struct NotificationContext {
     /// Configuration for exponential backoff reconnection.
     backoff_config: ExponentialBackoffConfig,
     auto_reconnect: bool,
+    /// Connection health monitor for proactive reconnection.
+    health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
 }
 
 /// Manages BLE and ANT+ sensor discovery, connection, and data streaming.
@@ -80,6 +83,8 @@ pub struct SensorManager {
     progressive_timeout_state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
     /// Priority-based connection queue for discovered sensors
     connection_queue: Arc<Mutex<ConnectionQueue>>,
+    /// Connection health monitor for proactive stale detection
+    health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
 }
 
 impl SensorManager {
@@ -119,6 +124,7 @@ impl SensorManager {
             sensor_cache: Arc::new(Mutex::new(sensor_cache)),
             progressive_timeout_state: Arc::new(Mutex::new(None)),
             connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
+            health_monitor: Arc::new(Mutex::new(ConnectionHealthMonitor::new())),
         }
     }
 
@@ -992,36 +998,42 @@ impl SensorManager {
             .insert(device_id.to_string(), peripheral.clone());
 
         // Create sensor state and cache the sensor
-        let discovered = self.discovered.lock().await;
-        if let Some(disc_sensor) = discovered.get(device_id) {
-            let state = SensorState {
-                id: Uuid::new_v4(),
-                device_id: device_id.to_string(),
-                name: disc_sensor.name.clone(),
-                sensor_type: disc_sensor.sensor_type,
-                protocol: disc_sensor.protocol,
-                connection_state: ConnectionState::Connected,
-                signal_strength: disc_sensor.signal_strength,
-                battery_level: None,
-                last_data_at: None,
-                is_primary: false,
-            };
+        let sensor_type_for_health: Option<SensorType>;
+        {
+            let discovered = self.discovered.lock().await;
+            if let Some(disc_sensor) = discovered.get(device_id) {
+                sensor_type_for_health = Some(disc_sensor.sensor_type);
+                let state = SensorState {
+                    id: Uuid::new_v4(),
+                    device_id: device_id.to_string(),
+                    name: disc_sensor.name.clone(),
+                    sensor_type: disc_sensor.sensor_type,
+                    protocol: disc_sensor.protocol,
+                    connection_state: ConnectionState::Connected,
+                    signal_strength: disc_sensor.signal_strength,
+                    battery_level: None,
+                    last_data_at: None,
+                    is_primary: false,
+                };
 
-            self.sensor_states
-                .lock()
-                .await
-                .insert(device_id.to_string(), state);
+                self.sensor_states
+                    .lock()
+                    .await
+                    .insert(device_id.to_string(), state);
 
-            // Cache the sensor for fast reconnection
-            let mut cache = self.sensor_cache.lock().await;
-            cache.cache_sensor(
-                device_id.to_string(),
-                disc_sensor.name.clone(),
-                disc_sensor.sensor_type,
-                disc_sensor.protocol,
-            );
-            if let Err(e) = cache.save() {
-                tracing::warn!("Failed to save sensor cache: {}", e);
+                // Cache the sensor for fast reconnection
+                let mut cache = self.sensor_cache.lock().await;
+                cache.cache_sensor(
+                    device_id.to_string(),
+                    disc_sensor.name.clone(),
+                    disc_sensor.sensor_type,
+                    disc_sensor.protocol,
+                );
+                if let Err(e) = cache.save() {
+                    tracing::warn!("Failed to save sensor cache: {}", e);
+                }
+            } else {
+                sensor_type_for_health = None;
             }
         }
 
@@ -1030,6 +1042,19 @@ impl SensorManager {
             device_id: device_id.to_string(),
             state: ConnectionState::Connected,
         });
+
+        // Start health monitoring for this connection
+        {
+            let mut health_monitor = self.health_monitor.lock().await;
+            // Use strict config for trainers and power meters, relaxed for others
+            let health_config = match sensor_type_for_health {
+                Some(SensorType::Trainer) | Some(SensorType::SmartTrainer) | Some(SensorType::PowerMeter) => {
+                    ConnectionHealthConfig::strict()
+                }
+                _ => ConnectionHealthConfig::default()
+            };
+            health_monitor.start_monitoring_with_config(device_id, health_config);
+        }
 
         // Start notification handler with auto-reconnect support (T029)
         // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
@@ -1040,6 +1065,7 @@ impl SensorManager {
             reconnection_backoff: self.reconnection_backoff.clone(),
             backoff_config: self.backoff_config.clone(),
             auto_reconnect: self.config.auto_reconnect,
+            health_monitor: self.health_monitor.clone(),
         };
 
         tokio::spawn(async move {
@@ -1109,6 +1135,12 @@ impl SensorManager {
                 // Update last data time
                 if let Some(state) = ctx.sensor_states.lock().await.get_mut(&ctx.device_id) {
                     state.last_data_at = Some(Instant::now());
+                }
+
+                // Record data for health monitoring
+                {
+                    let mut health_monitor = ctx.health_monitor.lock().await;
+                    health_monitor.record_data(&ctx.device_id);
                 }
 
                 // Reset exponential backoff on successful data
@@ -1321,6 +1353,9 @@ impl SensorManager {
                 .await
                 .map_err(|e| SensorError::BleError(e.to_string()))?;
         }
+
+        // Stop health monitoring for this sensor
+        self.health_monitor.lock().await.stop_monitoring(device_id);
 
         // Update sensor state
         if let Some(state) = self.sensor_states.lock().await.get_mut(device_id) {
@@ -1834,6 +1869,107 @@ impl SensorManager {
         })
     }
 
+    // =========================================================================
+    // Connection Health Monitoring Methods
+    // =========================================================================
+
+    /// Get the health status of a connected sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_sensor_health(&self, device_id: &str) -> Option<HealthStatus> {
+        self.health_monitor.lock().await.get_status(device_id)
+    }
+
+    /// Get detailed health statistics for a sensor.
+    pub async fn get_sensor_health_stats(&self, device_id: &str) -> Option<HealthStats> {
+        self.health_monitor.lock().await.get_stats(device_id)
+    }
+
+    /// Get health statistics for all monitored sensors.
+    pub async fn get_all_health_stats(&self) -> Vec<HealthStats> {
+        self.health_monitor.lock().await.get_all_stats()
+    }
+
+    /// Check all connections for health issues.
+    ///
+    /// Returns a list of device IDs that have stale connections and may need
+    /// proactive reconnection.
+    pub async fn check_connection_health(&mut self) -> Vec<String> {
+        self.health_monitor.lock().await.check_all()
+    }
+
+    /// Get devices with stale connections (no data received for stale timeout).
+    ///
+    /// Stale connections should trigger proactive reconnection before
+    /// the BLE disconnect notification arrives.
+    pub async fn get_stale_connections(&self) -> Vec<String> {
+        self.health_monitor.lock().await.get_stale_devices()
+    }
+
+    /// Get devices that need attention (degraded or stale connections).
+    pub async fn get_connections_needing_attention(&self) -> Vec<String> {
+        self.health_monitor.lock().await.get_devices_needing_attention()
+    }
+
+    /// Check if a sensor's connection is healthy.
+    pub async fn is_connection_healthy(&self, device_id: &str) -> bool {
+        self.health_monitor
+            .lock()
+            .await
+            .get_status(device_id)
+            .map_or(false, |s| s == HealthStatus::Healthy)
+    }
+
+    /// Proactively reconnect to sensors with stale connections.
+    ///
+    /// This method checks all connected sensors for health issues and
+    /// attempts to reconnect to any with stale connections (no data for 5s).
+    /// This triggers reconnection BEFORE the BLE timeout would normally occur.
+    ///
+    /// Returns a list of device IDs that reconnection was attempted for.
+    pub async fn reconnect_stale_connections(&mut self) -> Vec<String> {
+        let stale_devices = self.get_stale_connections().await;
+
+        if stale_devices.is_empty() {
+            return Vec::new();
+        }
+
+        tracing::info!(
+            "Proactively reconnecting {} stale connections: {:?}",
+            stale_devices.len(),
+            stale_devices
+        );
+
+        let mut reconnected = Vec::new();
+
+        for device_id in stale_devices {
+            // Disconnect first
+            if let Err(e) = self.disconnect(&device_id).await {
+                tracing::warn!("Failed to disconnect stale sensor {}: {}", device_id, e);
+            }
+
+            // Attempt reconnection
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    tracing::info!("Successfully reconnected stale sensor: {}", device_id);
+                    reconnected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to reconnect stale sensor {}: {}", device_id, e);
+                }
+            }
+        }
+
+        reconnected
+    }
+
+    /// Reset health tracking for a sensor after successful reconnection.
+    ///
+    /// Call this after a manual reconnection to reset the health state.
+    pub async fn reset_sensor_health(&self, device_id: &str) {
+        self.health_monitor.lock().await.reset(device_id);
+    }
+
     /// Shutdown the sensor manager.
     pub async fn shutdown(&mut self) {
         tracing::info!("Shutting down SensorManager");
@@ -1847,6 +1983,9 @@ impl SensorManager {
         for device_id in device_ids {
             let _ = self.disconnect(&device_id).await;
         }
+
+        // Clear health monitoring
+        self.health_monitor.lock().await.clear();
 
         // Save sensor cache
         let mut cache = self.sensor_cache.lock().await;

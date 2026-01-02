@@ -6,6 +6,7 @@ pub mod connection_queue;
 pub mod dynamics;
 pub mod ftms;
 pub mod fusion;
+pub mod health;
 pub mod imu;
 pub mod incline;
 pub mod manager;
@@ -29,6 +30,9 @@ pub use incline::{
 };
 pub use cache::{CacheError, CachedSensor, SensorCache};
 pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+pub use health::{
+    ConnectionHealth, ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus,
+};
 pub use reconnection::{
     ExponentialBackoff, ExponentialBackoffConfig, ReconnectionManager, ReconnectionStats,
 };
