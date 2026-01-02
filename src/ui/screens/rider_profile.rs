@@ -2,10 +2,12 @@
 //!
 //! Displays and edits rider profile information, stats, and badges.
 //! T044: Add XP/level display to user profile screen.
+//! T019: Import confirmation dialog with conflict resolution.
 
 use egui::{Color32, RichText, Ui, Vec2};
 
 use crate::achievements::XpStatus;
+use crate::social::export::{ConflictResolution, ProfileConflict, ProfileExport};
 use crate::social::types::{Badge, RiderProfile};
 
 /// Rider profile screen actions.
@@ -19,6 +21,15 @@ pub enum RiderProfileAction {
     ExportProfile,
     /// Import profile from JSON file (opens file picker).
     ImportProfile,
+    /// Confirm import with conflict resolution strategy.
+    ConfirmImport {
+        /// The parsed profile export data.
+        export: ProfileExport,
+        /// The chosen conflict resolution strategy.
+        resolution: ConflictResolution,
+    },
+    /// Cancel import operation.
+    CancelImport,
     /// Navigate back.
     Back,
 }
@@ -33,6 +44,17 @@ pub enum RiderProfileView {
     Edit,
 }
 
+/// T019: State for the import conflict resolution dialog.
+#[derive(Debug, Clone)]
+pub struct ImportConflictDialogState {
+    /// The parsed profile export data to import.
+    pub export: ProfileExport,
+    /// Conflicts detected with the existing profile.
+    pub conflicts: Vec<ProfileConflict>,
+    /// Currently selected resolution strategy.
+    pub selected_resolution: ConflictResolution,
+}
+
 /// Rider profile screen state.
 pub struct RiderProfileScreen {
     /// Current view mode.
@@ -45,6 +67,8 @@ pub struct RiderProfileScreen {
     edit_sharing_enabled: bool,
     /// T044: Current XP status
     xp_status: Option<XpStatus>,
+    /// T019: Import conflict dialog state.
+    import_conflict_dialog: Option<ImportConflictDialogState>,
 }
 
 impl Default for RiderProfileScreen {
@@ -62,12 +86,40 @@ impl RiderProfileScreen {
             edit_bio: String::new(),
             edit_sharing_enabled: true,
             xp_status: None,
+            import_conflict_dialog: None,
         }
     }
 
     /// T044: Set the current XP status for display.
     pub fn set_xp_status(&mut self, status: XpStatus) {
         self.xp_status = Some(status);
+    }
+
+    /// T019: Show the import conflict resolution dialog.
+    ///
+    /// Call this when conflicts are detected during profile import.
+    /// The dialog will display the conflicts and allow the user to choose
+    /// how to resolve them: Replace existing, Merge data, or Cancel.
+    pub fn show_import_conflicts(
+        &mut self,
+        export: ProfileExport,
+        conflicts: Vec<ProfileConflict>,
+    ) {
+        self.import_conflict_dialog = Some(ImportConflictDialogState {
+            export,
+            conflicts,
+            selected_resolution: ConflictResolution::Merge, // Default to merge
+        });
+    }
+
+    /// T019: Check if the import conflict dialog is currently open.
+    pub fn has_import_dialog_open(&self) -> bool {
+        self.import_conflict_dialog.is_some()
+    }
+
+    /// T019: Close the import conflict dialog.
+    pub fn close_import_dialog(&mut self) {
+        self.import_conflict_dialog = None;
     }
 
     /// Start editing with current profile values.
@@ -121,6 +173,11 @@ impl RiderProfileScreen {
             } else {
                 action = Some(RiderProfileAction::Back);
             }
+        }
+
+        // T019: Render import conflict dialog if open
+        if let Some(dialog_action) = self.render_import_conflict_dialog(ui) {
+            action = Some(dialog_action);
         }
 
         action
@@ -491,5 +548,182 @@ impl RiderProfileScreen {
                     }
                 });
             });
+    }
+
+    /// T019: Render the import conflict resolution dialog.
+    ///
+    /// Displays detected conflicts and offers options: Replace existing, Merge data, Cancel.
+    /// Returns the chosen action when user confirms or cancels.
+    fn render_import_conflict_dialog(&mut self, ui: &mut Ui) -> Option<RiderProfileAction> {
+        let mut action = None;
+
+        // Clone dialog state to avoid borrow conflicts during rendering
+        if let Some(state) = self.import_conflict_dialog.clone() {
+            egui::Window::new("Import Profile Conflicts")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_width(400.0);
+
+                    // Header description
+                    ui.label("The imported profile conflicts with your existing data.");
+                    ui.label(
+                        RichText::new("Choose how to resolve these conflicts:")
+                            .weak()
+                            .size(13.0),
+                    );
+                    ui.add_space(12.0);
+
+                    // Display conflicts section
+                    ui.label(RichText::new("What will be changed:").strong());
+                    ui.add_space(6.0);
+
+                    egui::Frame::new()
+                        .fill(Color32::from_rgb(40, 40, 50))
+                        .inner_margin(10.0)
+                        .corner_radius(4.0)
+                        .show(ui, |ui| {
+                            self.render_conflict_details(ui, &state.conflicts, &state.export);
+                        });
+
+                    ui.add_space(16.0);
+
+                    // Resolution options
+                    ui.label(RichText::new("Resolution Strategy:").strong());
+                    ui.add_space(8.0);
+
+                    // Get mutable reference to dialog state for radio buttons
+                    if let Some(ref mut dialog) = self.import_conflict_dialog {
+                        ui.vertical(|ui| {
+                            ui.radio_value(
+                                &mut dialog.selected_resolution,
+                                ConflictResolution::Merge,
+                                "Merge data — Combine FTP history, keep existing profile",
+                            );
+                            ui.add_space(4.0);
+                            ui.radio_value(
+                                &mut dialog.selected_resolution,
+                                ConflictResolution::Replace,
+                                "Replace existing — Overwrite with imported data",
+                            );
+                        });
+                    }
+
+                    ui.add_space(16.0);
+
+                    // Action buttons
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            action = Some(RiderProfileAction::CancelImport);
+                            self.import_conflict_dialog = None;
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let import_btn = ui.add(
+                                egui::Button::new("Import")
+                                    .fill(Color32::from_rgb(66, 133, 244)),
+                            );
+                            if import_btn.clicked() {
+                                if let Some(dialog) = self.import_conflict_dialog.take() {
+                                    action = Some(RiderProfileAction::ConfirmImport {
+                                        export: dialog.export,
+                                        resolution: dialog.selected_resolution,
+                                    });
+                                }
+                            }
+                        });
+                    });
+                });
+        }
+
+        action
+    }
+
+    /// T019: Render details about detected conflicts.
+    fn render_conflict_details(
+        &self,
+        ui: &mut Ui,
+        conflicts: &[ProfileConflict],
+        export: &ProfileExport,
+    ) {
+        if conflicts.is_empty() {
+            ui.label(
+                RichText::new("No conflicts detected. Profile can be imported directly.")
+                    .color(Color32::from_rgb(76, 175, 80)),
+            );
+            return;
+        }
+
+        for conflict in conflicts {
+            match conflict {
+                ProfileConflict::ExistingProfile {
+                    existing_name,
+                    rider_id: _,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("•");
+                        ui.label(format!(
+                            "Profile exists: \"{}\" → \"{}\"",
+                            existing_name, export.profile.display_name
+                        ));
+                    });
+                }
+                ProfileConflict::DisplayNameMismatch {
+                    imported_name,
+                    existing_name,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("•");
+                        ui.label(format!(
+                            "Name change: \"{}\" → \"{}\"",
+                            existing_name, imported_name
+                        ));
+                    });
+                }
+                ProfileConflict::FtpMismatch {
+                    imported_ftp,
+                    existing_ftp,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("•");
+                        let existing = existing_ftp
+                            .map(|f| format!("{}W", f))
+                            .unwrap_or_else(|| "None".to_string());
+                        let imported = imported_ftp
+                            .map(|f| format!("{}W", f))
+                            .unwrap_or_else(|| "None".to_string());
+                        ui.label(format!("FTP change: {} → {}", existing, imported));
+                    });
+                }
+                ProfileConflict::AvatarMismatch {
+                    import_has_avatar,
+                    existing_has_avatar,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("•");
+                        let msg = match (existing_has_avatar, import_has_avatar) {
+                            (true, true) => "Avatar will be replaced",
+                            (true, false) => "Avatar will be removed",
+                            (false, true) => "Avatar will be added",
+                            (false, false) => "No avatar changes",
+                        };
+                        ui.label(msg);
+                    });
+                }
+            }
+        }
+
+        // Show FTP history info if any
+        if !export.ftp_history.is_empty() {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("•");
+                ui.label(format!(
+                    "{} FTP history entries will be imported",
+                    export.ftp_history.len()
+                ));
+            });
+        }
     }
 }

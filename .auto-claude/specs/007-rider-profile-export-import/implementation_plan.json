@@ -198,17 +198,21 @@
           "id": "T017",
           "title": "Add export button to rider profile screen",
           "description": "Add 'Export Profile' button to RiderProfileScreen. On click, trigger export and show success/error message.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 30,
-          "file_path": "src/ui/screens/rider_profile.rs"
+          "file_path": "src/ui/screens/rider_profile.rs",
+          "notes": "Added ExportProfile action to RiderProfileAction enum and 'Export Profile' button to rider profile screen. Button appears only in view mode and triggers ExportProfile action when clicked. Follows LeaderboardScreen pattern. Commit: 3311ee2",
+          "updated_at": "2026-01-02T23:46:42.462759+00:00"
         },
         {
           "id": "T018",
           "title": "Add import button to rider profile screen",
           "description": "Add 'Import Profile' button to RiderProfileScreen. Open file picker for JSON selection.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 25,
-          "file_path": "src/ui/screens/rider_profile.rs"
+          "file_path": "src/ui/screens/rider_profile.rs",
+          "notes": "Added ImportProfile action variant to RiderProfileAction enum and 'Import Profile' button to rider profile screen. Button appears next to 'Export Profile' in view mode and returns ImportProfile action when clicked. Parent component handles file picker. Follows LeaderboardScreen ImportJson pattern. Commit: e18cdcc",
+          "updated_at": "2026-01-02T23:49:02.766584+00:00"
         },
         {
           "id": "T019",
@@ -326,5 +330,5 @@
     "tests_passed": null,
     "issues": null
   },
-  "last_updated": "2026-01-02T23:43:24.700174+00:00"
+  "last_updated": "2026-01-02T23:49:02.766584+00:00"
 }
