@@ -10,7 +10,7 @@
 use chrono::Local;
 use egui::{Align, Color32, Layout, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
 
-use crate::recording::types::{Ride, RideSample};
+use crate::recording::types::{ExportFormat, Ride, RideSample};
 use crate::sensors::MotionSample;
 use crate::storage::config::Units;
 use crate::ui::theme::zone_colors;
@@ -26,15 +26,6 @@ pub enum RideDetailAction {
     Export(ExportFormat),
     /// Delete ride
     Delete,
-}
-
-/// Export format options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExportFormat {
-    /// TCX format for Strava/Garmin
-    Tcx,
-    /// CSV for data analysis
-    Csv,
 }
 
 /// Ride detail screen state.
@@ -65,7 +56,7 @@ impl Default for RideDetailScreen {
             motion_samples: Vec::new(),
             show_delete_dialog: false,
             show_export_dialog: false,
-            export_format: ExportFormat::Tcx,
+            export_format: ExportFormat::Fit,
             units: Units::Metric,
             ftp: 200,
         }
@@ -502,36 +493,48 @@ impl RideDetailScreen {
                 ui.label("Select export format:");
                 ui.add_space(8.0);
 
+                // Format selection with radio buttons
                 ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(
-                            self.export_format == ExportFormat::Tcx,
-                            "TCX (Strava/Garmin)",
-                        )
-                        .clicked()
-                    {
-                        self.export_format = ExportFormat::Tcx;
-                    }
-                    if ui
-                        .selectable_label(
-                            self.export_format == ExportFormat::Csv,
-                            "CSV (Data Analysis)",
-                        )
-                        .clicked()
-                    {
-                        self.export_format = ExportFormat::Csv;
-                    }
+                    ui.radio_value(
+                        &mut self.export_format,
+                        ExportFormat::Fit,
+                        "FIT (Garmin/Native) — Recommended",
+                    );
                 });
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut self.export_format,
+                        ExportFormat::Tcx,
+                        "TCX (Strava/Garmin)",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut self.export_format,
+                        ExportFormat::Csv,
+                        "CSV (Data Analysis)",
+                    );
+                });
+
+                ui.add_space(8.0);
+
+                ui.label(
+                    RichText::new(
+                        "FIT format is recommended for Garmin Connect upload. TCX works with Strava and TrainingPeaks.",
+                    )
+                    .weak()
+                    .size(12.0),
+                );
 
                 ui.add_space(16.0);
 
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.show_export_dialog = false;
-                    }
-
                     if ui.button("Export").clicked() {
                         result = Some(self.export_format);
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        self.show_export_dialog = false;
                     }
                 });
             });
