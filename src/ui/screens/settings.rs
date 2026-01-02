@@ -14,6 +14,7 @@
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
+use crate::audio::VoiceInfo;
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -65,6 +66,8 @@ pub struct SettingsScreen {
     pub audio_alert_settings: AudioAlertSettings,
     /// Show/hide audio alerts section
     show_audio_alerts: bool,
+    /// Available system voices for TTS
+    available_voices: Vec<VoiceInfo>,
     /// T072: MQTT configuration
     pub mqtt_config: MqttConfig,
     /// T073: Fan profiles for zone-based fan control
@@ -120,6 +123,8 @@ pub struct AudioAlertSettings {
     pub voice_volume: f32,
     /// Speech rate (0.5-2.0, 1.0 is normal)
     pub speech_rate: f32,
+    /// Preferred voice ID (system-specific identifier)
+    pub preferred_voice: Option<String>,
     /// Workout alerts enabled (start, intervals, countdown, complete)
     pub workout_alerts_enabled: bool,
     /// Zone change alerts enabled (power zone, HR zone changes)
@@ -140,6 +145,7 @@ impl Default for AudioAlertSettings {
             voice_alerts_enabled: true,
             voice_volume: 0.8,
             speech_rate: 1.0,
+            preferred_voice: None,
             workout_alerts_enabled: true,
             zone_alerts_enabled: true,
             sensor_alerts_enabled: true,
@@ -332,6 +338,7 @@ impl SettingsScreen {
             incline_bike_weight_input: "10.0".to_string(),
             audio_alert_settings: AudioAlertSettings::default(),
             show_audio_alerts: false,
+            available_voices: Vec::new(),
             mqtt_config: MqttConfig::default(),
             fan_profiles: vec![FanProfile::default()],
             show_mqtt: false,
@@ -398,6 +405,17 @@ impl SettingsScreen {
     pub fn set_rider_type(&mut self, rider_type: Option<RiderType>, profile: Option<PowerProfile>) {
         self.rider_type = rider_type;
         self.power_profile = profile;
+    }
+
+    /// Set available voices for TTS voice selection.
+    /// Called from the app with voices from the audio engine's TTS provider.
+    pub fn set_available_voices(&mut self, voices: Vec<VoiceInfo>) {
+        self.available_voices = voices;
+    }
+
+    /// Get available voices for TTS.
+    pub fn available_voices(&self) -> &[VoiceInfo] {
+        &self.available_voices
     }
 
     /// Update the profile (e.g., after loading from database).
@@ -1294,6 +1312,68 @@ impl SettingsScreen {
                         .changed()
                     {
                         self.has_changes = true;
+                    }
+                });
+
+                // Voice selection dropdown
+                ui.horizontal(|ui| {
+                    ui.label("Voice:");
+
+                    // Get the selected voice display text
+                    let selected_text = if let Some(ref voice_id) = self.audio_alert_settings.preferred_voice {
+                        // Find the voice name from available voices
+                        self.available_voices
+                            .iter()
+                            .find(|v| &v.id == voice_id)
+                            .map(|v| format!("{} ({})", v.name, v.language))
+                            .unwrap_or_else(|| voice_id.clone())
+                    } else {
+                        // Find the default voice
+                        self.available_voices
+                            .iter()
+                            .find(|v| v.is_default)
+                            .map(|v| format!("{} ({})", v.name, v.language))
+                            .unwrap_or_else(|| "System Default".to_string())
+                    };
+
+                    egui::ComboBox::from_id_salt("voice_selection")
+                        .selected_text(&selected_text)
+                        .width(250.0)
+                        .show_ui(ui, |ui| {
+                            // System Default option (clears preferred_voice)
+                            if ui
+                                .selectable_label(
+                                    self.audio_alert_settings.preferred_voice.is_none(),
+                                    "System Default",
+                                )
+                                .clicked()
+                            {
+                                self.audio_alert_settings.preferred_voice = None;
+                                self.has_changes = true;
+                            }
+
+                            ui.separator();
+
+                            // Available voices
+                            for voice in &self.available_voices {
+                                let is_selected = self
+                                    .audio_alert_settings
+                                    .preferred_voice
+                                    .as_ref()
+                                    .map(|id| id == &voice.id)
+                                    .unwrap_or(false);
+
+                                let label = format!("{} ({})", voice.name, voice.language);
+                                if ui.selectable_label(is_selected, &label).clicked() {
+                                    self.audio_alert_settings.preferred_voice = Some(voice.id.clone());
+                                    self.has_changes = true;
+                                }
+                            }
+                        });
+
+                    // Show hint if no voices available
+                    if self.available_voices.is_empty() {
+                        ui.label(RichText::new("(Loading voices...)").weak().italics());
                     }
                 });
 
