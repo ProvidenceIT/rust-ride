@@ -1,0 +1,330 @@
+{
+  "feature": "Rider Profile Export/Import",
+  "description": "Add export and import functionality for rider profiles including settings, FTP history, and avatar configuration. Enables profile backup and transfer between installations.",
+  "created_at": "2026-01-02T22:52:59.047Z",
+  "updated_at": "2026-01-02T23:58:00.000Z",
+  "status": "in_progress",
+  "planStatus": "complete",
+  "workflow_type": "development",
+  "spec_file": "spec.md",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Export Data Structures",
+      "description": "Define the export format data structures following the LeaderboardExport pattern",
+      "subtasks": [
+        {
+          "id": "T001",
+          "title": "Create ProfileExport struct with versioned format",
+          "description": "Create the main export container with export_version, exported_at timestamp, and profile data. Follow the pattern from LeaderboardExport struct.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs",
+          "notes": "Created ProfileExport struct with versioned format following LeaderboardExport pattern. Includes ProfileData, FtpHistoryEntry, and AvatarExport structs. Added unit tests for serialization.",
+          "updated_at": "2026-01-02T22:59:48.423446+00:00"
+        },
+        {
+          "id": "T002",
+          "title": "Create ProfileData struct for core profile fields",
+          "description": "Define ProfileData struct containing display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled. Ensure Serialize/Deserialize derives.",
+          "status": "completed",
+          "estimated_minutes": 15,
+          "file_path": "src/social/export.rs",
+          "notes": "ProfileData struct was already created as part of T001. Verified the struct contains all required fields: display_name (String), bio (Option<String>), ftp (Option<u16>), total_distance_km (f64), total_time_hours (f64), sharing_enabled (bool). Has proper Serialize/Deserialize derives from serde.",
+          "updated_at": "2026-01-02T23:01:31.639765+00:00"
+        },
+        {
+          "id": "T003",
+          "title": "Create FtpHistoryEntry struct for FTP records",
+          "description": "Define FtpHistoryEntry with ftp_watts, method, confidence, detected_at, accepted fields. Match the ftp_estimates table schema.",
+          "status": "completed",
+          "estimated_minutes": 15,
+          "file_path": "src/social/export.rs",
+          "notes": "FtpHistoryEntry struct was already created as part of T001. Verified the struct contains all required fields matching the ftp_estimates table schema: ftp_watts (u16), method (String), confidence (String), detected_at (DateTime<Utc>), accepted (bool). Has proper Serialize/Deserialize derives from serde. Tests exist in test_profile_export_with_ftp_history that exercise the struct.",
+          "updated_at": "2026-01-02T23:03:24.307590+00:00"
+        },
+        {
+          "id": "T004",
+          "title": "Create AvatarExport struct for avatar configuration",
+          "description": "Define AvatarExport with jersey_color, bike_style, jersey_secondary, helmet_color. Compatible with existing AvatarConfig from world/avatar.rs.",
+          "status": "completed",
+          "estimated_minutes": 10,
+          "file_path": "src/social/export.rs",
+          "notes": "AvatarExport struct was already created as part of T001. Verified the struct contains all required fields matching AvatarConfig from world/avatar.rs: jersey_color (String hex format), bike_style (String), jersey_secondary (Option<String>), helmet_color (Option<String>). Uses portable string formats (hex colors, string enums) for JSON compatibility instead of raw [u8;3] arrays and enum types. Has proper Serialize/Deserialize derives from serde. Test exists in test_profile_export_with_avatar that exercises the struct.",
+          "updated_at": "2026-01-02T23:04:43.430212+00:00"
+        },
+        {
+          "id": "T005",
+          "title": "Create ImportResult and conflict resolution types",
+          "description": "Define ImportResult with success status, conflicts list. Create ProfileConflict enum for handling existing profile data. Follow LeaderboardExporter.ImportResult pattern.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented ProfileImportResult struct with success status, import counts (ftp_entries_imported, ftp_entries_skipped), update flags (profile_updated, avatar_updated), and conflicts list. Created ProfileConflict enum with DisplayNameMismatch, ExistingProfile, FtpMismatch, and AvatarMismatch variants. Added ConflictResolution enum with Replace, Merge, Skip strategies. Follows LeaderboardExporter.ImportResult pattern. Added 4 unit tests for the new types.",
+          "updated_at": "2026-01-02T23:08:04.773377+00:00"
+        },
+        {
+          "id": "T006",
+          "title": "Create ProfileExportError enum",
+          "description": "Define error types for export operations: DatabaseError, SerializationFailed, ParseError, ProfileNotFound, InvalidVersion. Use thiserror for derives.",
+          "status": "completed",
+          "estimated_minutes": 15,
+          "file_path": "src/social/export.rs",
+          "notes": "Created ProfileExportError enum with thiserror derives. Includes 5 error variants: DatabaseError, SerializationFailed, ParseError, ProfileNotFound, InvalidVersion. Added 6 unit tests for error type verification. Follows pattern from leaderboards/export.rs. Commit: 967a4c7",
+          "updated_at": "2026-01-02T23:10:46.472164+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Export Implementation",
+      "description": "Implement the ProfileExporter service with database queries and serialization",
+      "subtasks": [
+        {
+          "id": "T007",
+          "title": "Create ProfileExporter struct with database connection",
+          "description": "Create ProfileExporter struct holding Arc<Database>, matching the pattern from LeaderboardExporter.",
+          "status": "completed",
+          "estimated_minutes": 10,
+          "file_path": "src/social/export.rs",
+          "notes": "Created ProfileExporter struct following LeaderboardExporter pattern. Added Arc<Database> field, new() constructor, and database() getter. Commit: aed6031",
+          "updated_at": "2026-01-02T23:13:09.673429+00:00"
+        },
+        {
+          "id": "T008",
+          "title": "Implement build_export method to gather profile data",
+          "description": "Query riders table for profile data, ftp_estimates for FTP history, and avatars table for avatar config. Combine into ProfileExport struct.",
+          "status": "completed",
+          "estimated_minutes": 30,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented build_export method on ProfileExporter that queries: riders table for profile data, ftp_estimates table for FTP history (ordered by detected_at DESC), and avatars table for avatar configuration. Combines all data into ProfileExport struct. Follows LeaderboardExporter pattern. Added rusqlite import and FtpHistoryEntryRow helper struct. Commit: e243780",
+          "updated_at": "2026-01-02T23:16:54.915597+00:00"
+        },
+        {
+          "id": "T009",
+          "title": "Implement export_json method",
+          "description": "Serialize ProfileExport to pretty-printed JSON string. Handle serialization errors appropriately.",
+          "status": "completed",
+          "estimated_minutes": 15,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented export_json method on ProfileExporter following LeaderboardExporter pattern. Method calls build_export() to gather profile data, then serializes to pretty-printed JSON using serde_json::to_string_pretty(). Serialization errors are mapped to ProfileExportError::SerializationFailed. Added 3 unit tests for JSON format verification, optional field handling, and error type validation. Commit: 5be99a1",
+          "updated_at": "2026-01-02T23:20:26.897069+00:00"
+        },
+        {
+          "id": "T010",
+          "title": "Implement export_to_file method",
+          "description": "Write exported JSON to a file at specified path. Create parent directories if needed. Return path on success.",
+          "status": "completed",
+          "estimated_minutes": 15,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented export_to_file method on ProfileExporter that writes exported JSON to a file at the specified path. Creates parent directories if they don't exist using std::fs::create_dir_all. Returns PathBuf on success. Added IoError variant to ProfileExportError for file I/O error handling with descriptive error messages. Added 2 unit tests for IoError variant. Commit: 2409be0",
+          "updated_at": "2026-01-02T23:23:24.550962+00:00"
+        },
+        {
+          "id": "T011",
+          "title": "Add module export to social/mod.rs",
+          "description": "Add pub mod export; to social/mod.rs and re-export key types (ProfileExporter, ProfileExport, etc.).",
+          "status": "completed",
+          "estimated_minutes": 5,
+          "file_path": "src/social/mod.rs",
+          "notes": "Added pub mod export; to social/mod.rs and re-exported all key types: ProfileExporter, ProfileExport, ProfileData, FtpHistoryEntry, AvatarExport, ProfileImportResult, ProfileConflict, ConflictResolution, ProfileExportError. Follows the same pattern as leaderboards/mod.rs. Commit: 13edc69",
+          "updated_at": "2026-01-02T23:25:43.684670+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Import Implementation",
+      "description": "Implement profile import with conflict detection and resolution",
+      "subtasks": [
+        {
+          "id": "T012",
+          "title": "Implement parse_import method for JSON parsing",
+          "description": "Parse JSON string to ProfileExport struct. Validate export_version compatibility. Return structured errors for invalid data.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented parse_import method on ProfileExporter that: (1) Parses JSON string to ProfileExport struct using serde_json::from_str with error mapping to ProfileExportError::ParseError, (2) Validates export_version compatibility via validate_version helper method (exact match to CURRENT_VERSION \"1.0\"), (3) Returns ProfileExportError::InvalidVersion with expected/found fields for incompatible versions. Added 8 unit tests covering valid JSON parsing, malformed JSON, missing fields, version validation, empty history, full data parsing, and type errors. Commit: f97822f",
+          "updated_at": "2026-01-02T23:28:43.326674+00:00"
+        },
+        {
+          "id": "T013",
+          "title": "Implement detect_conflicts method",
+          "description": "Check if imported profile conflicts with existing profile (same rider_id, display_name collision). Return list of ProfileConflict items.",
+          "status": "completed",
+          "estimated_minutes": 25,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented detect_conflicts method on ProfileExporter that checks for conflicts between an imported profile and existing profiles in the database. Checks for: (1) ExistingProfile - profile with same rider_id exists, (2) DisplayNameMismatch - imported name differs from existing profile, (3) FtpMismatch - FTP values differ, (4) AvatarMismatch - avatar configuration differs. Also handles display_name collision detection for different rider_ids. Added helper methods query_existing_profile and find_rider_by_display_name. Includes 12 unit tests for conflict type creation and detection logic. Commit: c8a1707",
+          "updated_at": "2026-01-02T23:31:59.927717+00:00"
+        },
+        {
+          "id": "T014",
+          "title": "Implement import_profile method with merge strategy",
+          "description": "Import profile data to database. Support strategies: Replace (overwrite), Merge (combine FTP history), Skip. Update riders, ftp_estimates, avatars tables.",
+          "status": "completed",
+          "estimated_minutes": 40,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented import_profile method on ProfileExporter with three conflict resolution strategies: Replace (overwrite existing data), Merge (combine FTP history with deduplication), and Skip (return immediately). Added database operations for riders, avatars, and ftp_estimates tables. Includes 15 unit tests for import result structures and validation. Commit: da59e1f",
+          "updated_at": "2026-01-02T23:36:46.257774+00:00"
+        },
+        {
+          "id": "T015",
+          "title": "Implement import_from_file method",
+          "description": "Read file contents, parse JSON, and import with specified conflict resolution. Return ImportResult with summary.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs",
+          "notes": "Implemented import_from_file method on ProfileExporter that reads file contents, parses JSON using parse_import, validates version, and imports profile data with specified conflict resolution strategy. Returns ProfileImportResult with summary. Added 7 unit tests for file I/O error handling, JSON parsing, version validation, and path type flexibility. Commit: e3db026",
+          "updated_at": "2026-01-02T23:40:06.908887+00:00"
+        },
+        {
+          "id": "T016",
+          "title": "Handle FTP history deduplication during import",
+          "description": "When importing FTP history, skip duplicate entries based on detected_at timestamp. Track imported vs skipped counts.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs",
+          "notes": "FTP history deduplication was already implemented as part of T014. The import_ftp_history_merge method checks for duplicates using detected_at timestamp via ftp_entry_exists SQL query. Tracks ftp_entries_imported and ftp_entries_skipped counts in ProfileImportResult. Existing tests verify functionality. No new code needed.",
+          "updated_at": "2026-01-02T23:43:24.700174+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "UI Integration",
+      "description": "Add export/import buttons to the rider profile screen",
+      "subtasks": [
+        {
+          "id": "T017",
+          "title": "Add export button to rider profile screen",
+          "description": "Add 'Export Profile' button to RiderProfileScreen. On click, trigger export and show success/error message.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "file_path": "src/ui/screens/rider_profile.rs"
+        },
+        {
+          "id": "T018",
+          "title": "Add import button to rider profile screen",
+          "description": "Add 'Import Profile' button to RiderProfileScreen. Open file picker for JSON selection.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "file_path": "src/ui/screens/rider_profile.rs"
+        },
+        {
+          "id": "T019",
+          "title": "Create import confirmation dialog",
+          "description": "When conflicts detected, show dialog with options: Replace existing, Merge data, Cancel. Display what will be changed.",
+          "status": "pending",
+          "estimated_minutes": 35,
+          "file_path": "src/ui/screens/rider_profile.rs"
+        },
+        {
+          "id": "T020",
+          "title": "Add import/export status feedback",
+          "description": "Show progress indicator during export/import. Display success toast with summary (e.g., 'Imported 5 FTP records'). Show error details on failure.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "file_path": "src/ui/screens/rider_profile.rs"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Testing",
+      "description": "Add unit and integration tests for export/import functionality",
+      "subtasks": [
+        {
+          "id": "T021",
+          "title": "Add unit tests for ProfileExport serialization",
+          "description": "Test that ProfileExport serializes to valid JSON and deserializes back correctly. Test version field presence.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "file_path": "tests/unit/profile_export_tests.rs"
+        },
+        {
+          "id": "T022",
+          "title": "Add unit tests for import parsing",
+          "description": "Test parsing valid exports, invalid JSON, incompatible versions, missing required fields.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "file_path": "tests/unit/profile_export_tests.rs"
+        },
+        {
+          "id": "T023",
+          "title": "Add integration tests for export workflow",
+          "description": "Test full export: create profile in DB, export to JSON, verify all fields present. Use test database.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "file_path": "tests/integration/profile_export_integration.rs"
+        },
+        {
+          "id": "T024",
+          "title": "Add integration tests for import workflow",
+          "description": "Test import scenarios: empty DB import, conflict detection, merge strategy, replace strategy.",
+          "status": "pending",
+          "estimated_minutes": 35,
+          "file_path": "tests/integration/profile_export_integration.rs"
+        },
+        {
+          "id": "T025",
+          "title": "Add round-trip test for export/import",
+          "description": "Export a profile, import it to fresh DB, verify all data matches original. Test FTP history ordering preserved.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "file_path": "tests/integration/profile_export_integration.rs"
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Documentation and Polish",
+      "description": "Final documentation and code cleanup",
+      "subtasks": [
+        {
+          "id": "T026",
+          "title": "Add module-level documentation for export.rs",
+          "description": "Document the export module with examples, format specification, and usage patterns.",
+          "status": "pending",
+          "estimated_minutes": 20,
+          "file_path": "src/social/export.rs"
+        },
+        {
+          "id": "T027",
+          "title": "Add export format documentation",
+          "description": "Create JSON schema documentation for the export format. Include version compatibility notes.",
+          "status": "pending",
+          "estimated_minutes": 15,
+          "file_path": "docs/profile-export-format.md"
+        }
+      ]
+    }
+  ],
+  "total_estimated_minutes": 560,
+  "dependencies": [
+    "src/leaderboards/export.rs - Pattern reference for export structure",
+    "src/social/profile.rs - ProfileManager for profile operations",
+    "src/social/types.rs - RiderProfile type definition",
+    "src/world/avatar.rs - AvatarConfig type definition",
+    "src/storage/schema.rs - Database schema for ftp_estimates, riders, avatars tables"
+  ],
+  "services_involved": [
+    "social/export.rs - New ProfileExporter service",
+    "social/profile.rs - ProfileManager integration",
+    "ui/screens/rider_profile.rs - UI integration"
+  ],
+  "final_acceptance": [
+    "Profile can be exported to JSON file",
+    "Profile can be imported from JSON file",
+    "FTP history is preserved during export/import",
+    "Avatar configuration is preserved during export/import",
+    "Conflicts are detected and user can choose resolution",
+    "Export format is versioned for future compatibility",
+    "All unit and integration tests pass"
+  ],
+  "qa_signoff": {
+    "status": "pending",
+    "tests_passed": null,
+    "issues": null
+  },
+  "last_updated": "2026-01-02T23:43:24.700174+00:00"
+}
