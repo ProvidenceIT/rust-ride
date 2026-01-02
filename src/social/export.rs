@@ -6,6 +6,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -217,6 +218,10 @@ pub enum ProfileExportError {
         /// The version found in the import file.
         found: String,
     },
+
+    /// File I/O operation failed.
+    #[error("IO error: {0}")]
+    IoError(String),
 }
 
 /// Profile exporter for creating and importing profile backups.
@@ -349,6 +354,49 @@ impl ProfileExporter {
         let export = self.build_export(rider_id)?;
         serde_json::to_string_pretty(&export)
             .map_err(|e| ProfileExportError::SerializationFailed(e.to_string()))
+    }
+
+    /// Export a rider profile to a JSON file at the specified path.
+    ///
+    /// Creates parent directories if they don't exist, then writes the
+    /// exported JSON to the file.
+    ///
+    /// # Arguments
+    /// * `rider_id` - The UUID of the rider to export
+    /// * `path` - The file path to write the export to
+    ///
+    /// # Returns
+    /// The path to the created file on success, or an error if the profile
+    /// is not found, serialization fails, or file I/O fails.
+    pub fn export_to_file<P: AsRef<Path>>(
+        &self,
+        rider_id: Uuid,
+        path: P,
+    ) -> Result<PathBuf, ProfileExportError> {
+        let path = path.as_ref();
+        let json = self.export_json(rider_id)?;
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| ProfileExportError::IoError(format!(
+                        "Failed to create directory '{}': {}",
+                        parent.display(),
+                        e
+                    )))?;
+            }
+        }
+
+        // Write the JSON to the file
+        std::fs::write(path, json)
+            .map_err(|e| ProfileExportError::IoError(format!(
+                "Failed to write file '{}': {}",
+                path.display(),
+                e
+            )))?;
+
+        Ok(path.to_path_buf())
     }
 
     /// Query the avatars table for avatar configuration.
@@ -725,5 +773,22 @@ mod tests {
         let msg = error.to_string();
         assert!(msg.contains("Serialization failed"));
         assert!(msg.contains("JSON error"));
+    }
+
+    #[test]
+    fn test_profile_export_error_io() {
+        let error = ProfileExportError::IoError("permission denied".to_string());
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("IO error"));
+        assert!(error_msg.contains("permission denied"));
+    }
+
+    #[test]
+    fn test_io_error_is_std_error() {
+        // Verify IoError variant implements std::error::Error
+        fn assert_error<E: std::error::Error>(_: &E) {}
+
+        let error = ProfileExportError::IoError("test io error".to_string());
+        assert_error(&error);
     }
 }
