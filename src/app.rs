@@ -642,6 +642,13 @@ impl RustRideApp {
     /// Navigate to a different screen.
     fn navigate(&mut self, screen: Screen) {
         tracing::debug!("Navigating from {:?} to {:?}", self.current_screen, screen);
+
+        // Populate available voices when entering Settings screen
+        if matches!(screen, Screen::Settings) {
+            let voices = self.audio_engine.tts_provider().get_voices();
+            self.settings_screen.set_available_voices(voices);
+        }
+
         self.current_screen = screen;
     }
 
