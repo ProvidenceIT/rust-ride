@@ -379,13 +379,19 @@ impl OAuthHandler for DefaultOAuthHandler {
             .refresh_token
             .ok_or(SyncError::RefreshFailed("No refresh token".to_string()))?;
 
+        let configs = self.configs.read().await;
+        let config = configs
+            .get(&platform)
+            .ok_or(SyncError::NotConfigured(platform))?;
+
         tracing::info!("Refreshing token for {:?}", platform);
 
-        // TODO: Actually refresh the token
-        let new_tokens = TokenResponse {
-            access_token: format!("refreshed_{}", refresh),
-            refresh_token: Some(refresh),
-            expires_at: Utc::now() + Duration::hours(1),
+        // Refresh tokens based on platform
+        let new_tokens = match platform {
+            SyncPlatform::Strava => self.refresh_strava_token(&refresh, config).await?,
+            _ => {
+                return Err(SyncError::NotConfigured(platform));
+            }
         };
 
         self.tokens
@@ -394,6 +400,102 @@ impl OAuthHandler for DefaultOAuthHandler {
             .insert(platform, new_tokens.clone());
 
         Ok(new_tokens)
+    }
+
+    /// Refresh tokens with Strava's OAuth endpoint
+    async fn refresh_strava_token(
+        &self,
+        refresh_token: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::Strava))?;
+
+        // Build the refresh token request
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ];
+
+        tracing::debug!("Refreshing Strava access token");
+
+        let response = self
+            .http_client
+            .post("https://www.strava.com/oauth/token")
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to send refresh token request: {}", e))
+            })?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Strava error response
+            if let Ok(error_response) = serde_json::from_str::<StravaErrorResponse>(&body) {
+                tracing::error!("Strava token refresh failed: {}", error_response);
+
+                // Check if the refresh token is invalid or expired
+                // Strava returns "invalid" code for bad refresh tokens
+                let requires_reauth = error_response.errors.iter().any(|e| {
+                    e.field == "refresh_token"
+                        && (e.code == "invalid" || e.code == "expired" || e.code == "revoked")
+                });
+
+                if requires_reauth {
+                    tracing::warn!(
+                        "Refresh token is invalid/expired, re-authorization required"
+                    );
+                    return Err(SyncError::AuthorizationRequired);
+                }
+
+                return Err(SyncError::RefreshFailed(format!(
+                    "Strava OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!(
+                "Strava token refresh failed with status {}: {}",
+                status,
+                body
+            );
+            return Err(SyncError::RefreshFailed(format!(
+                "Strava refresh failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let strava_response: StravaTokenResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::RefreshFailed(format!("Failed to parse refresh response: {}", e))
+        })?;
+
+        // Convert Unix timestamp to DateTime<Utc>
+        let expires_at = Utc
+            .timestamp_opt(strava_response.expires_at, 0)
+            .single()
+            .unwrap_or_else(|| Utc::now() + Duration::hours(1));
+
+        tracing::info!(
+            "Successfully refreshed Strava tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: strava_response.access_token,
+            refresh_token: Some(strava_response.refresh_token),
+            expires_at,
+        })
     }
 
     fn is_authorized(&self, platform: SyncPlatform) -> bool {
@@ -723,5 +825,75 @@ mod tests {
         let handler = DefaultOAuthHandler::new(8888);
         let status = handler.get_token_status(SyncPlatform::Strava);
         assert!(matches!(status, TokenStatus::NotConfigured));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_without_tokens_returns_auth_required() {
+        let handler = DefaultOAuthHandler::new(8888);
+
+        // Configure Strava but don't store any tokens
+        handler
+            .configure(
+                SyncPlatform::Strava,
+                OAuthConfig {
+                    client_id: "test_client".to_string(),
+                    client_secret: Some("test_secret".to_string()),
+                    redirect_uri: "http://localhost:8888/callback".to_string(),
+                    scopes: vec!["activity:read_all".to_string()],
+                },
+            )
+            .await;
+
+        let result = handler.refresh_token(SyncPlatform::Strava).await;
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_without_refresh_token_returns_error() {
+        let handler = DefaultOAuthHandler::new(8888);
+
+        // Configure Strava
+        handler
+            .configure(
+                SyncPlatform::Strava,
+                OAuthConfig {
+                    client_id: "test_client".to_string(),
+                    client_secret: Some("test_secret".to_string()),
+                    redirect_uri: "http://localhost:8888/callback".to_string(),
+                    scopes: vec!["activity:read_all".to_string()],
+                },
+            )
+            .await;
+
+        // Store tokens without refresh_token
+        handler.tokens.write().await.insert(
+            SyncPlatform::Strava,
+            TokenResponse {
+                access_token: "test_access".to_string(),
+                refresh_token: None,
+                expires_at: Utc::now() + Duration::hours(1),
+            },
+        );
+
+        let result = handler.refresh_token(SyncPlatform::Strava).await;
+        assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_without_config_returns_not_configured() {
+        let handler = DefaultOAuthHandler::new(8888);
+
+        // Store tokens but don't configure the platform
+        handler.tokens.write().await.insert(
+            SyncPlatform::Strava,
+            TokenResponse {
+                access_token: "test_access".to_string(),
+                refresh_token: Some("test_refresh".to_string()),
+                expires_at: Utc::now() + Duration::hours(1),
+            },
+        );
+
+        let result = handler.refresh_token(SyncPlatform::Strava).await;
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
     }
 }
