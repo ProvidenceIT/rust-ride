@@ -89,8 +89,10 @@ impl std::fmt::Display for StravaApiError {
 pub struct StravaClient {
     /// Access token for API calls
     access_token: Arc<RwLock<Option<String>>>,
-    /// API base URL
+    /// API base URL (for /api/v3 endpoints)
     base_url: String,
+    /// OAuth base URL (for /oauth endpoints like deauthorize)
+    oauth_base_url: String,
     /// HTTP client for API requests
     http_client: Client,
 }
@@ -101,12 +103,30 @@ impl Default for StravaClient {
     }
 }
 
+/// Default Strava API base URL
+const STRAVA_API_BASE_URL: &str = "https://www.strava.com/api/v3";
+
+/// Default Strava OAuth base URL (for deauthorize)
+const STRAVA_OAUTH_BASE_URL: &str = "https://www.strava.com/oauth";
+
 impl StravaClient {
     /// Create a new Strava client
     pub fn new() -> Self {
         Self {
             access_token: Arc::new(RwLock::new(None)),
-            base_url: "https://www.strava.com/api/v3".to_string(),
+            base_url: STRAVA_API_BASE_URL.to_string(),
+            oauth_base_url: STRAVA_OAUTH_BASE_URL.to_string(),
+            http_client: Client::new(),
+        }
+    }
+
+    /// Create a new Strava client with custom base URLs (for testing)
+    #[cfg(test)]
+    pub fn with_base_url(base_url: String, oauth_base_url: String) -> Self {
+        Self {
+            access_token: Arc::new(RwLock::new(None)),
+            base_url,
+            oauth_base_url,
             http_client: Client::new(),
         }
     }
@@ -497,7 +517,7 @@ impl StravaClient {
         tracing::info!("Deauthorizing Strava");
 
         // POST to Strava's deauthorize endpoint (note: this is at oauth path, not api/v3)
-        let url = "https://www.strava.com/oauth/deauthorize";
+        let url = format!("{}/deauthorize", self.oauth_base_url);
 
         let response = self
             .http_client
@@ -887,5 +907,642 @@ mod tests {
 
         // Token should be cleared regardless of network outcome
         assert!(!client.is_configured());
+    }
+}
+
+/// HTTP mocked tests using wiremock
+#[cfg(test)]
+mod http_mocked_tests {
+    use super::*;
+    use wiremock::matchers::{bearer_token, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // ============================================================================
+    // Upload Activity Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_upload_activity_success() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345678,
+            "external_id": "test-ride-uuid",
+            "activity_id": null,
+            "status": "Your activity is still being processed.",
+            "error": null
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(201).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![0u8; 100]; // Dummy FIT data
+
+        let result = client
+            .upload_activity(&ride_id, &fit_data, Some("Test Ride"), Some("A test ride"))
+            .await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.ride_id, ride_id);
+        assert_eq!(record.platform, SyncPlatform::Strava);
+        assert_eq!(record.status, SyncRecordStatus::Uploading);
+        assert_eq!(record.external_id, Some("12345678".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![0u8; 100];
+
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![0u8; 100];
+
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Bad Request",
+            "errors": [
+                {"resource": "Upload", "field": "file", "code": "invalid"}
+            ]
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![0u8; 100];
+
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("Bad Request")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_generic_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![0u8; 100];
+
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("500")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_without_optional_fields() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 99999,
+            "external_id": "ride-uuid",
+            "activity_id": null,
+            "status": "Your activity is still being processed."
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(201).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = vec![1u8, 2, 3, 4, 5];
+
+        // Test without name and description
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("99999".to_string()));
+    }
+
+    // ============================================================================
+    // Check Upload Status Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_check_upload_status_processing() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": null,
+            "status": "Your activity is still being processed.",
+            "error": null
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), UploadStatus::Processing);
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_ready() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": 987654321,
+            "status": "Your activity is ready.",
+            "error": null
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            UploadStatus::Ready {
+                activity_id: 987654321
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_error() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": null,
+            "status": null,
+            "error": "The activity appears to be a duplicate."
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            UploadStatus::Error {
+                error: "The activity appears to be a duplicate.".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_not_found() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/99999"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("99999").await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("not found")));
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Server Error",
+            "errors": []
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Server Error")));
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_empty_error_treated_as_processing() {
+        let mock_server = MockServer::start().await;
+
+        // Some edge case where error is empty string
+        let response_body = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": null,
+            "status": "Processing...",
+            "error": ""
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        // Empty error string should be treated as still processing
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), UploadStatus::Processing);
+    }
+
+    // ============================================================================
+    // Get Athlete Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_athlete_success() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345678,
+            "username": "cyclist123",
+            "firstname": "John",
+            "lastname": "Doe",
+            "profile_medium": "https://example.com/medium.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/athlete"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_athlete().await;
+
+        assert!(result.is_ok());
+        let athlete = result.unwrap();
+        assert_eq!(athlete.id, 12345678);
+        assert_eq!(athlete.username, Some("cyclist123".to_string()));
+        assert_eq!(athlete.firstname, "John");
+        assert_eq!(athlete.lastname, "Doe");
+        assert_eq!(
+            athlete.profile_medium,
+            Some("https://example.com/medium.jpg".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_athlete_minimal_response() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 99999,
+            "username": null,
+            "firstname": "Jane",
+            "lastname": "Smith",
+            "profile_medium": null
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/athlete"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_athlete().await;
+
+        assert!(result.is_ok());
+        let athlete = result.unwrap();
+        assert_eq!(athlete.id, 99999);
+        assert!(athlete.username.is_none());
+        assert_eq!(athlete.firstname, "Jane");
+        assert_eq!(athlete.lastname, "Smith");
+        assert!(athlete.profile_medium.is_none());
+        // Test display name when username is None
+        assert_eq!(athlete.display_name(), "Jane Smith");
+    }
+
+    #[tokio::test]
+    async fn test_get_athlete_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/athlete"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_athlete().await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+    }
+
+    #[tokio::test]
+    async fn test_get_athlete_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/athlete"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_athlete().await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_get_athlete_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Resource Not Found"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/athlete"))
+            .respond_with(ResponseTemplate::new(404).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_athlete().await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Resource Not Found")));
+    }
+
+    // ============================================================================
+    // Deauthorize Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_deauthorize_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deauthorize"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"access_token": "revoked"}"#))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        assert!(client.is_configured());
+
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured()); // Token should be cleared
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_rate_limit_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deauthorize"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with rate limit since token is cleared locally
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_unauthorized_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deauthorize"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with 401 since token was already invalid
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_server_error_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deauthorize"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with server error since local token is cleared
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_api_error_with_body_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Something went wrong",
+            "errors": []
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/deauthorize"))
+            .respond_with(ResponseTemplate::new(403).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    // ============================================================================
+    // Token State Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_clear_token() {
+        let client = StravaClient::new();
+        client.set_access_token("test_token".to_string()).await;
+        assert!(client.is_configured());
+
+        client.clear_token().await;
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_is_configured_with_token() {
+        let client = StravaClient::new();
+        assert!(!client.is_configured());
+
+        client.set_access_token("abc123".to_string()).await;
+        assert!(client.is_configured());
     }
 }
