@@ -15,6 +15,8 @@ pub enum RiderProfileAction {
     SaveProfile(RiderProfile),
     /// Change avatar.
     ChangeAvatar,
+    /// Export profile to JSON file.
+    ExportProfile,
     /// Navigate back.
     Back,
 }
@@ -97,6 +99,16 @@ impl RiderProfileScreen {
         }
 
         ui.add_space(20.0);
+
+        // Export/Import section (only in view mode)
+        if self.view == RiderProfileView::View {
+            ui.horizontal(|ui| {
+                if ui.button("Export Profile").clicked() {
+                    action = Some(RiderProfileAction::ExportProfile);
+                }
+            });
+            ui.add_space(10.0);
+        }
 
         if ui.button("Back").clicked() {
             if self.view == RiderProfileView::Edit {
