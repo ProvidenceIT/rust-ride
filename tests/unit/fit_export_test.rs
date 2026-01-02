@@ -988,3 +988,378 @@ fn test_fit_export_with_laps_deterministic() {
 
     assert_eq!(data1, data2);
 }
+
+// ============================================================================
+// ROUNDTRIP TESTS (EXPORT -> PARSE WITH FITPARSER)
+// ============================================================================
+
+/// Parse FIT file using fitparser and validate basic structure.
+/// Returns the parsed records for further verification.
+fn parse_exported_fit(data: &[u8]) -> Vec<fitparser::FitDataRecord> {
+    fitparser::from_bytes(data).expect("fitparser should successfully parse exported FIT file")
+}
+
+#[test]
+fn test_roundtrip_fitparser_parses_exported_file() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(60);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Parse with fitparser - this validates the FIT format is correct
+    let records = parse_exported_fit(&data);
+
+    // Should have records
+    assert!(!records.is_empty(), "Parsed FIT should contain records");
+}
+
+#[test]
+fn test_roundtrip_contains_file_id_message() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Find FileId message
+    let file_id = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::FileId);
+
+    assert!(
+        file_id.is_some(),
+        "Exported FIT should contain FileId message"
+    );
+
+    // Verify it's an activity type
+    let file_id = file_id.unwrap();
+    let type_field = file_id.fields().iter().find(|f| f.name() == "type");
+    assert!(type_field.is_some(), "FileId should have type field");
+}
+
+#[test]
+fn test_roundtrip_contains_session_message() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Find Session message
+    let session = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Session);
+
+    assert!(
+        session.is_some(),
+        "Exported FIT should contain Session message"
+    );
+}
+
+#[test]
+fn test_roundtrip_contains_lap_message() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Find Lap message
+    let lap = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Lap);
+
+    assert!(lap.is_some(), "Exported FIT should contain Lap message");
+}
+
+#[test]
+fn test_roundtrip_contains_activity_message() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Find Activity message
+    let activity = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Activity);
+
+    assert!(
+        activity.is_some(),
+        "Exported FIT should contain Activity message"
+    );
+}
+
+#[test]
+fn test_roundtrip_contains_record_messages() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(50);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Count Record messages
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(
+        record_count,
+        50,
+        "Exported FIT should contain one Record message per sample"
+    );
+}
+
+#[test]
+fn test_roundtrip_record_contains_power_data() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Get first Record message
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Find power field
+    let power_field = record.fields().iter().find(|f| f.name() == "power");
+    assert!(power_field.is_some(), "Record should contain power field");
+
+    // Verify power value is reasonable (samples start at 150 watts)
+    if let Some(field) = power_field {
+        match field.value() {
+            fitparser::Value::UInt16(v) => {
+                assert!(
+                    *v >= 100 && *v <= 500,
+                    "Power value {} should be in valid range",
+                    v
+                );
+            }
+            _ => panic!("Power field should be UInt16"),
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_record_contains_heart_rate() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let hr_field = record.fields().iter().find(|f| f.name() == "heart_rate");
+    assert!(hr_field.is_some(), "Record should contain heart_rate field");
+}
+
+#[test]
+fn test_roundtrip_record_contains_cadence() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let cadence_field = record.fields().iter().find(|f| f.name() == "cadence");
+    assert!(
+        cadence_field.is_some(),
+        "Record should contain cadence field"
+    );
+}
+
+#[test]
+fn test_roundtrip_session_contains_sport_type() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let session = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Session)
+        .expect("Should have Session message");
+
+    // Check sport field (should be cycling = 2)
+    let sport_field = session.fields().iter().find(|f| f.name() == "sport");
+    assert!(sport_field.is_some(), "Session should contain sport field");
+
+    if let Some(field) = sport_field {
+        // Sport type 2 = cycling
+        let is_cycling = match field.value() {
+            fitparser::Value::UInt8(v) => *v == 2,
+            fitparser::Value::String(s) => s.to_lowercase().contains("cycling"),
+            _ => false,
+        };
+        assert!(is_cycling, "Sport should be cycling");
+    }
+}
+
+#[test]
+fn test_roundtrip_multi_lap_export() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(120);
+
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 40, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 40, 80, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 80, 120, ride.started_at).unwrap(),
+    ];
+
+    let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Count Lap messages
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    assert_eq!(lap_count, 3, "Should have 3 lap messages for 3 laps");
+}
+
+#[test]
+fn test_roundtrip_workout_export() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(150);
+    let workout = create_test_workout();
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Count Lap messages - workout has 4 segments + potential remainder
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Workout segments: 30s warmup + 60s steady + 30s intervals + 30s cooldown = 150s
+    // With 150 samples at 1Hz, we should have laps for each segment
+    assert!(
+        lap_count >= 4,
+        "Should have at least 4 lap messages for workout segments, got {}",
+        lap_count
+    );
+}
+
+#[test]
+fn test_roundtrip_cycling_dynamics_export() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(20);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Verify Record messages exist (dynamics are encoded in record fields)
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Check for left_right_balance field
+    let balance_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_right_balance");
+    assert!(
+        balance_field.is_some(),
+        "Record should contain left_right_balance field for dynamics data"
+    );
+}
+
+#[test]
+fn test_roundtrip_event_messages() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(30);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Count Event messages (should have at least start and stop events)
+    let event_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Event)
+        .count();
+
+    assert!(
+        event_count >= 2,
+        "Should have at least 2 event messages (start and stop)"
+    );
+}
+
+#[test]
+fn test_roundtrip_timestamp_in_records() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Get Record messages and verify they have timestamps
+    let record_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .collect();
+
+    assert_eq!(record_messages.len(), 5);
+
+    for record in record_messages {
+        let timestamp_field = record.fields().iter().find(|f| f.name() == "timestamp");
+        assert!(
+            timestamp_field.is_some(),
+            "Each Record message should have timestamp field"
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_large_ride() {
+    let ride = create_test_ride();
+    // 2 hours of samples at 1Hz
+    let samples = create_test_samples(7200);
+
+    let data = export_fit(&ride, &samples).unwrap();
+
+    // Verify fitparser can parse large files
+    let records = parse_exported_fit(&data);
+
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(record_count, 7200, "All 7200 samples should be in the file");
+}
+
+#[test]
+fn test_roundtrip_file_creator_message() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let file_creator = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::FileCreator);
+
+    assert!(
+        file_creator.is_some(),
+        "Exported FIT should contain FileCreator message"
+    );
+}
