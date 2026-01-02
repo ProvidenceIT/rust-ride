@@ -504,8 +504,8 @@ impl RideScreen {
 
             ui.add_space(32.0);
 
-            // Cadence
-            MetricDisplay::cadence(self.metrics.cadence)
+            // Cadence (smoothed 3s average with fallback to raw)
+            MetricDisplay::cadence(self.metrics.cadence_3s_avg.or(self.metrics.cadence))
                 .with_size(MetricSize::Large)
                 .show(ui);
         });
