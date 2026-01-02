@@ -4,6 +4,7 @@
 //! and avatar configuration. Enables profile backup and transfer between installations.
 
 use chrono::{DateTime, Utc};
+use rusqlite;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -236,6 +237,139 @@ impl ProfileExporter {
     pub fn database(&self) -> &Arc<Database> {
         &self.db
     }
+
+    /// Build a complete profile export for the given rider.
+    ///
+    /// Gathers data from the riders, ftp_estimates, and avatars tables
+    /// and combines it into a ProfileExport struct.
+    pub fn build_export(&self, rider_id: Uuid) -> Result<ProfileExport, ProfileExportError> {
+        let conn = self.db.connection();
+
+        // Query rider profile data
+        let profile_data = self.query_profile_data(&conn, rider_id)?;
+
+        // Query FTP history
+        let ftp_history = self.query_ftp_history(&conn, rider_id)?;
+
+        // Query avatar configuration
+        let avatar = self.query_avatar(&conn, rider_id)?;
+
+        Ok(ProfileExport::new(rider_id, profile_data, ftp_history, avatar))
+    }
+
+    /// Query the riders table for profile data.
+    fn query_profile_data(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+    ) -> Result<ProfileData, ProfileExportError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled
+                 FROM riders WHERE id = ?1",
+            )
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        stmt.query_row([rider_id.to_string()], |row| {
+            Ok(ProfileData {
+                display_name: row.get(0)?,
+                bio: row.get(1)?,
+                ftp: row.get(2)?,
+                total_distance_km: row.get(3)?,
+                total_time_hours: row.get(4)?,
+                sharing_enabled: row.get(5)?,
+            })
+        })
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => ProfileExportError::ProfileNotFound(rider_id),
+            other => ProfileExportError::DatabaseError(other.to_string()),
+        })
+    }
+
+    /// Query the ftp_estimates table for FTP history.
+    fn query_ftp_history(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+    ) -> Result<Vec<FtpHistoryEntry>, ProfileExportError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT ftp_watts, method, confidence, detected_at, accepted
+                 FROM ftp_estimates WHERE user_id = ?1
+                 ORDER BY detected_at DESC",
+            )
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([rider_id.to_string()], |row| {
+                let detected_at_str: String = row.get(3)?;
+                let accepted_int: i32 = row.get(4)?;
+
+                Ok(FtpHistoryEntryRow {
+                    ftp_watts: row.get(0)?,
+                    method: row.get(1)?,
+                    confidence: row.get(2)?,
+                    detected_at_str,
+                    accepted: accepted_int != 0,
+                })
+            })
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        let mut history = Vec::new();
+        for row_result in rows {
+            let row = row_result.map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+            let detected_at = DateTime::parse_from_rfc3339(&row.detected_at_str)
+                .map_err(|e| ProfileExportError::DatabaseError(format!("Invalid date format: {}", e)))?
+                .with_timezone(&Utc);
+
+            history.push(FtpHistoryEntry {
+                ftp_watts: row.ftp_watts,
+                method: row.method,
+                confidence: row.confidence,
+                detected_at,
+                accepted: row.accepted,
+            });
+        }
+
+        Ok(history)
+    }
+
+    /// Query the avatars table for avatar configuration.
+    fn query_avatar(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+    ) -> Result<Option<AvatarExport>, ProfileExportError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT jersey_color, bike_style, jersey_secondary, helmet_color
+                 FROM avatars WHERE user_id = ?1",
+            )
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        match stmt.query_row([rider_id.to_string()], |row| {
+            Ok(AvatarExport {
+                jersey_color: row.get(0)?,
+                bike_style: row.get(1)?,
+                jersey_secondary: row.get(2)?,
+                helmet_color: row.get(3)?,
+            })
+        }) {
+            Ok(avatar) => Ok(Some(avatar)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(ProfileExportError::DatabaseError(e.to_string())),
+        }
+    }
+}
+
+/// Helper struct for FTP history row data.
+struct FtpHistoryEntryRow {
+    ftp_watts: u16,
+    method: String,
+    confidence: String,
+    detected_at_str: String,
+    accepted: bool,
 }
 
 #[cfg(test)]
