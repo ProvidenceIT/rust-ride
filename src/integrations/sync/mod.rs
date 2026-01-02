@@ -4,6 +4,7 @@
 
 pub mod garmin;
 pub mod oauth;
+pub mod service;
 pub mod strava;
 
 use chrono::{DateTime, Utc};
@@ -14,6 +15,10 @@ use uuid::Uuid;
 
 // Re-export main types
 pub use oauth::{CallbackResult, CredentialStore, OAuthCallbackServer, OAuthHandler};
+pub use service::{
+    create_sync_service, PlatformStatus, SyncMessage, SyncService, SyncServiceHandle,
+    UploadQueueEntry,
+};
 
 /// Sync-related errors
 #[derive(Debug, Error)]
