@@ -3,7 +3,9 @@
 //! Handles OAuth2 flows for fitness platform authentication.
 
 use super::{SyncError, SyncPlatform};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use reqwest::Client;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -109,12 +111,64 @@ pub struct OAuthConfig {
     pub scopes: Vec<String>,
 }
 
+/// Strava OAuth token response from the token endpoint
+#[derive(Debug, Deserialize)]
+struct StravaTokenResponse {
+    /// The access token for API calls
+    access_token: String,
+    /// The refresh token for getting new access tokens
+    refresh_token: String,
+    /// When the access token expires (Unix timestamp)
+    expires_at: i64,
+    /// Token type (usually "Bearer")
+    #[allow(dead_code)]
+    token_type: String,
+}
+
+/// Strava OAuth error response
+#[derive(Debug, Deserialize)]
+struct StravaErrorResponse {
+    /// Error message
+    message: String,
+    /// Error field details (optional)
+    #[serde(default)]
+    errors: Vec<StravaFieldError>,
+}
+
+/// Strava field-level error detail
+#[derive(Debug, Deserialize)]
+struct StravaFieldError {
+    /// Resource type
+    #[allow(dead_code)]
+    resource: String,
+    /// Field name
+    field: String,
+    /// Error code
+    code: String,
+}
+
+impl std::fmt::Display for StravaErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.errors.is_empty() {
+            write!(f, "{}", self.message)
+        } else {
+            let details: Vec<String> = self
+                .errors
+                .iter()
+                .map(|e| format!("{}: {}", e.field, e.code))
+                .collect();
+            write!(f, "{} ({})", self.message, details.join(", "))
+        }
+    }
+}
+
 /// Default OAuth handler implementation
 #[allow(dead_code)]
 pub struct DefaultOAuthHandler {
     configs: Arc<RwLock<HashMap<SyncPlatform, OAuthConfig>>>,
     tokens: Arc<RwLock<HashMap<SyncPlatform, TokenResponse>>>,
     pending_states: Arc<RwLock<HashMap<String, SyncPlatform>>>,
+    http_client: Client,
     callback_port: u16,
 }
 
@@ -125,6 +179,7 @@ impl DefaultOAuthHandler {
             configs: Arc::new(RwLock::new(HashMap::new())),
             tokens: Arc::new(RwLock::new(HashMap::new())),
             pending_states: Arc::new(RwLock::new(HashMap::new())),
+            http_client: Client::new(),
             callback_port,
         }
     }
@@ -219,24 +274,101 @@ impl OAuthHandler for DefaultOAuthHandler {
         let platform = pending.ok_or(SyncError::AuthorizationRequired)?;
 
         let configs = self.configs.read().await;
-        let _config = configs
+        let config = configs
             .get(&platform)
             .ok_or(SyncError::NotConfigured(platform))?;
 
         tracing::info!("Handling OAuth callback for {:?}", platform);
 
-        // TODO: Exchange code for tokens using oauth2 crate
-        // For now, return mock tokens
-        let tokens = TokenResponse {
-            access_token: format!("mock_access_token_{}", code),
-            refresh_token: Some("mock_refresh_token".to_string()),
-            expires_at: Utc::now() + Duration::hours(1),
+        // Exchange authorization code for tokens
+        let tokens = match platform {
+            SyncPlatform::Strava => {
+                self.exchange_strava_token(code, config).await?
+            }
+            _ => {
+                // For other platforms, return an error until implemented
+                return Err(SyncError::NotConfigured(platform));
+            }
         };
 
         // Store tokens
         self.tokens.write().await.insert(platform, tokens.clone());
 
         Ok(tokens)
+    }
+
+    /// Exchange authorization code for tokens with Strava's OAuth endpoint
+    async fn exchange_strava_token(
+        &self,
+        code: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::Strava))?;
+
+        // Build the token request
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+        ];
+
+        tracing::debug!("Exchanging authorization code with Strava token endpoint");
+
+        let response = self
+            .http_client
+            .post("https://www.strava.com/oauth/token")
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to send token request: {}", e)))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Strava error response
+            if let Ok(error_response) = serde_json::from_str::<StravaErrorResponse>(&body) {
+                tracing::error!("Strava token exchange failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Strava OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!("Strava token exchange failed with status {}: {}", status, body);
+            return Err(SyncError::ApiError(format!(
+                "Strava OAuth failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let strava_response: StravaTokenResponse = serde_json::from_str(&body)
+            .map_err(|e| SyncError::ApiError(format!("Failed to parse token response: {}", e)))?;
+
+        // Convert Unix timestamp to DateTime<Utc>
+        let expires_at = Utc
+            .timestamp_opt(strava_response.expires_at, 0)
+            .single()
+            .unwrap_or_else(|| Utc::now() + Duration::hours(1));
+
+        tracing::info!(
+            "Successfully exchanged code for Strava tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: strava_response.access_token,
+            refresh_token: Some(strava_response.refresh_token),
+            expires_at,
+        })
     }
 
     async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
