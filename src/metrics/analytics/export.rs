@@ -877,6 +877,300 @@ impl AnalyticsExporter {
 
         Ok(training_load_export.to_csv())
     }
+
+    /// Build an analytics export with configurable options.
+    ///
+    /// Similar to [`build_export`], but allows filtering which data types
+    /// to include and specifying a date range for training load data.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export analytics for
+    /// * `options` - Export options controlling which data to include and date filtering
+    ///
+    /// # Returns
+    ///
+    /// Returns an [`AnalyticsExport`] containing the requested analytics data,
+    /// or an error if the export fails.
+    pub fn build_export_with_options(
+        &self,
+        user_id: Uuid,
+        options: &ExportOptions,
+    ) -> Result<AnalyticsExport, ExportError> {
+        let conn = self.db.connection();
+        let store = AnalyticsStore::new(conn);
+
+        let mut export = AnalyticsExport::new(user_id.to_string());
+
+        // Load PDC data if requested
+        if options.include_pdc {
+            let pdc = store
+                .load_pdc(&user_id)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+            if !pdc.is_empty() {
+                let pdc_points: Vec<PdcPointExport> = pdc
+                    .points()
+                    .map(|p| PdcPointExport::from(p.clone()))
+                    .collect();
+                export = export.with_pdc(PdcExport::from_points(pdc_points));
+            }
+        }
+
+        // Load training load history if requested
+        if options.include_training_load {
+            let end_date = options
+                .end_date
+                .unwrap_or_else(|| Utc::now().date_naive());
+            let start_date = options
+                .start_date
+                .unwrap_or_else(|| end_date - chrono::Duration::days(365));
+
+            let load_history = store
+                .load_training_load_history(&user_id, start_date, end_date)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?;
+
+            if !load_history.is_empty() {
+                let daily_loads: Vec<DailyLoadExport> = load_history
+                    .into_iter()
+                    .map(|(date, load)| DailyLoadExport::from_daily_load(date, load))
+                    .collect();
+                export = export.with_training_load(TrainingLoadExport::from_days(daily_loads));
+            }
+        }
+
+        // Load current CP model if requested
+        if options.include_cp_model {
+            if let Some(cp_model) = store
+                .load_current_cp_model(&user_id)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+            {
+                export = export.with_cp_model(CpModelExport::from(cp_model));
+            }
+        }
+
+        // Build fitness profile if requested
+        if options.include_fitness_profile {
+            let mut fitness_profile = FitnessProfileExport::new();
+
+            // Load FTP
+            if let Some(ftp) = store
+                .load_accepted_ftp(&user_id)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+            {
+                fitness_profile = fitness_profile.with_ftp(ftp);
+            }
+
+            // Load VO2max
+            if let Some(vo2max) = store
+                .load_current_vo2max(&user_id)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+            {
+                fitness_profile = fitness_profile.with_vo2max(Vo2maxExport::from(vo2max));
+            }
+
+            // Load rider profile (type and power profile)
+            if let Some((rider_type, power_profile)) = store
+                .load_rider_profile(&user_id)
+                .map_err(|e| ExportError::DatabaseError(e.to_string()))?
+            {
+                fitness_profile = fitness_profile
+                    .with_rider_type(rider_type)
+                    .with_power_profile(PowerProfileExport::from(power_profile));
+            }
+
+            // Only add fitness profile if it has any data
+            if fitness_profile.has_data() {
+                export = export.with_fitness_profile(fitness_profile);
+            }
+        }
+
+        Ok(export)
+    }
+
+    /// Export analytics data with configurable options to pretty-printed JSON.
+    ///
+    /// This method allows selective export of analytics data, controlling
+    /// which data types to include and specifying a date range for filtering.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export analytics for
+    /// * `options` - Export options controlling which data to include and date filtering
+    ///
+    /// # Returns
+    ///
+    /// Returns a pretty-printed JSON string containing the requested analytics
+    /// data for the user, or an error if building or serializing fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let exporter = AnalyticsExporter::new(db);
+    ///
+    /// // Export only PDC and training load for a specific date range
+    /// let options = ExportOptions::new()
+    ///     .with_pdc(true)
+    ///     .with_training_load(true)
+    ///     .with_cp_model(false)
+    ///     .with_fitness_profile(false)
+    ///     .with_date_range(
+    ///         NaiveDate::from_ymd_opt(2024, 1, 1),
+    ///         NaiveDate::from_ymd_opt(2024, 6, 30),
+    ///     );
+    ///
+    /// let json = exporter.export_json_with_options(user_id, &options)?;
+    /// ```
+    pub fn export_json_with_options(
+        &self,
+        user_id: Uuid,
+        options: &ExportOptions,
+    ) -> Result<String, ExportError> {
+        let export = self.build_export_with_options(user_id, options)?;
+        export.export_json()
+    }
+}
+
+/// Options for configuring analytics data export.
+///
+/// Controls which data types to include in the export and allows
+/// filtering by date range. Use the builder pattern to configure options.
+///
+/// # Example
+///
+/// ```ignore
+/// let options = ExportOptions::new()
+///     .with_pdc(true)
+///     .with_training_load(true)
+///     .with_cp_model(false)
+///     .with_fitness_profile(false)
+///     .with_date_range(
+///         NaiveDate::from_ymd_opt(2024, 1, 1),
+///         NaiveDate::from_ymd_opt(2024, 6, 30),
+///     );
+/// ```
+#[derive(Debug, Clone)]
+pub struct ExportOptions {
+    /// Include Power Duration Curve data in export.
+    pub include_pdc: bool,
+    /// Include training load history in export.
+    pub include_training_load: bool,
+    /// Include Critical Power model data in export.
+    pub include_cp_model: bool,
+    /// Include fitness profile data (VO2max, FTP, rider type) in export.
+    pub include_fitness_profile: bool,
+    /// Start date for filtering training load history (inclusive).
+    pub start_date: Option<NaiveDate>,
+    /// End date for filtering training load history (inclusive).
+    pub end_date: Option<NaiveDate>,
+}
+
+impl ExportOptions {
+    /// Create new export options with all data types included.
+    ///
+    /// By default, all data types are included and no date filtering is applied.
+    pub fn new() -> Self {
+        Self {
+            include_pdc: true,
+            include_training_load: true,
+            include_cp_model: true,
+            include_fitness_profile: true,
+            start_date: None,
+            end_date: None,
+        }
+    }
+
+    /// Set whether to include PDC data.
+    pub fn with_pdc(mut self, include: bool) -> Self {
+        self.include_pdc = include;
+        self
+    }
+
+    /// Set whether to include training load data.
+    pub fn with_training_load(mut self, include: bool) -> Self {
+        self.include_training_load = include;
+        self
+    }
+
+    /// Set whether to include CP model data.
+    pub fn with_cp_model(mut self, include: bool) -> Self {
+        self.include_cp_model = include;
+        self
+    }
+
+    /// Set whether to include fitness profile data.
+    pub fn with_fitness_profile(mut self, include: bool) -> Self {
+        self.include_fitness_profile = include;
+        self
+    }
+
+    /// Set the date range for filtering training load data.
+    ///
+    /// Both dates are inclusive. If either is None, the corresponding
+    /// bound is not applied.
+    pub fn with_date_range(
+        mut self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Self {
+        self.start_date = start_date;
+        self.end_date = end_date;
+        self
+    }
+
+    /// Set only the start date for filtering.
+    pub fn with_start_date(mut self, start_date: NaiveDate) -> Self {
+        self.start_date = Some(start_date);
+        self
+    }
+
+    /// Set only the end date for filtering.
+    pub fn with_end_date(mut self, end_date: NaiveDate) -> Self {
+        self.end_date = Some(end_date);
+        self
+    }
+
+    /// Create options that include only PDC data.
+    pub fn pdc_only() -> Self {
+        Self::new()
+            .with_pdc(true)
+            .with_training_load(false)
+            .with_cp_model(false)
+            .with_fitness_profile(false)
+    }
+
+    /// Create options that include only training load data.
+    pub fn training_load_only() -> Self {
+        Self::new()
+            .with_pdc(false)
+            .with_training_load(true)
+            .with_cp_model(false)
+            .with_fitness_profile(false)
+    }
+
+    /// Create options that include only CP model data.
+    pub fn cp_model_only() -> Self {
+        Self::new()
+            .with_pdc(false)
+            .with_training_load(false)
+            .with_cp_model(true)
+            .with_fitness_profile(false)
+    }
+
+    /// Create options that include only fitness profile data.
+    pub fn fitness_profile_only() -> Self {
+        Self::new()
+            .with_pdc(false)
+            .with_training_load(false)
+            .with_cp_model(false)
+            .with_fitness_profile(true)
+    }
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Errors that can occur during analytics export operations.
@@ -2541,5 +2835,215 @@ mod tests {
         let fp = deserialized.fitness_profile.unwrap();
         assert_eq!(fp.ftp_watts, Some(280));
         assert_eq!(fp.rider_type, Some("All-Rounder".to_string()));
+    }
+
+    // ============ ExportOptions Tests ============
+
+    #[test]
+    fn test_export_options_new_defaults() {
+        let options = ExportOptions::new();
+
+        assert!(options.include_pdc);
+        assert!(options.include_training_load);
+        assert!(options.include_cp_model);
+        assert!(options.include_fitness_profile);
+        assert!(options.start_date.is_none());
+        assert!(options.end_date.is_none());
+    }
+
+    #[test]
+    fn test_export_options_default_trait() {
+        let options = ExportOptions::default();
+
+        assert!(options.include_pdc);
+        assert!(options.include_training_load);
+        assert!(options.include_cp_model);
+        assert!(options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_with_pdc() {
+        let options = ExportOptions::new().with_pdc(false);
+        assert!(!options.include_pdc);
+        assert!(options.include_training_load);
+
+        let options = ExportOptions::new().with_pdc(true);
+        assert!(options.include_pdc);
+    }
+
+    #[test]
+    fn test_export_options_with_training_load() {
+        let options = ExportOptions::new().with_training_load(false);
+        assert!(!options.include_training_load);
+        assert!(options.include_pdc);
+
+        let options = ExportOptions::new().with_training_load(true);
+        assert!(options.include_training_load);
+    }
+
+    #[test]
+    fn test_export_options_with_cp_model() {
+        let options = ExportOptions::new().with_cp_model(false);
+        assert!(!options.include_cp_model);
+        assert!(options.include_pdc);
+
+        let options = ExportOptions::new().with_cp_model(true);
+        assert!(options.include_cp_model);
+    }
+
+    #[test]
+    fn test_export_options_with_fitness_profile() {
+        let options = ExportOptions::new().with_fitness_profile(false);
+        assert!(!options.include_fitness_profile);
+        assert!(options.include_pdc);
+
+        let options = ExportOptions::new().with_fitness_profile(true);
+        assert!(options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_with_date_range() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
+
+        let options = ExportOptions::new().with_date_range(Some(start), Some(end));
+
+        assert_eq!(options.start_date, Some(start));
+        assert_eq!(options.end_date, Some(end));
+    }
+
+    #[test]
+    fn test_export_options_with_date_range_partial() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+
+        let options = ExportOptions::new().with_date_range(Some(start), None);
+        assert_eq!(options.start_date, Some(start));
+        assert!(options.end_date.is_none());
+
+        let end = NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
+        let options = ExportOptions::new().with_date_range(None, Some(end));
+        assert!(options.start_date.is_none());
+        assert_eq!(options.end_date, Some(end));
+    }
+
+    #[test]
+    fn test_export_options_with_start_date() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let options = ExportOptions::new().with_start_date(start);
+
+        assert_eq!(options.start_date, Some(start));
+        assert!(options.end_date.is_none());
+    }
+
+    #[test]
+    fn test_export_options_with_end_date() {
+        let end = NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
+        let options = ExportOptions::new().with_end_date(end);
+
+        assert!(options.start_date.is_none());
+        assert_eq!(options.end_date, Some(end));
+    }
+
+    #[test]
+    fn test_export_options_pdc_only() {
+        let options = ExportOptions::pdc_only();
+
+        assert!(options.include_pdc);
+        assert!(!options.include_training_load);
+        assert!(!options.include_cp_model);
+        assert!(!options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_training_load_only() {
+        let options = ExportOptions::training_load_only();
+
+        assert!(!options.include_pdc);
+        assert!(options.include_training_load);
+        assert!(!options.include_cp_model);
+        assert!(!options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_cp_model_only() {
+        let options = ExportOptions::cp_model_only();
+
+        assert!(!options.include_pdc);
+        assert!(!options.include_training_load);
+        assert!(options.include_cp_model);
+        assert!(!options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_fitness_profile_only() {
+        let options = ExportOptions::fitness_profile_only();
+
+        assert!(!options.include_pdc);
+        assert!(!options.include_training_load);
+        assert!(!options.include_cp_model);
+        assert!(options.include_fitness_profile);
+    }
+
+    #[test]
+    fn test_export_options_chained_builders() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
+
+        let options = ExportOptions::new()
+            .with_pdc(true)
+            .with_training_load(true)
+            .with_cp_model(false)
+            .with_fitness_profile(false)
+            .with_date_range(Some(start), Some(end));
+
+        assert!(options.include_pdc);
+        assert!(options.include_training_load);
+        assert!(!options.include_cp_model);
+        assert!(!options.include_fitness_profile);
+        assert_eq!(options.start_date, Some(start));
+        assert_eq!(options.end_date, Some(end));
+    }
+
+    #[test]
+    fn test_export_options_clone() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let options = ExportOptions::new()
+            .with_pdc(false)
+            .with_start_date(start);
+
+        let cloned = options.clone();
+
+        assert_eq!(cloned.include_pdc, options.include_pdc);
+        assert_eq!(cloned.include_training_load, options.include_training_load);
+        assert_eq!(cloned.include_cp_model, options.include_cp_model);
+        assert_eq!(cloned.include_fitness_profile, options.include_fitness_profile);
+        assert_eq!(cloned.start_date, options.start_date);
+        assert_eq!(cloned.end_date, options.end_date);
+    }
+
+    #[test]
+    fn test_export_options_debug() {
+        let options = ExportOptions::new();
+        let debug_str = format!("{:?}", options);
+
+        assert!(debug_str.contains("ExportOptions"));
+        assert!(debug_str.contains("include_pdc"));
+        assert!(debug_str.contains("include_training_load"));
+    }
+
+    #[test]
+    fn test_export_options_training_load_only_with_date_range() {
+        let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 3, 31).unwrap();
+
+        let options = ExportOptions::training_load_only()
+            .with_date_range(Some(start), Some(end));
+
+        assert!(!options.include_pdc);
+        assert!(options.include_training_load);
+        assert!(!options.include_cp_model);
+        assert!(!options.include_fitness_profile);
+        assert_eq!(options.start_date, Some(start));
+        assert_eq!(options.end_date, Some(end));
     }
 }
