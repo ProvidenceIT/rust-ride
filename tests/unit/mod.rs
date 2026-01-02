@@ -4,6 +4,7 @@ mod achievements_tests;
 mod ant_profiles_test;
 mod audio_test;
 mod career_tests;
+mod connection_queue_test;
 mod dynamics_test;
 mod elevation_test;
 mod fit_export_test;

@@ -2,6 +2,7 @@
 
 pub mod ant;
 pub mod cache;
+pub mod connection_queue;
 pub mod dynamics;
 pub mod ftms;
 pub mod fusion;
@@ -26,6 +27,7 @@ pub use incline::{
     IntensityScaler,
 };
 pub use cache::{CacheError, CachedSensor, SensorCache};
+pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 pub use manager::SensorManager;
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,

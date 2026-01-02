@@ -10,6 +10,7 @@
 use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleManager};
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::cache::SensorCache;
+use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
     CYCLING_POWER_MEASUREMENT_UUID, CYCLING_POWER_SERVICE_UUID, FTMS_SERVICE_UUID,
@@ -72,6 +73,8 @@ pub struct SensorManager {
     sensor_cache: Arc<Mutex<SensorCache>>,
     /// Progressive timeout state for current discovery
     progressive_timeout_state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
+    /// Priority-based connection queue for discovered sensors
+    connection_queue: Arc<Mutex<ConnectionQueue>>,
 }
 
 impl SensorManager {
@@ -99,6 +102,7 @@ impl SensorManager {
             reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
             sensor_cache: Arc::new(Mutex::new(sensor_cache)),
             progressive_timeout_state: Arc::new(Mutex::new(None)),
+            connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
         }
     }
 
@@ -1635,6 +1639,161 @@ impl SensorManager {
     pub async fn cached_sensor_count(&self) -> usize {
         let cache = self.sensor_cache.lock().await;
         cache.len()
+    }
+
+    // =========================================================================
+    // Priority-Based Connection Queue Methods
+    // =========================================================================
+
+    /// Add a discovered sensor to the connection queue.
+    ///
+    /// The sensor will be automatically prioritized based on its type:
+    /// - Primary (trainers, power meters) connect first
+    /// - Secondary (HR, cadence) connect after
+    pub async fn queue_sensor_for_connection(&self, sensor: DiscoveredSensor) {
+        let mut queue = self.connection_queue.lock().await;
+        queue.enqueue(sensor);
+    }
+
+    /// Add a preferred sensor to the connection queue (highest priority within its level).
+    pub async fn queue_preferred_sensor(&self, sensor: DiscoveredSensor) {
+        let mut queue = self.connection_queue.lock().await;
+        queue.enqueue_preferred(sensor);
+    }
+
+    /// Add all discovered sensors to the connection queue.
+    ///
+    /// Sensors are automatically prioritized by type.
+    pub async fn queue_all_discovered(&self) {
+        let discovered = self.discovered.lock().await.clone();
+        let cache = self.sensor_cache.lock().await;
+        let mut queue = self.connection_queue.lock().await;
+
+        for sensor in discovered.into_values() {
+            // Check if this sensor is preferred in the cache
+            if cache.get(&sensor.device_id).map_or(false, |c| c.is_preferred) {
+                queue.enqueue_preferred(sensor);
+            } else {
+                queue.enqueue(sensor);
+            }
+        }
+    }
+
+    /// Connect to the next sensor in the priority queue.
+    ///
+    /// Returns the device ID of the sensor that connection was attempted for,
+    /// or None if the queue is empty.
+    pub async fn connect_next_in_queue(&mut self) -> Result<Option<String>, SensorError> {
+        let entry = {
+            let mut queue = self.connection_queue.lock().await;
+            queue.dequeue()
+        };
+
+        match entry {
+            Some(entry) => {
+                let device_id = entry.sensor.device_id.clone();
+                tracing::info!(
+                    "Connecting to {} sensor: {} ({})",
+                    entry.priority,
+                    entry.name(),
+                    device_id
+                );
+                self.connect(&device_id).await?;
+                Ok(Some(device_id))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Connect to all sensors in the queue in priority order.
+    ///
+    /// Primary sensors (trainers, power meters) are connected first,
+    /// then secondary sensors (HR, cadence).
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn connect_all_in_queue(&mut self) -> Vec<String> {
+        let entries = {
+            let mut queue = self.connection_queue.lock().await;
+            queue.drain_in_order()
+        };
+
+        let mut connected = Vec::new();
+
+        for entry in entries {
+            let device_id = entry.sensor.device_id.clone();
+            tracing::info!(
+                "Connecting to {} sensor: {} ({})",
+                entry.priority,
+                entry.name(),
+                device_id
+            );
+
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    connected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect to {}: {}", device_id, e);
+                    // Continue with other sensors
+                }
+            }
+        }
+
+        if !connected.is_empty() {
+            tracing::info!(
+                "Connected to {} sensors in priority order",
+                connected.len()
+            );
+        }
+
+        connected
+    }
+
+    /// Connect to discovered sensors in priority order.
+    ///
+    /// This is a convenience method that:
+    /// 1. Queues all discovered sensors
+    /// 2. Connects to them in priority order (primary first)
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn connect_discovered_by_priority(&mut self) -> Vec<String> {
+        // Queue all discovered sensors
+        self.queue_all_discovered().await;
+
+        // Connect in priority order
+        self.connect_all_in_queue().await
+    }
+
+    /// Get the number of sensors in the connection queue.
+    pub async fn connection_queue_len(&self) -> usize {
+        self.connection_queue.lock().await.len()
+    }
+
+    /// Check if the connection queue is empty.
+    pub async fn is_connection_queue_empty(&self) -> bool {
+        self.connection_queue.lock().await.is_empty()
+    }
+
+    /// Get the count of primary and secondary sensors in the queue.
+    pub async fn connection_queue_counts(&self) -> (usize, usize) {
+        self.connection_queue.lock().await.count_by_priority()
+    }
+
+    /// Clear the connection queue.
+    pub async fn clear_connection_queue(&self) {
+        self.connection_queue.lock().await.clear();
+    }
+
+    /// Remove a sensor from the connection queue.
+    pub async fn remove_from_connection_queue(&self, device_id: &str) -> bool {
+        self.connection_queue.lock().await.remove(device_id)
+    }
+
+    /// Peek at the next sensor in the queue without removing it.
+    pub async fn peek_connection_queue(&self) -> Option<(String, SensorPriority)> {
+        self.connection_queue.lock().await.peek().map(|entry| {
+            (entry.sensor.device_id.clone(), entry.priority)
+        })
     }
 
     /// Shutdown the sensor manager.
