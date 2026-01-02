@@ -7,10 +7,204 @@
 //! - File header and CRC
 //! - Activity, session, lap, and record messages
 //! - Cycling dynamics (L/R balance, torque effectiveness, pedal smoothness)
+//! - Multiple laps based on workout segments/intervals
 
 use crate::recording::types::{ExportError, Ride, RideSample};
 use chrono::{DateTime, Duration, Utc};
 use std::io::{Cursor, Write};
+
+/// Statistics for a single lap/segment within a ride.
+#[derive(Debug, Clone)]
+pub struct LapData {
+    /// Start time of this lap
+    pub start_time: DateTime<Utc>,
+    /// End time of this lap
+    pub end_time: DateTime<Utc>,
+    /// Duration in seconds
+    pub duration_seconds: u32,
+    /// Distance covered in this lap (meters)
+    pub distance_meters: f64,
+    /// Calories burned in this lap
+    pub calories: u32,
+    /// Average heart rate (bpm)
+    pub avg_hr: Option<u8>,
+    /// Maximum heart rate (bpm)
+    pub max_hr: Option<u8>,
+    /// Average cadence (rpm)
+    pub avg_cadence: Option<u8>,
+    /// Average power (watts)
+    pub avg_power: Option<u16>,
+    /// Maximum power (watts)
+    pub max_power: Option<u16>,
+    /// Start index in the samples array (inclusive)
+    pub start_sample_index: usize,
+    /// End index in the samples array (exclusive)
+    pub end_sample_index: usize,
+}
+
+impl LapData {
+    /// Compute lap statistics from a range of samples.
+    pub fn from_samples(
+        samples: &[RideSample],
+        start_index: usize,
+        end_index: usize,
+        ride_start_time: DateTime<Utc>,
+    ) -> Option<Self> {
+        if start_index >= end_index || end_index > samples.len() || samples.is_empty() {
+            return None;
+        }
+
+        let lap_samples = &samples[start_index..end_index];
+        if lap_samples.is_empty() {
+            return None;
+        }
+
+        let first_sample = &lap_samples[0];
+        let last_sample = &lap_samples[lap_samples.len() - 1];
+
+        // Calculate times
+        let start_time = ride_start_time + Duration::seconds(first_sample.elapsed_seconds as i64);
+        let end_time = ride_start_time + Duration::seconds(last_sample.elapsed_seconds as i64);
+        let duration_seconds = last_sample.elapsed_seconds - first_sample.elapsed_seconds + 1;
+
+        // Calculate distance (difference between end and start)
+        let start_distance = if start_index > 0 {
+            samples[start_index - 1].distance_meters
+        } else {
+            0.0
+        };
+        let distance_meters = last_sample.distance_meters - start_distance;
+
+        // Calculate calories (difference between end and start)
+        let start_calories = if start_index > 0 {
+            samples[start_index - 1].calories
+        } else {
+            0
+        };
+        let calories = last_sample.calories.saturating_sub(start_calories);
+
+        // Calculate averages and maximums
+        let mut hr_sum: u32 = 0;
+        let mut hr_count: u32 = 0;
+        let mut max_hr: Option<u8> = None;
+
+        let mut cadence_sum: u32 = 0;
+        let mut cadence_count: u32 = 0;
+
+        let mut power_sum: u32 = 0;
+        let mut power_count: u32 = 0;
+        let mut max_power: Option<u16> = None;
+
+        for sample in lap_samples {
+            if let Some(hr) = sample.heart_rate_bpm {
+                hr_sum += hr as u32;
+                hr_count += 1;
+                max_hr = Some(max_hr.map_or(hr, |m| m.max(hr)));
+            }
+            if let Some(cadence) = sample.cadence_rpm {
+                cadence_sum += cadence as u32;
+                cadence_count += 1;
+            }
+            if let Some(power) = sample.power_watts {
+                power_sum += power as u32;
+                power_count += 1;
+                max_power = Some(max_power.map_or(power, |m| m.max(power)));
+            }
+        }
+
+        let avg_hr = if hr_count > 0 {
+            Some((hr_sum / hr_count) as u8)
+        } else {
+            None
+        };
+
+        let avg_cadence = if cadence_count > 0 {
+            Some((cadence_sum / cadence_count) as u8)
+        } else {
+            None
+        };
+
+        let avg_power = if power_count > 0 {
+            Some((power_sum / power_count) as u16)
+        } else {
+            None
+        };
+
+        Some(LapData {
+            start_time,
+            end_time,
+            duration_seconds,
+            distance_meters,
+            calories,
+            avg_hr,
+            max_hr,
+            avg_cadence,
+            avg_power,
+            max_power,
+            start_sample_index: start_index,
+            end_sample_index: end_index,
+        })
+    }
+
+    /// Create lap data from workout segment boundaries.
+    ///
+    /// Given a list of segment durations (in seconds), this function computes
+    /// lap boundaries by matching elapsed time to segment boundaries.
+    pub fn from_segment_durations(
+        samples: &[RideSample],
+        segment_durations: &[u32],
+        ride_start_time: DateTime<Utc>,
+    ) -> Vec<LapData> {
+        if samples.is_empty() || segment_durations.is_empty() {
+            return vec![];
+        }
+
+        let mut laps = Vec::new();
+        let mut current_index = 0;
+        let mut accumulated_duration: u32 = 0;
+
+        for &duration in segment_durations {
+            let segment_end_time = accumulated_duration + duration;
+
+            // Find the end index for this segment
+            let end_index = samples
+                .iter()
+                .position(|s| s.elapsed_seconds >= segment_end_time)
+                .unwrap_or(samples.len());
+
+            // Only create a lap if we have samples in this range
+            if current_index < end_index {
+                if let Some(lap) = LapData::from_samples(
+                    samples,
+                    current_index,
+                    end_index,
+                    ride_start_time,
+                ) {
+                    laps.push(lap);
+                }
+            }
+
+            current_index = end_index;
+            accumulated_duration = segment_end_time;
+
+            // Stop if we've processed all samples
+            if current_index >= samples.len() {
+                break;
+            }
+        }
+
+        // If there are remaining samples after the last segment, create a final lap
+        if current_index < samples.len() {
+            if let Some(lap) =
+                LapData::from_samples(samples, current_index, samples.len(), ride_start_time)
+            {
+                laps.push(lap);
+            }
+        }
+
+        laps
+    }
+}
 
 /// FIT epoch offset: FIT timestamps are seconds since 1989-12-31 00:00:00 UTC
 const FIT_EPOCH_OFFSET: i64 = 631065600;
@@ -293,6 +487,126 @@ pub fn export_fit(ride: &Ride, samples: &[RideSample]) -> Result<Vec<u8>, Export
     writer.finalize()
 }
 
+/// Export a ride to FIT format with multiple laps.
+///
+/// This function allows exporting a ride with explicit lap boundaries,
+/// which is useful for structured workouts with multiple intervals.
+///
+/// # Arguments
+/// * `ride` - The ride metadata
+/// * `samples` - All ride samples
+/// * `laps` - Precomputed lap data for each segment
+///
+/// # Returns
+/// The FIT file as a byte vector
+pub fn export_fit_with_laps(
+    ride: &Ride,
+    samples: &[RideSample],
+    laps: &[LapData],
+) -> Result<Vec<u8>, ExportError> {
+    if samples.is_empty() {
+        return Err(ExportError::NoData);
+    }
+
+    // If no laps provided, fall back to single lap export
+    if laps.is_empty() {
+        return export_fit(ride, samples);
+    }
+
+    let mut writer = FitWriter::new();
+
+    // Write FIT header
+    writer.write_header()?;
+
+    // Write File ID message
+    write_file_id(&mut writer, ride)?;
+
+    // Write File Creator message
+    write_file_creator(&mut writer)?;
+
+    // Write Event message (timer start)
+    write_event(&mut writer, ride.started_at, 0, 0)?; // timer start
+
+    // Check if any sample has dynamics data
+    let has_dynamics = samples.iter().any(|s| {
+        s.left_right_balance.is_some()
+            || s.left_torque_effectiveness.is_some()
+            || s.right_torque_effectiveness.is_some()
+            || s.left_pedal_smoothness.is_some()
+            || s.right_pedal_smoothness.is_some()
+    });
+
+    // Check if any sample has power phase data
+    let has_power_phase = samples
+        .iter()
+        .any(|s| s.left_power_phase_start.is_some() || s.right_power_phase_start.is_some());
+
+    // Write Record messages for each sample
+    write_records(
+        &mut writer,
+        ride.started_at,
+        samples,
+        has_dynamics,
+        has_power_phase,
+    )?;
+
+    // Write Event message (timer stop)
+    let end_time = ride.ended_at.unwrap_or(ride.started_at);
+    write_event(&mut writer, end_time, 0, 1)?; // timer stop
+
+    // Write Lap messages for each lap
+    for (i, lap) in laps.iter().enumerate() {
+        // Only define the message for the first lap
+        write_lap_from_data(&mut writer, lap, i == 0)?;
+    }
+
+    // Write Session message with correct lap count
+    write_session_with_laps(&mut writer, ride, laps.len() as u16)?;
+
+    // Write Activity message
+    write_activity(&mut writer, ride)?;
+
+    // Finalize and return
+    writer.finalize()
+}
+
+/// Export a ride to FIT format using workout segment durations as lap boundaries.
+///
+/// This is a convenience function that computes lap data from segment durations
+/// and then exports the ride with those laps.
+///
+/// # Arguments
+/// * `ride` - The ride metadata
+/// * `samples` - All ride samples
+/// * `segment_durations` - Duration of each workout segment in seconds
+///
+/// # Returns
+/// The FIT file as a byte vector
+pub fn export_fit_with_segments(
+    ride: &Ride,
+    samples: &[RideSample],
+    segment_durations: &[u32],
+) -> Result<Vec<u8>, ExportError> {
+    if samples.is_empty() {
+        return Err(ExportError::NoData);
+    }
+
+    // If no segments provided, fall back to single lap export
+    if segment_durations.is_empty() {
+        return export_fit(ride, samples);
+    }
+
+    // Compute lap data from segment durations
+    let laps = LapData::from_segment_durations(samples, segment_durations, ride.started_at);
+
+    // If no laps could be computed, fall back to single lap export
+    if laps.is_empty() {
+        return export_fit(ride, samples);
+    }
+
+    export_fit_with_laps(ride, samples, &laps)
+}
+
 /// Write File ID message
 fn write_file_id(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError> {
     // Define File ID message (local message 0)
@@ -499,49 +813,78 @@ fn write_records(
     Ok(())
 }
 
-/// Write Lap message
-fn write_lap(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError> {
-    let fields = [
-        (field_type::TIMESTAMP, 4, base_type::UINT32), // timestamp
-        (2, 4, base_type::UINT32),                     // start_time
-        (7, 4, base_type::UINT32),                     // total_elapsed_time (1000 * s)
-        (8, 4, base_type::UINT32),                     // total_timer_time (1000 * s)
-        (9, 4, base_type::UINT32),                     // total_distance (100 * m)
-        (11, 2, base_type::UINT16),                    // total_calories
-        (13, 1, base_type::UINT8),                     // avg_heart_rate
-        (14, 1, base_type::UINT8),                     // max_heart_rate
-        (15, 1, base_type::UINT8),                     // avg_cadence
-        (19, 2, base_type::UINT16),                    // avg_power
-        (20, 2, base_type::UINT16),                    // max_power
-        (25, 1, base_type::ENUM),                      // event (lap = 9)
-        (26, 1, base_type::ENUM),                      // event_type (stop = 1)
-    ];
-    writer.write_definition(4, message_type::LAP, &fields)?;
+/// Write Lap message from LapData
+fn write_lap_from_data(
+    writer: &mut FitWriter,
+    lap: &LapData,
+    define_message: bool,
+) -> Result<(), ExportError> {
+    if define_message {
+        let fields = [
+            (field_type::TIMESTAMP, 4, base_type::UINT32), // timestamp
+            (2, 4, base_type::UINT32),                     // start_time
+            (7, 4, base_type::UINT32),                     // total_elapsed_time (1000 * s)
+            (8, 4, base_type::UINT32),                     // total_timer_time (1000 * s)
+            (9, 4, base_type::UINT32),                     // total_distance (100 * m)
+            (11, 2, base_type::UINT16),                    // total_calories
+            (13, 1, base_type::UINT8),                     // avg_heart_rate
+            (14, 1, base_type::UINT8),                     // max_heart_rate
+            (15, 1, base_type::UINT8),                     // avg_cadence
+            (19, 2, base_type::UINT16),                    // avg_power
+            (20, 2, base_type::UINT16),                    // max_power
+            (25, 1, base_type::ENUM),                      // event (lap = 9)
+            (26, 1, base_type::ENUM),                      // event_type (stop = 1)
+        ];
+        writer.write_definition(4, message_type::LAP, &fields)?;
+    }
 
-    let end_time = ride.ended_at.unwrap_or(ride.started_at);
-    let total_time_ms = ride.duration_seconds * 1000;
-    let total_distance_scaled = (ride.distance_meters * 100.0) as u32;
+    let total_time_ms = lap.duration_seconds * 1000;
+    let total_distance_scaled = (lap.distance_meters * 100.0) as u32;
 
     writer.write_data_header(4)?;
-    writer.write_u32(FitWriter::datetime_to_fit_timestamp(end_time))?;
-    writer.write_u32(FitWriter::datetime_to_fit_timestamp(ride.started_at))?;
+    writer.write_u32(FitWriter::datetime_to_fit_timestamp(lap.end_time))?;
+    writer.write_u32(FitWriter::datetime_to_fit_timestamp(lap.start_time))?;
     writer.write_u32(total_time_ms)?;
     writer.write_u32(total_time_ms)?;
     writer.write_u32(total_distance_scaled)?;
-    writer.write_u16(ride.calories as u16)?;
-    writer.write_byte(ride.avg_hr.unwrap_or(0xFF))?;
-    writer.write_byte(ride.max_hr.unwrap_or(0xFF))?;
-    writer.write_byte(ride.avg_cadence.unwrap_or(0xFF))?;
-    writer.write_u16(ride.avg_power.unwrap_or(0xFFFF))?;
-    writer.write_u16(ride.max_power.unwrap_or(0xFFFF))?;
+    writer.write_u16(lap.calories as u16)?;
+    writer.write_byte(lap.avg_hr.unwrap_or(0xFF))?;
+    writer.write_byte(lap.max_hr.unwrap_or(0xFF))?;
+    writer.write_byte(lap.avg_cadence.unwrap_or(0xFF))?;
+    writer.write_u16(lap.avg_power.unwrap_or(0xFFFF))?;
+    writer.write_u16(lap.max_power.unwrap_or(0xFFFF))?;
     writer.write_byte(9)?; // event = lap
     writer.write_byte(1)?; // event_type = stop
 
     Ok(())
 }
 
-/// Write Session message
-fn write_session(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError> {
+/// Write Lap message (legacy helper for single-lap export from Ride)
+fn write_lap(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError> {
+    let end_time = ride.ended_at.unwrap_or(ride.started_at);
+    let lap = LapData {
+        start_time: ride.started_at,
+        end_time,
+        duration_seconds: ride.duration_seconds,
+        distance_meters: ride.distance_meters,
+        calories: ride.calories,
+        avg_hr: ride.avg_hr,
+        max_hr: ride.max_hr,
+        avg_cadence: ride.avg_cadence,
+        avg_power: ride.avg_power,
+        max_power: ride.max_power,
+        start_sample_index: 0,
+        end_sample_index: 0,
+    };
+    write_lap_from_data(writer, &lap, true)
+}
+
+/// Write Session message with configurable lap count
+fn write_session_with_laps(
+    writer: &mut FitWriter,
+    ride: &Ride,
+    num_laps: u16,
+) -> Result<(), ExportError> {
     let fields = [
         (field_type::TIMESTAMP, 4, base_type::UINT32), // timestamp
         (2, 4, base_type::UINT32),                     // start_time
@@ -582,9 +925,14 @@ fn write_session(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError>
     writer.write_u16(ride.max_power.unwrap_or(0xFFFF))?;
     writer.write_byte(8)?; // event = session
     writer.write_byte(1)?; // event_type = stop
-    writer.write_u16(1)?; // num_laps = 1
+    writer.write_u16(num_laps)?;
 
     Ok(())
+}
+
+/// Write Session message (legacy helper for single-lap export)
+fn write_session(writer: &mut FitWriter, ride: &Ride) -> Result<(), ExportError> {
+    write_session_with_laps(writer, ride, 1)
 }
 
 /// Write Activity message
@@ -785,5 +1133,166 @@ mod tests {
         let crc = calculate_crc(data);
         // CRC should be non-zero for non-empty data
         assert_ne!(crc, 0);
+    }
+
+    #[test]
+    fn test_lap_data_from_samples() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(100);
+
+        // Test creating lap data from first 50 samples
+        let lap = LapData::from_samples(&samples, 0, 50, ride.started_at);
+        assert!(lap.is_some());
+
+        let lap = lap.unwrap();
+        assert_eq!(lap.duration_seconds, 50);
+        assert!(lap.avg_power.is_some());
+        assert!(lap.avg_hr.is_some());
+        assert!(lap.avg_cadence.is_some());
+    }
+
+    #[test]
+    fn test_lap_data_from_samples_invalid_range() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(10);
+
+        // Start >= end should return None
+        let lap = LapData::from_samples(&samples, 5, 5, ride.started_at);
+        assert!(lap.is_none());
+
+        // End > samples.len() should return None
+        let lap = LapData::from_samples(&samples, 0, 100, ride.started_at);
+        assert!(lap.is_none());
+    }
+
+    #[test]
+    fn test_lap_data_from_segment_durations() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(120); // 2 minutes of samples
+
+        // Create 3 segments: 30s, 30s, 30s
+        let segment_durations = vec![30, 30, 30];
+        let laps = LapData::from_segment_durations(&samples, &segment_durations, ride.started_at);
+
+        // Should have 4 laps (3 segments + remaining samples)
+        assert_eq!(laps.len(), 4);
+
+        // First lap should cover ~30 seconds
+        assert!(laps[0].duration_seconds >= 29 && laps[0].duration_seconds <= 31);
+    }
+
+    #[test]
+    fn test_lap_data_from_segment_durations_empty() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(60);
+
+        // Empty segments should return empty laps
+        let laps = LapData::from_segment_durations(&samples, &[], ride.started_at);
+        assert!(laps.is_empty());
+
+        // Empty samples should return empty laps
+        let laps = LapData::from_segment_durations(&[], &[30, 30], ride.started_at);
+        assert!(laps.is_empty());
+    }
+
+    #[test]
+    fn test_export_fit_with_laps() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(120);
+
+        // Create 3 laps
+        let laps = vec![
+            LapData::from_samples(&samples, 0, 40, ride.started_at).unwrap(),
+            LapData::from_samples(&samples, 40, 80, ride.started_at).unwrap(),
+            LapData::from_samples(&samples, 80, 120, ride.started_at).unwrap(),
+        ];
+
+        let result = export_fit_with_laps(&ride, &samples, &laps);
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+        // Check valid FIT header
+        assert_eq!(data[0], 14);
+        assert_eq!(data[1], 0x20);
+        assert_eq!(&data[8..12], b".FIT");
+
+        // File should be larger than single-lap export due to multiple lap messages
+        let single_lap_result = export_fit(&ride, &samples).unwrap();
+        assert!(data.len() > single_lap_result.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_laps_empty_laps_fallback() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(60);
+
+        // Empty laps should fall back to single-lap export
+        let result = export_fit_with_laps(&ride, &samples, &[]);
+        assert!(result.is_ok());
+
+        // Should produce the same result as export_fit
+        let expected = export_fit(&ride, &samples).unwrap();
+        let actual = result.unwrap();
+        assert_eq!(actual.len(), expected.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_segments() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(120);
+
+        // Create a workout with 3 segments
+        let segment_durations = vec![40, 40, 40];
+
+        let result = export_fit_with_segments(&ride, &samples, &segment_durations);
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+        // Check valid FIT header
+        assert_eq!(data[0], 14);
+        assert_eq!(data[1], 0x20);
+        assert_eq!(&data[8..12], b".FIT");
+    }
+
+    #[test]
+    fn test_export_fit_with_segments_empty_fallback() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(60);
+
+        // Empty segments should fall back to single-lap export
+        let result = export_fit_with_segments(&ride, &samples, &[]);
+        assert!(result.is_ok());
+
+        // Should produce the same result as export_fit
+        let expected = export_fit(&ride, &samples).unwrap();
+        let actual = result.unwrap();
+        assert_eq!(actual.len(), expected.len());
+    }
+
+    #[test]
+    fn test_export_fit_with_laps_preserves_header_format() {
+        let ride = create_test_ride();
+        let samples = create_test_samples(100);
+
+        let laps = vec![
+            LapData::from_samples(&samples, 0, 50, ride.started_at).unwrap(),
+            LapData::from_samples(&samples, 50, 100, ride.started_at).unwrap(),
+        ];
+
+        let result = export_fit_with_laps(&ride, &samples, &laps);
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+
+        // Verify FIT header structure
+        assert_eq!(data[0], 14); // Header size
+        assert_eq!(data[1], 0x20); // Protocol version 2.0
+
+        // Profile version (bytes 2-3, little endian)
+        let profile_version = u16::from_le_bytes([data[2], data[3]]);
+        assert_eq!(profile_version, 2100); // 21.00
+
+        // Data type signature
+        assert_eq!(&data[8..12], b".FIT");
     }
 }
