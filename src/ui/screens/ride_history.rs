@@ -4,6 +4,7 @@
 //! T130: Display ride summary cards (date, duration, distance, TSS)
 //! T131: Implement sorting by date
 //! T132: Implement pagination
+//! 3.4: Add retry button for failed syncs
 
 use chrono::{Duration, Local, Utc};
 use egui::{Align, Color32, CursorIcon, Layout, RichText, ScrollArea, Ui, Vec2};
@@ -15,6 +16,22 @@ use crate::storage::config::Units;
 
 use super::Screen;
 
+/// Actions that can result from the ride history screen.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RideHistoryAction {
+    /// No action
+    None,
+    /// Navigate to a different screen
+    Navigate(Screen),
+    /// Retry sync for a specific ride
+    RetrySync {
+        /// The ride ID to retry sync for
+        ride_id: Uuid,
+        /// Platform to retry (e.g., "Strava")
+        platform: String,
+    },
+}
+
 /// Strava brand color for sync badges
 const STRAVA_ORANGE: Color32 = Color32::from_rgb(252, 82, 0);
 
@@ -24,7 +41,10 @@ pub enum RideSyncStatus {
     /// No sync attempted for this ride
     NotSynced,
     /// Upload is pending or in progress
-    Pending,
+    Pending {
+        /// Platform name (e.g., "Strava")
+        platform: String,
+    },
     /// Upload completed successfully
     Synced {
         /// External activity ID (e.g., Strava activity ID)
@@ -38,6 +58,13 @@ pub enum RideSyncStatus {
         error: String,
         /// Number of retry attempts
         retry_count: i32,
+        /// Platform name (e.g., "Strava")
+        platform: String,
+    },
+    /// Retry in progress
+    Retrying {
+        /// Platform name (e.g., "Strava")
+        platform: String,
     },
 }
 
@@ -46,9 +73,10 @@ impl RideSyncStatus {
     pub fn label(&self) -> &str {
         match self {
             RideSyncStatus::NotSynced => "",
-            RideSyncStatus::Pending => "Syncing...",
+            RideSyncStatus::Pending { .. } => "Syncing...",
             RideSyncStatus::Synced { .. } => "Synced",
             RideSyncStatus::Failed { .. } => "Failed",
+            RideSyncStatus::Retrying { .. } => "Retrying...",
         }
     }
 
@@ -56,9 +84,10 @@ impl RideSyncStatus {
     pub fn color(&self) -> Color32 {
         match self {
             RideSyncStatus::NotSynced => Color32::TRANSPARENT,
-            RideSyncStatus::Pending => Color32::from_rgb(251, 188, 4), // Yellow/amber
+            RideSyncStatus::Pending { .. } => Color32::from_rgb(251, 188, 4), // Yellow/amber
             RideSyncStatus::Synced { .. } => Color32::from_rgb(52, 168, 83), // Green
             RideSyncStatus::Failed { .. } => Color32::from_rgb(234, 67, 53), // Red
+            RideSyncStatus::Retrying { .. } => Color32::from_rgb(251, 188, 4), // Yellow/amber
         }
     }
 
@@ -76,6 +105,17 @@ impl RideSyncStatus {
                 }
             }
             _ => None,
+        }
+    }
+
+    /// Get the platform name for this status (if applicable)
+    pub fn platform(&self) -> Option<&str> {
+        match self {
+            RideSyncStatus::NotSynced => None,
+            RideSyncStatus::Pending { platform } => Some(platform),
+            RideSyncStatus::Synced { platform, .. } => Some(platform),
+            RideSyncStatus::Failed { platform, .. } => Some(platform),
+            RideSyncStatus::Retrying { platform } => Some(platform),
         }
     }
 }
@@ -144,6 +184,32 @@ impl SortOrder {
             SortOrder::TssDesc => "Highest TSS",
         }
     }
+}
+
+/// Result from rendering a ride card.
+#[derive(Debug, Clone)]
+enum RideCardResult {
+    /// No interaction
+    None,
+    /// Card was clicked (navigate to detail)
+    Clicked,
+    /// Retry sync was requested
+    RetrySync {
+        /// Platform to retry
+        platform: String,
+    },
+}
+
+/// Result from rendering a sync badge.
+#[derive(Debug, Clone)]
+enum SyncBadgeResult {
+    /// No interaction
+    None,
+    /// Retry was clicked
+    Retry {
+        /// Platform to retry
+        platform: String,
+    },
 }
 
 /// Ride history screen state.
@@ -257,13 +323,13 @@ impl RideHistoryScreen {
     }
 
     /// Render the ride history screen.
-    pub fn show(&mut self, ui: &mut Ui) -> Option<Screen> {
-        let mut next_screen = None;
+    pub fn show(&mut self, ui: &mut Ui) -> RideHistoryAction {
+        let mut action = RideHistoryAction::None;
 
         // Header
         ui.horizontal(|ui| {
             if ui.button("← Back").clicked() {
-                next_screen = Some(Screen::Home);
+                action = RideHistoryAction::Navigate(Screen::Home);
             }
             ui.heading("Ride History");
         });
@@ -302,9 +368,19 @@ impl RideHistoryScreen {
                 });
             } else {
                 for ride in &page_rides {
-                    if self.render_ride_card(ui, ride) {
-                        self.selected_ride = Some(ride.id);
-                        next_screen = Some(Screen::RideDetail);
+                    let card_result = self.render_ride_card(ui, ride);
+                    match card_result {
+                        RideCardResult::Clicked => {
+                            self.selected_ride = Some(ride.id);
+                            action = RideHistoryAction::Navigate(Screen::RideDetail);
+                        }
+                        RideCardResult::RetrySync { platform } => {
+                            action = RideHistoryAction::RetrySync {
+                                ride_id: ride.id,
+                                platform,
+                            };
+                        }
+                        RideCardResult::None => {}
                     }
                     ui.add_space(4.0);
                 }
@@ -317,7 +393,7 @@ impl RideHistoryScreen {
             self.render_pagination(ui, total_pages);
         }
 
-        next_screen
+        action
     }
 
     /// Render the filters bar.
@@ -424,9 +500,10 @@ impl RideHistoryScreen {
         });
     }
 
-    /// Render a single ride card. Returns true if clicked.
-    fn render_ride_card(&self, ui: &mut Ui, ride: &Ride) -> bool {
-        let mut clicked = false;
+    /// Render a single ride card. Returns the result of user interaction.
+    fn render_ride_card(&self, ui: &mut Ui, ride: &Ride) -> RideCardResult {
+        let mut result = RideCardResult::None;
+        let mut badge_result = SyncBadgeResult::None;
 
         let response = ui.group(|ui| {
             ui.set_min_width(ui.available_width() - 16.0);
@@ -505,24 +582,30 @@ impl RideHistoryScreen {
                     // Sync status badge
                     let sync_status = self.get_sync_status(&ride.id);
                     if !matches!(sync_status, RideSyncStatus::NotSynced) {
-                        self.render_sync_badge(ui, sync_status);
+                        badge_result = self.render_sync_badge(ui, sync_status);
                     }
                 });
             });
         });
 
-        if response.response.interact(egui::Sense::click()).clicked() {
-            clicked = true;
+        // Check for retry action first (takes priority)
+        if let SyncBadgeResult::Retry { platform } = badge_result {
+            return RideCardResult::RetrySync { platform };
         }
 
-        clicked
+        // Otherwise check for card click
+        if response.response.interact(egui::Sense::click()).clicked() {
+            result = RideCardResult::Clicked;
+        }
+
+        result
     }
 
-    /// Render a sync status badge for a ride.
-    fn render_sync_badge(&self, ui: &mut Ui, status: &RideSyncStatus) {
+    /// Render a sync status badge for a ride. Returns action if retry button clicked.
+    fn render_sync_badge(&self, ui: &mut Ui, status: &RideSyncStatus) -> SyncBadgeResult {
         match status {
-            RideSyncStatus::NotSynced => {}
-            RideSyncStatus::Pending => {
+            RideSyncStatus::NotSynced => SyncBadgeResult::None,
+            RideSyncStatus::Pending { platform } => {
                 // Pending/syncing badge with spinner-like indicator
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("⟳").color(status.color()).size(12.0));
@@ -532,6 +615,11 @@ impl RideHistoryScreen {
                             .color(status.color()),
                     );
                 });
+                // Show platform on hover
+                ui.ctx()
+                    .clone()
+                    .on_hover_text(format!("Uploading to {}", platform));
+                SyncBadgeResult::None
             }
             RideSyncStatus::Synced {
                 activity_id,
@@ -568,25 +656,67 @@ impl RideHistoryScreen {
                 } else {
                     response.on_hover_text(format!("Activity ID: {}", activity_id));
                 }
+                SyncBadgeResult::None
             }
-            RideSyncStatus::Failed { error, retry_count } => {
-                // Failed badge with error tooltip
-                let response = ui.horizontal(|ui| {
+            RideSyncStatus::Failed {
+                error,
+                retry_count,
+                platform,
+            } => {
+                let mut result = SyncBadgeResult::None;
+
+                // Failed badge with error tooltip and retry button
+                ui.horizontal(|ui| {
                     ui.label(RichText::new("!").color(status.color()).size(12.0).strong());
                     ui.label(
                         RichText::new(status.label())
                             .size(11.0)
                             .color(status.color()),
                     );
+
+                    ui.add_space(4.0);
+
+                    // Retry button
+                    let retry_button = egui::Button::new(
+                        RichText::new("↻ Retry").size(10.0).color(Color32::WHITE),
+                    )
+                    .fill(STRAVA_ORANGE)
+                    .min_size(Vec2::new(50.0, 18.0));
+
+                    // Show retry count and error on hover
+                    let hover_text = if *retry_count > 0 {
+                        format!(
+                            "Error: {}\nRetries: {}\nClick to retry upload to {}",
+                            error, retry_count, platform
+                        )
+                    } else {
+                        format!("Error: {}\nClick to retry upload to {}", error, platform)
+                    };
+
+                    if ui.add(retry_button).on_hover_text(hover_text).clicked() {
+                        result = SyncBadgeResult::Retry {
+                            platform: platform.clone(),
+                        };
+                    }
                 });
 
-                // Show retry count and error on hover
-                let hover_text = if *retry_count > 0 {
-                    format!("Error: {} (Retries: {})", error, retry_count)
-                } else {
-                    format!("Error: {}", error)
-                };
-                response.response.on_hover_text(hover_text);
+                result
+            }
+            RideSyncStatus::Retrying { platform } => {
+                // Retrying badge with spinner
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(
+                        RichText::new(status.label())
+                            .size(11.0)
+                            .color(status.color()),
+                    );
+                });
+                // Show platform on hover
+                ui.ctx()
+                    .clone()
+                    .on_hover_text(format!("Retrying upload to {}", platform));
+                SyncBadgeResult::None
             }
         }
     }
@@ -628,7 +758,13 @@ mod tests {
     #[test]
     fn test_ride_sync_status_label() {
         assert_eq!(RideSyncStatus::NotSynced.label(), "");
-        assert_eq!(RideSyncStatus::Pending.label(), "Syncing...");
+        assert_eq!(
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string()
+            }
+            .label(),
+            "Syncing..."
+        );
         assert_eq!(
             RideSyncStatus::Synced {
                 activity_id: "123".to_string(),
@@ -641,9 +777,17 @@ mod tests {
             RideSyncStatus::Failed {
                 error: "Network error".to_string(),
                 retry_count: 1,
+                platform: "Strava".to_string(),
             }
             .label(),
             "Failed"
+        );
+        assert_eq!(
+            RideSyncStatus::Retrying {
+                platform: "Strava".to_string()
+            }
+            .label(),
+            "Retrying..."
         );
     }
 
@@ -653,7 +797,10 @@ mod tests {
         assert_eq!(RideSyncStatus::NotSynced.color(), Color32::TRANSPARENT);
 
         // Pending should be amber/yellow
-        let pending_color = RideSyncStatus::Pending.color();
+        let pending_color = RideSyncStatus::Pending {
+            platform: "Strava".to_string(),
+        }
+        .color();
         assert_eq!(pending_color, Color32::from_rgb(251, 188, 4));
 
         // Synced should be green
@@ -668,9 +815,17 @@ mod tests {
         let failed_color = RideSyncStatus::Failed {
             error: "Error".to_string(),
             retry_count: 0,
+            platform: "Strava".to_string(),
         }
         .color();
         assert_eq!(failed_color, Color32::from_rgb(234, 67, 53));
+
+        // Retrying should be amber/yellow
+        let retrying_color = RideSyncStatus::Retrying {
+            platform: "Strava".to_string(),
+        }
+        .color();
+        assert_eq!(retrying_color, Color32::from_rgb(251, 188, 4));
     }
 
     #[test]
@@ -679,7 +834,11 @@ mod tests {
         assert!(RideSyncStatus::NotSynced.activity_url().is_none());
 
         // Pending has no URL
-        assert!(RideSyncStatus::Pending.activity_url().is_none());
+        assert!(RideSyncStatus::Pending {
+            platform: "Strava".to_string()
+        }
+        .activity_url()
+        .is_none());
 
         // Synced with Strava has URL
         let strava_synced = RideSyncStatus::Synced {
@@ -712,8 +871,54 @@ mod tests {
         let failed = RideSyncStatus::Failed {
             error: "Error".to_string(),
             retry_count: 0,
+            platform: "Strava".to_string(),
         };
         assert!(failed.activity_url().is_none());
+    }
+
+    #[test]
+    fn test_ride_sync_status_platform() {
+        // NotSynced has no platform
+        assert!(RideSyncStatus::NotSynced.platform().is_none());
+
+        // Pending has platform
+        assert_eq!(
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string()
+            }
+            .platform(),
+            Some("Strava")
+        );
+
+        // Synced has platform
+        assert_eq!(
+            RideSyncStatus::Synced {
+                activity_id: "123".to_string(),
+                platform: "Strava".to_string()
+            }
+            .platform(),
+            Some("Strava")
+        );
+
+        // Failed has platform
+        assert_eq!(
+            RideSyncStatus::Failed {
+                error: "Error".to_string(),
+                retry_count: 0,
+                platform: "Strava".to_string()
+            }
+            .platform(),
+            Some("Strava")
+        );
+
+        // Retrying has platform
+        assert_eq!(
+            RideSyncStatus::Retrying {
+                platform: "Strava".to_string()
+            }
+            .platform(),
+            Some("Strava")
+        );
     }
 
     #[test]
@@ -725,8 +930,16 @@ mod tests {
         assert_eq!(screen.get_sync_status(&ride_id), &RideSyncStatus::NotSynced);
 
         // Set pending status
-        screen.set_sync_status(ride_id, RideSyncStatus::Pending);
-        assert_eq!(screen.get_sync_status(&ride_id), &RideSyncStatus::Pending);
+        screen.set_sync_status(
+            ride_id,
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string(),
+            },
+        );
+        assert!(matches!(
+            screen.get_sync_status(&ride_id),
+            RideSyncStatus::Pending { .. }
+        ));
 
         // Set synced status
         let synced = RideSyncStatus::Synced {
@@ -744,7 +957,12 @@ mod tests {
         let ride_id_2 = Uuid::new_v4();
 
         let mut statuses = HashMap::new();
-        statuses.insert(ride_id_1, RideSyncStatus::Pending);
+        statuses.insert(
+            ride_id_1,
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string(),
+            },
+        );
         statuses.insert(
             ride_id_2,
             RideSyncStatus::Synced {
@@ -755,7 +973,10 @@ mod tests {
 
         screen.set_sync_statuses(statuses);
 
-        assert_eq!(screen.get_sync_status(&ride_id_1), &RideSyncStatus::Pending);
+        assert!(matches!(
+            screen.get_sync_status(&ride_id_1),
+            RideSyncStatus::Pending { .. }
+        ));
         assert!(matches!(
             screen.get_sync_status(&ride_id_2),
             RideSyncStatus::Synced { .. }
@@ -767,8 +988,16 @@ mod tests {
         let mut screen = RideHistoryScreen::new();
         let ride_id = Uuid::new_v4();
 
-        screen.set_sync_status(ride_id, RideSyncStatus::Pending);
-        assert_eq!(screen.get_sync_status(&ride_id), &RideSyncStatus::Pending);
+        screen.set_sync_status(
+            ride_id,
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string(),
+            },
+        );
+        assert!(matches!(
+            screen.get_sync_status(&ride_id),
+            RideSyncStatus::Pending { .. }
+        ));
 
         screen.clear_sync_status();
         assert_eq!(screen.get_sync_status(&ride_id), &RideSyncStatus::NotSynced);
@@ -777,7 +1006,14 @@ mod tests {
     #[test]
     fn test_ride_sync_status_equality() {
         assert_eq!(RideSyncStatus::NotSynced, RideSyncStatus::NotSynced);
-        assert_eq!(RideSyncStatus::Pending, RideSyncStatus::Pending);
+        assert_eq!(
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string()
+            },
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string()
+            }
+        );
         assert_eq!(
             RideSyncStatus::Synced {
                 activity_id: "123".to_string(),
@@ -788,6 +1024,48 @@ mod tests {
                 platform: "Strava".to_string(),
             }
         );
-        assert_ne!(RideSyncStatus::NotSynced, RideSyncStatus::Pending);
+        assert_ne!(
+            RideSyncStatus::NotSynced,
+            RideSyncStatus::Pending {
+                platform: "Strava".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_ride_history_action_variants() {
+        // Test action variants exist and can be created
+        let none = RideHistoryAction::None;
+        assert!(matches!(none, RideHistoryAction::None));
+
+        let navigate = RideHistoryAction::Navigate(Screen::Home);
+        assert!(matches!(navigate, RideHistoryAction::Navigate(_)));
+
+        let retry = RideHistoryAction::RetrySync {
+            ride_id: Uuid::new_v4(),
+            platform: "Strava".to_string(),
+        };
+        assert!(matches!(retry, RideHistoryAction::RetrySync { .. }));
+    }
+
+    #[test]
+    fn test_ride_sync_status_failed_with_retry_count() {
+        let failed = RideSyncStatus::Failed {
+            error: "Network timeout".to_string(),
+            retry_count: 3,
+            platform: "Strava".to_string(),
+        };
+
+        assert_eq!(failed.label(), "Failed");
+        assert_eq!(failed.color(), Color32::from_rgb(234, 67, 53));
+        assert_eq!(failed.platform(), Some("Strava"));
+        assert!(failed.activity_url().is_none());
+
+        // Verify retry count is preserved
+        if let RideSyncStatus::Failed { retry_count, .. } = failed {
+            assert_eq!(retry_count, 3);
+        } else {
+            panic!("Expected Failed variant");
+        }
     }
 }
