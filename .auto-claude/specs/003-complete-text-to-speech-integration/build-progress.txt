@@ -207,5 +207,40 @@ Updated `CueBuilder` to generate natural-sounding interval change announcements:
    - `test_interval_change_various_durations` - Verifies duration formatting
    - `test_interval_change_natural_sounding_message` - Verifies exact message format
 
+## Subtask 4.3 Implementation Details
+
+Added per-alert-type voice/sound configuration to the settings UI:
+
+1. **AlertTypeConfig struct**:
+   - `use_voice: bool` - Whether this alert uses voice announcement
+   - `play_sound: bool` - Whether this alert plays a sound effect
+   - Default: both enabled
+   - Helper constructors: `voice_only()`, `sound_only()`
+
+2. **AudioAlertSettings Updates**:
+   - Added `alert_type_configs: HashMap<AlertType, AlertTypeConfig>` field
+   - Added `configurable_alert_types()` - Returns list of user-configurable alert types
+   - Added `default_alert_type_configs()` - Creates default configs for all alert types
+   - Added `get_alert_type_config()` and `set_alert_type_config()` helper methods
+
+3. **Configurable Alert Types** (15 types across 5 categories):
+   - **Workout**: WorkoutStart, IntervalChange, IntervalCountdown, WorkoutComplete, RecoveryStart
+   - **Power**: PowerZoneChange, PowerTooHigh, PowerTooLow
+   - **Heart Rate**: HeartRateZoneChange, HeartRateTooHigh, HeartRateTooLow
+   - **Sensors**: SensorConnected, SensorDisconnected
+   - **Milestones**: DistanceMilestone, TimeMilestone
+
+4. **UI Implementation**:
+   - Added new section "Voice vs. Sound per Alert Type" in expanded audio alerts
+   - Grid layout with 3 columns: Alert Type, Voice toggle, Sound toggle
+   - Alerts grouped by category with colored headers (Workout, Power, Heart Rate, etc.)
+   - Checkboxes to enable/disable voice and sound for each alert type
+   - Changes tracked via `has_changes` flag for save detection
+
+5. **Use Case Examples**:
+   - User wants interval changes spoken but not countdowns
+   - User prefers sound effects for sensor alerts but voice for workouts
+   - User wants voice-only announcements (no sound effects)
+
 ---
 Last Updated: 2026-01-02

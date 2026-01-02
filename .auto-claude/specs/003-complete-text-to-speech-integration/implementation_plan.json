@@ -144,17 +144,17 @@
       "phase_id": "phase-4",
       "name": "Voice Settings UI",
       "description": "Add voice selection and configuration to the settings screen.",
-      "status": "pending",
+      "status": "completed",
       "subtasks": [
         {
           "subtask_id": "4.1",
           "title": "Add voice selection dropdown to settings",
           "description": "Add a dropdown/combo box to the Voice Alerts section in settings that lists available system voices. Allow users to select their preferred voice.",
-          "file_paths": ["src/ui/screens/settings.rs"],
-          "status": "pending",
+          "file_paths": ["src/ui/screens/settings.rs", "src/app.rs"],
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["1.2"],
-          "notes": "The settings screen already has the Voice Alerts section with volume and rate sliders."
+          "notes": "COMPLETED: Wired up voice selection dropdown in settings. The UI was already implemented in settings.rs with ComboBox for voice selection, System Default option, available voice listing, and loading hint. Added code to app.rs navigate() function to populate the available voices when entering Settings screen by calling audio_engine.tts_provider().get_voices() and passing to settings_screen.set_available_voices(). Voice selection persists via preferred_voice field in AudioAlertSettings."
         },
         {
           "subtask_id": "4.2",
@@ -171,10 +171,10 @@
           "title": "Add per-alert-type voice configuration",
           "description": "In the expanded audio alerts section, allow users to customize which alert types use voice vs. sound effects. Some users may want only interval changes spoken but not countdowns.",
           "file_paths": ["src/ui/screens/settings.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["4.1"],
-          "notes": "AlertConfig already has use_voice and play_sound fields."
+          "notes": "COMPLETED: Added per-alert-type voice/sound configuration to settings UI. Created AlertTypeConfig struct with use_voice and play_sound fields. Added alert_type_configs HashMap to AudioAlertSettings with 15 configurable alert types across 5 categories (Workout, Power, Heart Rate, Sensors, Milestones). Implemented render_alert_type_configs() function with grid layout showing checkboxes for voice and sound per alert type, grouped by category. Users can now customize which alerts use voice announcements vs. sound effects."
         }
       ]
     },

@@ -13,8 +13,9 @@
 //! T092: Add HID device list and button mapping UI with learning mode
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
+use std::collections::HashMap;
 
-use crate::audio::VoiceInfo;
+use crate::audio::{AlertCategory, AlertType, VoiceInfo};
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -114,6 +115,42 @@ pub struct SettingsScreen {
     pub tv_mode_font_scale: f32,
 }
 
+/// Configuration for a specific alert type (voice vs. sound)
+#[derive(Debug, Clone)]
+pub struct AlertTypeConfig {
+    /// Whether this alert uses voice announcement
+    pub use_voice: bool,
+    /// Whether this alert plays a sound effect
+    pub play_sound: bool,
+}
+
+impl Default for AlertTypeConfig {
+    fn default() -> Self {
+        Self {
+            use_voice: true,
+            play_sound: true,
+        }
+    }
+}
+
+impl AlertTypeConfig {
+    /// Create with voice only (no sound effect)
+    pub fn voice_only() -> Self {
+        Self {
+            use_voice: true,
+            play_sound: false,
+        }
+    }
+
+    /// Create with sound only (no voice)
+    pub fn sound_only() -> Self {
+        Self {
+            use_voice: false,
+            play_sound: true,
+        }
+    }
+}
+
 /// T064: Audio alert settings for voice alerts and notifications.
 #[derive(Debug, Clone)]
 pub struct AudioAlertSettings {
@@ -137,6 +174,59 @@ pub struct AudioAlertSettings {
     pub countdown_threshold_secs: u32,
     /// Zone change debounce time (minimum seconds between zone alerts)
     pub zone_debounce_secs: u32,
+    /// Per-alert-type voice/sound configuration
+    pub alert_type_configs: HashMap<AlertType, AlertTypeConfig>,
+}
+
+impl AudioAlertSettings {
+    /// Get the list of user-configurable alert types
+    /// These are the most common alerts users may want to customize
+    fn configurable_alert_types() -> Vec<AlertType> {
+        vec![
+            // Workout alerts
+            AlertType::WorkoutStart,
+            AlertType::IntervalChange,
+            AlertType::IntervalCountdown,
+            AlertType::WorkoutComplete,
+            AlertType::RecoveryStart,
+            // Power alerts
+            AlertType::PowerZoneChange,
+            AlertType::PowerTooHigh,
+            AlertType::PowerTooLow,
+            // Heart rate alerts
+            AlertType::HeartRateZoneChange,
+            AlertType::HeartRateTooHigh,
+            AlertType::HeartRateTooLow,
+            // Sensor alerts
+            AlertType::SensorConnected,
+            AlertType::SensorDisconnected,
+            // Milestone alerts
+            AlertType::DistanceMilestone,
+            AlertType::TimeMilestone,
+        ]
+    }
+
+    /// Create default alert type configurations
+    fn default_alert_type_configs() -> HashMap<AlertType, AlertTypeConfig> {
+        let mut configs = HashMap::new();
+        for alert_type in Self::configurable_alert_types() {
+            configs.insert(alert_type, AlertTypeConfig::default());
+        }
+        configs
+    }
+
+    /// Get config for an alert type, with defaults
+    pub fn get_alert_type_config(&self, alert_type: AlertType) -> AlertTypeConfig {
+        self.alert_type_configs
+            .get(&alert_type)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Set config for an alert type
+    pub fn set_alert_type_config(&mut self, alert_type: AlertType, config: AlertTypeConfig) {
+        self.alert_type_configs.insert(alert_type, config);
+    }
 }
 
 impl Default for AudioAlertSettings {
@@ -152,6 +242,7 @@ impl Default for AudioAlertSettings {
             achievement_alerts_enabled: true,
             countdown_threshold_secs: 10,
             zone_debounce_secs: 5,
+            alert_type_configs: AudioAlertSettings::default_alert_type_configs(),
         }
     }
 }
@@ -1498,9 +1589,94 @@ impl SettingsScreen {
                             self.has_changes = true;
                         }
                     });
+
+                    // Per-alert-type voice/sound configuration
+                    ui.add_space(12.0);
+                    ui.label(RichText::new("Voice vs. Sound per Alert Type").strong());
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("Customize which alerts use voice announcements vs. sound effects")
+                            .size(12.0)
+                            .color(Color32::GRAY),
+                    );
+                    ui.add_space(8.0);
+
+                    // Group alerts by category for better organization
+                    self.render_alert_type_configs(ui);
                 }
             });
         });
+    }
+
+    /// Render per-alert-type voice/sound configuration grid
+    fn render_alert_type_configs(&mut self, ui: &mut Ui) {
+        // Get all configurable alert types grouped by category
+        let alert_types = AudioAlertSettings::configurable_alert_types();
+
+        // Create a grid with alert name, voice toggle, and sound toggle
+        egui::Grid::new("alert_type_configs_grid")
+            .num_columns(3)
+            .spacing([12.0, 6.0])
+            .striped(true)
+            .show(ui, |ui| {
+                // Header row
+                ui.label(RichText::new("Alert Type").strong());
+                ui.label(RichText::new("🗣️ Voice").strong());
+                ui.label(RichText::new("🔔 Sound").strong());
+                ui.end_row();
+
+                let mut current_category: Option<AlertCategory> = None;
+
+                for alert_type in alert_types {
+                    // Show category separator when category changes
+                    let category = alert_type.category();
+                    if current_category != Some(category) {
+                        current_category = Some(category);
+                        // Add category header
+                        ui.add_space(4.0);
+                        ui.end_row();
+                        ui.label(
+                            RichText::new(category.display_name())
+                                .size(12.0)
+                                .color(Color32::from_rgb(100, 149, 237)), // Cornflower blue
+                        );
+                        ui.label("");
+                        ui.label("");
+                        ui.end_row();
+                    }
+
+                    // Get or create config for this alert type
+                    let mut config = self
+                        .audio_alert_settings
+                        .alert_type_configs
+                        .get(&alert_type)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    // Alert name
+                    ui.label(format!("  {}", alert_type.display_name()));
+
+                    // Voice toggle
+                    let voice_response = ui.checkbox(&mut config.use_voice, "");
+                    if voice_response.changed() {
+                        self.has_changes = true;
+                        self.audio_alert_settings
+                            .alert_type_configs
+                            .insert(alert_type, config.clone());
+                    }
+
+                    // Sound toggle
+                    let sound_response = ui.checkbox(&mut config.play_sound, "");
+                    if sound_response.changed() {
+                        self.has_changes = true;
+                        self.audio_alert_settings
+                            .alert_type_configs
+                            .insert(alert_type, config);
+                    }
+
+                    ui.end_row();
+                }
+            });
     }
 
     /// Render the incline/slope mode settings section.
