@@ -144,6 +144,7 @@ voice-control = ["vosk"]  # Enable voice control (requires Vosk model)
 
 [dev-dependencies]
 tempfile = "3.0"
+wiremock = "0.6"
 
 [profile.release]
 opt-level = 3

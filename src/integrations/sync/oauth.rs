@@ -171,7 +171,12 @@ pub struct DefaultOAuthHandler {
     pending_states: Arc<RwLock<HashMap<String, SyncPlatform>>>,
     http_client: Client,
     callback_port: u16,
+    /// Base URL for Strava OAuth API (overridable for testing)
+    strava_token_url: String,
 }
+
+/// Default Strava OAuth token URL
+const STRAVA_TOKEN_URL: &str = "https://www.strava.com/oauth/token";
 
 impl DefaultOAuthHandler {
     /// Create a new OAuth handler
@@ -182,6 +187,20 @@ impl DefaultOAuthHandler {
             pending_states: Arc::new(RwLock::new(HashMap::new())),
             http_client: Client::new(),
             callback_port,
+            strava_token_url: STRAVA_TOKEN_URL.to_string(),
+        }
+    }
+
+    /// Create a new OAuth handler with a custom Strava token URL (for testing)
+    #[cfg(test)]
+    pub fn with_strava_token_url(callback_port: u16, strava_token_url: String) -> Self {
+        Self {
+            configs: Arc::new(RwLock::new(HashMap::new())),
+            tokens: Arc::new(RwLock::new(HashMap::new())),
+            pending_states: Arc::new(RwLock::new(HashMap::new())),
+            http_client: Client::new(),
+            callback_port,
+            strava_token_url,
         }
     }
 
@@ -321,7 +340,7 @@ impl OAuthHandler for DefaultOAuthHandler {
 
         let response = self
             .http_client
-            .post("https://www.strava.com/oauth/token")
+            .post(&self.strava_token_url)
             .form(&params)
             .send()
             .await
@@ -426,7 +445,7 @@ impl OAuthHandler for DefaultOAuthHandler {
 
         let response = self
             .http_client
-            .post("https://www.strava.com/oauth/token")
+            .post(&self.strava_token_url)
             .form(&params)
             .send()
             .await
@@ -1131,5 +1150,749 @@ mod tests {
         assert_eq!(original.access_token, restored.access_token);
         assert_eq!(original.refresh_token, restored.refresh_token);
         assert_eq!(original.expires_at, restored.expires_at);
+    }
+
+    // === HTTP Mocked Tests for Token Exchange and Refresh ===
+
+    mod http_mocked_tests {
+        use super::*;
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        /// Helper to set up handler with mock server URL
+        async fn setup_handler_with_mock_server(
+            mock_server: &MockServer,
+        ) -> DefaultOAuthHandler {
+            let handler = DefaultOAuthHandler::with_strava_token_url(
+                8888,
+                format!("{}/oauth/token", mock_server.uri()),
+            );
+
+            // Configure Strava OAuth
+            handler
+                .configure(
+                    SyncPlatform::Strava,
+                    OAuthConfig {
+                        client_id: "test_client_id".to_string(),
+                        client_secret: Some("test_client_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["activity:read_all".to_string(), "activity:write".to_string()],
+                    },
+                )
+                .await;
+
+            // Add a pending state for the callback
+            handler
+                .pending_states
+                .write()
+                .await
+                .insert("test_state".to_string(), SyncPlatform::Strava);
+
+            handler
+        }
+
+        #[tokio::test]
+        async fn test_token_exchange_success() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for successful token exchange
+            let expires_at = Utc::now().timestamp() + 21600; // 6 hours from now
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=authorization_code"))
+                .and(body_string_contains("code=test_auth_code"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "mock_access_token_12345",
+                    "refresh_token": "mock_refresh_token_67890",
+                    "expires_at": expires_at
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_auth_code", "test_state").await;
+
+            assert!(result.is_ok(), "Token exchange should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "mock_access_token_12345");
+            assert_eq!(token.refresh_token, Some("mock_refresh_token_67890".to_string()));
+            assert!(handler.is_authorized(SyncPlatform::Strava));
+        }
+
+        #[tokio::test]
+        async fn test_token_exchange_invalid_code_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for error response (invalid authorization code)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "message": "Bad Request",
+                    "errors": [{
+                        "resource": "Application",
+                        "field": "code",
+                        "code": "invalid"
+                    }]
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("invalid_code", "test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("Bad Request"), "Error should contain message");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_token_exchange_invalid_json_response() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock that returns invalid JSON
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("Failed to parse"), "Error should mention parsing failure");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_token_exchange_server_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for server error (500)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("500"), "Error should contain status code");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_token_exchange_invalid_state() {
+            let mock_server = MockServer::start().await;
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            // Use wrong state - no HTTP call should be made
+            let result = handler.handle_callback("test_code", "wrong_state").await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_success() {
+            let mock_server = MockServer::start().await;
+
+            let new_expires_at = Utc::now().timestamp() + 21600; // 6 hours from now
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .and(body_string_contains("refresh_token=original_refresh_token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "new_access_token_abc",
+                    "refresh_token": "new_refresh_token_xyz",
+                    "expires_at": new_expires_at
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            // Set up existing tokens
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access_token".to_string(),
+                    refresh_token: Some("original_refresh_token".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1), // Expired
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(result.is_ok(), "Token refresh should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "new_access_token_abc");
+            assert_eq!(token.refresh_token, Some("new_refresh_token_xyz".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_expired_refresh_token_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns error indicating refresh token is expired
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "message": "Bad Request",
+                    "errors": [{
+                        "resource": "RefreshToken",
+                        "field": "refresh_token",
+                        "code": "expired"
+                    }]
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("expired_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_invalid_refresh_token_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns error indicating refresh token is invalid
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "message": "Bad Request",
+                    "errors": [{
+                        "resource": "RefreshToken",
+                        "field": "refresh_token",
+                        "code": "invalid"
+                    }]
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("invalid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_revoked_refresh_token_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns error indicating refresh token is revoked
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "message": "Bad Request",
+                    "errors": [{
+                        "resource": "RefreshToken",
+                        "field": "refresh_token",
+                        "code": "revoked"
+                    }]
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("revoked_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_generic_api_error() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns a generic API error (not refresh token specific)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "message": "Bad Request",
+                    "errors": [{
+                        "resource": "Application",
+                        "field": "client_id",
+                        "code": "invalid"
+                    }]
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("valid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+        }
+
+        #[tokio::test]
+        async fn test_token_refresh_server_error() {
+            let mock_server = MockServer::start().await;
+
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("valid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::Strava).await;
+
+            assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+        }
+
+        #[tokio::test]
+        async fn test_token_status_expired() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            // Store expired tokens
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "expired_token".to_string(),
+                    refresh_token: Some("refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let status = handler.get_token_status(SyncPlatform::Strava);
+            assert!(matches!(status, TokenStatus::Expired));
+        }
+
+        #[tokio::test]
+        async fn test_token_status_needs_refresh() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            // Store tokens expiring in 3 minutes (less than 5 minute threshold)
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "expiring_soon".to_string(),
+                    refresh_token: Some("refresh".to_string()),
+                    expires_at: Utc::now() + Duration::minutes(3),
+                },
+            );
+
+            let status = handler.get_token_status(SyncPlatform::Strava);
+            assert!(matches!(status, TokenStatus::NeedsRefresh));
+        }
+
+        #[tokio::test]
+        async fn test_token_status_valid() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            // Store tokens valid for 6 hours
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "valid_token".to_string(),
+                    refresh_token: Some("refresh".to_string()),
+                    expires_at: Utc::now() + Duration::hours(6),
+                },
+            );
+
+            let status = handler.get_token_status(SyncPlatform::Strava);
+            match status {
+                TokenStatus::Valid { expires_in } => {
+                    // Should be approximately 6 hours (allow some tolerance)
+                    assert!(expires_in.as_secs() > 5 * 60 * 60); // > 5 hours
+                    assert!(expires_in.as_secs() <= 6 * 60 * 60 + 60); // <= 6h + 1min buffer
+                }
+                _ => panic!("Expected TokenStatus::Valid"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_start_authorization_builds_correct_url() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            handler
+                .configure(
+                    SyncPlatform::Strava,
+                    OAuthConfig {
+                        client_id: "my_client_id".to_string(),
+                        client_secret: Some("my_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["activity:read_all".to_string(), "activity:write".to_string()],
+                    },
+                )
+                .await;
+
+            let result = handler.start_authorization(SyncPlatform::Strava).await;
+
+            assert!(result.is_ok());
+            let auth_url = result.unwrap();
+            assert!(auth_url.url.contains("client_id=my_client_id"));
+            assert!(auth_url.url.contains("redirect_uri="));
+            assert!(auth_url.url.contains("scope="));
+            assert!(auth_url.url.contains("state="));
+            assert!(!auth_url.state.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_revoke_clears_tokens() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            // Store tokens
+            handler.tokens.write().await.insert(
+                SyncPlatform::Strava,
+                TokenResponse {
+                    access_token: "token".to_string(),
+                    refresh_token: Some("refresh".to_string()),
+                    expires_at: Utc::now() + Duration::hours(1),
+                },
+            );
+
+            assert!(handler.is_authorized(SyncPlatform::Strava));
+
+            let result = handler.revoke(SyncPlatform::Strava).await;
+            assert!(result.is_ok());
+            assert!(!handler.is_authorized(SyncPlatform::Strava));
+        }
+    }
+
+    // === Credential Store Mock Tests ===
+
+    mod credential_store_tests {
+        use super::*;
+
+        /// A mock credential store for testing that stores tokens in memory
+        struct MockCredentialStore {
+            tokens: std::sync::RwLock<HashMap<SyncPlatform, TokenResponse>>,
+        }
+
+        impl MockCredentialStore {
+            fn new() -> Self {
+                Self {
+                    tokens: std::sync::RwLock::new(HashMap::new()),
+                }
+            }
+        }
+
+        impl CredentialStore for MockCredentialStore {
+            async fn store_tokens(
+                &self,
+                platform: SyncPlatform,
+                tokens: &TokenResponse,
+            ) -> Result<(), SyncError> {
+                self.tokens.write().unwrap().insert(platform, tokens.clone());
+                Ok(())
+            }
+
+            async fn get_tokens(
+                &self,
+                platform: SyncPlatform,
+            ) -> Result<Option<TokenResponse>, SyncError> {
+                Ok(self.tokens.read().unwrap().get(&platform).cloned())
+            }
+
+            async fn delete_tokens(&self, platform: SyncPlatform) -> Result<(), SyncError> {
+                self.tokens.write().unwrap().remove(&platform);
+                Ok(())
+            }
+
+            fn has_credentials(&self, platform: SyncPlatform) -> bool {
+                self.tokens.read().unwrap().contains_key(&platform)
+            }
+        }
+
+        #[tokio::test]
+        async fn test_mock_store_store_and_retrieve() {
+            let store = MockCredentialStore::new();
+
+            let tokens = TokenResponse {
+                access_token: "test_access".to_string(),
+                refresh_token: Some("test_refresh".to_string()),
+                expires_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            };
+
+            // Store tokens
+            store.store_tokens(SyncPlatform::Strava, &tokens).await.unwrap();
+
+            // Verify has_credentials
+            assert!(store.has_credentials(SyncPlatform::Strava));
+            assert!(!store.has_credentials(SyncPlatform::GarminConnect));
+
+            // Retrieve and verify
+            let retrieved = store.get_tokens(SyncPlatform::Strava).await.unwrap();
+            assert!(retrieved.is_some());
+            let retrieved = retrieved.unwrap();
+            assert_eq!(retrieved.access_token, "test_access");
+            assert_eq!(retrieved.refresh_token, Some("test_refresh".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_mock_store_delete() {
+            let store = MockCredentialStore::new();
+
+            let tokens = TokenResponse {
+                access_token: "test".to_string(),
+                refresh_token: None,
+                expires_at: Utc::now(),
+            };
+
+            store.store_tokens(SyncPlatform::Strava, &tokens).await.unwrap();
+            assert!(store.has_credentials(SyncPlatform::Strava));
+
+            store.delete_tokens(SyncPlatform::Strava).await.unwrap();
+            assert!(!store.has_credentials(SyncPlatform::Strava));
+        }
+
+        #[tokio::test]
+        async fn test_mock_store_get_nonexistent() {
+            let store = MockCredentialStore::new();
+
+            let result = store.get_tokens(SyncPlatform::Strava).await.unwrap();
+            assert!(result.is_none());
+        }
+
+        #[tokio::test]
+        async fn test_mock_store_overwrite() {
+            let store = MockCredentialStore::new();
+
+            let tokens1 = TokenResponse {
+                access_token: "first".to_string(),
+                refresh_token: Some("refresh1".to_string()),
+                expires_at: Utc::now(),
+            };
+
+            let tokens2 = TokenResponse {
+                access_token: "second".to_string(),
+                refresh_token: Some("refresh2".to_string()),
+                expires_at: Utc::now(),
+            };
+
+            store.store_tokens(SyncPlatform::Strava, &tokens1).await.unwrap();
+            store.store_tokens(SyncPlatform::Strava, &tokens2).await.unwrap();
+
+            let retrieved = store.get_tokens(SyncPlatform::Strava).await.unwrap().unwrap();
+            assert_eq!(retrieved.access_token, "second");
+        }
+
+        #[tokio::test]
+        async fn test_mock_store_multiple_platforms() {
+            let store = MockCredentialStore::new();
+
+            let strava_tokens = TokenResponse {
+                access_token: "strava_token".to_string(),
+                refresh_token: Some("strava_refresh".to_string()),
+                expires_at: Utc::now(),
+            };
+
+            let garmin_tokens = TokenResponse {
+                access_token: "garmin_token".to_string(),
+                refresh_token: Some("garmin_refresh".to_string()),
+                expires_at: Utc::now(),
+            };
+
+            store.store_tokens(SyncPlatform::Strava, &strava_tokens).await.unwrap();
+            store.store_tokens(SyncPlatform::GarminConnect, &garmin_tokens).await.unwrap();
+
+            assert!(store.has_credentials(SyncPlatform::Strava));
+            assert!(store.has_credentials(SyncPlatform::GarminConnect));
+
+            let strava = store.get_tokens(SyncPlatform::Strava).await.unwrap().unwrap();
+            let garmin = store.get_tokens(SyncPlatform::GarminConnect).await.unwrap().unwrap();
+
+            assert_eq!(strava.access_token, "strava_token");
+            assert_eq!(garmin.access_token, "garmin_token");
+
+            // Delete just Strava
+            store.delete_tokens(SyncPlatform::Strava).await.unwrap();
+            assert!(!store.has_credentials(SyncPlatform::Strava));
+            assert!(store.has_credentials(SyncPlatform::GarminConnect));
+        }
+
+        // Test the keyring credential store cache behavior (without actual keyring)
+        #[test]
+        fn test_keyring_cache_update() {
+            let store = KeyringCredentialStore::new("TestService");
+
+            // Initially empty
+            assert!(!store.has_credentials(SyncPlatform::Strava));
+
+            // Manually update cache (simulating what store_tokens does)
+            store.update_cache(SyncPlatform::Strava, true);
+
+            // Check cache returns true
+            if let Ok(cache) = store.credentials_cache.lock() {
+                assert_eq!(cache.get(&SyncPlatform::Strava), Some(&true));
+            }
+
+            // Update to false
+            store.update_cache(SyncPlatform::Strava, false);
+
+            if let Ok(cache) = store.credentials_cache.lock() {
+                assert_eq!(cache.get(&SyncPlatform::Strava), Some(&false));
+            }
+        }
+
+        #[test]
+        fn test_keyring_key_generation_all_platforms() {
+            let store = KeyringCredentialStore::new("RustRide");
+
+            // Test all platforms generate valid, distinct keys
+            let strava_key = store.key_for_platform(SyncPlatform::Strava);
+            let garmin_key = store.key_for_platform(SyncPlatform::GarminConnect);
+            let tp_key = store.key_for_platform(SyncPlatform::TrainingPeaks);
+            let intervals_key = store.key_for_platform(SyncPlatform::IntervalsIcu);
+
+            // All should be lowercase
+            assert!(strava_key.chars().all(|c| c.is_lowercase() || c.is_numeric()));
+            assert!(garmin_key.chars().all(|c| c.is_lowercase() || c.is_numeric()));
+            assert!(tp_key.chars().all(|c| c.is_lowercase() || c.is_numeric()));
+            assert!(intervals_key.chars().all(|c| c.is_lowercase() || c.is_numeric()));
+
+            // All should be distinct
+            let keys = vec![&strava_key, &garmin_key, &tp_key, &intervals_key];
+            let unique: std::collections::HashSet<_> = keys.iter().collect();
+            assert_eq!(keys.len(), unique.len(), "All platform keys should be unique");
+        }
+    }
+
+    // === Strava Response Parsing Tests ===
+
+    mod response_parsing_tests {
+        use super::*;
+
+        #[test]
+        fn test_strava_token_response_deserialization() {
+            let json = r#"{
+                "token_type": "Bearer",
+                "access_token": "abc123",
+                "refresh_token": "def456",
+                "expires_at": 1704067200
+            }"#;
+
+            let response: StravaTokenResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(response.access_token, "abc123");
+            assert_eq!(response.refresh_token, "def456");
+            assert_eq!(response.expires_at, 1704067200);
+            assert_eq!(response.token_type, "Bearer");
+        }
+
+        #[test]
+        fn test_strava_error_response_simple() {
+            let json = r#"{
+                "message": "Bad Request",
+                "errors": []
+            }"#;
+
+            let error: StravaErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.message, "Bad Request");
+            assert!(error.errors.is_empty());
+            assert_eq!(format!("{}", error), "Bad Request");
+        }
+
+        #[test]
+        fn test_strava_error_response_with_field_errors() {
+            let json = r#"{
+                "message": "Bad Request",
+                "errors": [
+                    {"resource": "Application", "field": "code", "code": "invalid"},
+                    {"resource": "Application", "field": "client_id", "code": "missing"}
+                ]
+            }"#;
+
+            let error: StravaErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.message, "Bad Request");
+            assert_eq!(error.errors.len(), 2);
+
+            let display = format!("{}", error);
+            assert!(display.contains("Bad Request"));
+            assert!(display.contains("code: invalid"));
+            assert!(display.contains("client_id: missing"));
+        }
+
+        #[test]
+        fn test_strava_error_response_without_errors_field() {
+            // Strava sometimes returns just the message
+            let json = r#"{"message": "Authorization Error"}"#;
+
+            let error: StravaErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.message, "Authorization Error");
+            assert!(error.errors.is_empty()); // Default empty vec
+        }
     }
 }
