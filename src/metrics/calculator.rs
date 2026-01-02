@@ -72,10 +72,14 @@ pub struct PowerMetrics {
 pub struct MetricsCalculator {
     /// Power filter
     power_filter: PowerFilter,
-    /// 3-second rolling average
+    /// 3-second rolling average power
     power_3s: RollingAverage,
-    /// 30-second rolling average (for display)
+    /// 30-second rolling average power (for display)
     power_30s: RollingAverage,
+    /// 3-second rolling average cadence
+    cadence_3s: RollingAverage,
+    /// 10-second rolling average cadence
+    cadence_10s: RollingAverage,
     /// Normalized Power calculator
     np_calculator: NormalizedPowerCalculator,
     /// Power zones
@@ -107,6 +111,8 @@ impl MetricsCalculator {
             power_filter: PowerFilter::new(),
             power_3s: RollingAverage::three_second(),
             power_30s: RollingAverage::thirty_second(),
+            cadence_3s: RollingAverage::three_second(),
+            cadence_10s: RollingAverage::ten_second(),
             np_calculator: NormalizedPowerCalculator::new(),
             power_zones: Some(PowerZones::from_ftp(ftp)),
             hr_zones: None,
@@ -278,6 +284,8 @@ impl MetricsCalculator {
         self.power_filter.reset();
         self.power_3s.reset();
         self.power_30s.reset();
+        self.cadence_3s.reset();
+        self.cadence_10s.reset();
         self.np_calculator.reset();
         self.power_sum = 0;
         self.power_count = 0;
