@@ -46,6 +46,18 @@ pub enum SyncError {
 
     #[error("Network error: {0}")]
     NetworkError(String),
+
+    #[error("Activity already exists on {0:?}")]
+    DuplicateActivity(SyncPlatform),
+
+    #[error("Invalid FIT file: {0}")]
+    InvalidFitFile(String),
+
+    #[error("Request timed out after {0} seconds")]
+    Timeout(u64),
+
+    #[error("Rate limit exceeded. Please try again later.")]
+    RateLimited,
 }
 
 /// Supported sync platforms

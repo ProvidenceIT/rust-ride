@@ -8,8 +8,19 @@ use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+
+/// Default request timeout in seconds
+const DEFAULT_TIMEOUT_SECS: u64 = 60;
+
+/// Upload timeout in seconds (longer for file uploads)
+const UPLOAD_TIMEOUT_SECS: u64 = 120;
+
+/// FIT file header magic bytes
+const FIT_HEADER_SIZE: u8 = 14;
+const FIT_HEADER_SIGNATURE: &[u8] = b".FIT";
 
 /// Strava upload API response
 #[derive(Debug, Deserialize)]
@@ -112,23 +123,96 @@ const STRAVA_OAUTH_BASE_URL: &str = "https://www.strava.com/oauth";
 impl StravaClient {
     /// Create a new Strava client
     pub fn new() -> Self {
+        let http_client = Client::builder()
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+
         Self {
             access_token: Arc::new(RwLock::new(None)),
             base_url: STRAVA_API_BASE_URL.to_string(),
             oauth_base_url: STRAVA_OAUTH_BASE_URL.to_string(),
-            http_client: Client::new(),
+            http_client,
         }
     }
 
     /// Create a new Strava client with custom base URLs (for testing)
     #[cfg(test)]
     pub fn with_base_url(base_url: String, oauth_base_url: String) -> Self {
+        let http_client = Client::builder()
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+
         Self {
             access_token: Arc::new(RwLock::new(None)),
             base_url,
             oauth_base_url,
-            http_client: Client::new(),
+            http_client,
         }
+    }
+
+    /// Validate FIT file data before upload.
+    ///
+    /// Checks:
+    /// - Minimum file size (at least header size)
+    /// - FIT file signature (".FIT" at offset 8-12)
+    /// - Header size byte is valid
+    ///
+    /// # Arguments
+    /// * `fit_data` - The FIT file bytes
+    ///
+    /// # Returns
+    /// Ok(()) if valid, or InvalidFitFile error with description
+    pub fn validate_fit_file(fit_data: &[u8]) -> Result<(), SyncError> {
+        // Check minimum size (header must be at least 12 bytes for basic FIT)
+        if fit_data.len() < 12 {
+            return Err(SyncError::InvalidFitFile(format!(
+                "File too small: {} bytes (minimum 12 bytes required)",
+                fit_data.len()
+            )));
+        }
+
+        // Check header size byte (first byte)
+        let header_size = fit_data[0];
+        if header_size != 12 && header_size != FIT_HEADER_SIZE {
+            return Err(SyncError::InvalidFitFile(format!(
+                "Invalid header size: {} (expected 12 or 14)",
+                header_size
+            )));
+        }
+
+        // Check FIT signature at bytes 8-11
+        if fit_data.len() >= 12 {
+            let signature = &fit_data[8..12];
+            if signature != FIT_HEADER_SIGNATURE {
+                return Err(SyncError::InvalidFitFile(
+                    "Missing '.FIT' signature in header".to_string(),
+                ));
+            }
+        }
+
+        // Check total file size is reasonable (at least header + some data)
+        let min_expected_size = header_size as usize + 2; // header + at least CRC
+        if fit_data.len() < min_expected_size {
+            return Err(SyncError::InvalidFitFile(format!(
+                "File truncated: {} bytes (expected at least {})",
+                fit_data.len(),
+                min_expected_size
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Check if an error message indicates a duplicate activity.
+    fn is_duplicate_error(error_msg: &str) -> bool {
+        let lower = error_msg.to_lowercase();
+        lower.contains("duplicate")
+            || lower.contains("already exists")
+            || lower.contains("already uploaded")
     }
 
     /// Set the access token for API calls
@@ -163,6 +247,14 @@ impl StravaClient {
     ///
     /// # Returns
     /// A SyncRecord with the upload_id in external_id field for status polling
+    ///
+    /// # Errors
+    /// * `InvalidFitFile` - If the FIT file is malformed or too small
+    /// * `DuplicateActivity` - If the activity was already uploaded to Strava
+    /// * `RateLimited` - If Strava's rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
     pub async fn upload_activity(
         &self,
         ride_id: &Uuid,
@@ -170,6 +262,9 @@ impl StravaClient {
         activity_name: Option<&str>,
         description: Option<&str>,
     ) -> Result<SyncRecord, SyncError> {
+        // Validate FIT file before attempting upload
+        Self::validate_fit_file(fit_data)?;
+
         let token = self
             .access_token
             .read()
@@ -180,9 +275,10 @@ impl StravaClient {
         let record_id = Uuid::new_v4();
 
         tracing::info!(
-            "Uploading activity {} to Strava (record: {})",
+            "Uploading activity {} to Strava (record: {}, size: {} bytes)",
             ride_id,
-            record_id
+            record_id,
+            fit_data.len()
         );
 
         // Build multipart form
@@ -210,7 +306,7 @@ impl StravaClient {
             form = form.text("description", desc.to_string());
         }
 
-        // Send the upload request
+        // Send the upload request with extended timeout for file uploads
         let url = format!("{}/uploads", self.base_url);
         tracing::debug!("Sending upload request to {}", url);
 
@@ -218,10 +314,22 @@ impl StravaClient {
             .http_client
             .post(&url)
             .bearer_auth(&token)
+            .timeout(Duration::from_secs(UPLOAD_TIMEOUT_SECS))
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SyncError::NetworkError(format!("Failed to send upload request: {}", e)))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    tracing::warn!("Strava upload request timed out after {} seconds", UPLOAD_TIMEOUT_SECS);
+                    SyncError::Timeout(UPLOAD_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    tracing::warn!("Failed to connect to Strava: {}", e);
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    tracing::warn!("Failed to send upload request: {}", e);
+                    SyncError::NetworkError(format!("Request failed: {}", e))
+                }
+            })?;
 
         let status_code = response.status();
         let body = response
@@ -232,14 +340,12 @@ impl StravaClient {
         // Handle rate limiting (429 Too Many Requests)
         if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Strava API rate limit exceeded");
-            return Err(SyncError::ApiError(
-                "Rate limit exceeded. Please try again later.".to_string(),
-            ));
+            return Err(SyncError::RateLimited);
         }
 
         // Handle unauthorized (401)
         if status_code == reqwest::StatusCode::UNAUTHORIZED {
-            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired");
+            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired or revoked");
             return Err(SyncError::TokenExpired);
         }
 
@@ -247,10 +353,18 @@ impl StravaClient {
         if !status_code.is_success() {
             // Try to parse as Strava error response
             if let Ok(error_response) = serde_json::from_str::<StravaApiError>(&body) {
-                tracing::error!("Strava upload failed: {}", error_response);
+                let error_msg = error_response.to_string();
+
+                // Check for duplicate activity error
+                if Self::is_duplicate_error(&error_msg) {
+                    tracing::info!("Activity {} already exists on Strava", ride_id);
+                    return Err(SyncError::DuplicateActivity(SyncPlatform::Strava));
+                }
+
+                tracing::error!("Strava upload failed: {}", error_msg);
                 return Err(SyncError::UploadFailed(format!(
                     "Strava error: {}",
-                    error_response
+                    error_msg
                 )));
             }
             // Fall back to generic error
@@ -303,6 +417,12 @@ impl StravaClient {
     ///
     /// # Returns
     /// The current upload status
+    ///
+    /// # Errors
+    /// * `RateLimited` - If Strava's rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
     pub async fn check_upload_status(&self, upload_id: &str) -> Result<UploadStatus, SyncError> {
         let token = self
             .access_token
@@ -322,7 +442,14 @@ impl StravaClient {
             .send()
             .await
             .map_err(|e| {
-                SyncError::NetworkError(format!("Failed to check upload status: {}", e))
+                if e.is_timeout() {
+                    tracing::warn!("Strava status check timed out after {} seconds", DEFAULT_TIMEOUT_SECS);
+                    SyncError::Timeout(DEFAULT_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    SyncError::NetworkError(format!("Failed to check upload status: {}", e))
+                }
             })?;
 
         let status_code = response.status();
@@ -334,14 +461,12 @@ impl StravaClient {
         // Handle rate limiting (429 Too Many Requests)
         if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Strava API rate limit exceeded");
-            return Err(SyncError::ApiError(
-                "Rate limit exceeded. Please try again later.".to_string(),
-            ));
+            return Err(SyncError::RateLimited);
         }
 
         // Handle unauthorized (401)
         if status_code == reqwest::StatusCode::UNAUTHORIZED {
-            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired");
+            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired or revoked");
             return Err(SyncError::TokenExpired);
         }
 
@@ -383,6 +508,11 @@ impl StravaClient {
         // Priority: error > activity_id > processing
         if let Some(error) = upload_response.error {
             if !error.is_empty() {
+                // Check for duplicate activity in processing error
+                if Self::is_duplicate_error(&error) {
+                    tracing::info!("Strava upload {} detected as duplicate: {}", upload_id, error);
+                    return Ok(UploadStatus::Duplicate { error });
+                }
                 tracing::warn!("Strava upload {} failed: {}", upload_id, error);
                 return Ok(UploadStatus::Error { error });
             }
@@ -411,6 +541,12 @@ impl StravaClient {
     ///
     /// # Returns
     /// The athlete profile including id, name, username, and profile image URL
+    ///
+    /// # Errors
+    /// * `RateLimited` - If Strava's rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
     pub async fn get_athlete(&self) -> Result<AthleteProfile, SyncError> {
         let token = self
             .access_token
@@ -430,7 +566,13 @@ impl StravaClient {
             .send()
             .await
             .map_err(|e| {
-                SyncError::NetworkError(format!("Failed to fetch athlete profile: {}", e))
+                if e.is_timeout() {
+                    SyncError::Timeout(DEFAULT_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    SyncError::NetworkError(format!("Failed to fetch athlete profile: {}", e))
+                }
             })?;
 
         let status_code = response.status();
@@ -442,14 +584,12 @@ impl StravaClient {
         // Handle rate limiting (429 Too Many Requests)
         if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Strava API rate limit exceeded");
-            return Err(SyncError::ApiError(
-                "Rate limit exceeded. Please try again later.".to_string(),
-            ));
+            return Err(SyncError::RateLimited);
         }
 
         // Handle unauthorized (401)
         if status_code == reqwest::StatusCode::UNAUTHORIZED {
-            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired");
+            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired or revoked");
             return Err(SyncError::TokenExpired);
         }
 
@@ -590,6 +730,8 @@ pub enum UploadStatus {
     Ready { activity_id: u64 },
     /// Processing failed
     Error { error: String },
+    /// Activity is a duplicate (already uploaded)
+    Duplicate { error: String },
 }
 
 /// Strava athlete profile
@@ -908,6 +1050,154 @@ mod tests {
         // Token should be cleared regardless of network outcome
         assert!(!client.is_configured());
     }
+
+    // ========================================================================
+    // FIT File Validation Tests
+    // ========================================================================
+
+    /// Create a valid FIT file header for testing
+    fn create_valid_fit_header() -> Vec<u8> {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size (14 bytes)
+        data[1] = 0x10; // Protocol version
+        data[2] = 0x00; // Profile version LSB
+        data[3] = 0x00; // Profile version MSB
+        data[4] = 0x00; // Data size LSB
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = 0x00; // Data size MSB
+        // ".FIT" signature at bytes 8-11
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        data[12] = 0x00; // CRC LSB
+        data[13] = 0x00; // CRC MSB
+        data
+    }
+
+    #[test]
+    fn test_validate_fit_file_valid() {
+        let valid_fit = create_valid_fit_header();
+        let result = StravaClient::validate_fit_file(&valid_fit);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_fit_file_valid_12_byte_header() {
+        // 12-byte header version (older FIT format)
+        let mut data = vec![0u8; 14];
+        data[0] = 12; // Header size (12 bytes)
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = StravaClient::validate_fit_file(&data);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_fit_file_too_small() {
+        let tiny_data = vec![0u8; 5];
+        let result = StravaClient::validate_fit_file(&tiny_data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("too small")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_invalid_header_size() {
+        let mut data = vec![0u8; 20];
+        data[0] = 50; // Invalid header size
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = StravaClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("Invalid header size")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_missing_signature() {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size
+        // Missing ".FIT" signature - just zeros
+        let result = StravaClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("signature")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_truncated() {
+        let mut data = vec![0u8; 12]; // Too small for 14-byte header
+        data[0] = 14; // Claims 14-byte header but only 12 bytes
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = StravaClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("truncated")));
+    }
+
+    // ========================================================================
+    // Duplicate Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_duplicate_error_detection() {
+        assert!(StravaClient::is_duplicate_error("The activity appears to be a duplicate."));
+        assert!(StravaClient::is_duplicate_error("Activity already exists"));
+        assert!(StravaClient::is_duplicate_error("This file has already uploaded"));
+        assert!(StravaClient::is_duplicate_error("DUPLICATE activity detected"));
+
+        // Should not match non-duplicate errors
+        assert!(!StravaClient::is_duplicate_error("Invalid file format"));
+        assert!(!StravaClient::is_duplicate_error("Rate limit exceeded"));
+        assert!(!StravaClient::is_duplicate_error("Server error"));
+    }
+
+    #[test]
+    fn test_upload_status_duplicate_variant() {
+        let duplicate = UploadStatus::Duplicate {
+            error: "Activity is a duplicate".to_string(),
+        };
+        assert_eq!(
+            duplicate,
+            UploadStatus::Duplicate {
+                error: "Activity is a duplicate".to_string()
+            }
+        );
+        // Duplicate should not equal other variants
+        assert_ne!(duplicate, UploadStatus::Processing);
+        assert_ne!(
+            duplicate,
+            UploadStatus::Error {
+                error: "Activity is a duplicate".to_string()
+            }
+        );
+    }
+
+    // ========================================================================
+    // Error Type Tests
+    // ========================================================================
+
+    #[test]
+    fn test_timeout_constant() {
+        assert!(DEFAULT_TIMEOUT_SECS > 0);
+        assert!(UPLOAD_TIMEOUT_SECS > DEFAULT_TIMEOUT_SECS);
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_invalid_fit_file() {
+        let client = StravaClient::new();
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let invalid_fit_data = vec![0u8; 5]; // Too small
+
+        let result = client
+            .upload_activity(&ride_id, &invalid_fit_data, Some("Test Ride"), None)
+            .await;
+
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(_))));
+    }
 }
 
 /// HTTP mocked tests using wiremock
@@ -916,6 +1206,27 @@ mod http_mocked_tests {
     use super::*;
     use wiremock::matchers::{bearer_token, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Create a valid FIT file header for testing
+    fn create_valid_fit_data() -> Vec<u8> {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size (14 bytes)
+        data[1] = 0x10; // Protocol version
+        data[2] = 0x00; // Profile version LSB
+        data[3] = 0x00; // Profile version MSB
+        data[4] = 0x00; // Data size LSB
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = 0x00; // Data size MSB
+        // ".FIT" signature at bytes 8-11
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        data[12] = 0x00; // CRC LSB
+        data[13] = 0x00; // CRC MSB
+        data
+    }
 
     // ============================================================================
     // Upload Activity Tests
@@ -944,7 +1255,7 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100]; // Dummy FIT data
+        let fit_data = create_valid_fit_data();
 
         let result = client
             .upload_activity(&ride_id, &fit_data, Some("Test Ride"), Some("A test ride"))
@@ -972,11 +1283,11 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100];
+        let fit_data = create_valid_fit_data();
 
         let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
 
-        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+        assert!(matches!(result, Err(SyncError::RateLimited)));
     }
 
     #[tokio::test]
@@ -993,7 +1304,7 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100];
+        let fit_data = create_valid_fit_data();
 
         let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
 
@@ -1021,7 +1332,7 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100];
+        let fit_data = create_valid_fit_data();
 
         let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
 
@@ -1042,7 +1353,7 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100];
+        let fit_data = create_valid_fit_data();
 
         let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
 
@@ -1070,7 +1381,7 @@ mod http_mocked_tests {
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![1u8, 2, 3, 4, 5];
+        let fit_data = create_valid_fit_data();
 
         // Test without name and description
         let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
@@ -1078,6 +1389,32 @@ mod http_mocked_tests {
         assert!(result.is_ok());
         let record = result.unwrap();
         assert_eq!(record.external_id, Some("99999".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_duplicate_detection() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "The activity appears to be a duplicate.",
+            "errors": []
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/uploads"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data, None, None).await;
+
+        assert!(matches!(result, Err(SyncError::DuplicateActivity(SyncPlatform::Strava))));
     }
 
     // ============================================================================
@@ -1190,7 +1527,34 @@ mod http_mocked_tests {
 
         let result = client.check_upload_status("12345").await;
 
-        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+        assert!(matches!(result, Err(SyncError::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_duplicate() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": null,
+            "status": null,
+            "error": "The activity appears to be a duplicate."
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/uploads/12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = StravaClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), UploadStatus::Duplicate { error } if error.contains("duplicate")));
     }
 
     #[tokio::test]
@@ -1370,7 +1734,7 @@ mod http_mocked_tests {
 
         let result = client.get_athlete().await;
 
-        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Rate limit")));
+        assert!(matches!(result, Err(SyncError::RateLimited)));
     }
 
     #[tokio::test]

@@ -918,13 +918,77 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 });
             }
             Err(e) => {
-                let error_msg = e.to_string();
+                // Get user-friendly error message
+                let user_error_msg = self.get_user_friendly_error_message(&e);
                 let current_retry = self
                     .upload_queue
                     .iter()
                     .find(|e| e.record.id == record_id)
                     .map(|e| e.record.retry_count as i32)
                     .unwrap_or(0);
+
+                // Handle special error cases
+                match &e {
+                    SyncError::TokenExpired => {
+                        tracing::warn!(
+                            "Upload {} failed due to expired token - triggering re-authorization",
+                            record_id
+                        );
+                        // Mark as permanently failed but with a helpful message
+                        self.mark_upload_permanently_failed(record_id, &user_error_msg);
+
+                        // Emit re-authorization required event
+                        self.emit_event(SyncEvent::ReauthorizationRequired { platform });
+
+                        // Emit failure event
+                        self.emit_event(SyncEvent::UploadFailed {
+                            record_id,
+                            ride_id,
+                            platform,
+                            error: user_error_msg,
+                            retry_count: current_retry + 1,
+                            will_retry: false,
+                        });
+                        return;
+                    }
+                    SyncError::DuplicateActivity(_) => {
+                        tracing::info!(
+                            "Upload {} is a duplicate - marking as completed",
+                            record_id
+                        );
+                        // For duplicates, we mark as completed (not failed) since the activity exists
+                        self.mark_upload_completed(record_id, None, None);
+
+                        // Emit a special event for duplicates (as success with note)
+                        self.emit_event(SyncEvent::UploadCompleted {
+                            record_id,
+                            ride_id,
+                            platform,
+                            external_id: None,
+                            external_url: None,
+                        });
+                        return;
+                    }
+                    SyncError::InvalidFitFile(_) => {
+                        tracing::error!(
+                            "Upload {} failed due to invalid FIT file - not retryable",
+                            record_id
+                        );
+                        // Permanent failure for invalid data
+                        self.mark_upload_permanently_failed(record_id, &user_error_msg);
+
+                        self.emit_event(SyncEvent::UploadFailed {
+                            record_id,
+                            ride_id,
+                            platform,
+                            error: user_error_msg,
+                            retry_count: current_retry + 1,
+                            will_retry: false,
+                        });
+                        return;
+                    }
+                    _ => {}
+                }
 
                 let will_retry = current_retry < MAX_UPLOAD_RETRIES && self.is_retryable_error(&e);
 
@@ -933,7 +997,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     record_id,
                     current_retry + 1,
                     MAX_UPLOAD_RETRIES,
-                    error_msg,
+                    user_error_msg,
                     will_retry
                 );
 
@@ -941,10 +1005,10 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     // Calculate next retry time with exponential backoff
                     let backoff = BASE_RETRY_DELAY_SECS * (2_i64.pow(current_retry as u32));
                     let next_retry = Utc::now() + ChronoDuration::seconds(backoff);
-                    self.mark_upload_failed_with_retry(record_id, &error_msg, next_retry);
+                    self.mark_upload_failed_with_retry(record_id, &user_error_msg, next_retry);
                 } else {
                     // Permanent failure
-                    self.mark_upload_permanently_failed(record_id, &error_msg);
+                    self.mark_upload_permanently_failed(record_id, &user_error_msg);
                 }
 
                 // Emit failure event
@@ -952,7 +1016,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     record_id,
                     ride_id,
                     platform,
-                    error: error_msg,
+                    error: user_error_msg,
                     retry_count: current_retry + 1,
                     will_retry,
                 });
@@ -960,12 +1024,77 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         }
     }
 
-    /// Check if an error is retryable (e.g., network issues).
+    /// Check if an error is retryable (e.g., network issues, timeouts).
+    ///
+    /// Non-retryable errors include:
+    /// - TokenExpired (requires re-authorization)
+    /// - AuthorizationRequired (requires user action)
+    /// - InvalidFitFile (data is corrupt/invalid)
+    /// - DuplicateActivity (activity already exists)
+    /// - NotConfigured (platform not set up)
     fn is_retryable_error(&self, error: &SyncError) -> bool {
-        matches!(
-            error,
-            SyncError::NetworkError(_) | SyncError::ApiError(_)
-        )
+        match error {
+            // Retryable errors (transient network/server issues)
+            SyncError::NetworkError(_) => true,
+            SyncError::ApiError(_) => true,
+            SyncError::Timeout(_) => true,
+            SyncError::RateLimited => true,
+            SyncError::UploadFailed(msg) => {
+                // Only retry generic upload failures, not data issues
+                !msg.to_lowercase().contains("invalid")
+                    && !msg.to_lowercase().contains("corrupt")
+            }
+
+            // Non-retryable errors (require user action or data is invalid)
+            SyncError::TokenExpired => false,
+            SyncError::AuthorizationRequired => false,
+            SyncError::RefreshFailed(_) => false,
+            SyncError::InvalidFitFile(_) => false,
+            SyncError::DuplicateActivity(_) => false,
+            SyncError::NotConfigured(_) => false,
+            SyncError::CredentialError(_) => false,
+        }
+    }
+
+    /// Get a user-friendly error message for a sync error.
+    fn get_user_friendly_error_message(&self, error: &SyncError) -> String {
+        match error {
+            SyncError::DuplicateActivity(platform) => {
+                format!(
+                    "This activity has already been uploaded to {}. No action needed.",
+                    platform.display_name()
+                )
+            }
+            SyncError::InvalidFitFile(details) => {
+                format!(
+                    "The activity file is invalid or corrupted: {}. Please try exporting the ride again.",
+                    details
+                )
+            }
+            SyncError::Timeout(secs) => {
+                format!(
+                    "The upload request timed out after {} seconds. Please check your internet connection and try again.",
+                    secs
+                )
+            }
+            SyncError::RateLimited => {
+                "Too many requests to Strava. Please wait a few minutes before trying again.".to_string()
+            }
+            SyncError::TokenExpired => {
+                "Your Strava connection has expired. Please reconnect your account in Settings.".to_string()
+            }
+            SyncError::AuthorizationRequired => {
+                "Please connect your Strava account in Settings to sync activities.".to_string()
+            }
+            SyncError::NetworkError(details) => {
+                if details.contains("Connection failed") {
+                    "Unable to connect to Strava. Please check your internet connection.".to_string()
+                } else {
+                    format!("A network error occurred: {}. Please try again.", details)
+                }
+            }
+            _ => error.to_string(),
+        }
     }
 
     /// Update queue entry status in memory and database.
