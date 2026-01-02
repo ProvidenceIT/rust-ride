@@ -186,6 +186,35 @@ pub enum ConflictResolution {
     Skip,
 }
 
+/// Errors that can occur during profile export/import operations.
+#[derive(Debug, thiserror::Error)]
+pub enum ProfileExportError {
+    /// Database operation failed.
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    /// JSON serialization failed.
+    #[error("Serialization failed: {0}")]
+    SerializationFailed(String),
+
+    /// JSON parsing failed.
+    #[error("Parse error: {0}")]
+    ParseError(String),
+
+    /// Requested profile was not found.
+    #[error("Profile not found: {0}")]
+    ProfileNotFound(Uuid),
+
+    /// Export format version is not compatible.
+    #[error("Invalid version: expected {expected}, found {found}")]
+    InvalidVersion {
+        /// The expected version.
+        expected: String,
+        /// The version found in the import file.
+        found: String,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +400,59 @@ mod tests {
         assert_ne!(ConflictResolution::Replace, ConflictResolution::Merge);
         assert_ne!(ConflictResolution::Replace, ConflictResolution::Skip);
         assert_ne!(ConflictResolution::Merge, ConflictResolution::Skip);
+    }
+
+    #[test]
+    fn test_profile_export_error_database() {
+        let error = ProfileExportError::DatabaseError("connection failed".to_string());
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Database error"));
+        assert!(error_msg.contains("connection failed"));
+    }
+
+    #[test]
+    fn test_profile_export_error_serialization() {
+        let error = ProfileExportError::SerializationFailed("invalid UTF-8".to_string());
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Serialization failed"));
+        assert!(error_msg.contains("invalid UTF-8"));
+    }
+
+    #[test]
+    fn test_profile_export_error_parse() {
+        let error = ProfileExportError::ParseError("unexpected token".to_string());
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Parse error"));
+        assert!(error_msg.contains("unexpected token"));
+    }
+
+    #[test]
+    fn test_profile_export_error_profile_not_found() {
+        let rider_id = Uuid::new_v4();
+        let error = ProfileExportError::ProfileNotFound(rider_id);
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Profile not found"));
+        assert!(error_msg.contains(&rider_id.to_string()));
+    }
+
+    #[test]
+    fn test_profile_export_error_invalid_version() {
+        let error = ProfileExportError::InvalidVersion {
+            expected: "1.0".to_string(),
+            found: "2.0".to_string(),
+        };
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("Invalid version"));
+        assert!(error_msg.contains("expected 1.0"));
+        assert!(error_msg.contains("found 2.0"));
+    }
+
+    #[test]
+    fn test_profile_export_error_is_std_error() {
+        // Verify ProfileExportError implements std::error::Error
+        fn assert_error<E: std::error::Error>(_: &E) {}
+
+        let error = ProfileExportError::DatabaseError("test".to_string());
+        assert_error(&error);
     }
 }
