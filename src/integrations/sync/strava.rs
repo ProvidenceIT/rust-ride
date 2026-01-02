@@ -257,9 +257,18 @@ impl StravaClient {
 
     /// Check upload status
     ///
-    /// Strava processes uploads asynchronously, so we need to poll for status
+    /// Strava processes uploads asynchronously, so we need to poll for status.
+    /// Returns `UploadStatus::Ready` with `activity_id` when processing is complete,
+    /// `UploadStatus::Error` with a message if processing failed, or
+    /// `UploadStatus::Processing` if still being processed.
+    ///
+    /// # Arguments
+    /// * `upload_id` - The upload ID returned from `upload_activity`
+    ///
+    /// # Returns
+    /// The current upload status
     pub async fn check_upload_status(&self, upload_id: &str) -> Result<UploadStatus, SyncError> {
-        let _token = self
+        let token = self
             .access_token
             .read()
             .await
@@ -268,9 +277,95 @@ impl StravaClient {
 
         tracing::debug!("Checking Strava upload status: {}", upload_id);
 
-        // TODO: GET https://www.strava.com/api/v3/uploads/{upload_id}
-        // Returns status, activity_id when complete
+        let url = format!("{}/uploads/{}", self.base_url, upload_id);
 
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to check upload status: {}", e))
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("Strava API rate limit exceeded");
+            return Err(SyncError::ApiError(
+                "Rate limit exceeded. Please try again later.".to_string(),
+            ));
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!("Strava API returned 401 Unauthorized - token may be expired");
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle not found (404) - upload may have been deleted or invalid ID
+        if status_code == reqwest::StatusCode::NOT_FOUND {
+            tracing::warn!("Strava upload {} not found", upload_id);
+            return Err(SyncError::ApiError(format!(
+                "Upload {} not found",
+                upload_id
+            )));
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<StravaApiError>(&body) {
+                tracing::error!("Strava status check failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Strava error: {}",
+                    error_response
+                )));
+            }
+            tracing::error!(
+                "Strava status check failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::ApiError(format!(
+                "Status check failed with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response
+        let upload_response: StravaUploadResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::ApiError(format!("Failed to parse upload status response: {}", e))
+        })?;
+
+        // Determine status based on response fields
+        // Priority: error > activity_id > processing
+        if let Some(error) = upload_response.error {
+            if !error.is_empty() {
+                tracing::warn!("Strava upload {} failed: {}", upload_id, error);
+                return Ok(UploadStatus::Error { error });
+            }
+        }
+
+        if let Some(activity_id) = upload_response.activity_id {
+            tracing::info!(
+                "Strava upload {} complete, activity_id: {}",
+                upload_id,
+                activity_id
+            );
+            return Ok(UploadStatus::Ready { activity_id });
+        }
+
+        tracing::debug!(
+            "Strava upload {} still processing: {:?}",
+            upload_id,
+            upload_response.status
+        );
         Ok(UploadStatus::Processing)
     }
 
@@ -459,5 +554,81 @@ mod tests {
         assert_eq!(response.id, 12345);
         assert_eq!(response.external_id, Some("test-uuid".to_string()));
         assert!(response.activity_id.is_none());
+    }
+
+    #[test]
+    fn test_strava_upload_response_ready_state() {
+        // Response when upload processing is complete
+        let json = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": 987654321,
+            "status": "Your activity is ready.",
+            "error": null
+        }"#;
+
+        let response: StravaUploadResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.id, 12345);
+        assert_eq!(response.activity_id, Some(987654321));
+        assert!(response.error.is_none());
+    }
+
+    #[test]
+    fn test_strava_upload_response_error_state() {
+        // Response when upload processing failed
+        let json = r#"{
+            "id": 12345,
+            "external_id": "test-uuid",
+            "activity_id": null,
+            "status": null,
+            "error": "The activity appears to be a duplicate."
+        }"#;
+
+        let response: StravaUploadResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.id, 12345);
+        assert!(response.activity_id.is_none());
+        assert_eq!(
+            response.error,
+            Some("The activity appears to be a duplicate.".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_upload_status_without_token_returns_not_configured() {
+        let client = StravaClient::new();
+
+        let result = client.check_upload_status("12345").await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[test]
+    fn test_upload_status_enum_variants() {
+        // Test that UploadStatus variants can be created and compared
+        let processing = UploadStatus::Processing;
+        let ready = UploadStatus::Ready { activity_id: 12345 };
+        let error = UploadStatus::Error {
+            error: "Duplicate activity".to_string(),
+        };
+
+        assert_eq!(processing, UploadStatus::Processing);
+        assert_eq!(
+            ready,
+            UploadStatus::Ready { activity_id: 12345 }
+        );
+        assert_eq!(
+            error,
+            UploadStatus::Error {
+                error: "Duplicate activity".to_string()
+            }
+        );
+
+        // Test they are not equal to each other
+        assert_ne!(processing, ready);
+        assert_ne!(ready, error);
     }
 }
