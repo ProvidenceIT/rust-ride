@@ -74,7 +74,7 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
 
     templates.insert(
         AlertType::IntervalChange,
-        CueTemplate::simple("{interval_name}, {duration}"),
+        CueTemplate::simple("{interval_name} interval, {power}, {duration}"),
     );
 
     templates.insert(
@@ -239,12 +239,15 @@ impl CueBuilder {
                 duration_secs,
             } => {
                 result = result.replace("{interval_name}", new_interval_name);
-                result = result.replace(
-                    "{power}",
-                    &target_power
-                        .map(|p| format!("{} watts", p))
-                        .unwrap_or_default(),
-                );
+                // Handle power with proper formatting for optional values
+                if let Some(power) = target_power {
+                    result = result.replace("{power}", &format!("{} watts", power));
+                } else {
+                    // Remove "{power}" and clean up any surrounding commas/spaces
+                    result = result.replace(", {power}", "");
+                    result = result.replace("{power}, ", "");
+                    result = result.replace("{power}", "");
+                }
                 result = result.replace("{duration}", &format_duration(*duration_secs));
             }
             AlertData::Countdown { seconds_remaining } => {
@@ -324,11 +327,27 @@ mod tests {
     #[test]
     fn test_cue_builder_interval_change() {
         let builder = CueBuilder::new();
-        let context = AlertContext::interval_change("Threshold", Some(250), 300);
+        let context = AlertContext::interval_change("Sweet Spot", Some(260), 300);
 
         let message = builder.build(AlertType::IntervalChange, &context);
-        assert!(message.contains("Threshold"));
+        // Should produce "Sweet Spot interval, 260 watts, 5 minutes"
+        assert!(message.contains("Sweet Spot interval"));
+        assert!(message.contains("260 watts"));
         assert!(message.contains("5 minutes"));
+    }
+
+    #[test]
+    fn test_cue_builder_interval_change_without_power() {
+        let builder = CueBuilder::new();
+        let context = AlertContext::interval_change("Recovery", None, 120);
+
+        let message = builder.build(AlertType::IntervalChange, &context);
+        // Should produce "Recovery interval, 2 minutes" (no power)
+        assert!(message.contains("Recovery interval"));
+        assert!(message.contains("2 minutes"));
+        // Should not have double commas or "watts"
+        assert!(!message.contains("watts"));
+        assert!(!message.contains(", ,"));
     }
 
     #[test]
@@ -347,5 +366,40 @@ mod tests {
         assert_eq!(format_duration(60), "1 minutes");
         assert_eq!(format_duration(90), "1 minutes 30 seconds");
         assert_eq!(format_duration(3600), "1 hours 0 minutes");
+    }
+
+    #[test]
+    fn test_interval_change_various_durations() {
+        let builder = CueBuilder::new();
+
+        // Short interval (seconds)
+        let context = AlertContext::interval_change("Sprint", Some(400), 30);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("30 seconds"));
+
+        // Medium interval (minutes)
+        let context = AlertContext::interval_change("Tempo", Some(200), 600);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("10 minutes"));
+
+        // Long interval (minutes with seconds)
+        let context = AlertContext::interval_change("Endurance", Some(150), 330);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("5 minutes 30 seconds"));
+    }
+
+    #[test]
+    fn test_interval_change_natural_sounding_message() {
+        let builder = CueBuilder::new();
+
+        // Test the exact format: "Sweet Spot interval, 260 watts, 5 minutes"
+        let context = AlertContext::interval_change("Sweet Spot", Some(260), 300);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert_eq!(message, "Sweet Spot interval, 260 watts, 5 minutes");
+
+        // Test with different interval name
+        let context = AlertContext::interval_change("Threshold", Some(280), 120);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert_eq!(message, "Threshold interval, 280 watts, 2 minutes");
     }
 }

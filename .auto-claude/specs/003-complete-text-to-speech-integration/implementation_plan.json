@@ -58,7 +58,7 @@
       "phase_id": "phase-2",
       "name": "Audio Engine Integration",
       "description": "Connect the TTS provider to the audio engine and implement the speech queue.",
-      "status": "pending",
+      "status": "completed",
       "subtasks": [
         {
           "subtask_id": "2.1",
@@ -75,20 +75,20 @@
           "title": "Implement speech queuing with priority",
           "description": "Ensure the AudioEngine's queue properly handles Speech items. High-priority speech (like interval changes) should interrupt lower-priority items. Implement stop() to actually stop current speech.",
           "file_paths": ["src/audio/engine.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["2.1"],
-          "notes": "The queue structure exists but needs the priority interruption logic implemented."
+          "notes": "COMPLETED: Implemented priority-based interruption in AudioEngine. Added current_priority tracking, interrupt_requested flag, should_interrupt() logic for High/Critical priorities. High-priority items now interrupt lower-priority playback and clear the queue. stop() now properly stops TTS, clears queue, and resets state. Added speak_with_interrupt_check() for monitored speech. Comprehensive tests added for interrupt logic, queue clearing, and state management."
         },
         {
           "subtask_id": "2.3",
           "title": "Add TTS configuration persistence",
           "description": "Save and load TTS settings (preferred voice, rate, volume) from the config store. Integrate with the existing AudioConfig serialization.",
           "file_paths": ["src/audio/mod.rs", "src/storage/config.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["1.2", "2.1"],
-          "notes": "AudioConfig already has voice_volume and speech_rate fields."
+          "notes": "COMPLETED: Added AudioConfig to AppConfig for persistent storage. Changes: 1) Added AudioConfig field to AppConfig with #[serde(default)] for backwards compatibility, 2) Updated app.rs to use config.audio.clone() instead of AudioConfig::default(), 3) Added example_audio_config() for documentation, 4) Added load_audio_config() helper function, 5) Added comprehensive tests for serialization/deserialization including full config, missing audio section, and partial config scenarios."
         }
       ]
     },
@@ -96,27 +96,27 @@
       "phase_id": "phase-3",
       "name": "Workout Event Integration",
       "description": "Connect workout events to voice announcements.",
-      "status": "pending",
+      "status": "in_progress",
       "subtasks": [
         {
           "subtask_id": "3.1",
           "title": "Create workout audio bridge",
           "description": "Create a WorkoutAudioBridge component that subscribes to WorkoutEngine events and triggers appropriate alerts via the AlertManager. This bridges the gap between workout events and the audio system.",
           "file_paths": ["src/audio/workout_bridge.rs", "src/audio/mod.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["2.1"],
-          "notes": "WorkoutEngine already emits WorkoutEvent variants. Need to map these to AlertType and trigger alerts."
+          "notes": "COMPLETED: Created WorkoutAudioBridge component with WorkoutAudioBridgeConfig for controlling announcements (interval_changes, countdowns, workout_lifecycle, trainer_status, recovery_intervals). Implemented process_events()/process_event() async methods that map all WorkoutEvent variants to AlertType/AlertContext. Comprehensive test suite with MockAlertManager."
         },
         {
           "subtask_id": "3.2",
           "title": "Implement interval change announcements",
           "description": "When an interval changes, announce the interval name, target power, and duration. Use the CueBuilder to generate natural-sounding messages like 'Sweet Spot interval, 260 watts, 5 minutes'.",
           "file_paths": ["src/audio/workout_bridge.rs", "src/audio/cues.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["3.1"],
-          "notes": "The cue templates already exist in cues.rs, just need proper integration."
+          "notes": "COMPLETED: Updated IntervalChange template to include power in natural-sounding format. Template now produces messages like 'Sweet Spot interval, 260 watts, 5 minutes'. Added graceful handling for missing power values (removes placeholder and cleans up surrounding commas). Added comprehensive tests for various durations and edge cases."
         },
         {
           "subtask_id": "3.3",
