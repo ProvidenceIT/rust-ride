@@ -194,6 +194,12 @@ impl MetricsCalculator {
         // Process cadence
         if let Some(cadence) = reading.cadence_rpm {
             self.current_metrics.cadence = Some(cadence);
+
+            // Calculate rolling averages (convert u8 to u16 for RollingAverage, then back to u8)
+            self.current_metrics.cadence_3s_avg =
+                self.cadence_3s.add(cadence as u16).map(|v| v as u8);
+            self.current_metrics.cadence_10s_avg =
+                self.cadence_10s.add(cadence as u16).map(|v| v as u8);
         }
 
         // Process speed
