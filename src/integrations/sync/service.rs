@@ -12,7 +12,8 @@ use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenR
 use super::strava::StravaClient;
 use super::{PlatformConfig, SyncConfig, SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use crate::storage::sync_store::{
-    delete_fit_from_queue, load_fit_from_queue, save_fit_for_queue, StoredUploadQueueEntry, SyncStore,
+    delete_fit_from_queue, load_fit_from_queue, save_fit_for_queue, StoredPlatformSync,
+    StoredUploadQueueEntry, SyncStore,
 };
 use crate::storage::Database;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -165,6 +166,7 @@ pub enum SyncMessage {
     UpdateConfig {
         platform: SyncPlatform,
         config: PlatformConfig,
+        user_id: Option<Uuid>,
         response: oneshot::Sender<Result<(), SyncError>>,
     },
     /// Internal message to trigger token refresh check
@@ -347,16 +349,31 @@ impl SyncServiceHandle {
     }
 
     /// Update platform configuration
+    ///
+    /// If `user_id` is provided, the configuration will be persisted to the database.
     pub async fn update_config(
         &self,
         platform: SyncPlatform,
         config: PlatformConfig,
+    ) -> Result<(), SyncError> {
+        self.update_config_with_user(platform, config, None).await
+    }
+
+    /// Update platform configuration with user ID for database persistence.
+    ///
+    /// This persists the configuration to the database if a user_id is provided.
+    pub async fn update_config_with_user(
+        &self,
+        platform: SyncPlatform,
+        config: PlatformConfig,
+        user_id: Option<Uuid>,
     ) -> Result<(), SyncError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SyncMessage::UpdateConfig {
                 platform,
                 config,
+                user_id,
                 response: tx,
             })
             .await
@@ -606,9 +623,10 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 SyncMessage::UpdateConfig {
                     platform,
                     config,
+                    user_id,
                     response,
                 } => {
-                    let result = self.handle_update_config(platform, config).await;
+                    let result = self.handle_update_config(platform, config, user_id).await;
                     let _ = response.send(result);
                 }
                 SyncMessage::CheckTokenRefresh => {
@@ -1689,11 +1707,145 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         &mut self,
         platform: SyncPlatform,
         config: PlatformConfig,
+        user_id: Option<Uuid>,
     ) -> Result<(), SyncError> {
-        let mut configs = self.configs.write().await;
-        configs.platforms.insert(platform, config);
-        tracing::info!("Updated config for {:?}", platform);
+        // Update in-memory config
+        {
+            let mut configs = self.configs.write().await;
+            configs.platforms.insert(platform, config.clone());
+        }
+
+        // Persist to database if user_id provided and database is configured
+        if let Some(user_id) = user_id {
+            if self.db_path.is_some() {
+                self.persist_platform_config(user_id, platform, &config);
+            }
+        }
+
+        tracing::info!(
+            "Updated config for {:?}: enabled={}, auto_sync={}",
+            platform,
+            config.enabled,
+            config.auto_sync
+        );
         Ok(())
+    }
+
+    /// Persist platform configuration to the database.
+    fn persist_platform_config(
+        &self,
+        user_id: Uuid,
+        platform: SyncPlatform,
+        config: &PlatformConfig,
+    ) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        let platform_name = match platform {
+            SyncPlatform::Strava => "Strava",
+            SyncPlatform::GarminConnect => "GarminConnect",
+            SyncPlatform::TrainingPeaks => "TrainingPeaks",
+            SyncPlatform::IntervalsIcu => "IntervalsIcu",
+            #[cfg(target_os = "macos")]
+            SyncPlatform::HealthKit => "HealthKit",
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+
+            // First try to update existing record
+            match store.update_platform_config(&user_id, platform_name, config.enabled, config.auto_sync) {
+                Ok(true) => {
+                    tracing::debug!(
+                        "Updated platform config in database: {:?} enabled={} auto_sync={}",
+                        platform,
+                        config.enabled,
+                        config.auto_sync
+                    );
+                }
+                Ok(false) => {
+                    // No existing record, create a new one
+                    let now = Utc::now().to_rfc3339();
+                    let sync_record = StoredPlatformSync {
+                        id: Uuid::new_v4(),
+                        user_id,
+                        platform: platform_name.to_string(),
+                        is_enabled: config.enabled,
+                        auto_upload: config.auto_sync,
+                        athlete_id: None,
+                        last_sync_at: None,
+                        created_at: now.clone(),
+                        updated_at: now,
+                    };
+
+                    if let Err(e) = store.upsert_platform_sync(&sync_record) {
+                        tracing::warn!("Failed to create platform sync record: {}", e);
+                    } else {
+                        tracing::debug!(
+                            "Created platform config in database: {:?} enabled={} auto_sync={}",
+                            platform,
+                            config.enabled,
+                            config.auto_sync
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to update platform config in database: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Load platform configuration from the database.
+    ///
+    /// Returns the platform configuration if found, otherwise returns default config.
+    pub fn load_platform_config(
+        &self,
+        user_id: &Uuid,
+        platform: SyncPlatform,
+    ) -> PlatformConfig {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return PlatformConfig::default(),
+        };
+
+        let platform_name = match platform {
+            SyncPlatform::Strava => "Strava",
+            SyncPlatform::GarminConnect => "GarminConnect",
+            SyncPlatform::TrainingPeaks => "TrainingPeaks",
+            SyncPlatform::IntervalsIcu => "IntervalsIcu",
+            #[cfg(target_os = "macos")]
+            SyncPlatform::HealthKit => "HealthKit",
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+
+            match store.get_platform_sync(user_id, platform_name) {
+                Ok(Some(sync)) => {
+                    tracing::debug!(
+                        "Loaded platform config from database: {:?} enabled={} auto_sync={}",
+                        platform,
+                        sync.is_enabled,
+                        sync.auto_upload
+                    );
+                    return PlatformConfig {
+                        enabled: sync.is_enabled,
+                        auto_sync: sync.auto_upload,
+                    };
+                }
+                Ok(None) => {
+                    tracing::debug!("No platform config found in database for {:?}", platform);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load platform config from database: {}", e);
+                }
+            }
+        }
+
+        PlatformConfig::default()
     }
 }
 

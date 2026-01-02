@@ -908,6 +908,290 @@ pub fn delete_fit_from_queue(path: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+// ========== Platform Sync Configuration ==========
+
+/// Stored platform sync configuration (from platform_syncs table).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredPlatformSync {
+    /// Unique ID for the platform sync record
+    pub id: Uuid,
+    /// User ID
+    pub user_id: Uuid,
+    /// Platform name (e.g., "Strava", "GarminConnect")
+    pub platform: String,
+    /// Whether this platform is enabled
+    pub is_enabled: bool,
+    /// Whether to auto-upload after ride completion
+    pub auto_upload: bool,
+    /// Athlete ID from the platform
+    pub athlete_id: Option<String>,
+    /// Last sync timestamp
+    pub last_sync_at: Option<String>,
+    /// When the record was created
+    pub created_at: String,
+    /// When the record was last updated
+    pub updated_at: String,
+}
+
+impl<'a> SyncStore<'a> {
+    // ========== Platform Sync Configuration Operations ==========
+
+    /// Get platform sync configuration by user and platform.
+    pub fn get_platform_sync(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+    ) -> Result<Option<StoredPlatformSync>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, user_id, platform, is_enabled, auto_upload, athlete_id,
+                        last_sync_at, created_at, updated_at
+                 FROM platform_syncs
+                 WHERE user_id = ?1 AND platform = ?2",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut rows = stmt
+            .query_map(
+                params![user_id.to_string(), platform],
+                Self::map_platform_sync_row,
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        match rows.next() {
+            Some(Ok(sync)) => Ok(Some(sync)),
+            Some(Err(e)) => Err(DatabaseError::QueryFailed(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    /// Get platform sync configuration by ID.
+    pub fn get_platform_sync_by_id(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<StoredPlatformSync>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, user_id, platform, is_enabled, auto_upload, athlete_id,
+                        last_sync_at, created_at, updated_at
+                 FROM platform_syncs
+                 WHERE id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut rows = stmt
+            .query_map(params![id.to_string()], Self::map_platform_sync_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        match rows.next() {
+            Some(Ok(sync)) => Ok(Some(sync)),
+            Some(Err(e)) => Err(DatabaseError::QueryFailed(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all platform syncs for a user.
+    pub fn get_platform_syncs_by_user(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<StoredPlatformSync>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, user_id, platform, is_enabled, auto_upload, athlete_id,
+                        last_sync_at, created_at, updated_at
+                 FROM platform_syncs
+                 WHERE user_id = ?1
+                 ORDER BY platform ASC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![user_id.to_string()], Self::map_platform_sync_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut syncs = Vec::new();
+        for row in rows {
+            syncs.push(row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?);
+        }
+        Ok(syncs)
+    }
+
+    /// Create or update a platform sync configuration.
+    pub fn upsert_platform_sync(&self, sync: &StoredPlatformSync) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO platform_syncs (id, user_id, platform, is_enabled, auto_upload,
+                    athlete_id, last_sync_at, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ON CONFLICT(user_id, platform) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    auto_upload = excluded.auto_upload,
+                    athlete_id = excluded.athlete_id,
+                    last_sync_at = excluded.last_sync_at,
+                    updated_at = excluded.updated_at
+                "#,
+                params![
+                    sync.id.to_string(),
+                    sync.user_id.to_string(),
+                    sync.platform,
+                    sync.is_enabled,
+                    sync.auto_upload,
+                    sync.athlete_id,
+                    sync.last_sync_at,
+                    sync.created_at,
+                    sync.updated_at,
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Update the auto_upload setting for a platform.
+    pub fn update_platform_auto_upload(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+        auto_upload: bool,
+    ) -> Result<bool, DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE platform_syncs SET auto_upload = ?1, updated_at = ?2 WHERE user_id = ?3 AND platform = ?4",
+                params![auto_upload, now, user_id.to_string(), platform],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Update the is_enabled setting for a platform.
+    pub fn update_platform_enabled(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+        is_enabled: bool,
+    ) -> Result<bool, DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE platform_syncs SET is_enabled = ?1, updated_at = ?2 WHERE user_id = ?3 AND platform = ?4",
+                params![is_enabled, now, user_id.to_string(), platform],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Update both enabled and auto_upload settings for a platform.
+    pub fn update_platform_config(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+        is_enabled: bool,
+        auto_upload: bool,
+    ) -> Result<bool, DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE platform_syncs SET is_enabled = ?1, auto_upload = ?2, updated_at = ?3 WHERE user_id = ?4 AND platform = ?5",
+                params![is_enabled, auto_upload, now, user_id.to_string(), platform],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Update the last sync timestamp for a platform.
+    pub fn update_platform_last_sync(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+    ) -> Result<bool, DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE platform_syncs SET last_sync_at = ?1, updated_at = ?1 WHERE user_id = ?2 AND platform = ?3",
+                params![now, user_id.to_string(), platform],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Delete a platform sync configuration.
+    pub fn delete_platform_sync(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+    ) -> Result<bool, DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM platform_syncs WHERE user_id = ?1 AND platform = ?2",
+                params![user_id.to_string(), platform],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Check if auto_upload is enabled for a platform.
+    pub fn is_auto_upload_enabled(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+    ) -> Result<bool, DatabaseError> {
+        match self
+            .conn
+            .query_row(
+                "SELECT auto_upload FROM platform_syncs WHERE user_id = ?1 AND platform = ?2",
+                params![user_id.to_string(), platform],
+                |row| row.get::<_, bool>(0),
+            ) {
+            Ok(auto_upload) => Ok(auto_upload),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Check if a platform is enabled for a user.
+    pub fn is_platform_enabled(
+        &self,
+        user_id: &Uuid,
+        platform: &str,
+    ) -> Result<bool, DatabaseError> {
+        match self
+            .conn
+            .query_row(
+                "SELECT is_enabled FROM platform_syncs WHERE user_id = ?1 AND platform = ?2",
+                params![user_id.to_string(), platform],
+                |row| row.get::<_, bool>(0),
+            ) {
+            Ok(is_enabled) => Ok(is_enabled),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Helper function to map a row to StoredPlatformSync.
+    fn map_platform_sync_row(row: &rusqlite::Row) -> rusqlite::Result<StoredPlatformSync> {
+        Ok(StoredPlatformSync {
+            id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+            user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+            platform: row.get(2)?,
+            is_enabled: row.get(3)?,
+            auto_upload: row.get(4)?,
+            athlete_id: row.get(5)?,
+            last_sync_at: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1912,5 +2196,415 @@ mod tests {
 
         // Fifth retry: 30 * 2^4 = 480 seconds (8 minutes)
         assert_eq!(base_delay * 2_i64.pow(4), 480);
+    }
+
+    // ========== Platform Sync Configuration Tests ==========
+
+    fn setup_test_db_with_platform_syncs() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create minimal schema for platform_syncs tests
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS platform_syncs (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 0,
+                auto_upload INTEGER NOT NULL DEFAULT 0,
+                access_token_encrypted TEXT,
+                refresh_token_encrypted TEXT,
+                token_expires_at TEXT,
+                scopes_json TEXT,
+                athlete_id TEXT,
+                last_sync_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, platform)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_platform_syncs_user ON platform_syncs(user_id);
+            "#,
+        )
+        .unwrap();
+
+        conn
+    }
+
+    #[test]
+    fn test_upsert_and_get_platform_sync() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: Some("12345".to_string()),
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.platform, "Strava");
+        assert!(loaded.is_enabled);
+        assert!(loaded.auto_upload);
+        assert_eq!(loaded.athlete_id, Some("12345".to_string()));
+    }
+
+    #[test]
+    fn test_get_platform_sync_not_found() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn test_update_platform_auto_upload() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        // Create initial record with auto_upload = false
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        // Verify initial state
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(!loaded.auto_upload);
+
+        // Update auto_upload to true
+        let updated = store.update_platform_auto_upload(&user_id, "Strava", true).unwrap();
+        assert!(updated);
+
+        // Verify update
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(loaded.auto_upload);
+
+        // Update back to false
+        store.update_platform_auto_upload(&user_id, "Strava", false).unwrap();
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(!loaded.auto_upload);
+    }
+
+    #[test]
+    fn test_update_platform_auto_upload_not_found() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+
+        // Try to update non-existent record
+        let updated = store.update_platform_auto_upload(&user_id, "Strava", true).unwrap();
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_update_platform_enabled() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: false,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        // Update is_enabled to true
+        let updated = store.update_platform_enabled(&user_id, "Strava", true).unwrap();
+        assert!(updated);
+
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(loaded.is_enabled);
+    }
+
+    #[test]
+    fn test_update_platform_config() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: false,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        // Update both settings at once
+        let updated = store.update_platform_config(&user_id, "Strava", true, true).unwrap();
+        assert!(updated);
+
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(loaded.is_enabled);
+        assert!(loaded.auto_upload);
+    }
+
+    #[test]
+    fn test_is_auto_upload_enabled() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        // No record exists
+        assert!(!store.is_auto_upload_enabled(&user_id, "Strava").unwrap());
+
+        // Create record with auto_upload = true
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+        assert!(store.is_auto_upload_enabled(&user_id, "Strava").unwrap());
+    }
+
+    #[test]
+    fn test_is_platform_enabled() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        // No record exists
+        assert!(!store.is_platform_enabled(&user_id, "Strava").unwrap());
+
+        // Create enabled record
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+        assert!(store.is_platform_enabled(&user_id, "Strava").unwrap());
+    }
+
+    #[test]
+    fn test_get_platform_syncs_by_user() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        // Add two platform syncs for the same user
+        let strava_sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+
+        let garmin_sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "GarminConnect".to_string(),
+            is_enabled: false,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&strava_sync).unwrap();
+        store.upsert_platform_sync(&garmin_sync).unwrap();
+
+        let syncs = store.get_platform_syncs_by_user(&user_id).unwrap();
+        assert_eq!(syncs.len(), 2);
+
+        // Different user should have no syncs
+        let other_user = Uuid::new_v4();
+        let syncs = store.get_platform_syncs_by_user(&other_user).unwrap();
+        assert!(syncs.is_empty());
+    }
+
+    #[test]
+    fn test_delete_platform_sync() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        // Verify it exists
+        assert!(store.get_platform_sync(&user_id, "Strava").unwrap().is_some());
+
+        // Delete it
+        let deleted = store.delete_platform_sync(&user_id, "Strava").unwrap();
+        assert!(deleted);
+
+        // Verify it's gone
+        assert!(store.get_platform_sync(&user_id, "Strava").unwrap().is_none());
+
+        // Deleting again returns false
+        let deleted = store.delete_platform_sync(&user_id, "Strava").unwrap();
+        assert!(!deleted);
+    }
+
+    #[test]
+    fn test_update_platform_last_sync() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        let sync = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        store.upsert_platform_sync(&sync).unwrap();
+
+        // Verify no last_sync_at initially
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(loaded.last_sync_at.is_none());
+
+        // Update last_sync
+        let updated = store.update_platform_last_sync(&user_id, "Strava").unwrap();
+        assert!(updated);
+
+        // Verify last_sync_at is now set
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        assert!(loaded.last_sync_at.is_some());
+    }
+
+    #[test]
+    fn test_platform_sync_upsert_conflict() {
+        let conn = setup_test_db_with_platform_syncs();
+        let store = SyncStore::new(&conn);
+
+        let user_id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+
+        // Create initial record
+        let sync1 = StoredPlatformSync {
+            id: Uuid::new_v4(),
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: false,
+            auto_upload: false,
+            athlete_id: None,
+            last_sync_at: None,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+
+        store.upsert_platform_sync(&sync1).unwrap();
+
+        // Upsert with different ID but same user_id + platform
+        let later = Utc::now().to_rfc3339();
+        let sync2 = StoredPlatformSync {
+            id: Uuid::new_v4(), // Different ID
+            user_id,
+            platform: "Strava".to_string(),
+            is_enabled: true,
+            auto_upload: true,
+            athlete_id: Some("99999".to_string()),
+            last_sync_at: None,
+            created_at: later.clone(),
+            updated_at: later,
+        };
+
+        store.upsert_platform_sync(&sync2).unwrap();
+
+        // Should have updated the existing record
+        let loaded = store.get_platform_sync(&user_id, "Strava").unwrap().unwrap();
+        // The id should be the original one (sync1.id) since we're doing ON CONFLICT UPDATE
+        assert_eq!(loaded.id, sync1.id);
+        // But the values should be updated
+        assert!(loaded.is_enabled);
+        assert!(loaded.auto_upload);
+        assert_eq!(loaded.athlete_id, Some("99999".to_string()));
     }
 }
