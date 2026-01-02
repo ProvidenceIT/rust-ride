@@ -14,7 +14,7 @@ use rustride::achievements::{
     AchievementTracker, AllCheckers, CumulativeStats, DefaultAchievementTracker, NotificationQueue,
     RideMetrics,
 };
-use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
+use rustride::audio::{AudioEngine, DefaultAudioEngine};
 use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
@@ -180,8 +180,8 @@ impl RustRideApp {
         let metrics_calculator = MetricsCalculator::new(profile.ftp);
 
         // Initialize audio engine (Hardware Integration)
-        let audio_config = AudioConfig::default();
-        let audio_engine = Arc::new(DefaultAudioEngine::new(audio_config));
+        // Use audio config from loaded AppConfig for persistence
+        let audio_engine = Arc::new(DefaultAudioEngine::new(config.audio.clone()));
         if let Err(e) = audio_engine.initialize() {
             tracing::warn!("Failed to initialize audio engine: {}", e);
         }
