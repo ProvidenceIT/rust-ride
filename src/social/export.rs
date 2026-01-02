@@ -94,6 +94,98 @@ pub struct AvatarExport {
     pub helmet_color: Option<String>,
 }
 
+/// Result of a profile import operation.
+#[derive(Debug, Clone)]
+pub struct ProfileImportResult {
+    /// Whether the import completed successfully.
+    pub success: bool,
+    /// Number of FTP history entries imported.
+    pub ftp_entries_imported: u32,
+    /// Number of FTP history entries skipped (duplicates).
+    pub ftp_entries_skipped: u32,
+    /// Whether the profile data was updated.
+    pub profile_updated: bool,
+    /// Whether the avatar was updated.
+    pub avatar_updated: bool,
+    /// List of conflicts detected during import.
+    pub conflicts: Vec<ProfileConflict>,
+}
+
+impl ProfileImportResult {
+    /// Create a new successful import result with no conflicts.
+    pub fn success(
+        ftp_entries_imported: u32,
+        ftp_entries_skipped: u32,
+        profile_updated: bool,
+        avatar_updated: bool,
+    ) -> Self {
+        Self {
+            success: true,
+            ftp_entries_imported,
+            ftp_entries_skipped,
+            profile_updated,
+            avatar_updated,
+            conflicts: Vec::new(),
+        }
+    }
+
+    /// Create a result indicating conflicts were detected.
+    pub fn with_conflicts(conflicts: Vec<ProfileConflict>) -> Self {
+        Self {
+            success: false,
+            ftp_entries_imported: 0,
+            ftp_entries_skipped: 0,
+            profile_updated: false,
+            avatar_updated: false,
+            conflicts,
+        }
+    }
+}
+
+/// Conflict detected during profile import.
+#[derive(Debug, Clone)]
+pub enum ProfileConflict {
+    /// A profile already exists with a different display name.
+    DisplayNameMismatch {
+        /// Display name in the import file.
+        imported_name: String,
+        /// Display name in the existing profile.
+        existing_name: String,
+    },
+    /// A profile already exists for this rider ID.
+    ExistingProfile {
+        /// The rider ID that already exists.
+        rider_id: Uuid,
+        /// Display name of the existing profile.
+        existing_name: String,
+    },
+    /// FTP value differs between import and existing profile.
+    FtpMismatch {
+        /// FTP value in the import file.
+        imported_ftp: Option<u16>,
+        /// FTP value in the existing profile.
+        existing_ftp: Option<u16>,
+    },
+    /// Avatar configuration differs between import and existing profile.
+    AvatarMismatch {
+        /// Whether the import has avatar data.
+        import_has_avatar: bool,
+        /// Whether the existing profile has avatar data.
+        existing_has_avatar: bool,
+    },
+}
+
+/// Strategy for resolving import conflicts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictResolution {
+    /// Replace existing profile data with imported data.
+    Replace,
+    /// Merge imported data with existing data (e.g., combine FTP history).
+    Merge,
+    /// Skip the import and keep existing data.
+    Skip,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +292,84 @@ mod tests {
         let avatar = export.avatar.unwrap();
         assert_eq!(avatar.jersey_color, "#FF0000");
         assert_eq!(avatar.bike_style, "road_bike");
+    }
+
+    #[test]
+    fn test_profile_import_result_success() {
+        let result = ProfileImportResult::success(5, 2, true, true);
+
+        assert!(result.success);
+        assert_eq!(result.ftp_entries_imported, 5);
+        assert_eq!(result.ftp_entries_skipped, 2);
+        assert!(result.profile_updated);
+        assert!(result.avatar_updated);
+        assert!(result.conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_profile_import_result_with_conflicts() {
+        let conflicts = vec![
+            ProfileConflict::DisplayNameMismatch {
+                imported_name: "New Name".to_string(),
+                existing_name: "Old Name".to_string(),
+            },
+            ProfileConflict::FtpMismatch {
+                imported_ftp: Some(280),
+                existing_ftp: Some(250),
+            },
+        ];
+
+        let result = ProfileImportResult::with_conflicts(conflicts);
+
+        assert!(!result.success);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(!result.profile_updated);
+        assert!(!result.avatar_updated);
+        assert_eq!(result.conflicts.len(), 2);
+    }
+
+    #[test]
+    fn test_profile_conflict_variants() {
+        // Test DisplayNameMismatch
+        let conflict = ProfileConflict::DisplayNameMismatch {
+            imported_name: "Imported".to_string(),
+            existing_name: "Existing".to_string(),
+        };
+        assert!(matches!(conflict, ProfileConflict::DisplayNameMismatch { .. }));
+
+        // Test ExistingProfile
+        let rider_id = Uuid::new_v4();
+        let conflict = ProfileConflict::ExistingProfile {
+            rider_id,
+            existing_name: "Existing Rider".to_string(),
+        };
+        assert!(matches!(conflict, ProfileConflict::ExistingProfile { .. }));
+
+        // Test FtpMismatch
+        let conflict = ProfileConflict::FtpMismatch {
+            imported_ftp: Some(280),
+            existing_ftp: Some(250),
+        };
+        assert!(matches!(conflict, ProfileConflict::FtpMismatch { .. }));
+
+        // Test AvatarMismatch
+        let conflict = ProfileConflict::AvatarMismatch {
+            import_has_avatar: true,
+            existing_has_avatar: false,
+        };
+        assert!(matches!(conflict, ProfileConflict::AvatarMismatch { .. }));
+    }
+
+    #[test]
+    fn test_conflict_resolution_variants() {
+        assert_eq!(ConflictResolution::Replace, ConflictResolution::Replace);
+        assert_eq!(ConflictResolution::Merge, ConflictResolution::Merge);
+        assert_eq!(ConflictResolution::Skip, ConflictResolution::Skip);
+
+        // Verify they are different from each other
+        assert_ne!(ConflictResolution::Replace, ConflictResolution::Merge);
+        assert_ne!(ConflictResolution::Replace, ConflictResolution::Skip);
+        assert_ne!(ConflictResolution::Merge, ConflictResolution::Skip);
     }
 }
