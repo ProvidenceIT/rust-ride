@@ -98,6 +98,36 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
         CueTemplate::simple("Recovery. Take it easy."),
     );
 
+    // Motivational messages for high-intensity intervals
+    templates.insert(
+        AlertType::MotivationalHighIntensity,
+        CueTemplate::with_alternatives(
+            "You're doing great!".to_string(),
+            vec![
+                "Keep pushing!".to_string(),
+                "Stay strong!".to_string(),
+                "You've got this!".to_string(),
+                "Keep it up!".to_string(),
+                "Great effort!".to_string(),
+                "Push through!".to_string(),
+            ],
+        ),
+    );
+
+    // Motivational messages for recovery intervals
+    templates.insert(
+        AlertType::MotivationalRecovery,
+        CueTemplate::with_alternatives(
+            "Nice work, catch your breath".to_string(),
+            vec![
+                "Great job, take it easy".to_string(),
+                "Well done, recover well".to_string(),
+                "Excellent effort, rest up".to_string(),
+                "Good work, relax and recover".to_string(),
+            ],
+        ),
+    );
+
     // Power zone alerts
     templates.insert(
         AlertType::PowerZoneChange,
@@ -452,5 +482,81 @@ mod tests {
         let context = AlertContext::countdown(1);
         let message = builder.build(AlertType::IntervalCountdown, &context);
         assert_eq!(message, "1");
+    }
+
+    #[test]
+    fn test_motivational_high_intensity_template_exists() {
+        let templates = default_templates();
+        let template = templates.get(&AlertType::MotivationalHighIntensity);
+        assert!(template.is_some(), "MotivationalHighIntensity template should exist");
+
+        let template = template.unwrap();
+        // Should have alternatives for variety
+        assert!(!template.alternatives.is_empty(), "Should have alternatives for variety");
+        assert!(template.use_random, "Should use random selection for variety");
+
+        // Check that the main template is a motivational message
+        let main = &template.template;
+        assert!(
+            main.contains("great") || main.contains("pushing") || main.contains("strong"),
+            "Main template should be motivational"
+        );
+    }
+
+    #[test]
+    fn test_motivational_recovery_template_exists() {
+        let templates = default_templates();
+        let template = templates.get(&AlertType::MotivationalRecovery);
+        assert!(template.is_some(), "MotivationalRecovery template should exist");
+
+        let template = template.unwrap();
+        // Should have alternatives for variety
+        assert!(!template.alternatives.is_empty(), "Should have alternatives for variety");
+        assert!(template.use_random, "Should use random selection for variety");
+
+        // Check that the main template is a recovery message
+        let main = &template.template;
+        assert!(
+            main.contains("work") || main.contains("breath") || main.contains("recover"),
+            "Main template should be recovery-focused"
+        );
+    }
+
+    #[test]
+    fn test_motivational_messages_build() {
+        let builder = CueBuilder::new();
+        let context = AlertContext::simple();
+
+        // Test high intensity - should produce one of the motivational messages
+        let message = builder.build(AlertType::MotivationalHighIntensity, &context);
+        let high_intensity_messages = [
+            "You're doing great!",
+            "Keep pushing!",
+            "Stay strong!",
+            "You've got this!",
+            "Keep it up!",
+            "Great effort!",
+            "Push through!",
+        ];
+        assert!(
+            high_intensity_messages.contains(&message.as_str()),
+            "Message '{}' should be one of the high-intensity motivational messages",
+            message
+        );
+
+        // Test recovery - should produce one of the recovery messages
+        let message = builder.build(AlertType::MotivationalRecovery, &context);
+        let recovery_messages = [
+            "Nice work, catch your breath",
+            "Great job, take it easy",
+            "Well done, recover well",
+            "Excellent effort, rest up",
+            "Good work, relax and recover",
+        ];
+        assert!(
+            recovery_messages.contains(&message.as_str()),
+            "Message '{}' should be one of the recovery motivational messages",
+            message
+        );
     }
 }

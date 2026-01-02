@@ -96,7 +96,7 @@
       "phase_id": "phase-3",
       "name": "Workout Event Integration",
       "description": "Connect workout events to voice announcements.",
-      "status": "in_progress",
+      "status": "completed",
       "subtasks": [
         {
           "subtask_id": "3.1",
@@ -122,21 +122,21 @@
           "subtask_id": "3.3",
           "title": "Implement countdown announcements",
           "description": "Announce countdown before interval changes (10, 5, 3, 2, 1 seconds). The WorkoutEngine already emits IntervalCountdown events at these thresholds.",
-          "file_paths": ["src/audio/workout_bridge.rs"],
-          "status": "pending",
+          "file_paths": ["src/audio/cues.rs"],
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["3.1"],
-          "notes": "COUNTDOWN_THRESHOLDS is already defined in workout engine."
+          "notes": "COMPLETED: Added format_countdown() function for natural-sounding countdown announcements. Uses short form (just the number) for 1, 2, 3 seconds for urgency, and 'X seconds' format for 5+ seconds. Updated IntervalCountdown template to use new {countdown} placeholder. Added comprehensive tests for all COUNTDOWN_THRESHOLDS [10, 5, 3, 2, 1]."
         },
         {
           "subtask_id": "3.4",
           "title": "Add motivational cues",
           "description": "Add optional motivational messages during high-intensity intervals ('You're doing great!', 'Keep pushing!') and recovery intervals ('Nice work, catch your breath'). Make these configurable.",
           "file_paths": ["src/audio/cues.rs", "src/audio/workout_bridge.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["3.2"],
-          "notes": "Should be optional and not too frequent to avoid annoyance."
+          "notes": "COMPLETED: Added optional motivational messages during intervals. Changes: 1) Added MotivationalHighIntensity and MotivationalRecovery AlertTypes to alerts.rs with display names and category. 2) Added motivational message templates to cues.rs with variety (7 high-intensity messages like 'Keep pushing!', 'You're doing great!', and 5 recovery messages like 'Nice work, catch your breath'). 3) Added announce_motivational_messages config option to WorkoutAudioBridgeConfig (disabled by default to avoid annoyance). 4) Updated process_event to trigger motivational messages after interval changes when enabled. 5) Added comprehensive tests for all functionality."
         }
       ]
     },

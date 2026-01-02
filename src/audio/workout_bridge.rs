@@ -20,6 +20,8 @@ pub struct WorkoutAudioBridgeConfig {
     pub announce_trainer_status: bool,
     /// Enable recovery interval special announcements
     pub announce_recovery_intervals: bool,
+    /// Enable motivational messages during intervals
+    pub announce_motivational_messages: bool,
 }
 
 impl Default for WorkoutAudioBridgeConfig {
@@ -30,6 +32,7 @@ impl Default for WorkoutAudioBridgeConfig {
             announce_workout_lifecycle: true,
             announce_trainer_status: true,
             announce_recovery_intervals: true,
+            announce_motivational_messages: false, // Optional by default to avoid annoyance
         }
     }
 }
@@ -116,6 +119,14 @@ impl<A: AlertManager> WorkoutAudioBridge<A> {
                     self.alert_manager
                         .trigger(AlertType::RecoveryStart, AlertContext::simple())
                         .await;
+
+                    // Add motivational recovery message if enabled
+                    if self.config.announce_motivational_messages {
+                        tracing::debug!("Announcing motivational recovery message");
+                        self.alert_manager
+                            .trigger(AlertType::MotivationalRecovery, AlertContext::simple())
+                            .await;
+                    }
                 } else if self.config.announce_interval_changes {
                     tracing::debug!(
                         "Announcing interval change: {} ({} watts, {} secs)",
@@ -133,6 +144,14 @@ impl<A: AlertManager> WorkoutAudioBridge<A> {
                             ),
                         )
                         .await;
+
+                    // Add motivational high-intensity message if enabled (for non-recovery intervals)
+                    if self.config.announce_motivational_messages {
+                        tracing::debug!("Announcing motivational high-intensity message");
+                        self.alert_manager
+                            .trigger(AlertType::MotivationalHighIntensity, AlertContext::simple())
+                            .await;
+                    }
                 }
             }
 
@@ -436,6 +455,7 @@ mod tests {
             announce_workout_lifecycle: false,
             announce_trainer_status: false,
             announce_recovery_intervals: false,
+            announce_motivational_messages: false,
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
 
@@ -470,6 +490,7 @@ mod tests {
             announce_workout_lifecycle: false,
             announce_trainer_status: false,
             announce_recovery_intervals: false,
+            announce_motivational_messages: false,
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
 
@@ -503,6 +524,7 @@ mod tests {
             announce_workout_lifecycle: true,
             announce_trainer_status: true,
             announce_recovery_intervals: false, // Disable recovery-specific announcements
+            announce_motivational_messages: false,
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
 
@@ -529,5 +551,104 @@ mod tests {
         assert!(config.announce_workout_lifecycle);
         assert!(config.announce_trainer_status);
         assert!(config.announce_recovery_intervals);
+        assert!(!config.announce_motivational_messages); // Disabled by default
+    }
+
+    #[tokio::test]
+    async fn test_motivational_messages_high_intensity() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: false,
+            announce_workout_lifecycle: false,
+            announce_trainer_status: false,
+            announce_recovery_intervals: false,
+            announce_motivational_messages: true, // Enable motivational messages
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
+
+        // Non-recovery interval should trigger IntervalChange + MotivationalHighIntensity
+        let events = vec![WorkoutEvent::IntervalChange {
+            interval_name: "Sweet Spot".to_string(),
+            target_power: Some(260),
+            duration_secs: 300,
+            is_recovery: false,
+        }];
+        bridge.process_events(&events).await;
+
+        let triggered = alert_manager.get_triggered_alerts();
+        assert_eq!(triggered.len(), 2);
+        assert_eq!(triggered[0].0, AlertType::IntervalChange);
+        assert_eq!(triggered[1].0, AlertType::MotivationalHighIntensity);
+    }
+
+    #[tokio::test]
+    async fn test_motivational_messages_recovery() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: false,
+            announce_workout_lifecycle: false,
+            announce_trainer_status: false,
+            announce_recovery_intervals: true,
+            announce_motivational_messages: true, // Enable motivational messages
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
+
+        // Recovery interval should trigger RecoveryStart + MotivationalRecovery
+        let events = vec![WorkoutEvent::IntervalChange {
+            interval_name: "Recovery".to_string(),
+            target_power: Some(100),
+            duration_secs: 120,
+            is_recovery: true,
+        }];
+        bridge.process_events(&events).await;
+
+        let triggered = alert_manager.get_triggered_alerts();
+        assert_eq!(triggered.len(), 2);
+        assert_eq!(triggered[0].0, AlertType::RecoveryStart);
+        assert_eq!(triggered[1].0, AlertType::MotivationalRecovery);
+    }
+
+    #[tokio::test]
+    async fn test_motivational_messages_disabled() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: false,
+            announce_workout_lifecycle: false,
+            announce_trainer_status: false,
+            announce_recovery_intervals: true,
+            announce_motivational_messages: false, // Disabled
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), config);
+
+        // Should only trigger the base alerts without motivational messages
+        let events = vec![
+            WorkoutEvent::IntervalChange {
+                interval_name: "Sweet Spot".to_string(),
+                target_power: Some(260),
+                duration_secs: 300,
+                is_recovery: false,
+            },
+            WorkoutEvent::IntervalChange {
+                interval_name: "Recovery".to_string(),
+                target_power: Some(100),
+                duration_secs: 120,
+                is_recovery: true,
+            },
+        ];
+        bridge.process_events(&events).await;
+
+        let triggered = alert_manager.get_triggered_alerts();
+        assert_eq!(triggered.len(), 2);
+        assert_eq!(triggered[0].0, AlertType::IntervalChange);
+        assert_eq!(triggered[1].0, AlertType::RecoveryStart);
+        // No motivational messages
+        assert!(
+            !triggered.iter().any(|(t, _)| *t == AlertType::MotivationalHighIntensity
+                || *t == AlertType::MotivationalRecovery),
+            "No motivational messages should be triggered when disabled"
+        );
     }
 }
