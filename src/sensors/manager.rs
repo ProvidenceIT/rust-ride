@@ -9,6 +9,7 @@
 
 use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleManager};
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
+use crate::sensors::cache::SensorCache;
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
     CYCLING_POWER_MEASUREMENT_UUID, CYCLING_POWER_SERVICE_UUID, FTMS_SERVICE_UUID,
@@ -66,11 +67,20 @@ pub struct SensorManager {
     discovery_timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Reconnection attempts (device_id -> attempt count)
     reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
+    /// Cache of previously connected sensors for fast reconnection
+    sensor_cache: Arc<Mutex<SensorCache>>,
 }
 
 impl SensorManager {
     /// Create a new sensor manager.
     pub fn new(config: SensorConfig) -> Self {
+        // Load sensor cache from disk
+        let sensor_cache = SensorCache::load();
+        tracing::debug!(
+            "Loaded {} cached sensors for fast reconnection",
+            sensor_cache.len()
+        );
+
         Self {
             config,
             adapter: None,
@@ -84,6 +94,7 @@ impl SensorManager {
             is_scanning: Arc::new(Mutex::new(false)),
             discovery_timeout_handle: Arc::new(Mutex::new(None)),
             reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
+            sensor_cache: Arc::new(Mutex::new(sensor_cache)),
         }
     }
 
@@ -832,7 +843,7 @@ impl SensorManager {
             .await
             .insert(device_id.to_string(), peripheral.clone());
 
-        // Create sensor state
+        // Create sensor state and cache the sensor
         let discovered = self.discovered.lock().await;
         if let Some(disc_sensor) = discovered.get(device_id) {
             let state = SensorState {
@@ -852,6 +863,18 @@ impl SensorManager {
                 .lock()
                 .await
                 .insert(device_id.to_string(), state);
+
+            // Cache the sensor for fast reconnection
+            let mut cache = self.sensor_cache.lock().await;
+            cache.cache_sensor(
+                device_id.to_string(),
+                disc_sensor.name.clone(),
+                disc_sensor.sensor_type,
+                disc_sensor.protocol,
+            );
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
         }
 
         // Send connected state
@@ -1243,6 +1266,216 @@ impl SensorManager {
         Ok(())
     }
 
+    // =========================================================================
+    // Sensor Cache Methods for Fast Reconnection
+    // =========================================================================
+
+    /// Get cached sensors for fast reconnection.
+    ///
+    /// Returns sensors sorted by reconnection priority:
+    /// 1. Preferred sensors first
+    /// 2. Then by connection count (most used)
+    /// 3. Then by last connected (most recent)
+    pub async fn get_cached_sensors(&self) -> Vec<crate::sensors::cache::CachedSensor> {
+        let cache = self.sensor_cache.lock().await;
+        cache.reconnection_priority().into_iter().cloned().collect()
+    }
+
+    /// Get cached sensors of a specific type.
+    pub async fn get_cached_sensors_of_type(
+        &self,
+        sensor_type: SensorType,
+    ) -> Vec<crate::sensors::cache::CachedSensor> {
+        let cache = self.sensor_cache.lock().await;
+        cache.sensors_of_type(sensor_type).into_iter().cloned().collect()
+    }
+
+    /// Check if a sensor is in the cache.
+    pub async fn is_sensor_cached(&self, device_id: &str) -> bool {
+        let cache = self.sensor_cache.lock().await;
+        cache.contains(device_id)
+    }
+
+    /// Attempt fast reconnection to cached sensors.
+    ///
+    /// Tries to connect to sensors that were previously connected without
+    /// requiring a full discovery scan. This is significantly faster for
+    /// known sensors.
+    ///
+    /// Returns a list of device IDs that were successfully found and added
+    /// to discovered sensors (ready for connection).
+    pub async fn fast_reconnect_cached(&mut self) -> Result<Vec<String>, SensorError> {
+        let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
+
+        let cached_sensors: Vec<_> = {
+            let cache = self.sensor_cache.lock().await;
+            cache.reconnection_priority().into_iter().cloned().collect()
+        };
+
+        if cached_sensors.is_empty() {
+            tracing::debug!("No cached sensors for fast reconnection");
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Attempting fast reconnection to {} cached sensors",
+            cached_sensors.len()
+        );
+
+        let start = Instant::now();
+        let mut found_sensors = Vec::new();
+
+        // Get all currently visible peripherals
+        let peripherals = adapter
+            .peripherals()
+            .await
+            .map_err(|e| SensorError::BleError(e.to_string()))?;
+
+        for peripheral in peripherals {
+            let peripheral_id = peripheral.id().to_string();
+
+            // Check if this peripheral matches any cached sensor
+            for cached in &cached_sensors {
+                if cached.device_id == peripheral_id {
+                    // Found a cached sensor! Add it to discovered
+                    let sensor = DiscoveredSensor {
+                        device_id: cached.device_id.clone(),
+                        name: cached.name.clone(),
+                        sensor_type: cached.sensor_type,
+                        protocol: cached.protocol,
+                        signal_strength: None,
+                        last_seen: Instant::now(),
+                    };
+
+                    self.discovered
+                        .lock()
+                        .await
+                        .insert(cached.device_id.clone(), sensor.clone());
+
+                    self.send_event(SensorEvent::Discovered(sensor));
+                    found_sensors.push(cached.device_id.clone());
+
+                    tracing::info!(
+                        "Fast reconnect: found cached sensor {} ({})",
+                        cached.display_name(),
+                        cached.device_id
+                    );
+                    break;
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+        tracing::info!(
+            "Fast reconnection found {}/{} cached sensors in {:?}",
+            found_sensors.len(),
+            cached_sensors.len(),
+            elapsed
+        );
+
+        Ok(found_sensors)
+    }
+
+    /// Try to connect to all preferred cached sensors.
+    ///
+    /// This method attempts fast reconnection and then connects to any
+    /// preferred sensors that were found.
+    pub async fn connect_preferred_sensors(&mut self) -> Result<Vec<String>, SensorError> {
+        // First try fast reconnection
+        let found = self.fast_reconnect_cached().await?;
+
+        // Get preferred sensors that were found
+        let preferred_ids: Vec<String> = {
+            let cache = self.sensor_cache.lock().await;
+            cache
+                .preferred_sensors()
+                .iter()
+                .filter(|s| found.contains(&s.device_id))
+                .map(|s| s.device_id.clone())
+                .collect()
+        };
+
+        // Connect to each preferred sensor
+        let mut connected_ids = Vec::new();
+        for device_id in preferred_ids {
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    connected_ids.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect to preferred sensor {}: {}", device_id, e);
+                }
+            }
+        }
+
+        Ok(connected_ids)
+    }
+
+    /// Set a sensor as preferred for auto-reconnection.
+    pub async fn set_sensor_preferred(&self, device_id: &str, preferred: bool) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let result = cache.set_preferred(device_id, preferred);
+        if result {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        result
+    }
+
+    /// Set a nickname for a cached sensor.
+    pub async fn set_sensor_nickname(&self, device_id: &str, nickname: Option<String>) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let result = cache.set_nickname(device_id, nickname);
+        if result {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        result
+    }
+
+    /// Remove a sensor from the cache.
+    pub async fn remove_cached_sensor(&self, device_id: &str) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let removed = cache.remove(device_id).is_some();
+        if removed {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        removed
+    }
+
+    /// Clear all cached sensors.
+    pub async fn clear_sensor_cache(&self) {
+        let mut cache = self.sensor_cache.lock().await;
+        cache.clear();
+        if let Err(e) = cache.save() {
+            tracing::warn!("Failed to save sensor cache: {}", e);
+        }
+    }
+
+    /// Prune stale sensors from the cache.
+    ///
+    /// Returns the number of sensors removed.
+    pub async fn prune_stale_sensors(&self) -> usize {
+        let mut cache = self.sensor_cache.lock().await;
+        let count = cache.prune_stale();
+        if count > 0 {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        count
+    }
+
+    /// Get the number of cached sensors.
+    pub async fn cached_sensor_count(&self) -> usize {
+        let cache = self.sensor_cache.lock().await;
+        cache.len()
+    }
+
     /// Shutdown the sensor manager.
     pub async fn shutdown(&mut self) {
         tracing::info!("Shutting down SensorManager");
@@ -1255,6 +1488,12 @@ impl SensorManager {
 
         for device_id in device_ids {
             let _ = self.disconnect(&device_id).await;
+        }
+
+        // Save sensor cache
+        let mut cache = self.sensor_cache.lock().await;
+        if let Err(e) = cache.save() {
+            tracing::warn!("Failed to save sensor cache on shutdown: {}", e);
         }
     }
 }

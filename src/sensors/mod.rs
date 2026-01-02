@@ -1,6 +1,7 @@
 //! Sensor module for BLE and ANT+ device communication.
 
 pub mod ant;
+pub mod cache;
 pub mod dynamics;
 pub mod ftms;
 pub mod fusion;
@@ -24,6 +25,7 @@ pub use incline::{
     DefaultInclineController, GradientSmoother, GradientState, InclineConfig, InclineController,
     IntensityScaler,
 };
+pub use cache::{CacheError, CachedSensor, SensorCache};
 pub use manager::SensorManager;
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,

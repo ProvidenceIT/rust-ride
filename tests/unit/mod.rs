@@ -21,6 +21,7 @@ mod power_profile_tests;
 mod ride_history_test;
 mod ride_summary_test;
 mod segment_timing_test;
+mod sensor_cache_test;
 mod sensor_discovery_test;
 mod skybox_test;
 mod tcx_export_test;
