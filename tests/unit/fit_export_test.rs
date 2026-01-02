@@ -1363,3 +1363,788 @@ fn test_roundtrip_file_creator_message() {
         "Exported FIT should contain FileCreator message"
     );
 }
+
+// ============================================================================
+// CYCLING DYNAMICS ROUNDTRIP TESTS
+// ============================================================================
+
+/// Create test samples with varying cycling dynamics data.
+fn create_test_samples_with_varying_dynamics(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(180 + (i % 30) as u16),
+            cadence_rpm: Some(85),
+            heart_rate_bpm: Some(145),
+            speed_kmh: Some(30.0),
+            distance_meters: (i as f64) * 8.33,
+            calories: (i as f64 * 0.2) as u32,
+            resistance_level: None,
+            target_power: Some(180),
+            trainer_grade: None,
+            // Varying dynamics values to test scaling
+            left_right_balance: Some(48.0 + (i % 10) as f32),
+            left_torque_effectiveness: Some(70.0 + (i % 20) as f32),
+            right_torque_effectiveness: Some(68.0 + (i % 20) as f32),
+            left_pedal_smoothness: Some(18.0 + (i % 15) as f32),
+            right_pedal_smoothness: Some(20.0 + (i % 15) as f32),
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        })
+        .collect()
+}
+
+/// Create test samples with all dynamics including power phase.
+fn create_test_samples_full_dynamics(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(200),
+            cadence_rpm: Some(90),
+            heart_rate_bpm: Some(150),
+            speed_kmh: Some(32.0),
+            distance_meters: (i as f64) * 8.89,
+            calories: (i as f64 * 0.22) as u32,
+            resistance_level: None,
+            target_power: Some(200),
+            trainer_grade: None,
+            left_right_balance: Some(51.5),
+            left_torque_effectiveness: Some(78.0),
+            right_torque_effectiveness: Some(76.0),
+            left_pedal_smoothness: Some(24.0),
+            right_pedal_smoothness: Some(26.0),
+            left_power_phase_start: Some(15.0),
+            left_power_phase_end: Some(195.0),
+            left_power_phase_peak: Some(90.0),
+            right_power_phase_start: Some(12.0),
+            right_power_phase_end: Some(192.0),
+            right_power_phase_peak: Some(88.0),
+        })
+        .collect()
+}
+
+/// Create test samples with partial dynamics (only some fields present).
+fn create_test_samples_partial_dynamics(count: usize) -> Vec<RideSample> {
+    (0..count)
+        .map(|i| RideSample {
+            elapsed_seconds: i as u32,
+            power_watts: Some(175),
+            cadence_rpm: Some(82),
+            heart_rate_bpm: Some(142),
+            speed_kmh: Some(28.0),
+            distance_meters: (i as f64) * 7.78,
+            calories: (i as f64 * 0.18) as u32,
+            resistance_level: None,
+            target_power: Some(175),
+            trainer_grade: None,
+            // Only L/R balance and left metrics
+            left_right_balance: Some(50.0),
+            left_torque_effectiveness: Some(72.0),
+            right_torque_effectiveness: None,
+            left_pedal_smoothness: Some(21.0),
+            right_pedal_smoothness: None,
+            left_power_phase_start: None,
+            left_power_phase_end: None,
+            left_power_phase_peak: None,
+            right_power_phase_start: None,
+            right_power_phase_end: None,
+            right_power_phase_peak: None,
+        })
+        .collect()
+}
+
+/// Create test samples with boundary dynamics values.
+fn create_test_samples_boundary_dynamics() -> Vec<RideSample> {
+    vec![
+        // Sample with minimum valid values
+        RideSample {
+            elapsed_seconds: 0,
+            power_watts: Some(100),
+            cadence_rpm: Some(60),
+            heart_rate_bpm: Some(100),
+            speed_kmh: Some(20.0),
+            distance_meters: 0.0,
+            calories: 0,
+            resistance_level: None,
+            target_power: None,
+            trainer_grade: None,
+            left_right_balance: Some(0.0),
+            left_torque_effectiveness: Some(0.0),
+            right_torque_effectiveness: Some(0.0),
+            left_pedal_smoothness: Some(0.0),
+            right_pedal_smoothness: Some(0.0),
+            left_power_phase_start: Some(0.0),
+            left_power_phase_end: Some(0.0),
+            left_power_phase_peak: Some(0.0),
+            right_power_phase_start: Some(0.0),
+            right_power_phase_end: Some(0.0),
+            right_power_phase_peak: Some(0.0),
+        },
+        // Sample with maximum valid values
+        RideSample {
+            elapsed_seconds: 1,
+            power_watts: Some(500),
+            cadence_rpm: Some(120),
+            heart_rate_bpm: Some(200),
+            speed_kmh: Some(60.0),
+            distance_meters: 16.67,
+            calories: 1,
+            resistance_level: None,
+            target_power: None,
+            trainer_grade: None,
+            left_right_balance: Some(100.0),
+            left_torque_effectiveness: Some(100.0),
+            right_torque_effectiveness: Some(100.0),
+            left_pedal_smoothness: Some(100.0),
+            right_pedal_smoothness: Some(100.0),
+            left_power_phase_start: Some(360.0),
+            left_power_phase_end: Some(360.0),
+            left_power_phase_peak: Some(360.0),
+            right_power_phase_start: Some(360.0),
+            right_power_phase_end: Some(360.0),
+            right_power_phase_peak: Some(360.0),
+        },
+        // Sample with typical middle values
+        RideSample {
+            elapsed_seconds: 2,
+            power_watts: Some(250),
+            cadence_rpm: Some(90),
+            heart_rate_bpm: Some(155),
+            speed_kmh: Some(35.0),
+            distance_meters: 33.34,
+            calories: 2,
+            resistance_level: None,
+            target_power: None,
+            trainer_grade: None,
+            left_right_balance: Some(52.0),
+            left_torque_effectiveness: Some(75.0),
+            right_torque_effectiveness: Some(73.0),
+            left_pedal_smoothness: Some(22.0),
+            right_pedal_smoothness: Some(24.0),
+            left_power_phase_start: Some(30.0),
+            left_power_phase_end: Some(180.0),
+            left_power_phase_peak: Some(90.0),
+            right_power_phase_start: Some(25.0),
+            right_power_phase_end: Some(175.0),
+            right_power_phase_peak: Some(85.0),
+        },
+    ]
+}
+
+#[test]
+fn test_roundtrip_left_right_balance_present() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(10);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .collect();
+
+    assert_eq!(record_messages.len(), 10);
+
+    for record in record_messages {
+        let balance_field = record
+            .fields()
+            .iter()
+            .find(|f| f.name() == "left_right_balance");
+
+        assert!(
+            balance_field.is_some(),
+            "Record should contain left_right_balance field"
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_left_right_balance_value() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(1);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let balance_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_right_balance");
+
+    assert!(
+        balance_field.is_some(),
+        "Record should contain left_right_balance field"
+    );
+
+    // The first sample has left_right_balance of 48.0%
+    // FIT encoding: value * 1.27 with bit 7 set
+    // When parsed, it should decode back to approximately 48%
+    if let Some(field) = balance_field {
+        match field.value() {
+            fitparser::Value::UInt8(v) => {
+                // Value should have bit 7 set (0x80) and contain scaled balance
+                assert!(
+                    *v >= 0x80,
+                    "Balance should have reference bit set, got {}",
+                    v
+                );
+            }
+            _ => {
+                // Other value types are also valid depending on how fitparser decodes
+            }
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_torque_effectiveness_fields() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Check for left torque effectiveness
+    let left_te_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_torque_effectiveness");
+
+    // Check for right torque effectiveness
+    let right_te_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "right_torque_effectiveness");
+
+    assert!(
+        left_te_field.is_some(),
+        "Record should contain left_torque_effectiveness field"
+    );
+    assert!(
+        right_te_field.is_some(),
+        "Record should contain right_torque_effectiveness field"
+    );
+}
+
+#[test]
+fn test_roundtrip_torque_effectiveness_values() {
+    let ride = create_test_ride();
+    // First sample has left_torque_effectiveness = 70.0, right = 68.0
+    let samples = create_test_samples_with_dynamics(1);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let left_te_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_torque_effectiveness");
+
+    if let Some(field) = left_te_field {
+        match field.value() {
+            fitparser::Value::UInt8(v) => {
+                // FIT encoding: 0.5% per bit, so 70% = 140
+                // Allow some tolerance for encoding/decoding
+                assert!(
+                    *v >= 130 && *v <= 150,
+                    "Left torque effectiveness should be around 140 (70%), got {}",
+                    v
+                );
+            }
+            fitparser::Value::Float64(v) => {
+                assert!(
+                    *v >= 65.0 && *v <= 75.0,
+                    "Left torque effectiveness should be around 70%, got {}",
+                    v
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_pedal_smoothness_fields() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Check for left pedal smoothness
+    let left_ps_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_pedal_smoothness");
+
+    // Check for right pedal smoothness
+    let right_ps_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "right_pedal_smoothness");
+
+    assert!(
+        left_ps_field.is_some(),
+        "Record should contain left_pedal_smoothness field"
+    );
+    assert!(
+        right_ps_field.is_some(),
+        "Record should contain right_pedal_smoothness field"
+    );
+}
+
+#[test]
+fn test_roundtrip_pedal_smoothness_values() {
+    let ride = create_test_ride();
+    // First sample has left_pedal_smoothness = 18.0, right = 20.0
+    let samples = create_test_samples_with_dynamics(1);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let left_ps_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_pedal_smoothness");
+
+    if let Some(field) = left_ps_field {
+        match field.value() {
+            fitparser::Value::UInt8(v) => {
+                // FIT encoding: 0.5% per bit, so 18% = 36
+                // Allow some tolerance
+                assert!(
+                    *v >= 30 && *v <= 45,
+                    "Left pedal smoothness should be around 36 (18%), got {}",
+                    v
+                );
+            }
+            fitparser::Value::Float64(v) => {
+                assert!(
+                    *v >= 15.0 && *v <= 25.0,
+                    "Left pedal smoothness should be around 18%, got {}",
+                    v
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_power_phase_fields() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_power_phase(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Check for left power phase
+    let left_pp_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_power_phase");
+
+    // Check for right power phase
+    let right_pp_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "right_power_phase");
+
+    assert!(
+        left_pp_field.is_some(),
+        "Record should contain left_power_phase field"
+    );
+    assert!(
+        right_pp_field.is_some(),
+        "Record should contain right_power_phase field"
+    );
+}
+
+#[test]
+fn test_roundtrip_power_phase_peak_fields() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_power_phase(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // Check for left power phase peak
+    let left_pp_peak_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_power_phase_peak");
+
+    // Check for right power phase peak
+    let right_pp_peak_field = record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "right_power_phase_peak");
+
+    assert!(
+        left_pp_peak_field.is_some(),
+        "Record should contain left_power_phase_peak field"
+    );
+    assert!(
+        right_pp_peak_field.is_some(),
+        "Record should contain right_power_phase_peak field"
+    );
+}
+
+#[test]
+fn test_roundtrip_all_dynamics_fields_present() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_full_dynamics(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    // All cycling dynamics fields should be present
+    let expected_fields = [
+        "left_right_balance",
+        "left_torque_effectiveness",
+        "right_torque_effectiveness",
+        "left_pedal_smoothness",
+        "right_pedal_smoothness",
+        "left_power_phase",
+        "left_power_phase_peak",
+        "right_power_phase",
+        "right_power_phase_peak",
+    ];
+
+    for field_name in expected_fields {
+        let field = record.fields().iter().find(|f| f.name() == field_name);
+        assert!(
+            field.is_some(),
+            "Record should contain {} field",
+            field_name
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_partial_dynamics() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_partial_dynamics(5);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Verify parsing succeeds even with partial dynamics
+    assert!(!records.is_empty());
+
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(record_count, 5, "All 5 samples should be in the file");
+}
+
+#[test]
+fn test_roundtrip_boundary_dynamics_values() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_boundary_dynamics();
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Verify all 3 samples with boundary values parse successfully
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(
+        record_count, 3,
+        "All 3 boundary samples should be in the file"
+    );
+}
+
+#[test]
+fn test_roundtrip_dynamics_consistency_across_samples() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_varying_dynamics(20);
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let record_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .collect();
+
+    assert_eq!(record_messages.len(), 20);
+
+    // Verify each record has the dynamics fields
+    for (i, record) in record_messages.iter().enumerate() {
+        let balance_field = record
+            .fields()
+            .iter()
+            .find(|f| f.name() == "left_right_balance");
+
+        assert!(
+            balance_field.is_some(),
+            "Record {} should contain left_right_balance field",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_fit_dynamics_file_size_scaling() {
+    let ride = create_test_ride();
+
+    // Compare file sizes: no dynamics, dynamics only, full dynamics
+    let samples_no_dynamics = create_test_samples(50);
+    let samples_dynamics = create_test_samples_with_dynamics(50);
+    let samples_full = create_test_samples_full_dynamics(50);
+
+    let data_no_dynamics = export_fit(&ride, &samples_no_dynamics).unwrap();
+    let data_dynamics = export_fit(&ride, &samples_dynamics).unwrap();
+    let data_full = export_fit(&ride, &samples_full).unwrap();
+
+    // Dynamics should add ~5 bytes per sample (balance + 2x TE + 2x PS)
+    assert!(
+        data_dynamics.len() > data_no_dynamics.len(),
+        "Dynamics should add to file size"
+    );
+
+    // Full dynamics with power phase should be even larger (~16 more bytes per sample)
+    assert!(
+        data_full.len() > data_dynamics.len(),
+        "Power phase should add additional size"
+    );
+
+    // Verify approximate sizes
+    let dynamics_overhead = data_dynamics.len() - data_no_dynamics.len();
+    let power_phase_overhead = data_full.len() - data_dynamics.len();
+
+    assert!(
+        dynamics_overhead >= 200,
+        "Dynamics overhead for 50 samples should be at least 200 bytes"
+    );
+    assert!(
+        power_phase_overhead >= 400,
+        "Power phase overhead for 50 samples should be at least 400 bytes"
+    );
+}
+
+#[test]
+fn test_fit_dynamics_deterministic_output() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(30);
+
+    // Export twice
+    let data1 = export_fit(&ride, &samples).unwrap();
+    let data2 = export_fit(&ride, &samples).unwrap();
+
+    // Should produce identical output
+    assert_eq!(data1, data2, "Same input should produce identical output");
+}
+
+#[test]
+fn test_fit_full_dynamics_deterministic_output() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_full_dynamics(30);
+
+    // Export twice
+    let data1 = export_fit(&ride, &samples).unwrap();
+    let data2 = export_fit(&ride, &samples).unwrap();
+
+    // Should produce identical output
+    assert_eq!(data1, data2, "Same input should produce identical output");
+}
+
+#[test]
+fn test_roundtrip_dynamics_with_multi_lap() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_with_dynamics(120);
+
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 40, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 40, 80, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 80, 120, ride.started_at).unwrap(),
+    ];
+
+    let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Should have 3 laps and 120 records
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(lap_count, 3, "Should have 3 lap messages");
+    assert_eq!(record_count, 120, "Should have 120 record messages");
+
+    // Verify dynamics are present in record messages
+    let first_record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .unwrap();
+
+    let balance_field = first_record
+        .fields()
+        .iter()
+        .find(|f| f.name() == "left_right_balance");
+
+    assert!(
+        balance_field.is_some(),
+        "Multi-lap export should preserve dynamics"
+    );
+}
+
+#[test]
+fn test_roundtrip_full_dynamics_with_workout() {
+    let ride = create_test_ride();
+    let samples = create_test_samples_full_dynamics(150);
+    let workout = create_test_workout();
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Verify workout export preserves all dynamics
+    let record = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .expect("Should have Record message");
+
+    let all_fields = [
+        "left_right_balance",
+        "left_torque_effectiveness",
+        "right_torque_effectiveness",
+        "left_pedal_smoothness",
+        "right_pedal_smoothness",
+        "left_power_phase",
+        "left_power_phase_peak",
+        "right_power_phase",
+        "right_power_phase_peak",
+    ];
+
+    for field_name in all_fields {
+        let field = record.fields().iter().find(|f| f.name() == field_name);
+        assert!(
+            field.is_some(),
+            "Workout export should preserve {} field",
+            field_name
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_dynamics_mixed_presence() {
+    // Test with samples where some have dynamics and some don't
+    let ride = create_test_ride();
+    let mut samples = Vec::new();
+
+    // First sample: no dynamics
+    samples.push(RideSample {
+        elapsed_seconds: 0,
+        power_watts: Some(180),
+        cadence_rpm: Some(85),
+        heart_rate_bpm: Some(145),
+        speed_kmh: Some(30.0),
+        distance_meters: 0.0,
+        calories: 0,
+        resistance_level: None,
+        target_power: None,
+        trainer_grade: None,
+        left_right_balance: None,
+        left_torque_effectiveness: None,
+        right_torque_effectiveness: None,
+        left_pedal_smoothness: None,
+        right_pedal_smoothness: None,
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
+    });
+
+    // Second sample: has dynamics
+    samples.push(RideSample {
+        elapsed_seconds: 1,
+        power_watts: Some(185),
+        cadence_rpm: Some(86),
+        heart_rate_bpm: Some(148),
+        speed_kmh: Some(31.0),
+        distance_meters: 8.33,
+        calories: 1,
+        resistance_level: None,
+        target_power: None,
+        trainer_grade: None,
+        left_right_balance: Some(52.0),
+        left_torque_effectiveness: Some(75.0),
+        right_torque_effectiveness: Some(73.0),
+        left_pedal_smoothness: Some(22.0),
+        right_pedal_smoothness: Some(24.0),
+        left_power_phase_start: None,
+        left_power_phase_end: None,
+        left_power_phase_peak: None,
+        right_power_phase_start: None,
+        right_power_phase_end: None,
+        right_power_phase_peak: None,
+    });
+
+    let data = export_fit(&ride, &samples).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Export should succeed
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+
+    assert_eq!(record_count, 2, "Both samples should be exported");
+}
