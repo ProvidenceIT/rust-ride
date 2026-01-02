@@ -2,6 +2,7 @@
 
 mod achievement_flow_test;
 mod analytics_integration_test;
+mod fit_validation_test;
 mod gradient_ride_test;
 mod hid_test;
 mod mqtt_fan_test;

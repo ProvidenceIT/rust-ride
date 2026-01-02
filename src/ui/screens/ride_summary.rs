@@ -49,7 +49,7 @@ impl RideSummaryScreen {
             ride: None,
             samples: Vec::new(),
             show_export_dialog: false,
-            export_format: ExportFormat::Tcx,
+            export_format: ExportFormat::Fit,
             export_status: None,
             is_saved: false,
             notes: String::new(),
@@ -446,6 +446,9 @@ impl RideSummaryScreen {
 
                     // Format selection
                     ui.horizontal(|ui| {
+                        ui.radio_value(&mut self.export_format, ExportFormat::Fit, "FIT (Garmin/Native) — Recommended");
+                    });
+                    ui.horizontal(|ui| {
                         ui.radio_value(&mut self.export_format, ExportFormat::Tcx, "TCX (Strava/Garmin)");
                     });
                     ui.horizontal(|ui| {
@@ -455,7 +458,7 @@ impl RideSummaryScreen {
                     ui.add_space(16.0);
 
                     ui.label(
-                        RichText::new("TCX format is recommended for uploading to Strava, Garmin Connect, or TrainingPeaks.")
+                        RichText::new("FIT is the preferred format for Garmin Connect, TrainingPeaks, and other platforms supporting native FIT. TCX works with Strava and legacy systems. CSV is for spreadsheet analysis.")
                             .weak()
                             .size(12.0),
                     );
