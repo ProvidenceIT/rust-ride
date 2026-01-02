@@ -12,6 +12,7 @@ pub mod cues;
 pub mod engine;
 pub mod tones;
 pub mod tts;
+pub mod workout_bridge;
 
 use std::time::Duration;
 use thiserror::Error;
@@ -26,7 +27,8 @@ pub use engine::{AudioEngine, DefaultAudioEngine};
 pub use tones::{
     CuePattern, Tone, ToneError, ToneGenerator, ZoneChange, ZoneChangeDetector, ZoneDirection,
 };
-pub use tts::{DefaultTtsProvider, TtsProvider, VoiceInfo};
+pub use tts::{DefaultTtsProvider, ThreadSafeTtsProvider, TtsProvider, VoiceInfo};
+pub use workout_bridge::{WorkoutAudioBridge, WorkoutAudioBridgeConfig};
 
 /// Errors that can occur during audio operations
 #[derive(Debug, Error)]

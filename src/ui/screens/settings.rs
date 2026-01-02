@@ -13,7 +13,9 @@
 //! T092: Add HID device list and button mapping UI with learning mode
 
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
+use std::collections::HashMap;
 
+use crate::audio::{AlertCategory, AlertType, VoiceInfo};
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -65,6 +67,8 @@ pub struct SettingsScreen {
     pub audio_alert_settings: AudioAlertSettings,
     /// Show/hide audio alerts section
     show_audio_alerts: bool,
+    /// Available system voices for TTS
+    available_voices: Vec<VoiceInfo>,
     /// T072: MQTT configuration
     pub mqtt_config: MqttConfig,
     /// T073: Fan profiles for zone-based fan control
@@ -111,6 +115,42 @@ pub struct SettingsScreen {
     pub tv_mode_font_scale: f32,
 }
 
+/// Configuration for a specific alert type (voice vs. sound)
+#[derive(Debug, Clone)]
+pub struct AlertTypeConfig {
+    /// Whether this alert uses voice announcement
+    pub use_voice: bool,
+    /// Whether this alert plays a sound effect
+    pub play_sound: bool,
+}
+
+impl Default for AlertTypeConfig {
+    fn default() -> Self {
+        Self {
+            use_voice: true,
+            play_sound: true,
+        }
+    }
+}
+
+impl AlertTypeConfig {
+    /// Create with voice only (no sound effect)
+    pub fn voice_only() -> Self {
+        Self {
+            use_voice: true,
+            play_sound: false,
+        }
+    }
+
+    /// Create with sound only (no voice)
+    pub fn sound_only() -> Self {
+        Self {
+            use_voice: false,
+            play_sound: true,
+        }
+    }
+}
+
 /// T064: Audio alert settings for voice alerts and notifications.
 #[derive(Debug, Clone)]
 pub struct AudioAlertSettings {
@@ -120,6 +160,8 @@ pub struct AudioAlertSettings {
     pub voice_volume: f32,
     /// Speech rate (0.5-2.0, 1.0 is normal)
     pub speech_rate: f32,
+    /// Preferred voice ID (system-specific identifier)
+    pub preferred_voice: Option<String>,
     /// Workout alerts enabled (start, intervals, countdown, complete)
     pub workout_alerts_enabled: bool,
     /// Zone change alerts enabled (power zone, HR zone changes)
@@ -132,6 +174,59 @@ pub struct AudioAlertSettings {
     pub countdown_threshold_secs: u32,
     /// Zone change debounce time (minimum seconds between zone alerts)
     pub zone_debounce_secs: u32,
+    /// Per-alert-type voice/sound configuration
+    pub alert_type_configs: HashMap<AlertType, AlertTypeConfig>,
+}
+
+impl AudioAlertSettings {
+    /// Get the list of user-configurable alert types
+    /// These are the most common alerts users may want to customize
+    fn configurable_alert_types() -> Vec<AlertType> {
+        vec![
+            // Workout alerts
+            AlertType::WorkoutStart,
+            AlertType::IntervalChange,
+            AlertType::IntervalCountdown,
+            AlertType::WorkoutComplete,
+            AlertType::RecoveryStart,
+            // Power alerts
+            AlertType::PowerZoneChange,
+            AlertType::PowerTooHigh,
+            AlertType::PowerTooLow,
+            // Heart rate alerts
+            AlertType::HeartRateZoneChange,
+            AlertType::HeartRateTooHigh,
+            AlertType::HeartRateTooLow,
+            // Sensor alerts
+            AlertType::SensorConnected,
+            AlertType::SensorDisconnected,
+            // Milestone alerts
+            AlertType::DistanceMilestone,
+            AlertType::TimeMilestone,
+        ]
+    }
+
+    /// Create default alert type configurations
+    fn default_alert_type_configs() -> HashMap<AlertType, AlertTypeConfig> {
+        let mut configs = HashMap::new();
+        for alert_type in Self::configurable_alert_types() {
+            configs.insert(alert_type, AlertTypeConfig::default());
+        }
+        configs
+    }
+
+    /// Get config for an alert type, with defaults
+    pub fn get_alert_type_config(&self, alert_type: AlertType) -> AlertTypeConfig {
+        self.alert_type_configs
+            .get(&alert_type)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Set config for an alert type
+    pub fn set_alert_type_config(&mut self, alert_type: AlertType, config: AlertTypeConfig) {
+        self.alert_type_configs.insert(alert_type, config);
+    }
 }
 
 impl Default for AudioAlertSettings {
@@ -140,12 +235,14 @@ impl Default for AudioAlertSettings {
             voice_alerts_enabled: true,
             voice_volume: 0.8,
             speech_rate: 1.0,
+            preferred_voice: None,
             workout_alerts_enabled: true,
             zone_alerts_enabled: true,
             sensor_alerts_enabled: true,
             achievement_alerts_enabled: true,
             countdown_threshold_secs: 10,
             zone_debounce_secs: 5,
+            alert_type_configs: AudioAlertSettings::default_alert_type_configs(),
         }
     }
 }
@@ -284,6 +381,17 @@ impl Default for ImmersionSettings {
     }
 }
 
+/// Settings for testing voice preview.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestVoiceSettings {
+    /// The voice ID to use (None = system default)
+    pub voice_id: Option<String>,
+    /// Volume level (0.0-1.0)
+    pub volume: f32,
+    /// Speech rate (0.5-2.0, 1.0 is normal)
+    pub rate: f32,
+}
+
 /// Actions that can result from the settings screen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
@@ -293,6 +401,8 @@ pub enum SettingsAction {
     Save,
     /// Cancel changes and go back
     Cancel,
+    /// Test/preview the current voice settings
+    TestVoice(TestVoiceSettings),
 }
 
 impl SettingsScreen {
@@ -332,6 +442,7 @@ impl SettingsScreen {
             incline_bike_weight_input: "10.0".to_string(),
             audio_alert_settings: AudioAlertSettings::default(),
             show_audio_alerts: false,
+            available_voices: Vec::new(),
             mqtt_config: MqttConfig::default(),
             fan_profiles: vec![FanProfile::default()],
             show_mqtt: false,
@@ -398,6 +509,17 @@ impl SettingsScreen {
     pub fn set_rider_type(&mut self, rider_type: Option<RiderType>, profile: Option<PowerProfile>) {
         self.rider_type = rider_type;
         self.power_profile = profile;
+    }
+
+    /// Set available voices for TTS voice selection.
+    /// Called from the app with voices from the audio engine's TTS provider.
+    pub fn set_available_voices(&mut self, voices: Vec<VoiceInfo>) {
+        self.available_voices = voices;
+    }
+
+    /// Get available voices for TTS.
+    pub fn available_voices(&self) -> &[VoiceInfo] {
+        &self.available_voices
     }
 
     /// Update the profile (e.g., after loading from database).
@@ -1297,6 +1419,82 @@ impl SettingsScreen {
                     }
                 });
 
+                // Voice selection dropdown
+                ui.horizontal(|ui| {
+                    ui.label("Voice:");
+
+                    // Get the selected voice display text
+                    let selected_text = if let Some(ref voice_id) = self.audio_alert_settings.preferred_voice {
+                        // Find the voice name from available voices
+                        self.available_voices
+                            .iter()
+                            .find(|v| &v.id == voice_id)
+                            .map(|v| format!("{} ({})", v.name, v.language))
+                            .unwrap_or_else(|| voice_id.clone())
+                    } else {
+                        // Find the default voice
+                        self.available_voices
+                            .iter()
+                            .find(|v| v.is_default)
+                            .map(|v| format!("{} ({})", v.name, v.language))
+                            .unwrap_or_else(|| "System Default".to_string())
+                    };
+
+                    egui::ComboBox::from_id_salt("voice_selection")
+                        .selected_text(&selected_text)
+                        .width(250.0)
+                        .show_ui(ui, |ui| {
+                            // System Default option (clears preferred_voice)
+                            if ui
+                                .selectable_label(
+                                    self.audio_alert_settings.preferred_voice.is_none(),
+                                    "System Default",
+                                )
+                                .clicked()
+                            {
+                                self.audio_alert_settings.preferred_voice = None;
+                                self.has_changes = true;
+                            }
+
+                            ui.separator();
+
+                            // Available voices
+                            for voice in &self.available_voices {
+                                let is_selected = self
+                                    .audio_alert_settings
+                                    .preferred_voice
+                                    .as_ref()
+                                    .map(|id| id == &voice.id)
+                                    .unwrap_or(false);
+
+                                let label = format!("{} ({})", voice.name, voice.language);
+                                if ui.selectable_label(is_selected, &label).clicked() {
+                                    self.audio_alert_settings.preferred_voice = Some(voice.id.clone());
+                                    self.has_changes = true;
+                                }
+                            }
+                        });
+
+                    // Show hint if no voices available
+                    if self.available_voices.is_empty() {
+                        ui.label(RichText::new("(Loading voices...)").weak().italics());
+                    }
+
+                    // Test/Preview button
+                    ui.add_space(8.0);
+                    if ui
+                        .button("🔊 Test")
+                        .on_hover_text("Preview how the selected voice sounds")
+                        .clicked()
+                    {
+                        action = SettingsAction::TestVoice(TestVoiceSettings {
+                            voice_id: self.audio_alert_settings.preferred_voice.clone(),
+                            volume: self.audio_alert_settings.voice_volume,
+                            rate: self.audio_alert_settings.speech_rate,
+                        });
+                    }
+                });
+
                 if self.show_audio_alerts {
                     ui.add_space(12.0);
 
@@ -1391,9 +1589,94 @@ impl SettingsScreen {
                             self.has_changes = true;
                         }
                     });
+
+                    // Per-alert-type voice/sound configuration
+                    ui.add_space(12.0);
+                    ui.label(RichText::new("Voice vs. Sound per Alert Type").strong());
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("Customize which alerts use voice announcements vs. sound effects")
+                            .size(12.0)
+                            .color(Color32::GRAY),
+                    );
+                    ui.add_space(8.0);
+
+                    // Group alerts by category for better organization
+                    self.render_alert_type_configs(ui);
                 }
             });
         });
+    }
+
+    /// Render per-alert-type voice/sound configuration grid
+    fn render_alert_type_configs(&mut self, ui: &mut Ui) {
+        // Get all configurable alert types grouped by category
+        let alert_types = AudioAlertSettings::configurable_alert_types();
+
+        // Create a grid with alert name, voice toggle, and sound toggle
+        egui::Grid::new("alert_type_configs_grid")
+            .num_columns(3)
+            .spacing([12.0, 6.0])
+            .striped(true)
+            .show(ui, |ui| {
+                // Header row
+                ui.label(RichText::new("Alert Type").strong());
+                ui.label(RichText::new("🗣️ Voice").strong());
+                ui.label(RichText::new("🔔 Sound").strong());
+                ui.end_row();
+
+                let mut current_category: Option<AlertCategory> = None;
+
+                for alert_type in alert_types {
+                    // Show category separator when category changes
+                    let category = alert_type.category();
+                    if current_category != Some(category) {
+                        current_category = Some(category);
+                        // Add category header
+                        ui.add_space(4.0);
+                        ui.end_row();
+                        ui.label(
+                            RichText::new(category.display_name())
+                                .size(12.0)
+                                .color(Color32::from_rgb(100, 149, 237)), // Cornflower blue
+                        );
+                        ui.label("");
+                        ui.label("");
+                        ui.end_row();
+                    }
+
+                    // Get or create config for this alert type
+                    let mut config = self
+                        .audio_alert_settings
+                        .alert_type_configs
+                        .get(&alert_type)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    // Alert name
+                    ui.label(format!("  {}", alert_type.display_name()));
+
+                    // Voice toggle
+                    let voice_response = ui.checkbox(&mut config.use_voice, "");
+                    if voice_response.changed() {
+                        self.has_changes = true;
+                        self.audio_alert_settings
+                            .alert_type_configs
+                            .insert(alert_type, config.clone());
+                    }
+
+                    // Sound toggle
+                    let sound_response = ui.checkbox(&mut config.play_sound, "");
+                    if sound_response.changed() {
+                        self.has_changes = true;
+                        self.audio_alert_settings
+                            .alert_type_configs
+                            .insert(alert_type, config);
+                    }
+
+                    ui.end_row();
+                }
+            });
     }
 
     /// Render the incline/slope mode settings section.

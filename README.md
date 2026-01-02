@@ -9,6 +9,7 @@ A cross-platform indoor cycling application built in Rust with real-time sensor 
 - **Training Zones** - Power and heart rate zones with visual indicators and time-in-zone tracking
 - **Structured Workouts** - Import and execute workouts from ZWO (Zwift) and MRC/ERG formats
 - **ERG Mode** - Automatic resistance control to match target power during workouts
+- **Voice Alerts** - Text-to-speech announcements for interval changes, countdowns, and workout events
 - **Ride Recording** - Automatic recording with pause detection and lap markers
 - **Export Formats** - Export rides to TCX and CSV for upload to Strava, TrainingPeaks, etc.
 - **Ride History** - Browse past rides with filtering, sorting, and detailed analytics
@@ -58,7 +59,71 @@ cargo build --release
 sudo apt-get install libdbus-1-dev pkg-config libxcb-render0-dev \
   libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev \
   libgtk-3-dev libatk1.0-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf2.0-dev
+
+# For voice alerts (text-to-speech)
+sudo apt-get install speech-dispatcher libspeechd-dev
 ```
+
+## Voice Alerts (Text-to-Speech)
+
+RustRide includes voice announcements for hands-free workout guidance. Voice alerts announce:
+- Interval changes with target power and duration
+- Countdown warnings before interval transitions (10, 5, 3, 2, 1 seconds)
+- Workout start, pause, resume, and completion
+- Optional motivational cues during high-intensity and recovery intervals
+
+### Voice Alert Settings
+
+Configure voice alerts in **Settings > Voice Alerts**:
+- **Voice Selection** - Choose from available system voices
+- **Speech Rate** - Adjust how fast announcements are spoken (0.5x - 2.0x)
+- **Volume** - Control voice alert volume independently from sound effects
+- **Per-Alert Configuration** - Enable/disable voice vs. sound for specific alert types
+
+### Platform-Specific Requirements
+
+#### Windows
+Text-to-speech uses the built-in **Windows SAPI** (Speech API). This is available by default on Windows 10 and later.
+
+**Troubleshooting:**
+- If voices are not available, ensure text-to-speech is enabled in Windows Settings > Time & Language > Speech
+- Additional voices can be installed through Windows Settings > Time & Language > Speech > Manage voices
+- For PowerShell installation: `Add-WindowsCapability -Online -Name Language.Speech~~~en-US~0.0.1.0`
+
+#### macOS
+Text-to-speech uses **AVSpeechSynthesizer**, which is built into macOS 11 (Big Sur) and later.
+
+**Troubleshooting:**
+- Voices are managed in System Preferences > Accessibility > Spoken Content
+- Additional voices can be downloaded through System Preferences > Accessibility > Spoken Content > System Voice > Manage Voices
+
+#### Linux
+Text-to-speech uses **speech-dispatcher**, which must be installed separately.
+
+**Installation:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install speech-dispatcher speech-dispatcher-espeak-ng
+
+# Fedora
+sudo dnf install speech-dispatcher speech-dispatcher-espeak-ng
+
+# Arch Linux
+sudo pacman -S speech-dispatcher espeak-ng
+```
+
+**Troubleshooting:**
+- Verify speech-dispatcher is running: `speech-dispatcher --version`
+- Test speech from command line: `spd-say "Hello world"`
+- If no audio, check that pulseaudio or pipewire is running
+- Ensure your user is in the `audio` group: `sudo usermod -aG audio $USER`
+
+### Known Limitations
+
+- **Thread Safety**: TTS operations run on a dedicated worker thread to handle platform-specific constraints (especially on macOS where the TTS engine is not thread-safe)
+- **Voice Availability**: Available voices depend on the system language packs installed
+- **Linux Virtual Environments**: TTS may not work in Docker containers or VMs without proper audio passthrough configuration
+- **Simultaneous Speech**: Only one voice announcement plays at a time; high-priority alerts (interval changes) interrupt lower-priority ones
 
 ## Quick Start
 
@@ -114,6 +179,11 @@ src/
 ├── app.rs              # Main application state and event loop
 ├── main.rs             # Entry point
 ├── lib.rs              # Library exports
+├── audio/              # Audio alerts and text-to-speech
+│   ├── tts.rs          # Cross-platform TTS provider (SAPI/AVSpeech/speech-dispatcher)
+│   ├── engine.rs       # Audio engine with priority queue
+│   ├── cues.rs         # Message templates for workout announcements
+│   └── workout_bridge.rs # Bridges workout events to audio alerts
 ├── sensors/            # Bluetooth sensor management and FTMS parsing
 ├── metrics/            # Real-time metrics calculation and zones
 ├── recording/          # Ride recording and export (TCX, CSV)

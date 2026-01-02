@@ -3,6 +3,7 @@
 //! T010: Implement Config loading from TOML
 //! T016: Define UserProfile struct with FTP, zones, preferences
 
+use crate::audio::AudioConfig;
 use crate::metrics::zones::{HRZones, PowerZones};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -631,6 +632,9 @@ pub struct AppConfig {
     pub recording: RecordingSettings,
     /// UI settings
     pub ui: UiSettings,
+    /// Audio and TTS settings
+    #[serde(default)]
+    pub audio: AudioConfig,
     /// T064: Daemon settings for headless operation
     #[serde(default)]
     pub daemon: DaemonSettings,
@@ -644,6 +648,7 @@ impl Default for AppConfig {
             sensors: SensorSettings::default(),
             recording: RecordingSettings::default(),
             ui: UiSettings::default(),
+            audio: AudioConfig::default(),
             daemon: DaemonSettings::default(),
         }
     }
@@ -1080,4 +1085,211 @@ enable_crash_recovery = true
 # name = "My Trainer"
 # sensor_type = "smart_trainer"
 "#
+}
+
+/// Example TOML configuration for audio/TTS settings.
+/// This can be used to generate a default config file.
+pub fn example_audio_config() -> &'static str {
+    r#"
+# Audio and TTS settings
+[audio]
+# Master enable for all audio
+enabled = true
+
+# Master volume (0-100)
+volume = 80
+
+# Enable voice/TTS
+voice_enabled = true
+
+# Voice volume (0-100)
+voice_volume = 100
+
+# Preferred voice name (OS-dependent, use null for system default)
+# preferred_voice = "Microsoft David Desktop"
+
+# Speech rate multiplier (0.5 - 2.0, where 1.0 is normal)
+speech_rate = 1.0
+
+# Enable sound effects
+sound_effects_enabled = true
+
+# Sound effects volume (0-100)
+sound_effects_volume = 80
+
+# Minimum interval between alerts in milliseconds (prevents spam)
+min_alert_interval_ms = 3000
+"#
+}
+
+/// Load audio configuration from the config file.
+/// Returns default AudioConfig if config file doesn't exist or is invalid.
+pub fn load_audio_config() -> AudioConfig {
+    let config = load_config().unwrap_or_default();
+    config.audio
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_config_default_has_audio() {
+        let config = AppConfig::default();
+        // Verify audio config is included with defaults
+        assert!(config.audio.enabled);
+        assert_eq!(config.audio.volume, 80);
+        assert!(config.audio.voice_enabled);
+        assert_eq!(config.audio.voice_volume, 100);
+        assert!(config.audio.preferred_voice.is_none());
+        assert!((config.audio.speech_rate - 1.0).abs() < f32::EPSILON);
+        assert!(config.audio.sound_effects_enabled);
+        assert_eq!(config.audio.sound_effects_volume, 80);
+        assert_eq!(config.audio.min_alert_interval_ms, 3000);
+    }
+
+    #[test]
+    fn test_audio_config_serialization() {
+        let mut audio = AudioConfig::default();
+        audio.preferred_voice = Some("Test Voice".to_string());
+        audio.speech_rate = 1.5;
+        audio.voice_volume = 75;
+
+        let config = AppConfig {
+            audio,
+            ..Default::default()
+        };
+
+        // Serialize to TOML
+        let toml_str = toml::to_string(&config).expect("Failed to serialize");
+
+        // Verify the audio section is present
+        assert!(toml_str.contains("[audio]"));
+        assert!(toml_str.contains("preferred_voice = \"Test Voice\""));
+        assert!(toml_str.contains("speech_rate = 1.5"));
+        assert!(toml_str.contains("voice_volume = 75"));
+    }
+
+    #[test]
+    fn test_audio_config_deserialization() {
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [audio]
+            enabled = true
+            volume = 90
+            voice_enabled = true
+            voice_volume = 85
+            preferred_voice = "Custom Voice"
+            speech_rate = 1.2
+            sound_effects_enabled = false
+            sound_effects_volume = 70
+            min_alert_interval_ms = 2000
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        assert!(config.audio.enabled);
+        assert_eq!(config.audio.volume, 90);
+        assert!(config.audio.voice_enabled);
+        assert_eq!(config.audio.voice_volume, 85);
+        assert_eq!(
+            config.audio.preferred_voice,
+            Some("Custom Voice".to_string())
+        );
+        assert!((config.audio.speech_rate - 1.2).abs() < f32::EPSILON);
+        assert!(!config.audio.sound_effects_enabled);
+        assert_eq!(config.audio.sound_effects_volume, 70);
+        assert_eq!(config.audio.min_alert_interval_ms, 2000);
+    }
+
+    #[test]
+    fn test_audio_config_missing_uses_defaults() {
+        // Config without audio section should use defaults
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Should have default audio settings
+        assert!(config.audio.enabled);
+        assert_eq!(config.audio.volume, 80);
+        assert!(config.audio.voice_enabled);
+        assert_eq!(config.audio.voice_volume, 100);
+        assert!(config.audio.preferred_voice.is_none());
+        assert!((config.audio.speech_rate - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_audio_config_partial_uses_defaults() {
+        // Config with partial audio section should use defaults for missing fields
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [audio]
+            speech_rate = 1.5
+            preferred_voice = "My Voice"
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Custom values should be preserved
+        assert!((config.audio.speech_rate - 1.5).abs() < f32::EPSILON);
+        assert_eq!(config.audio.preferred_voice, Some("My Voice".to_string()));
+
+        // Other fields should use defaults
+        assert!(config.audio.enabled);
+        assert_eq!(config.audio.volume, 80);
+        assert!(config.audio.voice_enabled);
+        assert_eq!(config.audio.voice_volume, 100);
+    }
 }

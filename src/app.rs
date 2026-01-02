@@ -14,7 +14,7 @@ use rustride::achievements::{
     AchievementTracker, AllCheckers, CumulativeStats, DefaultAchievementTracker, NotificationQueue,
     RideMetrics,
 };
-use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
+use rustride::audio::{AudioEngine, DefaultAudioEngine};
 use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
@@ -87,7 +87,7 @@ pub struct RustRideApp {
     /// Metrics calculator
     metrics_calculator: MetricsCalculator,
     /// Audio engine for voice alerts and sound effects (Hardware Integration)
-    _audio_engine: Arc<DefaultAudioEngine>,
+    audio_engine: Arc<DefaultAudioEngine>,
     /// Sensor setup screen state
     sensor_setup_screen: SensorSetupScreen,
     /// Ride screen state
@@ -214,8 +214,8 @@ impl RustRideApp {
         let metrics_calculator = MetricsCalculator::new(profile.ftp);
 
         // Initialize audio engine (Hardware Integration)
-        let audio_config = AudioConfig::default();
-        let audio_engine = Arc::new(DefaultAudioEngine::new(audio_config));
+        // Use audio config from loaded AppConfig for persistence
+        let audio_engine = Arc::new(DefaultAudioEngine::new(config.audio.clone()));
         if let Err(e) = audio_engine.initialize() {
             tracing::warn!("Failed to initialize audio engine: {}", e);
         }
@@ -297,7 +297,7 @@ impl RustRideApp {
             _workout_engine: workout_engine,
             _ride_recorder: ride_recorder,
             metrics_calculator,
-            _audio_engine: audio_engine,
+            audio_engine,
             sensor_setup_screen: SensorSetupScreen::new(),
             ride_screen: RideScreen::new(),
             world_select_screen: WorldSelectScreen::new(),
@@ -743,6 +743,13 @@ impl RustRideApp {
     /// Navigate to a different screen.
     fn navigate(&mut self, screen: Screen) {
         tracing::debug!("Navigating from {:?} to {:?}", self.current_screen, screen);
+
+        // Populate available voices when entering Settings screen
+        if matches!(screen, Screen::Settings) {
+            let voices = self.audio_engine.tts_provider().get_voices();
+            self.settings_screen.set_available_voices(voices);
+        }
+
         self.current_screen = screen;
     }
 
@@ -1043,6 +1050,25 @@ impl eframe::App for RustRideApp {
                             // Reset settings screen to original values
                             self.settings_screen.reset();
                             self.navigate(Screen::Home);
+                        }
+                        SettingsAction::TestVoice(settings) => {
+                            // Preview the selected voice with current settings
+                            let tts = self.audio_engine.tts_provider();
+
+                            // Apply the test settings
+                            if let Some(ref voice_id) = settings.voice_id {
+                                if let Err(e) = tts.set_voice(voice_id) {
+                                    tracing::warn!("Failed to set voice for preview: {}", e);
+                                }
+                            }
+                            tts.set_volume(settings.volume);
+                            tts.set_rate(settings.rate);
+
+                            // Speak the preview phrase
+                            const PREVIEW_PHRASE: &str = "This is how your voice alerts will sound.";
+                            if let Err(e) = tts.speak(PREVIEW_PHRASE) {
+                                tracing::warn!("Failed to preview voice: {}", e);
+                            }
                         }
                         SettingsAction::None => {}
                     }

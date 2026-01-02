@@ -1,0 +1,246 @@
+# Build Progress: Complete Text-to-Speech Integration
+
+## Overview
+Finish the TTS module implementation to provide voice announcements during workouts.
+
+## Current Status: In Progress
+
+### Phase 1: Core TTS Implementation (4/4 subtasks) ✅ COMPLETE
+- [x] 1.1 Implement TTS crate integration
+- [x] 1.2 Implement voice enumeration and selection
+- [x] 1.3 Implement rate and volume controls
+- [x] 1.4 Add TTS state management and thread safety
+
+### Phase 2: Audio Engine Integration (3/3 subtasks) ✅ COMPLETE
+- [x] 2.1 Wire TTS provider into AudioEngine
+- [x] 2.2 Implement speech queuing with priority
+- [x] 2.3 Add TTS configuration persistence
+
+### Phase 3: Workout Event Integration (2/4 subtasks)
+- [x] 3.1 Create workout audio bridge
+- [x] 3.2 Implement interval change announcements
+- [ ] 3.3 Implement countdown announcements
+- [ ] 3.4 Add motivational cues
+
+### Phase 4: Voice Settings UI (0/3 subtasks)
+- [ ] 4.1 Add voice selection dropdown to settings
+- [ ] 4.2 Add voice preview button
+- [ ] 4.3 Add per-alert-type voice configuration
+
+### Phase 5: Testing and Platform Verification (0/3 subtasks)
+- [ ] 5.1 Add TTS integration tests
+- [ ] 5.2 Add workout audio integration tests
+- [ ] 5.3 Document platform-specific TTS notes
+
+## Key Findings
+
+### Existing Infrastructure
+- `tts` crate v0.26 already in Cargo.toml but not used
+- `src/audio/tts.rs` has TtsProvider trait and stub DefaultTtsProvider
+- `src/audio/engine.rs` has AudioEngine with priority queue
+- `src/audio/cues.rs` has CueBuilder with templates for all alert types
+- `src/audio/alerts.rs` has AlertManager with per-alert configuration
+- WorkoutEngine emits events: Started, IntervalChange, IntervalCountdown, etc.
+- Settings UI has voice_volume and speech_rate sliders already
+
+### What Needs Implementation
+1. Replace stub TTS with actual tts crate calls
+2. Add real voice enumeration from system
+3. Create WorkoutAudioBridge to connect workout events to alerts
+4. Add voice selection dropdown to settings
+
+## Notes
+- Linux requires speech-dispatcher to be installed
+- Windows uses SAPI (built-in)
+- macOS uses NSSpeechSynthesizer (built-in)
+- tts crate's Tts struct may not be Send+Sync on all platforms
+  - **RESOLVED**: ThreadSafeTtsProvider now handles this via dedicated worker thread
+
+## Subtask 1.4 Implementation Details
+
+Added `ThreadSafeTtsProvider` to handle thread-safety issues with `tts::Tts`:
+
+1. **TtsCommand enum** - Commands sent to worker thread:
+   - Initialize, Speak, Stop, SetRate, SetVolume
+   - GetVoices, SetVoice, CheckSpeaking, Shutdown
+
+2. **Worker thread** - Dedicated thread owns the `tts::Tts` instance:
+   - Receives commands via `mpsc::channel`
+   - Processes TTS operations safely
+   - Clean shutdown via Shutdown command
+
+3. **is_speaking() tracking**:
+   - Uses `Arc<AtomicBool>` shared between main struct and worker
+   - Worker updates state on speak start/completion
+   - `is_speaking()` method can also verify with TTS engine
+
+4. **Usage**: For multi-threaded apps, use `ThreadSafeTtsProvider` instead of `DefaultTtsProvider`
+
+## Subtask 2.2 Implementation Details
+
+Added priority-based interruption to `DefaultAudioEngine`:
+
+1. **Priority Interruption Logic**:
+   - `should_interrupt(priority)` - Checks if new item should interrupt current playback
+   - Critical priority interrupts everything except other Critical items
+   - High priority interrupts Normal and Low priority items
+   - Normal and Low never interrupt
+
+2. **New Fields in DefaultAudioEngine**:
+   - `current_priority: Arc<Mutex<Option<AudioPriority>>>` - Tracks what's currently playing
+   - `interrupt_requested: Arc<AtomicBool>` - Signals interruption to ongoing playback
+
+3. **Queue Management**:
+   - `queue()` now checks if high-priority item should interrupt current playback
+   - High/Critical priority items also clear lower-priority items from queue
+   - `clear_lower_priority(min)` - Removes items below given priority
+   - `clear_queue()` - Removes all queued items
+
+4. **Enhanced stop()**:
+   - Sets interrupt flag
+   - Stops TTS playback immediately
+   - Clears the queue
+   - Resets all state (is_playing, current_priority)
+
+5. **Updated process_queue()**:
+   - Checks for interrupt before playing each item
+   - Tracks current priority during playback
+   - `speak_with_interrupt_check()` - Monitors interruption during speech
+
+6. **Tests Added**:
+   - Priority-based interrupt logic tests
+   - Queue clearing tests
+   - Stop functionality tests
+   - Interrupt flag operation tests
+
+## Subtask 2.3 Implementation Details
+
+Added TTS configuration persistence to AppConfig:
+
+1. **AudioConfig in AppConfig**:
+   - Added `audio: AudioConfig` field to `AppConfig` struct
+   - Uses `#[serde(default)]` for backwards compatibility with existing config files
+   - Audio settings now persist in config.toml under `[audio]` section
+
+2. **Persisted TTS Settings**:
+   - `enabled` - Master audio enable
+   - `volume` - Master volume (0-100)
+   - `voice_enabled` - Voice/TTS enable
+   - `voice_volume` - Voice volume (0-100)
+   - `preferred_voice` - OS-dependent voice name (Option<String>)
+   - `speech_rate` - Speech rate multiplier (0.5-2.0)
+   - `sound_effects_enabled` - Sound effects enable
+   - `sound_effects_volume` - Sound effects volume (0-100)
+   - `min_alert_interval_ms` - Minimum alert interval
+
+3. **Helper Functions**:
+   - `load_audio_config()` - Loads audio config from file (or defaults)
+   - `example_audio_config()` - Returns example TOML for documentation
+
+4. **App Integration**:
+   - Updated `app.rs` to use `config.audio.clone()` instead of `AudioConfig::default()`
+   - Audio settings are now loaded from persistent storage on startup
+
+5. **Tests Added**:
+   - `test_app_config_default_has_audio` - Verifies default audio values
+   - `test_audio_config_serialization` - Tests TOML serialization
+   - `test_audio_config_deserialization` - Tests full config parsing
+   - `test_audio_config_missing_uses_defaults` - Tests missing [audio] section
+   - `test_audio_config_partial_uses_defaults` - Tests partial config with defaults
+
+## Subtask 3.1 Implementation Details
+
+Created `WorkoutAudioBridge` component to bridge WorkoutEngine events to AlertManager:
+
+1. **WorkoutAudioBridgeConfig**:
+   - `announce_interval_changes` - Enable interval change announcements
+   - `announce_countdowns` - Enable countdown announcements (10, 5, 3, 2, 1)
+   - `announce_workout_lifecycle` - Enable start/pause/resume/complete
+   - `announce_trainer_status` - Enable trainer disconnect/reconnect alerts
+   - `announce_recovery_intervals` - Enable special recovery interval messages
+
+2. **Event Mapping**:
+   - `WorkoutEvent::Started` → `AlertType::WorkoutStart`
+   - `WorkoutEvent::IntervalChange` → `AlertType::IntervalChange` or `RecoveryStart` if recovery
+   - `WorkoutEvent::IntervalCountdown` → `AlertType::IntervalCountdown` with seconds context
+   - `WorkoutEvent::Paused/Resumed` → `AlertType::RidePaused/RideResumed`
+   - `WorkoutEvent::Completed` → `AlertType::WorkoutComplete`
+   - `WorkoutEvent::TrainerDisconnected/Reconnected` → `AlertType::SensorDisconnected/SensorConnected`
+
+3. **Usage Pattern**:
+   ```rust
+   let bridge = WorkoutAudioBridge::new(alert_manager);
+   // In main loop:
+   let events = workout_engine.take_events();
+   bridge.process_events(&events).await;
+   ```
+
+4. **Tests Added**:
+   - MockAlertManager for capturing triggered alerts
+   - Tests for each WorkoutEvent type
+   - Config enable/disable tests
+   - Selective config tests
+   - Recovery interval fallback tests
+
+## Subtask 3.2 Implementation Details
+
+Updated `CueBuilder` to generate natural-sounding interval change announcements:
+
+1. **Updated IntervalChange Template**:
+   - Changed from: `"{interval_name}, {duration}"`
+   - Changed to: `"{interval_name} interval, {power}, {duration}"`
+   - Now produces messages like: "Sweet Spot interval, 260 watts, 5 minutes"
+
+2. **Graceful Power Handling**:
+   - When `target_power` is `Some(value)`: includes "{power} watts" in message
+   - When `target_power` is `None`: removes `{power}` and cleans up surrounding commas
+   - Prevents double commas or awkward spacing
+
+3. **Duration Formatting** (already implemented):
+   - `< 60 seconds`: "30 seconds"
+   - `>= 60 seconds`: "5 minutes" or "5 minutes 30 seconds"
+   - `>= 3600 seconds`: "1 hours 0 minutes"
+
+4. **Tests Added**:
+   - `test_cue_builder_interval_change` - Verifies power inclusion
+   - `test_cue_builder_interval_change_without_power` - Verifies graceful power omission
+   - `test_interval_change_various_durations` - Verifies duration formatting
+   - `test_interval_change_natural_sounding_message` - Verifies exact message format
+
+## Subtask 4.3 Implementation Details
+
+Added per-alert-type voice/sound configuration to the settings UI:
+
+1. **AlertTypeConfig struct**:
+   - `use_voice: bool` - Whether this alert uses voice announcement
+   - `play_sound: bool` - Whether this alert plays a sound effect
+   - Default: both enabled
+   - Helper constructors: `voice_only()`, `sound_only()`
+
+2. **AudioAlertSettings Updates**:
+   - Added `alert_type_configs: HashMap<AlertType, AlertTypeConfig>` field
+   - Added `configurable_alert_types()` - Returns list of user-configurable alert types
+   - Added `default_alert_type_configs()` - Creates default configs for all alert types
+   - Added `get_alert_type_config()` and `set_alert_type_config()` helper methods
+
+3. **Configurable Alert Types** (15 types across 5 categories):
+   - **Workout**: WorkoutStart, IntervalChange, IntervalCountdown, WorkoutComplete, RecoveryStart
+   - **Power**: PowerZoneChange, PowerTooHigh, PowerTooLow
+   - **Heart Rate**: HeartRateZoneChange, HeartRateTooHigh, HeartRateTooLow
+   - **Sensors**: SensorConnected, SensorDisconnected
+   - **Milestones**: DistanceMilestone, TimeMilestone
+
+4. **UI Implementation**:
+   - Added new section "Voice vs. Sound per Alert Type" in expanded audio alerts
+   - Grid layout with 3 columns: Alert Type, Voice toggle, Sound toggle
+   - Alerts grouped by category with colored headers (Workout, Power, Heart Rate, etc.)
+   - Checkboxes to enable/disable voice and sound for each alert type
+   - Changes tracked via `has_changes` flag for save detection
+
+5. **Use Case Examples**:
+   - User wants interval changes spoken but not countdowns
+   - User prefers sound effects for sensor alerts but voice for workouts
+   - User wants voice-only announcements (no sound effects)
+
+---
+Last Updated: 2026-01-02

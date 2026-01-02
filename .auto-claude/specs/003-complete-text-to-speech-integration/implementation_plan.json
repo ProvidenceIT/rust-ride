@@ -1,0 +1,234 @@
+{
+  "feature": "Complete Text-to-Speech Integration",
+  "description": "Finish the TTS module implementation to provide voice announcements during workouts. This includes interval changes, target power callouts, motivational cues, and customizable voice settings.",
+  "created_at": "2026-01-02T19:51:33.011Z",
+  "updated_at": "2026-01-02T21:00:00.000Z",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "phases": [
+    {
+      "phase_id": "phase-1",
+      "name": "Core TTS Implementation",
+      "description": "Implement the actual TTS functionality using the tts crate, replacing the stub implementations.",
+      "status": "completed",
+      "subtasks": [
+        {
+          "subtask_id": "1.1",
+          "title": "Implement TTS crate integration",
+          "description": "Replace the stub DefaultTtsProvider with actual tts crate calls. Initialize the TTS engine properly, implement speak() and speak_async() methods using tts::Tts, and handle platform-specific initialization for Windows (SAPI), macOS (NSSpeechSynthesizer), and Linux (speech-dispatcher).",
+          "file_paths": ["src/audio/tts.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": [],
+          "notes": "The tts crate v0.26 is already in Cargo.toml. Must handle platform-specific errors gracefully. COMPLETED: Implemented actual tts::Tts integration with lazy initialization, platform-specific error messages, and proper speak()/speak_async() implementations."
+        },
+        {
+          "subtask_id": "1.2",
+          "title": "Implement voice enumeration and selection",
+          "description": "Replace the hardcoded voice list with actual system voice enumeration from the tts crate. Implement get_voices() to return real voices with proper language codes, and implement set_voice() to actually change the TTS voice.",
+          "file_paths": ["src/audio/tts.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["1.1"],
+          "notes": "COMPLETED: Implemented real voice enumeration using tts.voices() and voice selection using tts.set_voice(). get_voices() maps tts::Voice to VoiceInfo with id, name, language, and is_default. set_voice() finds the matching voice by ID and actually sets it in the TTS engine. Tests updated to work with dynamic voice lists and handle CI environments."
+        },
+        {
+          "subtask_id": "1.3",
+          "title": "Implement rate and volume controls",
+          "description": "Wire up set_rate() and set_volume() to actually affect TTS output. The tts crate supports rate and volume settings. Ensure proper clamping and normalization between our 0-1 range and the tts crate's expected ranges.",
+          "file_paths": ["src/audio/tts.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["1.1"],
+          "notes": "COMPLETED: Rate and volume controls were already implemented in subtask 1.1. set_rate() clamps to 0.5-2.0 (where 1.0 is normal speed), set_volume() clamps to 0.0-1.0. Both are applied via apply_rate() and apply_volume() helper methods, called during initialization and before each speak/speak_async operation. The tts crate 0.26 uses f32 values directly for both."
+        },
+        {
+          "subtask_id": "1.4",
+          "title": "Add TTS state management and thread safety",
+          "description": "The tts crate's Tts struct is not Send+Sync on all platforms. Create a proper wrapper that handles TTS calls on a dedicated thread if needed. Implement proper is_speaking() tracking.",
+          "file_paths": ["src/audio/tts.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["1.1"],
+          "notes": "COMPLETED: Implemented ThreadSafeTtsProvider that handles TTS operations on a dedicated worker thread. Added TtsCommand enum for thread communication, proper is_speaking() tracking using Arc<AtomicBool>, clean shutdown via Drop trait, and comprehensive tests. The worker thread owns the tts::Tts instance and processes commands via channel, making it safe to use from multiple threads on all platforms including macOS."
+        }
+      ]
+    },
+    {
+      "phase_id": "phase-2",
+      "name": "Audio Engine Integration",
+      "description": "Connect the TTS provider to the audio engine and implement the speech queue.",
+      "status": "completed",
+      "subtasks": [
+        {
+          "subtask_id": "2.1",
+          "title": "Wire TTS provider into AudioEngine",
+          "description": "Update DefaultAudioEngine to hold and use the TTS provider. The speak() method should delegate to the TTS provider with proper configuration (rate, volume from AudioConfig).",
+          "file_paths": ["src/audio/engine.rs", "src/audio/mod.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["1.1", "1.4"],
+          "notes": "COMPLETED: Implemented TTS integration in DefaultAudioEngine: added ThreadSafeTtsProvider field, updated new() to create and configure TTS provider with voice_volume and speech_rate from AudioConfig, initialize() now initializes TTS and sets preferred voice, speak() delegates to TTS provider with proper configuration, stop() now stops TTS playback. Added tts_provider() accessor and update_config() helper methods."
+        },
+        {
+          "subtask_id": "2.2",
+          "title": "Implement speech queuing with priority",
+          "description": "Ensure the AudioEngine's queue properly handles Speech items. High-priority speech (like interval changes) should interrupt lower-priority items. Implement stop() to actually stop current speech.",
+          "file_paths": ["src/audio/engine.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["2.1"],
+          "notes": "COMPLETED: Implemented priority-based interruption in AudioEngine. Added current_priority tracking, interrupt_requested flag, should_interrupt() logic for High/Critical priorities. High-priority items now interrupt lower-priority playback and clear the queue. stop() now properly stops TTS, clears queue, and resets state. Added speak_with_interrupt_check() for monitored speech. Comprehensive tests added for interrupt logic, queue clearing, and state management."
+        },
+        {
+          "subtask_id": "2.3",
+          "title": "Add TTS configuration persistence",
+          "description": "Save and load TTS settings (preferred voice, rate, volume) from the config store. Integrate with the existing AudioConfig serialization.",
+          "file_paths": ["src/audio/mod.rs", "src/storage/config.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["1.2", "2.1"],
+          "notes": "COMPLETED: Added AudioConfig to AppConfig for persistent storage. Changes: 1) Added AudioConfig field to AppConfig with #[serde(default)] for backwards compatibility, 2) Updated app.rs to use config.audio.clone() instead of AudioConfig::default(), 3) Added example_audio_config() for documentation, 4) Added load_audio_config() helper function, 5) Added comprehensive tests for serialization/deserialization including full config, missing audio section, and partial config scenarios."
+        }
+      ]
+    },
+    {
+      "phase_id": "phase-3",
+      "name": "Workout Event Integration",
+      "description": "Connect workout events to voice announcements.",
+      "status": "completed",
+      "subtasks": [
+        {
+          "subtask_id": "3.1",
+          "title": "Create workout audio bridge",
+          "description": "Create a WorkoutAudioBridge component that subscribes to WorkoutEngine events and triggers appropriate alerts via the AlertManager. This bridges the gap between workout events and the audio system.",
+          "file_paths": ["src/audio/workout_bridge.rs", "src/audio/mod.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["2.1"],
+          "notes": "COMPLETED: Created WorkoutAudioBridge component with WorkoutAudioBridgeConfig for controlling announcements (interval_changes, countdowns, workout_lifecycle, trainer_status, recovery_intervals). Implemented process_events()/process_event() async methods that map all WorkoutEvent variants to AlertType/AlertContext. Comprehensive test suite with MockAlertManager."
+        },
+        {
+          "subtask_id": "3.2",
+          "title": "Implement interval change announcements",
+          "description": "When an interval changes, announce the interval name, target power, and duration. Use the CueBuilder to generate natural-sounding messages like 'Sweet Spot interval, 260 watts, 5 minutes'.",
+          "file_paths": ["src/audio/workout_bridge.rs", "src/audio/cues.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["3.1"],
+          "notes": "COMPLETED: Updated IntervalChange template to include power in natural-sounding format. Template now produces messages like 'Sweet Spot interval, 260 watts, 5 minutes'. Added graceful handling for missing power values (removes placeholder and cleans up surrounding commas). Added comprehensive tests for various durations and edge cases."
+        },
+        {
+          "subtask_id": "3.3",
+          "title": "Implement countdown announcements",
+          "description": "Announce countdown before interval changes (10, 5, 3, 2, 1 seconds). The WorkoutEngine already emits IntervalCountdown events at these thresholds.",
+          "file_paths": ["src/audio/cues.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["3.1"],
+          "notes": "COMPLETED: Added format_countdown() function for natural-sounding countdown announcements. Uses short form (just the number) for 1, 2, 3 seconds for urgency, and 'X seconds' format for 5+ seconds. Updated IntervalCountdown template to use new {countdown} placeholder. Added comprehensive tests for all COUNTDOWN_THRESHOLDS [10, 5, 3, 2, 1]."
+        },
+        {
+          "subtask_id": "3.4",
+          "title": "Add motivational cues",
+          "description": "Add optional motivational messages during high-intensity intervals ('You're doing great!', 'Keep pushing!') and recovery intervals ('Nice work, catch your breath'). Make these configurable.",
+          "file_paths": ["src/audio/cues.rs", "src/audio/workout_bridge.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["3.2"],
+          "notes": "COMPLETED: Added optional motivational messages during intervals. Changes: 1) Added MotivationalHighIntensity and MotivationalRecovery AlertTypes to alerts.rs with display names and category. 2) Added motivational message templates to cues.rs with variety (7 high-intensity messages like 'Keep pushing!', 'You're doing great!', and 5 recovery messages like 'Nice work, catch your breath'). 3) Added announce_motivational_messages config option to WorkoutAudioBridgeConfig (disabled by default to avoid annoyance). 4) Updated process_event to trigger motivational messages after interval changes when enabled. 5) Added comprehensive tests for all functionality."
+        }
+      ]
+    },
+    {
+      "phase_id": "phase-4",
+      "name": "Voice Settings UI",
+      "description": "Add voice selection and configuration to the settings screen.",
+      "status": "completed",
+      "subtasks": [
+        {
+          "subtask_id": "4.1",
+          "title": "Add voice selection dropdown to settings",
+          "description": "Add a dropdown/combo box to the Voice Alerts section in settings that lists available system voices. Allow users to select their preferred voice.",
+          "file_paths": ["src/ui/screens/settings.rs", "src/app.rs"],
+          "status": "completed",
+          "estimated_effort": "medium",
+          "dependencies": ["1.2"],
+          "notes": "COMPLETED: Wired up voice selection dropdown in settings. The UI was already implemented in settings.rs with ComboBox for voice selection, System Default option, available voice listing, and loading hint. Added code to app.rs navigate() function to populate the available voices when entering Settings screen by calling audio_engine.tts_provider().get_voices() and passing to settings_screen.set_available_voices(). Voice selection persists via preferred_voice field in AudioAlertSettings."
+        },
+        {
+          "subtask_id": "4.2",
+          "title": "Add voice preview button",
+          "description": "Add a 'Test' or 'Preview' button next to the voice selection that speaks a sample phrase ('This is how your voice alerts will sound') so users can preview voices before selecting.",
+          "file_paths": ["src/ui/screens/settings.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["4.1"],
+          "notes": "COMPLETED: Added voice preview button to Voice Alerts section. Changes: 1) Added TestVoiceSettings struct with voice_id, volume, and rate fields, 2) Added TestVoice(TestVoiceSettings) variant to SettingsAction enum, 3) Added '🔊 Test' button next to voice selection dropdown that triggers TTS preview, 4) Updated app.rs to handle TestVoice action - sets voice/volume/rate and speaks 'This is how your voice alerts will sound.' The button allows users to preview voices before selecting."
+        },
+        {
+          "subtask_id": "4.3",
+          "title": "Add per-alert-type voice configuration",
+          "description": "In the expanded audio alerts section, allow users to customize which alert types use voice vs. sound effects. Some users may want only interval changes spoken but not countdowns.",
+          "file_paths": ["src/ui/screens/settings.rs"],
+          "status": "completed",
+          "estimated_effort": "small",
+          "dependencies": ["4.1"],
+          "notes": "COMPLETED: Added per-alert-type voice/sound configuration to settings UI. Created AlertTypeConfig struct with use_voice and play_sound fields. Added alert_type_configs HashMap to AudioAlertSettings with 15 configurable alert types across 5 categories (Workout, Power, Heart Rate, Sensors, Milestones). Implemented render_alert_type_configs() function with grid layout showing checkboxes for voice and sound per alert type, grouped by category. Users can now customize which alerts use voice announcements vs. sound effects."
+        }
+      ]
+    },
+    {
+      "phase_id": "phase-5",
+      "name": "Testing and Platform Verification",
+      "description": "Ensure TTS works correctly on all supported platforms.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "subtask_id": "5.1",
+          "title": "Add TTS integration tests",
+          "description": "Create integration tests that verify TTS initialization, voice enumeration, and speech on each platform. Tests should handle cases where TTS is not available gracefully.",
+          "file_paths": ["tests/integration/tts_test.rs"],
+          "status": "pending",
+          "estimated_effort": "medium",
+          "dependencies": ["1.1", "1.2"],
+          "notes": "TTS availability varies by platform - tests should skip gracefully if unavailable."
+        },
+        {
+          "subtask_id": "5.2",
+          "title": "Add workout audio integration tests",
+          "description": "Create tests that verify workout events trigger appropriate voice announcements. Use mock audio engine to verify the correct messages are generated.",
+          "file_paths": ["tests/integration/workout_audio_test.rs"],
+          "status": "pending",
+          "estimated_effort": "medium",
+          "dependencies": ["3.1", "3.2"],
+          "notes": "Can mock the audio engine to capture speech text without actual audio output."
+        },
+        {
+          "subtask_id": "5.3",
+          "title": "Document platform-specific TTS notes",
+          "description": "Update documentation with any platform-specific requirements or notes (e.g., speech-dispatcher on Linux, required system components, known limitations).",
+          "file_paths": ["README.md"],
+          "status": "pending",
+          "estimated_effort": "small",
+          "dependencies": ["5.1"],
+          "notes": "Linux may require speech-dispatcher to be installed."
+        }
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    "TTS announces interval changes during workouts",
+    "Target power/cadence callouts work correctly",
+    "User can select from available system voices",
+    "Speech rate and volume are configurable",
+    "TTS works on Windows, macOS, and Linux"
+  ],
+  "total_subtasks": 16,
+  "estimated_total_effort": "medium-large",
+  "qa_status": {
+    "status": "pending",
+    "issues": "",
+    "tests_passed": ""
+  }
+}

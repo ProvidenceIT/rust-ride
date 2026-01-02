@@ -13,6 +13,8 @@ mod route_import_test;
 mod segment_test;
 mod sensor_mock;
 mod streaming_test;
+mod tts_test;
 mod weather_test;
+mod workout_audio_test;
 // TODO: workout_execution_test needs API updates for CadenceTarget and SegmentType changes
 // mod workout_execution_test;

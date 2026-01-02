@@ -74,12 +74,12 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
 
     templates.insert(
         AlertType::IntervalChange,
-        CueTemplate::simple("{interval_name}, {duration}"),
+        CueTemplate::simple("{interval_name} interval, {power}, {duration}"),
     );
 
     templates.insert(
         AlertType::IntervalCountdown,
-        CueTemplate::simple("{seconds} seconds"),
+        CueTemplate::simple("{countdown}"),
     );
 
     templates.insert(
@@ -96,6 +96,36 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
     templates.insert(
         AlertType::RecoveryStart,
         CueTemplate::simple("Recovery. Take it easy."),
+    );
+
+    // Motivational messages for high-intensity intervals
+    templates.insert(
+        AlertType::MotivationalHighIntensity,
+        CueTemplate::with_alternatives(
+            "You're doing great!".to_string(),
+            vec![
+                "Keep pushing!".to_string(),
+                "Stay strong!".to_string(),
+                "You've got this!".to_string(),
+                "Keep it up!".to_string(),
+                "Great effort!".to_string(),
+                "Push through!".to_string(),
+            ],
+        ),
+    );
+
+    // Motivational messages for recovery intervals
+    templates.insert(
+        AlertType::MotivationalRecovery,
+        CueTemplate::with_alternatives(
+            "Nice work, catch your breath".to_string(),
+            vec![
+                "Great job, take it easy".to_string(),
+                "Well done, recover well".to_string(),
+                "Excellent effort, rest up".to_string(),
+                "Good work, relax and recover".to_string(),
+            ],
+        ),
     );
 
     // Power zone alerts
@@ -239,15 +269,20 @@ impl CueBuilder {
                 duration_secs,
             } => {
                 result = result.replace("{interval_name}", new_interval_name);
-                result = result.replace(
-                    "{power}",
-                    &target_power
-                        .map(|p| format!("{} watts", p))
-                        .unwrap_or_default(),
-                );
+                // Handle power with proper formatting for optional values
+                if let Some(power) = target_power {
+                    result = result.replace("{power}", &format!("{} watts", power));
+                } else {
+                    // Remove "{power}" and clean up any surrounding commas/spaces
+                    result = result.replace(", {power}", "");
+                    result = result.replace("{power}, ", "");
+                    result = result.replace("{power}", "");
+                }
                 result = result.replace("{duration}", &format_duration(*duration_secs));
             }
             AlertData::Countdown { seconds_remaining } => {
+                result = result.replace("{countdown}", &format_countdown(*seconds_remaining));
+                // Also support legacy {seconds} placeholder
                 result = result.replace("{seconds}", &seconds_remaining.to_string());
             }
             AlertData::ZoneChange {
@@ -311,6 +346,15 @@ fn format_duration(secs: u32) -> String {
     }
 }
 
+/// Format countdown seconds with proper singular/plural handling
+fn format_countdown(seconds: u32) -> String {
+    match seconds {
+        1 => "1".to_string(),
+        2 | 3 => seconds.to_string(),
+        _ => format!("{} seconds", seconds),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,11 +368,27 @@ mod tests {
     #[test]
     fn test_cue_builder_interval_change() {
         let builder = CueBuilder::new();
-        let context = AlertContext::interval_change("Threshold", Some(250), 300);
+        let context = AlertContext::interval_change("Sweet Spot", Some(260), 300);
 
         let message = builder.build(AlertType::IntervalChange, &context);
-        assert!(message.contains("Threshold"));
+        // Should produce "Sweet Spot interval, 260 watts, 5 minutes"
+        assert!(message.contains("Sweet Spot interval"));
+        assert!(message.contains("260 watts"));
         assert!(message.contains("5 minutes"));
+    }
+
+    #[test]
+    fn test_cue_builder_interval_change_without_power() {
+        let builder = CueBuilder::new();
+        let context = AlertContext::interval_change("Recovery", None, 120);
+
+        let message = builder.build(AlertType::IntervalChange, &context);
+        // Should produce "Recovery interval, 2 minutes" (no power)
+        assert!(message.contains("Recovery interval"));
+        assert!(message.contains("2 minutes"));
+        // Should not have double commas or "watts"
+        assert!(!message.contains("watts"));
+        assert!(!message.contains(", ,"));
     }
 
     #[test]
@@ -347,5 +407,156 @@ mod tests {
         assert_eq!(format_duration(60), "1 minutes");
         assert_eq!(format_duration(90), "1 minutes 30 seconds");
         assert_eq!(format_duration(3600), "1 hours 0 minutes");
+    }
+
+    #[test]
+    fn test_interval_change_various_durations() {
+        let builder = CueBuilder::new();
+
+        // Short interval (seconds)
+        let context = AlertContext::interval_change("Sprint", Some(400), 30);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("30 seconds"));
+
+        // Medium interval (minutes)
+        let context = AlertContext::interval_change("Tempo", Some(200), 600);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("10 minutes"));
+
+        // Long interval (minutes with seconds)
+        let context = AlertContext::interval_change("Endurance", Some(150), 330);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert!(message.contains("5 minutes 30 seconds"));
+    }
+
+    #[test]
+    fn test_interval_change_natural_sounding_message() {
+        let builder = CueBuilder::new();
+
+        // Test the exact format: "Sweet Spot interval, 260 watts, 5 minutes"
+        let context = AlertContext::interval_change("Sweet Spot", Some(260), 300);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert_eq!(message, "Sweet Spot interval, 260 watts, 5 minutes");
+
+        // Test with different interval name
+        let context = AlertContext::interval_change("Threshold", Some(280), 120);
+        let message = builder.build(AlertType::IntervalChange, &context);
+        assert_eq!(message, "Threshold interval, 280 watts, 2 minutes");
+    }
+
+    #[test]
+    fn test_format_countdown() {
+        // Test countdown formatting for all COUNTDOWN_THRESHOLDS [10, 5, 3, 2, 1]
+        assert_eq!(format_countdown(10), "10 seconds");
+        assert_eq!(format_countdown(5), "5 seconds");
+        assert_eq!(format_countdown(3), "3");
+        assert_eq!(format_countdown(2), "2");
+        assert_eq!(format_countdown(1), "1");
+    }
+
+    #[test]
+    fn test_cue_builder_countdown_announcements() {
+        let builder = CueBuilder::new();
+
+        // Test 10 seconds countdown
+        let context = AlertContext::countdown(10);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "10 seconds");
+
+        // Test 5 seconds countdown
+        let context = AlertContext::countdown(5);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "5 seconds");
+
+        // Test 3 seconds countdown (short form for urgency)
+        let context = AlertContext::countdown(3);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "3");
+
+        // Test 2 seconds countdown (short form for urgency)
+        let context = AlertContext::countdown(2);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "2");
+
+        // Test 1 second countdown (short form for urgency)
+        let context = AlertContext::countdown(1);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "1");
+    }
+
+    #[test]
+    fn test_motivational_high_intensity_template_exists() {
+        let templates = default_templates();
+        let template = templates.get(&AlertType::MotivationalHighIntensity);
+        assert!(template.is_some(), "MotivationalHighIntensity template should exist");
+
+        let template = template.unwrap();
+        // Should have alternatives for variety
+        assert!(!template.alternatives.is_empty(), "Should have alternatives for variety");
+        assert!(template.use_random, "Should use random selection for variety");
+
+        // Check that the main template is a motivational message
+        let main = &template.template;
+        assert!(
+            main.contains("great") || main.contains("pushing") || main.contains("strong"),
+            "Main template should be motivational"
+        );
+    }
+
+    #[test]
+    fn test_motivational_recovery_template_exists() {
+        let templates = default_templates();
+        let template = templates.get(&AlertType::MotivationalRecovery);
+        assert!(template.is_some(), "MotivationalRecovery template should exist");
+
+        let template = template.unwrap();
+        // Should have alternatives for variety
+        assert!(!template.alternatives.is_empty(), "Should have alternatives for variety");
+        assert!(template.use_random, "Should use random selection for variety");
+
+        // Check that the main template is a recovery message
+        let main = &template.template;
+        assert!(
+            main.contains("work") || main.contains("breath") || main.contains("recover"),
+            "Main template should be recovery-focused"
+        );
+    }
+
+    #[test]
+    fn test_motivational_messages_build() {
+        let builder = CueBuilder::new();
+        let context = AlertContext::simple();
+
+        // Test high intensity - should produce one of the motivational messages
+        let message = builder.build(AlertType::MotivationalHighIntensity, &context);
+        let high_intensity_messages = [
+            "You're doing great!",
+            "Keep pushing!",
+            "Stay strong!",
+            "You've got this!",
+            "Keep it up!",
+            "Great effort!",
+            "Push through!",
+        ];
+        assert!(
+            high_intensity_messages.contains(&message.as_str()),
+            "Message '{}' should be one of the high-intensity motivational messages",
+            message
+        );
+
+        // Test recovery - should produce one of the recovery messages
+        let message = builder.build(AlertType::MotivationalRecovery, &context);
+        let recovery_messages = [
+            "Nice work, catch your breath",
+            "Great job, take it easy",
+            "Well done, recover well",
+            "Excellent effort, rest up",
+            "Good work, relax and recover",
+        ];
+        assert!(
+            recovery_messages.contains(&message.as_str()),
+            "Message '{}' should be one of the recovery motivational messages",
+            message
+        );
     }
 }

@@ -20,6 +20,10 @@ pub enum AlertType {
     WorkoutComplete,
     /// Recovery interval
     RecoveryStart,
+    /// Motivational message during high-intensity interval
+    MotivationalHighIntensity,
+    /// Motivational message during recovery interval
+    MotivationalRecovery,
 
     // Power zone alerts
     /// Entered new power zone
@@ -95,6 +99,8 @@ impl AlertType {
             // Optional by default
             AlertType::IntervalCountdown
             | AlertType::RecoveryStart
+            | AlertType::MotivationalHighIntensity
+            | AlertType::MotivationalRecovery
             | AlertType::PowerTooHigh
             | AlertType::PowerTooLow
             | AlertType::PowerOnTarget
@@ -121,6 +127,8 @@ impl AlertType {
             AlertType::IntervalCountdown => "Interval Countdown",
             AlertType::WorkoutComplete => "Workout Complete",
             AlertType::RecoveryStart => "Recovery Intervals",
+            AlertType::MotivationalHighIntensity => "Motivational (High Intensity)",
+            AlertType::MotivationalRecovery => "Motivational (Recovery)",
             AlertType::PowerZoneChange => "Power Zone Changes",
             AlertType::PowerTooHigh => "Power Too High",
             AlertType::PowerTooLow => "Power Too Low",
@@ -151,7 +159,9 @@ impl AlertType {
             | AlertType::IntervalChange
             | AlertType::IntervalCountdown
             | AlertType::WorkoutComplete
-            | AlertType::RecoveryStart => AlertCategory::Workout,
+            | AlertType::RecoveryStart
+            | AlertType::MotivationalHighIntensity
+            | AlertType::MotivationalRecovery => AlertCategory::Workout,
 
             AlertType::PowerZoneChange
             | AlertType::PowerTooHigh
@@ -430,6 +440,8 @@ impl DefaultAlertManager {
             AlertType::IntervalCountdown,
             AlertType::WorkoutComplete,
             AlertType::RecoveryStart,
+            AlertType::MotivationalHighIntensity,
+            AlertType::MotivationalRecovery,
             AlertType::PowerZoneChange,
             AlertType::PowerTooHigh,
             AlertType::PowerTooLow,
