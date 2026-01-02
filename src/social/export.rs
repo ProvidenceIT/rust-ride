@@ -335,6 +335,22 @@ impl ProfileExporter {
         Ok(history)
     }
 
+    /// Export a rider profile to pretty-printed JSON.
+    ///
+    /// Builds the complete profile export and serializes it to JSON format.
+    ///
+    /// # Arguments
+    /// * `rider_id` - The UUID of the rider to export
+    ///
+    /// # Returns
+    /// A pretty-printed JSON string on success, or an error if the profile
+    /// is not found or serialization fails.
+    pub fn export_json(&self, rider_id: Uuid) -> Result<String, ProfileExportError> {
+        let export = self.build_export(rider_id)?;
+        serde_json::to_string_pretty(&export)
+            .map_err(|e| ProfileExportError::SerializationFailed(e.to_string()))
+    }
+
     /// Query the avatars table for avatar configuration.
     fn query_avatar(
         &self,
@@ -611,5 +627,103 @@ mod tests {
 
         let error = ProfileExportError::DatabaseError("test".to_string());
         assert_error(&error);
+    }
+
+    #[test]
+    fn test_export_json_pretty_printed_format() {
+        // Test that the export produces valid pretty-printed JSON
+        let profile = ProfileData {
+            display_name: "JSON Test Rider".to_string(),
+            bio: Some("Testing JSON export".to_string()),
+            ftp: Some(275),
+            total_distance_km: 1500.5,
+            total_time_hours: 75.25,
+            sharing_enabled: true,
+        };
+
+        let ftp_history = vec![FtpHistoryEntry {
+            ftp_watts: 275,
+            method: "ramp_test".to_string(),
+            confidence: "high".to_string(),
+            detected_at: Utc::now(),
+            accepted: true,
+        }];
+
+        let avatar = AvatarExport {
+            jersey_color: "#3366CC".to_string(),
+            bike_style: "road_bike".to_string(),
+            jersey_secondary: Some("#FFFFFF".to_string()),
+            helmet_color: None,
+        };
+
+        let export = ProfileExport::new(Uuid::new_v4(), profile, ftp_history, Some(avatar));
+
+        // Serialize to pretty-printed JSON (same method as export_json uses)
+        let json = serde_json::to_string_pretty(&export).expect("Serialization should succeed");
+
+        // Verify pretty-printing (contains newlines and indentation)
+        assert!(json.contains('\n'), "JSON should be pretty-printed with newlines");
+        assert!(json.contains("  "), "JSON should have indentation");
+
+        // Verify all expected fields are present
+        assert!(json.contains("\"export_version\""));
+        assert!(json.contains("\"1.0\""));
+        assert!(json.contains("\"exported_at\""));
+        assert!(json.contains("\"rider_id\""));
+        assert!(json.contains("\"profile\""));
+        assert!(json.contains("\"display_name\""));
+        assert!(json.contains("\"JSON Test Rider\""));
+        assert!(json.contains("\"ftp_history\""));
+        assert!(json.contains("\"ftp_watts\""));
+        assert!(json.contains("275"));
+        assert!(json.contains("\"avatar\""));
+        assert!(json.contains("\"jersey_color\""));
+        assert!(json.contains("\"#3366CC\""));
+
+        // Verify it can be parsed back
+        let parsed: ProfileExport = serde_json::from_str(&json).expect("Should parse back");
+        assert_eq!(parsed.profile.display_name, "JSON Test Rider");
+        assert_eq!(parsed.profile.ftp, Some(275));
+        assert_eq!(parsed.ftp_history.len(), 1);
+        assert!(parsed.avatar.is_some());
+    }
+
+    #[test]
+    fn test_export_json_handles_all_optional_fields() {
+        // Test export with minimal data (no bio, no FTP, no history, no avatar)
+        let profile = ProfileData {
+            display_name: "Minimal Rider".to_string(),
+            bio: None,
+            ftp: None,
+            total_distance_km: 0.0,
+            total_time_hours: 0.0,
+            sharing_enabled: false,
+        };
+
+        let export = ProfileExport::new(Uuid::new_v4(), profile, vec![], None);
+
+        let json = serde_json::to_string_pretty(&export).expect("Serialization should succeed");
+
+        // Verify null values are serialized correctly
+        assert!(json.contains("\"bio\": null") || json.contains("\"bio\":null"));
+        assert!(json.contains("\"ftp\": null") || json.contains("\"ftp\":null"));
+        assert!(json.contains("\"avatar\": null") || json.contains("\"avatar\":null"));
+        assert!(json.contains("\"ftp_history\": []") || json.contains("\"ftp_history\":[]"));
+
+        // Verify round-trip
+        let parsed: ProfileExport = serde_json::from_str(&json).expect("Should parse back");
+        assert_eq!(parsed.profile.bio, None);
+        assert_eq!(parsed.profile.ftp, None);
+        assert!(parsed.ftp_history.is_empty());
+        assert!(parsed.avatar.is_none());
+    }
+
+    #[test]
+    fn test_serialization_error_type() {
+        // Verify the SerializationFailed error variant is correctly typed
+        let error = ProfileExportError::SerializationFailed("JSON error".to_string());
+        let msg = error.to_string();
+        assert!(msg.contains("Serialization failed"));
+        assert!(msg.contains("JSON error"));
     }
 }
