@@ -8,6 +8,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::sync::RwLock;
 
 /// OAuth authorization URL response
@@ -535,20 +536,49 @@ impl OAuthHandler for DefaultOAuthHandler {
 }
 
 /// Keyring-based credential store
-#[allow(dead_code)]
+///
+/// Stores OAuth tokens securely using the OS credential store:
+/// - Windows: Windows Credential Manager
+/// - macOS: macOS Keychain
+/// - Linux: Secret Service (via libsecret)
 pub struct KeyringCredentialStore {
     service_name: String,
+    /// Cache of which platforms have credentials (for fast synchronous checks)
+    credentials_cache: Mutex<HashMap<SyncPlatform, bool>>,
 }
 
 impl KeyringCredentialStore {
+    /// Create a new keyring credential store.
+    ///
+    /// # Arguments
+    /// * `service_name` - The service name used for keyring entries (e.g., "RustRide")
     pub fn new(service_name: impl Into<String>) -> Self {
         Self {
             service_name: service_name.into(),
+            credentials_cache: Mutex::new(HashMap::new()),
         }
     }
 
+    /// Get the keyring username for a platform.
     fn key_for_platform(&self, platform: SyncPlatform) -> String {
         format!("{:?}", platform).to_lowercase()
+    }
+
+    /// Create a keyring entry for the given platform.
+    fn entry_for_platform(
+        &self,
+        platform: SyncPlatform,
+    ) -> Result<keyring::Entry, SyncError> {
+        let key = self.key_for_platform(platform);
+        keyring::Entry::new(&self.service_name, &key)
+            .map_err(|e| SyncError::CredentialError(format!("Failed to create keyring entry: {}", e)))
+    }
+
+    /// Update the credentials cache.
+    fn update_cache(&self, platform: SyncPlatform, has_creds: bool) {
+        if let Ok(mut cache) = self.credentials_cache.lock() {
+            cache.insert(platform, has_creds);
+        }
     }
 }
 
@@ -558,53 +588,126 @@ impl CredentialStore for KeyringCredentialStore {
         platform: SyncPlatform,
         tokens: &TokenResponse,
     ) -> Result<(), SyncError> {
-        let _key = self.key_for_platform(platform);
-
         // Serialize tokens to JSON
-        let _json =
-            serde_json::to_string(tokens).map_err(|e| SyncError::CredentialError(e.to_string()))?;
+        let json = serde_json::to_string(tokens)
+            .map_err(|e| SyncError::CredentialError(format!("Failed to serialize tokens: {}", e)))?;
 
-        // TODO: Use keyring crate to store
-        // let entry = keyring::Entry::new(&self.service_name, &key)?;
-        // entry.set_password(&json)?;
+        // Create keyring entry and store
+        let entry = self.entry_for_platform(platform)?;
+        entry
+            .set_password(&json)
+            .map_err(|e| SyncError::CredentialError(format!("Failed to store credentials: {}", e)))?;
 
-        tracing::debug!("Stored tokens for {:?}", platform);
+        // Update cache
+        self.update_cache(platform, true);
+
+        tracing::debug!("Stored tokens for {:?} in OS keyring", platform);
 
         Ok(())
     }
 
     async fn get_tokens(&self, platform: SyncPlatform) -> Result<Option<TokenResponse>, SyncError> {
-        let _key = self.key_for_platform(platform);
+        let entry = self.entry_for_platform(platform)?;
 
-        // TODO: Use keyring crate to retrieve
-        // let entry = keyring::Entry::new(&self.service_name, &key)?;
-        // match entry.get_password() {
-        //     Ok(json) => {
-        //         let tokens = serde_json::from_str(&json)?;
-        //         Ok(Some(tokens))
-        //     }
-        //     Err(keyring::Error::NoEntry) => Ok(None),
-        //     Err(e) => Err(SyncError::CredentialError(e.to_string())),
-        // }
+        match entry.get_password() {
+            Ok(json) => {
+                // Parse stored JSON back to TokenResponse
+                let tokens: StoredTokenResponse = serde_json::from_str(&json)
+                    .map_err(|e| SyncError::CredentialError(format!("Failed to parse stored tokens: {}", e)))?;
 
-        Ok(None)
+                // Convert to TokenResponse
+                let token_response = tokens.into_token_response()?;
+
+                // Update cache
+                self.update_cache(platform, true);
+
+                tracing::debug!("Retrieved tokens for {:?} from OS keyring", platform);
+                Ok(Some(token_response))
+            }
+            Err(keyring::Error::NoEntry) => {
+                // No credentials stored - this is not an error
+                self.update_cache(platform, false);
+                tracing::debug!("No tokens found for {:?} in OS keyring", platform);
+                Ok(None)
+            }
+            Err(e) => {
+                // Other keyring errors
+                tracing::error!("Failed to retrieve tokens for {:?}: {}", platform, e);
+                Err(SyncError::CredentialError(format!(
+                    "Failed to retrieve credentials: {}",
+                    e
+                )))
+            }
+        }
     }
 
     async fn delete_tokens(&self, platform: SyncPlatform) -> Result<(), SyncError> {
-        let _key = self.key_for_platform(platform);
+        let entry = self.entry_for_platform(platform)?;
 
-        // TODO: Use keyring crate to delete
-        // let entry = keyring::Entry::new(&self.service_name, &key)?;
-        // entry.delete_password()?;
-
-        tracing::debug!("Deleted tokens for {:?}", platform);
-
-        Ok(())
+        match entry.delete_credential() {
+            Ok(()) => {
+                self.update_cache(platform, false);
+                tracing::debug!("Deleted tokens for {:?} from OS keyring", platform);
+                Ok(())
+            }
+            Err(keyring::Error::NoEntry) => {
+                // Already deleted or never existed - not an error
+                self.update_cache(platform, false);
+                tracing::debug!("No tokens to delete for {:?}", platform);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Failed to delete tokens for {:?}: {}", platform, e);
+                Err(SyncError::CredentialError(format!(
+                    "Failed to delete credentials: {}",
+                    e
+                )))
+            }
+        }
     }
 
-    fn has_credentials(&self, _platform: SyncPlatform) -> bool {
-        // TODO: Check keyring
-        false
+    fn has_credentials(&self, platform: SyncPlatform) -> bool {
+        // First check cache for fast lookup
+        if let Ok(cache) = self.credentials_cache.lock() {
+            if let Some(&has_creds) = cache.get(&platform) {
+                return has_creds;
+            }
+        }
+
+        // Cache miss - check keyring directly
+        let has_creds = match self.entry_for_platform(platform) {
+            Ok(entry) => entry.get_password().is_ok(),
+            Err(_) => false,
+        };
+
+        // Update cache
+        self.update_cache(platform, has_creds);
+
+        has_creds
+    }
+}
+
+/// Stored token response format for JSON serialization/deserialization.
+/// This mirrors TokenResponse but with string dates for JSON compatibility.
+#[derive(Debug, Deserialize)]
+struct StoredTokenResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: String, // RFC3339 formatted date string
+}
+
+impl StoredTokenResponse {
+    /// Convert to TokenResponse, parsing the date string.
+    fn into_token_response(self) -> Result<TokenResponse, SyncError> {
+        let expires_at = DateTime::parse_from_rfc3339(&self.expires_at)
+            .map_err(|e| SyncError::CredentialError(format!("Invalid expires_at date: {}", e)))?
+            .with_timezone(&Utc);
+
+        Ok(TokenResponse {
+            access_token: self.access_token,
+            refresh_token: self.refresh_token,
+            expires_at,
+        })
     }
 }
 
@@ -895,5 +998,138 @@ mod tests {
 
         let result = handler.refresh_token(SyncPlatform::Strava).await;
         assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    // === KeyringCredentialStore Tests ===
+
+    #[test]
+    fn test_keyring_store_key_for_platform() {
+        let store = KeyringCredentialStore::new("TestService");
+        assert_eq!(store.key_for_platform(SyncPlatform::Strava), "strava");
+        assert_eq!(
+            store.key_for_platform(SyncPlatform::GarminConnect),
+            "garminconnect"
+        );
+        assert_eq!(
+            store.key_for_platform(SyncPlatform::TrainingPeaks),
+            "trainingpeaks"
+        );
+    }
+
+    #[test]
+    fn test_token_response_serialization() {
+        let token = TokenResponse {
+            access_token: "test_access_token".to_string(),
+            refresh_token: Some("test_refresh_token".to_string()),
+            expires_at: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&token).expect("Serialization should succeed");
+
+        // Verify JSON contains expected fields
+        assert!(json.contains("test_access_token"));
+        assert!(json.contains("test_refresh_token"));
+        assert!(json.contains("2025-06-15"));
+    }
+
+    #[test]
+    fn test_token_response_serialization_without_refresh_token() {
+        let token = TokenResponse {
+            access_token: "test_access_token".to_string(),
+            refresh_token: None,
+            expires_at: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
+        };
+
+        let json = serde_json::to_string(&token).expect("Serialization should succeed");
+        assert!(json.contains("test_access_token"));
+        assert!(json.contains("null")); // refresh_token should be null
+    }
+
+    #[test]
+    fn test_stored_token_response_deserialization() {
+        let json = r#"{
+            "access_token": "my_access_token",
+            "refresh_token": "my_refresh_token",
+            "expires_at": "2025-06-15T12:00:00+00:00"
+        }"#;
+
+        let stored: StoredTokenResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+        let token = stored
+            .into_token_response()
+            .expect("Conversion should succeed");
+
+        assert_eq!(token.access_token, "my_access_token");
+        assert_eq!(token.refresh_token, Some("my_refresh_token".to_string()));
+        assert_eq!(
+            token.expires_at,
+            Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_stored_token_response_deserialization_null_refresh() {
+        let json = r#"{
+            "access_token": "my_access_token",
+            "refresh_token": null,
+            "expires_at": "2025-06-15T12:00:00+00:00"
+        }"#;
+
+        let stored: StoredTokenResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+        let token = stored
+            .into_token_response()
+            .expect("Conversion should succeed");
+
+        assert_eq!(token.access_token, "my_access_token");
+        assert_eq!(token.refresh_token, None);
+    }
+
+    #[test]
+    fn test_stored_token_response_invalid_date() {
+        let json = r#"{
+            "access_token": "my_access_token",
+            "refresh_token": "my_refresh_token",
+            "expires_at": "not-a-valid-date"
+        }"#;
+
+        let stored: StoredTokenResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+        let result = stored.into_token_response();
+
+        assert!(matches!(result, Err(SyncError::CredentialError(_))));
+    }
+
+    #[test]
+    fn test_keyring_store_creation() {
+        let store = KeyringCredentialStore::new("TestService");
+        // Initially, credentials cache should be empty
+        assert!(!store.has_credentials(SyncPlatform::Strava));
+    }
+
+    #[test]
+    fn test_token_roundtrip_serialization() {
+        // Create a token, serialize it, then deserialize and verify
+        let original = TokenResponse {
+            access_token: "access123".to_string(),
+            refresh_token: Some("refresh456".to_string()),
+            expires_at: Utc.with_ymd_and_hms(2025, 12, 31, 23, 59, 59).unwrap(),
+        };
+
+        // Serialize (this is what store_tokens does)
+        let json = serde_json::to_string(&original).expect("Serialization should succeed");
+
+        // Deserialize (this is what get_tokens does)
+        let stored: StoredTokenResponse =
+            serde_json::from_str(&json).expect("Deserialization should succeed");
+        let restored = stored
+            .into_token_response()
+            .expect("Conversion should succeed");
+
+        // Verify roundtrip
+        assert_eq!(original.access_token, restored.access_token);
+        assert_eq!(original.refresh_token, restored.refresh_token);
+        assert_eq!(original.expires_at, restored.expires_at);
     }
 }
