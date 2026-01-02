@@ -1,0 +1,177 @@
+{
+  "subtasks": {
+    "1.1": {
+      "attempts": [
+        {
+          "session": 2,
+          "timestamp": "2026-01-02T22:01:11.735349",
+          "approach": "Implemented: Update the export dialog in ride_summary.rs to include FIT format as a radio option alongside TCX an",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "1.2": {
+      "attempts": [
+        {
+          "session": 3,
+          "timestamp": "2026-01-02T22:04:58.147182",
+          "approach": "Implemented: Remove the duplicate local ExportFormat enum in ride_detail.rs and use crate::recording::types::Expo",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "1.3": {
+      "attempts": [
+        {
+          "session": 4,
+          "timestamp": "2026-01-02T22:06:57.169353",
+          "approach": "Implemented: Update the recommendation text in export dialogs to mention FIT as the preferred format for Garmin C",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.1": {
+      "attempts": [
+        {
+          "session": 5,
+          "timestamp": "2026-01-02T22:12:54.407344",
+          "approach": "Implemented: Check and update the main application export handler to properly route FIT export requests to the ex",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.2": {
+      "attempts": [
+        {
+          "session": 6,
+          "timestamp": "2026-01-02T22:15:55.596711",
+          "approach": "Implemented: Ensure the daemon IPC handler properly processes FIT format requests from CLI and routes to the corr",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "3.1": {
+      "attempts": [
+        {
+          "session": 7,
+          "timestamp": "2026-01-02T22:22:40.409438",
+          "approach": "Implemented: Enhance the FIT exporter to support multiple laps based on workout segments. Currently only writes a",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "3.2": {
+      "attempts": [
+        {
+          "session": 8,
+          "timestamp": "2026-01-02T22:27:58.201510",
+          "approach": "Implemented: If workout_id is present on ride, load workout structure and include interval markers as lap boundar",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.1": {
+      "attempts": [
+        {
+          "session": 9,
+          "timestamp": "2026-01-02T22:32:45.759293",
+          "approach": "Implemented: Create tests/unit/fit_export_test.rs with comprehensive tests for FIT export including header valida",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.2": {
+      "attempts": [
+        {
+          "session": 10,
+          "timestamp": "2026-01-02T22:36:41.188966",
+          "approach": "Implemented: Create a test that exports a ride to FIT, then parses it back using fitparser crate to verify the ex",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.3": {
+      "attempts": [
+        {
+          "session": 11,
+          "timestamp": "2026-01-02T22:41:03.649544",
+          "approach": "Implemented: Test that cycling dynamics fields (L/R balance, torque effectiveness, pedal smoothness, power phase)",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.4": {
+      "attempts": [
+        {
+          "session": 12,
+          "timestamp": "2026-01-02T22:46:09.484863",
+          "approach": "Implemented: Test that workouts with multiple intervals export correctly with proper lap markers.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.1": {
+      "attempts": [
+        {
+          "session": 13,
+          "timestamp": "2026-01-02T22:53:49.888589",
+          "approach": "Implemented: Create a script or test that validates exported FIT files using Garmin's FIT SDK validator tool (or ",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.2": {
+      "attempts": [
+        {
+          "session": 14,
+          "timestamp": "2026-01-02T22:57:16.941163",
+          "approach": "Implemented: Manual verification step - export a test ride to FIT and confirm it uploads successfully to Garmin C",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.3": {
+      "attempts": [
+        {
+          "session": 15,
+          "timestamp": "2026-01-02T22:59:38.326220",
+          "approach": "Implemented: Document completion of FIT export feature with summary of changes and test results.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    }
+  },
+  "stuck_subtasks": [],
+  "metadata": {
+    "created_at": "2026-01-02T21:54:53.593390",
+    "last_updated": "2026-01-02T22:59:38.326220"
+  }
+}
