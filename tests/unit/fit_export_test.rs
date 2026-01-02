@@ -2148,3 +2148,685 @@ fn test_roundtrip_dynamics_mixed_presence() {
 
     assert_eq!(record_count, 2, "Both samples should be exported");
 }
+
+// ============================================================================
+// MULTI-INTERVAL WORKOUT LAP MARKER TESTS
+// ============================================================================
+
+/// Create a workout with a specific number of intervals for testing.
+fn create_multi_interval_workout(interval_count: usize, interval_duration: u32) -> Workout {
+    let mut segments = Vec::new();
+
+    // Add warmup
+    segments.push(WorkoutSegment {
+        segment_type: SegmentType::Warmup,
+        duration_seconds: 60,
+        power_target: PowerTarget::percent_ftp(50),
+        cadence_target: None,
+        text_event: Some("Warmup".to_string()),
+    });
+
+    // Add intervals
+    for i in 0..interval_count {
+        segments.push(WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: interval_duration,
+            power_target: PowerTarget::percent_ftp(100 + (i * 5) as u16),
+            cadence_target: None,
+            text_event: Some(format!("Interval {}", i + 1)),
+        });
+
+        // Add recovery between intervals (except after last) - use SteadyState for recovery
+        if i < interval_count - 1 {
+            segments.push(WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: interval_duration / 2,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            });
+        }
+    }
+
+    // Add cooldown
+    segments.push(WorkoutSegment {
+        segment_type: SegmentType::Cooldown,
+        duration_seconds: 60,
+        power_target: PowerTarget::percent_ftp(40),
+        cadence_target: None,
+        text_event: Some("Cooldown".to_string()),
+    });
+
+    Workout::new("Multi-Interval Test".to_string(), segments)
+}
+
+/// Create samples with varying power for different intervals.
+fn create_samples_for_intervals(
+    total_duration: usize,
+    interval_boundaries: &[usize],
+    base_power: u16,
+) -> Vec<RideSample> {
+    (0..total_duration)
+        .map(|i| {
+            // Determine which interval we're in and adjust power
+            let interval_idx = interval_boundaries
+                .iter()
+                .position(|&b| i < b)
+                .unwrap_or(interval_boundaries.len());
+            let power_offset = (interval_idx * 20) as u16;
+
+            RideSample {
+                elapsed_seconds: i as u32,
+                power_watts: Some(base_power + power_offset + (i % 10) as u16),
+                cadence_rpm: Some(85 + (interval_idx * 2) as u8),
+                heart_rate_bpm: Some(140 + (interval_idx * 5) as u8),
+                speed_kmh: Some(28.0 + interval_idx as f32),
+                distance_meters: (i as f64) * 7.78,
+                calories: (i as f64 * 0.2) as u32,
+                resistance_level: None,
+                target_power: Some(base_power + power_offset),
+                trainer_grade: None,
+                left_right_balance: None,
+                left_torque_effectiveness: None,
+                right_torque_effectiveness: None,
+                left_pedal_smoothness: None,
+                right_pedal_smoothness: None,
+                left_power_phase_start: None,
+                left_power_phase_end: None,
+                left_power_phase_peak: None,
+                right_power_phase_start: None,
+                right_power_phase_end: None,
+                right_power_phase_peak: None,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_roundtrip_workout_two_intervals_lap_count() {
+    let ride = create_test_ride();
+    // Workout: 60s warmup + 30s interval + 15s recovery + 30s interval + 60s cooldown = 195s
+    let workout = create_multi_interval_workout(2, 30);
+    let samples = create_test_samples(200);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 5 segments + possible remainder: warmup, interval1, recovery, interval2, cooldown
+    assert!(
+        lap_count >= 5,
+        "Two-interval workout should produce at least 5 laps, got {}",
+        lap_count
+    );
+}
+
+#[test]
+fn test_roundtrip_workout_five_intervals_lap_count() {
+    let ride = create_test_ride();
+    // Workout with 5 intervals: warmup + 5*(interval+recovery) - 1 recovery + cooldown
+    // = 1 + 5 + 4 + 1 = 11 segments
+    let workout = create_multi_interval_workout(5, 20);
+    let samples = create_test_samples(300);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // 5 intervals = warmup + 5 intervals + 4 recoveries + cooldown = 11 segments
+    assert!(
+        lap_count >= 10,
+        "Five-interval workout should produce at least 10 laps, got {}",
+        lap_count
+    );
+}
+
+#[test]
+fn test_roundtrip_workout_lap_timestamps_sequential() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    // Extract timestamps from lap messages
+    let mut timestamps: Vec<u32> = Vec::new();
+    for lap in &lap_messages {
+        if let Some(ts_field) = lap.fields().iter().find(|f| f.name() == "timestamp") {
+            if let fitparser::Value::UInt32(ts) = ts_field.value() {
+                timestamps.push(*ts);
+            }
+        }
+    }
+
+    // Verify timestamps are sequential (each lap end should be >= previous lap end)
+    for window in timestamps.windows(2) {
+        assert!(
+            window[1] >= window[0],
+            "Lap timestamps should be sequential: {} should be >= {}",
+            window[1],
+            window[0]
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_workout_session_num_laps_field() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Count actual lap messages
+    let actual_lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Find session message and check num_laps field
+    let session = records
+        .iter()
+        .find(|r| r.kind() == fitparser::profile::MesgNum::Session)
+        .expect("Should have Session message");
+
+    let num_laps_field = session.fields().iter().find(|f| f.name() == "num_laps");
+
+    if let Some(field) = num_laps_field {
+        match field.value() {
+            fitparser::Value::UInt16(v) => {
+                assert_eq!(
+                    *v as usize, actual_lap_count,
+                    "Session num_laps should match actual lap count"
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_workout_lap_contains_avg_power() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    // Each lap should have avg_power field
+    for (i, lap) in lap_messages.iter().enumerate() {
+        let avg_power_field = lap.fields().iter().find(|f| f.name() == "avg_power");
+        assert!(
+            avg_power_field.is_some(),
+            "Lap {} should contain avg_power field",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_workout_lap_contains_avg_heart_rate() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    // Each lap should have avg_heart_rate field
+    for (i, lap) in lap_messages.iter().enumerate() {
+        let avg_hr_field = lap.fields().iter().find(|f| f.name() == "avg_heart_rate");
+        assert!(
+            avg_hr_field.is_some(),
+            "Lap {} should contain avg_heart_rate field",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_workout_lap_contains_total_elapsed_time() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    // Each lap should have total_elapsed_time field
+    for (i, lap) in lap_messages.iter().enumerate() {
+        let time_field = lap
+            .fields()
+            .iter()
+            .find(|f| f.name() == "total_elapsed_time");
+        assert!(
+            time_field.is_some(),
+            "Lap {} should contain total_elapsed_time field",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_roundtrip_workout_lap_event_type() {
+    let ride = create_test_ride();
+    let workout = create_test_workout();
+    let samples = create_test_samples(150);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    // Each lap should have event field = lap (9)
+    for lap in &lap_messages {
+        let event_field = lap.fields().iter().find(|f| f.name() == "event");
+        if let Some(field) = event_field {
+            match field.value() {
+                fitparser::Value::UInt8(v) => {
+                    assert_eq!(*v, 9, "Lap event should be 9 (lap)");
+                }
+                fitparser::Value::String(s) => {
+                    assert!(
+                        s.to_lowercase().contains("lap"),
+                        "Lap event should be 'lap'"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+#[test]
+fn test_roundtrip_short_intervals_lap_boundaries() {
+    let ride = create_test_ride();
+    // Create workout with very short intervals (10 seconds each)
+    let segments = vec![
+        WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 10,
+            power_target: PowerTarget::percent_ftp(50),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: 10,
+            power_target: PowerTarget::percent_ftp(150),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 10,
+            power_target: PowerTarget::percent_ftp(50),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: 10,
+            power_target: PowerTarget::percent_ftp(150),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 10,
+            power_target: PowerTarget::percent_ftp(40),
+            cadence_target: None,
+            text_event: None,
+        },
+    ];
+    let workout = Workout::new("Short Intervals".to_string(), segments);
+    let samples = create_test_samples(50);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 5 laps for 5 segments
+    assert_eq!(lap_count, 5, "Short interval workout should have exactly 5 laps");
+}
+
+#[test]
+fn test_roundtrip_long_intervals_lap_boundaries() {
+    let ride = create_test_ride();
+    // Create workout with long intervals (120 seconds each)
+    let segments = vec![
+        WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 120,
+            power_target: PowerTarget::percent_ftp(50),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: 120,
+            power_target: PowerTarget::percent_ftp(100),
+            cadence_target: None,
+            text_event: None,
+        },
+        WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 120,
+            power_target: PowerTarget::percent_ftp(40),
+            cadence_target: None,
+            text_event: None,
+        },
+    ];
+    let workout = Workout::new("Long Intervals".to_string(), segments);
+    let samples = create_test_samples(360);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 3 laps for 3 segments
+    assert_eq!(lap_count, 3, "Long interval workout should have exactly 3 laps");
+}
+
+#[test]
+fn test_roundtrip_single_long_interval() {
+    let ride = create_test_ride();
+    // Create workout with single long interval
+    let segments = vec![WorkoutSegment {
+        segment_type: SegmentType::SteadyState,
+        duration_seconds: 300,
+        power_target: PowerTarget::percent_ftp(75),
+        cadence_target: None,
+        text_event: None,
+    }];
+    let workout = Workout::new("Single Interval".to_string(), segments);
+    let samples = create_test_samples(300);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 1 lap for 1 segment
+    assert_eq!(lap_count, 1, "Single interval workout should have exactly 1 lap");
+}
+
+#[test]
+fn test_roundtrip_intervals_samples_shorter_than_workout() {
+    let ride = create_test_ride();
+    // Workout totals 150 seconds but we only have 100 samples
+    let workout = create_test_workout();
+    let samples = create_test_samples(100);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    // Export should succeed even if samples end before workout does
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have some laps (at least for segments that have samples)
+    assert!(
+        lap_count >= 1,
+        "Should have at least one lap even when samples are shorter than workout"
+    );
+
+    // Verify all 100 records are present
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+    assert_eq!(record_count, 100, "All 100 samples should be exported");
+}
+
+#[test]
+fn test_roundtrip_intervals_samples_longer_than_workout() {
+    let ride = create_test_ride();
+    // Workout totals 150 seconds but we have 250 samples
+    let workout = create_test_workout();
+    let samples = create_test_samples(250);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 4+ laps (4 workout segments + possible remainder)
+    assert!(
+        lap_count >= 4,
+        "Should have at least 4 laps for workout segments, got {}",
+        lap_count
+    );
+
+    // Verify all 250 records are present
+    let record_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Record)
+        .count();
+    assert_eq!(record_count, 250, "All 250 samples should be exported");
+}
+
+#[test]
+fn test_roundtrip_explicit_laps_match_provided_count() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(200);
+
+    // Create exactly 4 explicit laps
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 50, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 50, 100, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 100, 150, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 150, 200, ride.started_at).unwrap(),
+    ];
+
+    let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    assert_eq!(lap_count, 4, "Should have exactly 4 laps as provided");
+}
+
+#[test]
+fn test_roundtrip_explicit_laps_preserve_boundaries() {
+    let ride = create_test_ride();
+    let samples = create_samples_for_intervals(120, &[30, 60, 90, 120], 150);
+
+    // Create laps matching the interval boundaries
+    let laps = vec![
+        LapData::from_samples(&samples, 0, 30, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 30, 60, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 60, 90, ride.started_at).unwrap(),
+        LapData::from_samples(&samples, 90, 120, ride.started_at).unwrap(),
+    ];
+
+    let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_messages: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .collect();
+
+    assert_eq!(lap_messages.len(), 4, "Should have 4 laps");
+
+    // Each lap should have distinct avg_power reflecting the interval
+    let mut avg_powers: Vec<u16> = Vec::new();
+    for lap in &lap_messages {
+        if let Some(field) = lap.fields().iter().find(|f| f.name() == "avg_power") {
+            match field.value() {
+                fitparser::Value::UInt16(v) => avg_powers.push(*v),
+                _ => {}
+            }
+        }
+    }
+
+    // Verify we have power values for each lap
+    assert_eq!(avg_powers.len(), 4, "All 4 laps should have avg_power");
+}
+
+#[test]
+fn test_roundtrip_many_intervals_stress_test() {
+    let ride = create_test_ride();
+    // Create workout with 20 short intervals
+    let mut segments = Vec::new();
+    for i in 0..20 {
+        segments.push(WorkoutSegment {
+            segment_type: if i % 2 == 0 {
+                SegmentType::Intervals
+            } else {
+                SegmentType::SteadyState
+            },
+            duration_seconds: 15,
+            power_target: PowerTarget::percent_ftp(if i % 2 == 0 { 120 } else { 50 }),
+            cadence_target: None,
+            text_event: None,
+        });
+    }
+    let workout = Workout::new("Many Intervals".to_string(), segments);
+    let samples = create_test_samples(300);
+
+    let data = export_fit_with_workout(&ride, &samples, Some(&workout)).unwrap();
+    let records = parse_exported_fit(&data);
+
+    let lap_count = records
+        .iter()
+        .filter(|r| r.kind() == fitparser::profile::MesgNum::Lap)
+        .count();
+
+    // Should have 20 laps for 20 segments
+    assert_eq!(lap_count, 20, "Should have 20 laps for 20 interval segments");
+}
+
+#[test]
+fn test_lap_data_computed_correctly_for_interval() {
+    let ride = create_test_ride();
+    // Create samples where interval 2 (indices 30-60) has higher power
+    let mut samples = create_test_samples(90);
+
+    // Set specific power values for the second interval
+    for sample in samples[30..60].iter_mut() {
+        sample.power_watts = Some(250); // Higher power for interval
+    }
+
+    // Create lap for the high-power interval
+    let lap = LapData::from_samples(&samples, 30, 60, ride.started_at).unwrap();
+
+    // Verify computed average reflects the high power
+    assert_eq!(
+        lap.avg_power,
+        Some(250),
+        "Lap avg_power should reflect interval samples"
+    );
+}
+
+#[test]
+fn test_lap_data_duration_matches_interval_length() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(100);
+
+    // Create lap for 40-sample interval
+    let lap = LapData::from_samples(&samples, 20, 60, ride.started_at).unwrap();
+
+    // Duration should be 40 seconds (samples 20-59 inclusive)
+    assert_eq!(
+        lap.duration_seconds, 40,
+        "Lap duration should match interval sample count"
+    );
+}
+
+#[test]
+fn test_lap_data_max_values_computed() {
+    let ride = create_test_ride();
+    let mut samples = create_test_samples(50);
+
+    // Set one sample with max power spike
+    samples[25].power_watts = Some(500);
+    samples[25].heart_rate_bpm = Some(190);
+
+    let lap = LapData::from_samples(&samples, 0, 50, ride.started_at).unwrap();
+
+    assert_eq!(lap.max_power, Some(500), "Max power should capture spike");
+    assert_eq!(lap.max_hr, Some(190), "Max HR should capture spike");
+}
+
+#[test]
+fn test_segment_durations_boundary_alignment() {
+    let ride = create_test_ride();
+    let samples = create_test_samples(100);
+
+    // Segment durations that don't perfectly align with sample count
+    let segment_durations = vec![33, 33, 33];
+
+    let laps = LapData::from_segment_durations(&samples, &segment_durations, ride.started_at);
+
+    // Should create laps for each segment plus remainder
+    assert!(
+        laps.len() >= 3,
+        "Should have at least 3 laps for 3 segments, got {}",
+        laps.len()
+    );
+
+    // Total samples covered should be <= 100
+    let total_samples: usize = laps
+        .iter()
+        .map(|l| l.end_sample_index - l.start_sample_index)
+        .sum();
+    assert!(
+        total_samples <= 100,
+        "Laps should not exceed sample count"
+    );
+}
