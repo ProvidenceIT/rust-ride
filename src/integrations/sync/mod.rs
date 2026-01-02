@@ -16,7 +16,7 @@ use uuid::Uuid;
 // Re-export main types
 pub use oauth::{CallbackResult, CredentialStore, OAuthCallbackServer, OAuthHandler};
 pub use service::{
-    create_sync_service, PlatformStatus, SyncMessage, SyncService, SyncServiceHandle,
+    create_sync_service, PlatformStatus, SyncEvent, SyncMessage, SyncService, SyncServiceHandle,
     UploadQueueEntry,
 };
 

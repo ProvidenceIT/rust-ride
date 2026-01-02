@@ -1,0 +1,77 @@
+# Build Progress: Complete Strava OAuth Sync
+
+## Status: Phase 2 In Progress
+
+## Implementation Plan Created
+Date: 2026-01-02
+
+### Summary
+The implementation plan has been created with 4 phases and 23 subtasks total.
+
+### Completed Subtasks
+
+**Phase 1: Core OAuth & API Implementation** (7/7 completed ✓)
+- [x] 1.1: Implement real OAuth token exchange
+- [x] 1.2: Implement token refresh functionality
+- [x] 1.3: Implement secure credential storage with keyring
+- [x] 1.4: Implement Strava activity upload API
+- [x] 1.5: Implement upload status polling
+- [x] 1.6: Implement athlete profile fetch
+- [x] 1.7: Implement Strava deauthorization
+
+**Phase 2: Sync Service & Auto-Upload** (2/6 completed)
+- [x] 2.1: Create SyncService struct with platform manager
+- [x] 2.2: Implement automatic token refresh scheduler
+- [ ] 2.3: Implement ride completion hook for auto-upload
+- [ ] 2.4: Implement upload queue with persistence
+- [ ] 2.5: Implement upload status tracking in database
+- [ ] 2.6: Implement failed upload retry mechanism
+
+**Phase 3: UI Integration & Status Display** (0/5 pending)
+- [ ] 3.1: Create Strava connection settings screen
+- [ ] 3.2: Add auto-sync toggle to settings
+- [ ] 3.3: Show upload status in ride history
+- [ ] 3.4: Add manual retry button for failed uploads
+- [ ] 3.5: Show sync notification on ride completion
+
+**Phase 4: Testing & Polish** (0/5 pending)
+- [ ] 4.1: Add unit tests for OAuth flow
+- [ ] 4.2: Add unit tests for Strava client
+- [ ] 4.3: Add integration tests for sync service
+- [ ] 4.4: Handle edge cases and error scenarios
+- [ ] 4.5: Add Strava configuration documentation
+
+## Latest Changes (2026-01-02)
+
+### Subtask 2.2: Automatic Token Refresh Scheduler
+Implemented background task that proactively refreshes OAuth tokens before they expire.
+
+**Features Added:**
+- Background scheduler runs every 60 seconds (TOKEN_REFRESH_CHECK_INTERVAL_SECS)
+- Proactively refreshes tokens 5 minutes before expiry (TOKEN_REFRESH_BUFFER_MINUTES)
+- Retry logic with exponential backoff (30 second delay between retries)
+- Maximum 3 consecutive failures before requiring re-authorization
+- SyncEvent enum for notifying UI of token events:
+  - TokenRefreshed: Successful refresh with new expiry time
+  - TokenRefreshFailed: Failed refresh with error and retry count
+  - ReauthorizationRequired: User needs to re-authorize
+  - PlatformConnected: Platform was connected
+  - PlatformDisconnected: Platform was disconnected
+- TokenRefreshState tracking per platform for failure count and last attempt
+- Event subscription via SyncServiceHandle.subscribe_events()
+
+**Files Modified:**
+- src/integrations/sync/service.rs
+- src/integrations/sync/mod.rs (exported SyncEvent)
+
+### Existing Infrastructure Identified
+- StravaClient stub in src/integrations/sync/strava.rs
+- OAuth traits and handlers in src/integrations/sync/oauth.rs
+- KeyringCredentialStore stub ready for implementation
+- OAuthCallbackServer working for receiving OAuth callbacks
+- Database tables platform_syncs and sync_records already exist
+- FIT export format already defined in recording types
+- Dependencies oauth2, keyring, reqwest already in Cargo.toml
+
+### Next Steps
+Ready to continue with subtask 2.3: Implement ride completion hook for auto-upload

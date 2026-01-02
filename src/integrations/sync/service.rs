@@ -10,11 +10,52 @@
 use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenResponse, TokenStatus};
 use super::strava::StravaClient;
 use super::{PlatformConfig, SyncConfig, SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
+
+/// How often to check for token refresh (in seconds)
+const TOKEN_REFRESH_CHECK_INTERVAL_SECS: u64 = 60;
+
+/// How long before token expiry to proactively refresh (in minutes)
+const TOKEN_REFRESH_BUFFER_MINUTES: i64 = 5;
+
+/// Maximum number of consecutive refresh failures before giving up
+const MAX_REFRESH_FAILURES: u32 = 3;
+
+/// Delay between refresh retries (in seconds)
+const REFRESH_RETRY_DELAY_SECS: u64 = 30;
+
+/// Events emitted by the SyncService for external consumers
+#[derive(Debug, Clone)]
+pub enum SyncEvent {
+    /// Token was refreshed successfully
+    TokenRefreshed {
+        platform: SyncPlatform,
+        expires_at: DateTime<Utc>,
+    },
+    /// Token refresh failed, will retry
+    TokenRefreshFailed {
+        platform: SyncPlatform,
+        error: String,
+        retry_count: u32,
+    },
+    /// Re-authorization is required (refresh token invalid/expired)
+    ReauthorizationRequired {
+        platform: SyncPlatform,
+    },
+    /// Platform was connected
+    PlatformConnected {
+        platform: SyncPlatform,
+    },
+    /// Platform was disconnected
+    PlatformDisconnected {
+        platform: SyncPlatform,
+    },
+}
 
 /// Message types for the SyncService actor
 #[derive(Debug)]
@@ -67,6 +108,8 @@ pub enum SyncMessage {
         config: PlatformConfig,
         response: oneshot::Sender<Result<(), SyncError>>,
     },
+    /// Internal message to trigger token refresh check
+    CheckTokenRefresh,
     /// Shutdown the service
     Shutdown,
 }
@@ -103,9 +146,19 @@ pub struct UploadQueueEntry {
 #[derive(Clone)]
 pub struct SyncServiceHandle {
     sender: mpsc::Sender<SyncMessage>,
+    /// Event receiver for subscribing to sync events
+    event_receiver: Arc<RwLock<Option<mpsc::Receiver<SyncEvent>>>>,
 }
 
 impl SyncServiceHandle {
+    /// Subscribe to sync events.
+    ///
+    /// Returns a receiver for sync events. Only one subscriber is supported.
+    /// Calling this again will return None if already subscribed.
+    pub async fn subscribe_events(&self) -> Option<mpsc::Receiver<SyncEvent>> {
+        self.event_receiver.write().await.take()
+    }
+
     /// Connect to a platform via OAuth
     ///
     /// This initiates the OAuth flow for the given platform.
@@ -258,6 +311,17 @@ impl SyncServiceHandle {
     }
 }
 
+/// Tracks token refresh state for a platform
+#[derive(Debug, Clone, Default)]
+struct TokenRefreshState {
+    /// Number of consecutive refresh failures
+    failure_count: u32,
+    /// Time of last refresh attempt
+    last_attempt: Option<DateTime<Utc>>,
+    /// Whether re-authorization has been requested
+    reauth_requested: bool,
+}
+
 /// Sync Service that manages platform connections and uploads.
 ///
 /// This service runs as an async actor, receiving messages through a channel.
@@ -266,6 +330,8 @@ impl SyncServiceHandle {
 pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> {
     /// Message receiver
     receiver: mpsc::Receiver<SyncMessage>,
+    /// Message sender for internal use (e.g., scheduling refresh checks)
+    sender: mpsc::Sender<SyncMessage>,
     /// OAuth handler for authentication
     oauth_handler: Arc<O>,
     /// Credential store for secure token storage
@@ -282,6 +348,10 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
     sync_records: HashMap<Uuid, SyncRecord>,
     /// Last sync times per platform
     last_sync: HashMap<SyncPlatform, DateTime<Utc>>,
+    /// Token refresh state per platform
+    refresh_state: HashMap<SyncPlatform, TokenRefreshState>,
+    /// Event sender for notifying external consumers
+    event_sender: mpsc::Sender<SyncEvent>,
 }
 
 /// Client for a specific platform
@@ -301,6 +371,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         config: SyncConfig,
     ) -> SyncServiceHandle {
         let (sender, receiver) = mpsc::channel(64);
+        let (event_sender, event_receiver) = mpsc::channel(32);
 
         // Initialize platform clients
         let mut clients = HashMap::new();
@@ -308,6 +379,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
 
         let service = Self {
             receiver,
+            sender: sender.clone(),
             oauth_handler,
             credential_store,
             clients,
@@ -316,12 +388,39 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             upload_queue: Vec::new(),
             sync_records: HashMap::new(),
             last_sync: HashMap::new(),
+            refresh_state: HashMap::new(),
+            event_sender,
         };
 
         // Spawn the service actor
         tokio::spawn(service.run());
 
-        SyncServiceHandle { sender }
+        // Spawn the token refresh scheduler
+        let refresh_sender = sender.clone();
+        tokio::spawn(async move {
+            Self::token_refresh_scheduler(refresh_sender).await;
+        });
+
+        SyncServiceHandle {
+            sender,
+            event_receiver: Arc::new(RwLock::new(Some(event_receiver))),
+        }
+    }
+
+    /// Background task that periodically triggers token refresh checks.
+    async fn token_refresh_scheduler(sender: mpsc::Sender<SyncMessage>) {
+        let mut interval = tokio::time::interval(Duration::from_secs(TOKEN_REFRESH_CHECK_INTERVAL_SECS));
+
+        loop {
+            interval.tick().await;
+
+            // Send a check token refresh message to the service
+            if sender.send(SyncMessage::CheckTokenRefresh).await.is_err() {
+                // Service has shut down
+                tracing::debug!("Token refresh scheduler stopping: service channel closed");
+                break;
+            }
+        }
     }
 
     /// Run the service event loop
@@ -381,6 +480,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     let result = self.handle_update_config(platform, config).await;
                     let _ = response.send(result);
                 }
+                SyncMessage::CheckTokenRefresh => {
+                    self.handle_token_refresh_check().await;
+                }
                 SyncMessage::Shutdown => {
                     tracing::info!("SyncService shutting down");
                     break;
@@ -389,6 +491,177 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         }
 
         tracing::info!("SyncService stopped");
+    }
+
+    /// Handle token refresh check for all connected platforms.
+    ///
+    /// This is called periodically by the token refresh scheduler to proactively
+    /// refresh tokens before they expire.
+    async fn handle_token_refresh_check(&mut self) {
+        // Get list of connected platforms
+        let platforms: Vec<SyncPlatform> = self.connected.keys().cloned().collect();
+
+        for platform in platforms {
+            self.check_and_refresh_token(platform).await;
+        }
+    }
+
+    /// Check token status for a platform and refresh if needed.
+    async fn check_and_refresh_token(&mut self, platform: SyncPlatform) {
+        // Get current token
+        let token = match self.connected.get(&platform) {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        // Get refresh state
+        let refresh_state = self.refresh_state.entry(platform).or_default().clone();
+
+        // If re-auth has already been requested and not resolved, skip
+        if refresh_state.reauth_requested {
+            return;
+        }
+
+        // Check if we should attempt refresh based on retry delay
+        if let Some(last_attempt) = refresh_state.last_attempt {
+            let retry_delay = ChronoDuration::seconds(REFRESH_RETRY_DELAY_SECS as i64);
+            if Utc::now() < last_attempt + retry_delay && refresh_state.failure_count > 0 {
+                // Too soon to retry after a failure
+                return;
+            }
+        }
+
+        // Check token status
+        let now = Utc::now();
+        let refresh_threshold = now + ChronoDuration::minutes(TOKEN_REFRESH_BUFFER_MINUTES);
+
+        if token.expires_at > refresh_threshold {
+            // Token still valid, no refresh needed
+            // Reset failure count on success
+            if let Some(state) = self.refresh_state.get_mut(&platform) {
+                if state.failure_count > 0 {
+                    state.failure_count = 0;
+                    state.last_attempt = None;
+                }
+            }
+            return;
+        }
+
+        tracing::info!(
+            "Token for {:?} expires at {}, proactively refreshing",
+            platform,
+            token.expires_at
+        );
+
+        // Update last attempt time
+        if let Some(state) = self.refresh_state.get_mut(&platform) {
+            state.last_attempt = Some(now);
+        }
+
+        // Attempt to refresh the token
+        match self.oauth_handler.refresh_token(platform).await {
+            Ok(new_tokens) => {
+                tracing::info!(
+                    "Successfully refreshed token for {:?}, new expiry: {}",
+                    platform,
+                    new_tokens.expires_at
+                );
+
+                // Update the client's access token
+                if let Some(client) = self.clients.get(&platform) {
+                    match client {
+                        PlatformClient::Strava(strava) => {
+                            strava.set_access_token(new_tokens.access_token.clone()).await;
+                        }
+                    }
+                }
+
+                // Store new tokens in credential store
+                if let Err(e) = self.credential_store.store_tokens(platform, &new_tokens).await {
+                    tracing::warn!("Failed to store refreshed tokens for {:?}: {}", platform, e);
+                }
+
+                // Update connected tokens
+                let expires_at = new_tokens.expires_at;
+                self.connected.insert(platform, new_tokens);
+
+                // Reset refresh state
+                if let Some(state) = self.refresh_state.get_mut(&platform) {
+                    state.failure_count = 0;
+                    state.last_attempt = None;
+                    state.reauth_requested = false;
+                }
+
+                // Emit success event
+                self.emit_event(SyncEvent::TokenRefreshed { platform, expires_at });
+            }
+            Err(SyncError::AuthorizationRequired) => {
+                tracing::warn!(
+                    "Re-authorization required for {:?}, refresh token is invalid/expired",
+                    platform
+                );
+
+                // Mark re-auth as requested
+                if let Some(state) = self.refresh_state.get_mut(&platform) {
+                    state.reauth_requested = true;
+                }
+
+                // Emit re-authorization event
+                self.emit_event(SyncEvent::ReauthorizationRequired { platform });
+            }
+            Err(e) => {
+                let failure_count = {
+                    let state = self.refresh_state.entry(platform).or_default();
+                    state.failure_count += 1;
+                    state.failure_count
+                };
+
+                let error_msg = e.to_string();
+                tracing::warn!(
+                    "Token refresh failed for {:?} (attempt {}/{}): {}",
+                    platform,
+                    failure_count,
+                    MAX_REFRESH_FAILURES,
+                    error_msg
+                );
+
+                // Emit failure event
+                self.emit_event(SyncEvent::TokenRefreshFailed {
+                    platform,
+                    error: error_msg,
+                    retry_count: failure_count,
+                });
+
+                // If max failures reached, require re-authorization
+                if failure_count >= MAX_REFRESH_FAILURES {
+                    tracing::error!(
+                        "Max refresh failures reached for {:?}, re-authorization required",
+                        platform
+                    );
+
+                    if let Some(state) = self.refresh_state.get_mut(&platform) {
+                        state.reauth_requested = true;
+                    }
+
+                    self.emit_event(SyncEvent::ReauthorizationRequired { platform });
+                }
+            }
+        }
+    }
+
+    /// Emit an event to subscribers.
+    fn emit_event(&self, event: SyncEvent) {
+        // Use try_send to avoid blocking if no one is listening or buffer is full
+        if let Err(e) = self.event_sender.try_send(event) {
+            match e {
+                mpsc::error::TrySendError::Full(event) => {
+                    tracing::debug!("Event channel full, dropping event: {:?}", event);
+                }
+                mpsc::error::TrySendError::Closed(_) => {
+                    // No subscriber, this is fine
+                }
+            }
+        }
     }
 
     /// Load stored credentials from the credential store on startup
@@ -751,5 +1024,91 @@ mod tests {
         assert!(records.is_empty());
 
         handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_event_subscription() {
+        let oauth_handler = DefaultOAuthHandler::new(8894);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        // Subscribe to events
+        let event_rx = handle.subscribe_events().await;
+        assert!(event_rx.is_some());
+
+        // Second subscription should return None
+        let event_rx2 = handle.subscribe_events().await;
+        assert!(event_rx2.is_none());
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn test_token_refresh_constants() {
+        // Verify constants are reasonable
+        assert!(TOKEN_REFRESH_CHECK_INTERVAL_SECS > 0);
+        assert!(TOKEN_REFRESH_CHECK_INTERVAL_SECS <= 300); // At most 5 minutes
+
+        assert!(TOKEN_REFRESH_BUFFER_MINUTES > 0);
+        assert!(TOKEN_REFRESH_BUFFER_MINUTES <= 30); // At most 30 minutes
+
+        assert!(MAX_REFRESH_FAILURES >= 1);
+        assert!(MAX_REFRESH_FAILURES <= 10);
+
+        assert!(REFRESH_RETRY_DELAY_SECS > 0);
+        assert!(REFRESH_RETRY_DELAY_SECS <= 300); // At most 5 minutes
+    }
+
+    #[test]
+    fn test_token_refresh_state_default() {
+        let state = TokenRefreshState::default();
+        assert_eq!(state.failure_count, 0);
+        assert!(state.last_attempt.is_none());
+        assert!(!state.reauth_requested);
+    }
+
+    #[test]
+    fn test_sync_event_debug() {
+        // Verify SyncEvent variants can be formatted
+        let event = SyncEvent::TokenRefreshed {
+            platform: SyncPlatform::Strava,
+            expires_at: Utc::now(),
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("TokenRefreshed"));
+        assert!(debug_str.contains("Strava"));
+
+        let event = SyncEvent::TokenRefreshFailed {
+            platform: SyncPlatform::Strava,
+            error: "Network error".to_string(),
+            retry_count: 1,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("TokenRefreshFailed"));
+        assert!(debug_str.contains("Network error"));
+
+        let event = SyncEvent::ReauthorizationRequired {
+            platform: SyncPlatform::Strava,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("ReauthorizationRequired"));
+    }
+
+    #[test]
+    fn test_sync_event_clone() {
+        let event = SyncEvent::TokenRefreshed {
+            platform: SyncPlatform::Strava,
+            expires_at: Utc::now(),
+        };
+        let cloned = event.clone();
+        match (event, cloned) {
+            (
+                SyncEvent::TokenRefreshed { platform: p1, .. },
+                SyncEvent::TokenRefreshed { platform: p2, .. },
+            ) => {
+                assert_eq!(p1, p2);
+            }
+            _ => panic!("Clone produced different variant"),
+        }
     }
 }
