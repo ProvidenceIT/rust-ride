@@ -247,8 +247,9 @@
             "Test decimal precision for load values"
           ],
           "estimated_effort": "small",
-          "status": "pending",
-          "dependencies": ["P2.4"]
+          "status": "completed",
+          "dependencies": ["P2.4"],
+          "completion_notes": "Added filter_by_date_range() method to TrainingLoadExport for in-memory date range filtering. Added 17 comprehensive unit tests covering: (1) Basic date range filtering, (2) Inclusive boundary dates, (3) Single day filtering, (4) Empty results for out-of-range dates, (5) Data value preservation through filtering, (6) Filter then CSV export workflow, (7) All columns format verification, (8) Chronological ordering after filter, (9) Decimal precision preservation, (10) Partial overlap scenarios (start/end), (11) date_range() method after filtering. All acceptance criteria met: CSV format with all columns tested, date range filtering works correctly, chronological ordering verified, decimal precision for load values confirmed."
         },
         {
           "subtask_id": "P3.4",
