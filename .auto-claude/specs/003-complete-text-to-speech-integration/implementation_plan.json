@@ -10,7 +10,7 @@
       "phase_id": "phase-1",
       "name": "Core TTS Implementation",
       "description": "Implement the actual TTS functionality using the tts crate, replacing the stub implementations.",
-      "status": "in_progress",
+      "status": "completed",
       "subtasks": [
         {
           "subtask_id": "1.1",
@@ -47,10 +47,10 @@
           "title": "Add TTS state management and thread safety",
           "description": "The tts crate's Tts struct is not Send+Sync on all platforms. Create a proper wrapper that handles TTS calls on a dedicated thread if needed. Implement proper is_speaking() tracking.",
           "file_paths": ["src/audio/tts.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["1.1"],
-          "notes": "May need to use std::thread::spawn for synchronous speak or tokio::task::spawn_blocking."
+          "notes": "COMPLETED: Implemented ThreadSafeTtsProvider that handles TTS operations on a dedicated worker thread. Added TtsCommand enum for thread communication, proper is_speaking() tracking using Arc<AtomicBool>, clean shutdown via Drop trait, and comprehensive tests. The worker thread owns the tts::Tts instance and processes commands via channel, making it safe to use from multiple threads on all platforms including macOS."
         }
       ]
     },
@@ -65,10 +65,10 @@
           "title": "Wire TTS provider into AudioEngine",
           "description": "Update DefaultAudioEngine to hold and use the TTS provider. The speak() method should delegate to the TTS provider with proper configuration (rate, volume from AudioConfig).",
           "file_paths": ["src/audio/engine.rs", "src/audio/mod.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["1.1", "1.4"],
-          "notes": "AudioEngine already has the speak() method signature, just needs real implementation."
+          "notes": "COMPLETED: Implemented TTS integration in DefaultAudioEngine: added ThreadSafeTtsProvider field, updated new() to create and configure TTS provider with voice_volume and speech_rate from AudioConfig, initialize() now initializes TTS and sets preferred voice, speak() delegates to TTS provider with proper configuration, stop() now stops TTS playback. Added tts_provider() accessor and update_config() helper methods."
         },
         {
           "subtask_id": "2.2",

@@ -2,7 +2,8 @@
 //!
 //! Core audio playback engine using rodio.
 
-use super::{AudioConfig, AudioError, AudioEvent, AudioItem, AudioType};
+use super::tts::TtsProvider;
+use super::{AudioConfig, AudioError, AudioEvent, AudioItem, AudioType, ThreadSafeTtsProvider};
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -92,6 +93,8 @@ pub struct DefaultAudioEngine {
     sequence_counter: Arc<Mutex<u64>>,
     is_playing: Arc<Mutex<bool>>,
     event_tx: broadcast::Sender<AudioEvent>,
+    /// Thread-safe TTS provider for speech synthesis
+    tts_provider: Arc<ThreadSafeTtsProvider>,
 }
 
 impl DefaultAudioEngine {
@@ -99,13 +102,45 @@ impl DefaultAudioEngine {
     pub fn new(config: AudioConfig) -> Self {
         let (event_tx, _) = broadcast::channel(100);
 
+        // Create and configure the TTS provider
+        let tts_provider = Arc::new(ThreadSafeTtsProvider::new());
+
+        // Apply configuration settings to TTS provider
+        // Convert voice_volume from 0-100 to 0.0-1.0
+        let voice_volume = config.voice_volume as f32 / 100.0;
+        tts_provider.set_volume(voice_volume);
+        tts_provider.set_rate(config.speech_rate);
+
         Self {
             config: Arc::new(Mutex::new(config)),
             queue: Arc::new(Mutex::new(BinaryHeap::new())),
             sequence_counter: Arc::new(Mutex::new(0)),
             is_playing: Arc::new(Mutex::new(false)),
             event_tx,
+            tts_provider,
         }
+    }
+
+    /// Update TTS settings from the current config
+    fn update_tts_settings(&self) {
+        let config = self.config.lock().unwrap();
+        // Convert voice_volume from 0-100 to 0.0-1.0
+        let voice_volume = config.voice_volume as f32 / 100.0;
+        self.tts_provider.set_volume(voice_volume);
+        self.tts_provider.set_rate(config.speech_rate);
+    }
+
+    /// Get access to the TTS provider for voice enumeration and configuration
+    pub fn tts_provider(&self) -> &ThreadSafeTtsProvider {
+        &self.tts_provider
+    }
+
+    /// Update audio configuration
+    pub fn update_config(&self, config: AudioConfig) {
+        let mut current = self.config.lock().unwrap();
+        *current = config;
+        drop(current);
+        self.update_tts_settings();
     }
 
     /// Get the next item from the queue, removing expired items
@@ -150,6 +185,19 @@ impl AudioEngine for DefaultAudioEngine {
     fn initialize(&self) -> Result<(), AudioError> {
         tracing::info!("Initializing audio engine");
 
+        // Initialize TTS provider
+        self.tts_provider.initialize()?;
+
+        // Set preferred voice if configured
+        {
+            let config = self.config.lock().unwrap();
+            if let Some(ref voice_id) = config.preferred_voice {
+                if let Err(e) = self.tts_provider.set_voice(voice_id) {
+                    tracing::warn!("Failed to set preferred voice '{}': {}", voice_id, e);
+                }
+            }
+        }
+
         // TODO: Initialize rodio output stream
         // let (_stream, stream_handle) = rodio::OutputStream::try_default()
         //     .map_err(|e| AudioError::DeviceNotAvailable)?;
@@ -188,22 +236,23 @@ impl AudioEngine for DefaultAudioEngine {
             }
         }
 
+        // Update TTS settings from config before speaking
+        self.update_tts_settings();
+
         *self.is_playing.lock().unwrap() = true;
 
         let _ = self.event_tx.send(AudioEvent::SpeechStarted {
             text: text.to_string(),
         });
 
-        // TODO: Use TTS crate to speak
-        // For now, just simulate based on text length
-        let duration = Duration::from_millis((text.len() as u64 * 50).min(5000));
-        tokio::time::sleep(duration).await;
+        // Use the TTS provider to speak
+        let result = self.tts_provider.speak_async(text).await;
 
         let _ = self.event_tx.send(AudioEvent::SpeechCompleted);
 
         *self.is_playing.lock().unwrap() = false;
 
-        Ok(())
+        result
     }
 
     async fn play_tone(&self, _frequency_hz: u32, duration_ms: u32) -> Result<(), AudioError> {
@@ -248,7 +297,8 @@ impl AudioEngine for DefaultAudioEngine {
     }
 
     fn stop(&self) {
-        // TODO: Actually stop playback
+        // Stop TTS playback
+        self.tts_provider.stop();
         *self.is_playing.lock().unwrap() = false;
     }
 
