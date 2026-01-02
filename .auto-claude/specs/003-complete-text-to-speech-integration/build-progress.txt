@@ -5,15 +5,15 @@ Finish the TTS module implementation to provide voice announcements during worko
 
 ## Current Status: In Progress
 
-### Phase 1: Core TTS Implementation (3/4 subtasks)
+### Phase 1: Core TTS Implementation (4/4 subtasks) ✅ COMPLETE
 - [x] 1.1 Implement TTS crate integration
 - [x] 1.2 Implement voice enumeration and selection
 - [x] 1.3 Implement rate and volume controls
-- [ ] 1.4 Add TTS state management and thread safety
+- [x] 1.4 Add TTS state management and thread safety
 
-### Phase 2: Audio Engine Integration (0/3 subtasks)
-- [ ] 2.1 Wire TTS provider into AudioEngine
-- [ ] 2.2 Implement speech queuing with priority
+### Phase 2: Audio Engine Integration (2/3 subtasks)
+- [x] 2.1 Wire TTS provider into AudioEngine
+- [x] 2.2 Implement speech queuing with priority
 - [ ] 2.3 Add TTS configuration persistence
 
 ### Phase 3: Workout Event Integration (0/4 subtasks)
@@ -54,6 +54,64 @@ Finish the TTS module implementation to provide voice announcements during worko
 - Windows uses SAPI (built-in)
 - macOS uses NSSpeechSynthesizer (built-in)
 - tts crate's Tts struct may not be Send+Sync on all platforms
+  - **RESOLVED**: ThreadSafeTtsProvider now handles this via dedicated worker thread
+
+## Subtask 1.4 Implementation Details
+
+Added `ThreadSafeTtsProvider` to handle thread-safety issues with `tts::Tts`:
+
+1. **TtsCommand enum** - Commands sent to worker thread:
+   - Initialize, Speak, Stop, SetRate, SetVolume
+   - GetVoices, SetVoice, CheckSpeaking, Shutdown
+
+2. **Worker thread** - Dedicated thread owns the `tts::Tts` instance:
+   - Receives commands via `mpsc::channel`
+   - Processes TTS operations safely
+   - Clean shutdown via Shutdown command
+
+3. **is_speaking() tracking**:
+   - Uses `Arc<AtomicBool>` shared between main struct and worker
+   - Worker updates state on speak start/completion
+   - `is_speaking()` method can also verify with TTS engine
+
+4. **Usage**: For multi-threaded apps, use `ThreadSafeTtsProvider` instead of `DefaultTtsProvider`
+
+## Subtask 2.2 Implementation Details
+
+Added priority-based interruption to `DefaultAudioEngine`:
+
+1. **Priority Interruption Logic**:
+   - `should_interrupt(priority)` - Checks if new item should interrupt current playback
+   - Critical priority interrupts everything except other Critical items
+   - High priority interrupts Normal and Low priority items
+   - Normal and Low never interrupt
+
+2. **New Fields in DefaultAudioEngine**:
+   - `current_priority: Arc<Mutex<Option<AudioPriority>>>` - Tracks what's currently playing
+   - `interrupt_requested: Arc<AtomicBool>` - Signals interruption to ongoing playback
+
+3. **Queue Management**:
+   - `queue()` now checks if high-priority item should interrupt current playback
+   - High/Critical priority items also clear lower-priority items from queue
+   - `clear_lower_priority(min)` - Removes items below given priority
+   - `clear_queue()` - Removes all queued items
+
+4. **Enhanced stop()**:
+   - Sets interrupt flag
+   - Stops TTS playback immediately
+   - Clears the queue
+   - Resets all state (is_playing, current_priority)
+
+5. **Updated process_queue()**:
+   - Checks for interrupt before playing each item
+   - Tracks current priority during playback
+   - `speak_with_interrupt_check()` - Monitors interruption during speech
+
+6. **Tests Added**:
+   - Priority-based interrupt logic tests
+   - Queue clearing tests
+   - Stop functionality tests
+   - Interrupt flag operation tests
 
 ---
 Last Updated: 2026-01-02
