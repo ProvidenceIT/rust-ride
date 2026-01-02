@@ -3,12 +3,59 @@
 //! Displays and edits rider profile information, stats, and badges.
 //! T044: Add XP/level display to user profile screen.
 //! T019: Import confirmation dialog with conflict resolution.
+//! T020: Progress indicators, success toasts, and error display for export/import.
+
+use std::path::Path;
+use std::time::Instant;
 
 use egui::{Color32, RichText, Ui, Vec2};
 
 use crate::achievements::XpStatus;
-use crate::social::export::{ConflictResolution, ProfileConflict, ProfileExport};
+use crate::social::export::{
+    ConflictResolution, ProfileConflict, ProfileExport, ProfileExportError, ProfileImportResult,
+};
 use crate::social::types::{Badge, RiderProfile};
+
+/// T020: Status of a profile export/import operation.
+#[derive(Debug, Clone)]
+pub enum ProfileOperationStatus {
+    /// No operation in progress.
+    Idle,
+    /// Export is in progress.
+    Exporting,
+    /// Import is in progress.
+    Importing,
+    /// Export completed successfully.
+    ExportSuccess {
+        /// Path where the profile was exported.
+        path: String,
+        /// When the success message was shown (for auto-dismiss).
+        shown_at: Instant,
+    },
+    /// Import completed successfully.
+    ImportSuccess {
+        /// Summary of what was imported.
+        summary: String,
+        /// When the success message was shown (for auto-dismiss).
+        shown_at: Instant,
+    },
+    /// Operation failed with an error.
+    Error {
+        /// Error message to display.
+        message: String,
+        /// When the error was shown (for auto-dismiss).
+        shown_at: Instant,
+    },
+}
+
+impl Default for ProfileOperationStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
+/// T020: Duration to show success/error messages before auto-dismiss (5 seconds).
+const STATUS_DISPLAY_DURATION_SECS: f32 = 5.0;
 
 /// Rider profile screen actions.
 #[derive(Debug, Clone)]
@@ -69,6 +116,8 @@ pub struct RiderProfileScreen {
     xp_status: Option<XpStatus>,
     /// T019: Import conflict dialog state.
     import_conflict_dialog: Option<ImportConflictDialogState>,
+    /// T020: Current export/import operation status.
+    operation_status: ProfileOperationStatus,
 }
 
 impl Default for RiderProfileScreen {
@@ -87,6 +136,7 @@ impl RiderProfileScreen {
             edit_sharing_enabled: true,
             xp_status: None,
             import_conflict_dialog: None,
+            operation_status: ProfileOperationStatus::Idle,
         }
     }
 
@@ -120,6 +170,73 @@ impl RiderProfileScreen {
     /// T019: Close the import conflict dialog.
     pub fn close_import_dialog(&mut self) {
         self.import_conflict_dialog = None;
+    }
+
+    /// T020: Mark that an export operation is starting.
+    ///
+    /// Shows a progress indicator while the export is in progress.
+    pub fn start_export(&mut self) {
+        self.operation_status = ProfileOperationStatus::Exporting;
+    }
+
+    /// T020: Mark that an import operation is starting.
+    ///
+    /// Shows a progress indicator while the import is in progress.
+    pub fn start_import(&mut self) {
+        self.operation_status = ProfileOperationStatus::Importing;
+    }
+
+    /// T020: Show export success message.
+    ///
+    /// Displays a success toast showing where the profile was exported.
+    pub fn show_export_success(&mut self, path: &Path) {
+        self.operation_status = ProfileOperationStatus::ExportSuccess {
+            path: path.display().to_string(),
+            shown_at: Instant::now(),
+        };
+    }
+
+    /// T020: Show import success message with summary.
+    ///
+    /// Displays a success toast with details about what was imported
+    /// (e.g., "Imported 5 FTP records").
+    pub fn show_import_success(&mut self, result: &ProfileImportResult) {
+        let summary = format_import_summary(result);
+        self.operation_status = ProfileOperationStatus::ImportSuccess {
+            summary,
+            shown_at: Instant::now(),
+        };
+    }
+
+    /// T020: Show an error message.
+    ///
+    /// Displays error details to help the user understand what went wrong.
+    pub fn show_error(&mut self, error: &ProfileExportError) {
+        self.operation_status = ProfileOperationStatus::Error {
+            message: format_export_error(error),
+            shown_at: Instant::now(),
+        };
+    }
+
+    /// T020: Show a custom error message.
+    pub fn show_error_message(&mut self, message: String) {
+        self.operation_status = ProfileOperationStatus::Error {
+            message,
+            shown_at: Instant::now(),
+        };
+    }
+
+    /// T020: Clear any operation status.
+    pub fn clear_status(&mut self) {
+        self.operation_status = ProfileOperationStatus::Idle;
+    }
+
+    /// T020: Check if an operation is in progress.
+    pub fn is_operation_in_progress(&self) -> bool {
+        matches!(
+            self.operation_status,
+            ProfileOperationStatus::Exporting | ProfileOperationStatus::Importing
+        )
     }
 
     /// Start editing with current profile values.
@@ -156,14 +273,24 @@ impl RiderProfileScreen {
 
         // Export/Import section (only in view mode)
         if self.view == RiderProfileView::View {
+            let is_busy = self.is_operation_in_progress();
+
             ui.horizontal(|ui| {
-                if ui.button("Export Profile").clicked() {
-                    action = Some(RiderProfileAction::ExportProfile);
-                }
-                if ui.button("Import Profile").clicked() {
-                    action = Some(RiderProfileAction::ImportProfile);
-                }
+                // Disable buttons during operations
+                ui.add_enabled_ui(!is_busy, |ui| {
+                    if ui.button("Export Profile").clicked() {
+                        action = Some(RiderProfileAction::ExportProfile);
+                    }
+                    if ui.button("Import Profile").clicked() {
+                        action = Some(RiderProfileAction::ImportProfile);
+                    }
+                });
             });
+
+            // T020: Render operation status (progress/success/error)
+            ui.add_space(8.0);
+            self.render_operation_status(ui);
+
             ui.add_space(10.0);
         }
 
@@ -725,5 +852,373 @@ impl RiderProfileScreen {
                 ));
             });
         }
+    }
+
+    /// T020: Render the operation status (progress, success, or error).
+    ///
+    /// Shows progress indicator during operations, success toast with summary,
+    /// or error details on failure. Messages auto-dismiss after 5 seconds.
+    fn render_operation_status(&mut self, ui: &mut Ui) {
+        // Check for auto-dismiss based on time
+        let should_dismiss = match &self.operation_status {
+            ProfileOperationStatus::ExportSuccess { shown_at, .. }
+            | ProfileOperationStatus::ImportSuccess { shown_at, .. }
+            | ProfileOperationStatus::Error { shown_at, .. } => {
+                shown_at.elapsed().as_secs_f32() > STATUS_DISPLAY_DURATION_SECS
+            }
+            _ => false,
+        };
+
+        if should_dismiss {
+            self.operation_status = ProfileOperationStatus::Idle;
+            return;
+        }
+
+        match &self.operation_status {
+            ProfileOperationStatus::Idle => {}
+
+            ProfileOperationStatus::Exporting => {
+                self.render_progress_indicator(ui, "Exporting profile...");
+            }
+
+            ProfileOperationStatus::Importing => {
+                self.render_progress_indicator(ui, "Importing profile...");
+            }
+
+            ProfileOperationStatus::ExportSuccess { path, shown_at } => {
+                let remaining = STATUS_DISPLAY_DURATION_SECS - shown_at.elapsed().as_secs_f32();
+                self.render_success_toast(ui, "Profile exported successfully!", Some(path), remaining);
+            }
+
+            ProfileOperationStatus::ImportSuccess { summary, shown_at } => {
+                let remaining = STATUS_DISPLAY_DURATION_SECS - shown_at.elapsed().as_secs_f32();
+                self.render_success_toast(ui, summary, None, remaining);
+            }
+
+            ProfileOperationStatus::Error { message, shown_at } => {
+                let remaining = STATUS_DISPLAY_DURATION_SECS - shown_at.elapsed().as_secs_f32();
+                self.render_error_toast(ui, message, remaining);
+            }
+        }
+
+        // Request repaint for progress animations and auto-dismiss
+        if !matches!(self.operation_status, ProfileOperationStatus::Idle) {
+            ui.ctx().request_repaint();
+        }
+    }
+
+    /// T020: Render a progress indicator with spinner.
+    fn render_progress_indicator(&self, ui: &mut Ui, message: &str) {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(40, 60, 80, 230))
+            .inner_margin(12.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(message).color(Color32::WHITE));
+                });
+            });
+    }
+
+    /// T020: Render a success toast with optional path and dismiss progress.
+    fn render_success_toast(&self, ui: &mut Ui, message: &str, path: Option<&str>, remaining_secs: f32) {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(46, 125, 50, 230)) // Green
+            .inner_margin(12.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("✓").color(Color32::WHITE).strong().size(16.0));
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(message).color(Color32::WHITE).strong());
+                    });
+
+                    if let Some(path) = path {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(path)
+                                .color(Color32::from_rgb(200, 230, 200))
+                                .small()
+                                .monospace(),
+                        );
+                    }
+
+                    // Progress bar showing time until dismiss
+                    ui.add_space(6.0);
+                    let progress = remaining_secs / STATUS_DISPLAY_DURATION_SECS;
+                    let bar_rect = ui.available_rect_before_wrap();
+                    let bar_height = 3.0;
+                    let bar_rect = egui::Rect::from_min_size(
+                        egui::Pos2::new(bar_rect.min.x, bar_rect.min.y),
+                        Vec2::new(bar_rect.width(), bar_height),
+                    );
+                    ui.painter().rect_filled(bar_rect, 1.5, Color32::from_rgb(100, 160, 100));
+                    let filled_rect = egui::Rect::from_min_size(
+                        bar_rect.min,
+                        Vec2::new(bar_rect.width() * progress, bar_height),
+                    );
+                    ui.painter().rect_filled(filled_rect, 1.5, Color32::WHITE);
+                    ui.allocate_space(Vec2::new(0.0, bar_height));
+                });
+            });
+    }
+
+    /// T020: Render an error toast with dismiss progress.
+    fn render_error_toast(&self, ui: &mut Ui, message: &str, remaining_secs: f32) {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(198, 40, 40, 230)) // Red
+            .inner_margin(12.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("✕").color(Color32::WHITE).strong().size(16.0));
+                        ui.add_space(8.0);
+                        ui.label(RichText::new("Error").color(Color32::WHITE).strong());
+                    });
+
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(message).color(Color32::from_rgb(255, 200, 200)));
+
+                    // Progress bar showing time until dismiss
+                    ui.add_space(6.0);
+                    let progress = remaining_secs / STATUS_DISPLAY_DURATION_SECS;
+                    let bar_rect = ui.available_rect_before_wrap();
+                    let bar_height = 3.0;
+                    let bar_rect = egui::Rect::from_min_size(
+                        egui::Pos2::new(bar_rect.min.x, bar_rect.min.y),
+                        Vec2::new(bar_rect.width(), bar_height),
+                    );
+                    ui.painter().rect_filled(bar_rect, 1.5, Color32::from_rgb(160, 80, 80));
+                    let filled_rect = egui::Rect::from_min_size(
+                        bar_rect.min,
+                        Vec2::new(bar_rect.width() * progress, bar_height),
+                    );
+                    ui.painter().rect_filled(filled_rect, 1.5, Color32::WHITE);
+                    ui.allocate_space(Vec2::new(0.0, bar_height));
+                });
+            });
+    }
+}
+
+/// T020: Format a ProfileImportResult into a human-readable summary.
+fn format_import_summary(result: &ProfileImportResult) -> String {
+    let mut parts = Vec::new();
+
+    if result.ftp_entries_imported > 0 {
+        parts.push(format!(
+            "Imported {} FTP record{}",
+            result.ftp_entries_imported,
+            if result.ftp_entries_imported == 1 { "" } else { "s" }
+        ));
+    }
+
+    if result.ftp_entries_skipped > 0 {
+        parts.push(format!(
+            "skipped {} duplicate{}",
+            result.ftp_entries_skipped,
+            if result.ftp_entries_skipped == 1 { "" } else { "s" }
+        ));
+    }
+
+    if result.profile_updated {
+        parts.push("updated profile".to_string());
+    }
+
+    if result.avatar_updated {
+        parts.push("updated avatar".to_string());
+    }
+
+    if parts.is_empty() {
+        "Import complete (no changes)".to_string()
+    } else {
+        format!("Import complete: {}", parts.join(", "))
+    }
+}
+
+/// T020: Format a ProfileExportError into a human-readable error message.
+fn format_export_error(error: &ProfileExportError) -> String {
+    match error {
+        ProfileExportError::DatabaseError(msg) => {
+            format!("Database error: {}", msg)
+        }
+        ProfileExportError::SerializationFailed(msg) => {
+            format!("Failed to serialize profile: {}", msg)
+        }
+        ProfileExportError::ParseError(msg) => {
+            format!("Failed to parse file: {}", msg)
+        }
+        ProfileExportError::ProfileNotFound => {
+            "No profile found to export".to_string()
+        }
+        ProfileExportError::InvalidVersion { expected, found } => {
+            format!("Incompatible version: expected {}, found {}", expected, found)
+        }
+        ProfileExportError::IoError(msg) => {
+            format!("File error: {}", msg)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profile_operation_status_default() {
+        let status = ProfileOperationStatus::default();
+        assert!(matches!(status, ProfileOperationStatus::Idle));
+    }
+
+    #[test]
+    fn test_rider_profile_screen_new() {
+        let screen = RiderProfileScreen::new();
+        assert!(matches!(screen.operation_status, ProfileOperationStatus::Idle));
+        assert!(!screen.is_operation_in_progress());
+    }
+
+    #[test]
+    fn test_start_export() {
+        let mut screen = RiderProfileScreen::new();
+        screen.start_export();
+        assert!(matches!(screen.operation_status, ProfileOperationStatus::Exporting));
+        assert!(screen.is_operation_in_progress());
+    }
+
+    #[test]
+    fn test_start_import() {
+        let mut screen = RiderProfileScreen::new();
+        screen.start_import();
+        assert!(matches!(screen.operation_status, ProfileOperationStatus::Importing));
+        assert!(screen.is_operation_in_progress());
+    }
+
+    #[test]
+    fn test_show_export_success() {
+        let mut screen = RiderProfileScreen::new();
+        screen.show_export_success(std::path::Path::new("/tmp/profile.json"));
+
+        match &screen.operation_status {
+            ProfileOperationStatus::ExportSuccess { path, .. } => {
+                assert!(path.contains("profile.json"));
+            }
+            _ => panic!("Expected ExportSuccess status"),
+        }
+        assert!(!screen.is_operation_in_progress());
+    }
+
+    #[test]
+    fn test_show_import_success() {
+        let mut screen = RiderProfileScreen::new();
+        let result = ProfileImportResult::success(5, 2, true, true);
+        screen.show_import_success(&result);
+
+        match &screen.operation_status {
+            ProfileOperationStatus::ImportSuccess { summary, .. } => {
+                assert!(summary.contains("5 FTP records"));
+                assert!(summary.contains("skipped 2 duplicates"));
+                assert!(summary.contains("updated profile"));
+                assert!(summary.contains("updated avatar"));
+            }
+            _ => panic!("Expected ImportSuccess status"),
+        }
+    }
+
+    #[test]
+    fn test_show_error() {
+        let mut screen = RiderProfileScreen::new();
+        let error = ProfileExportError::ProfileNotFound;
+        screen.show_error(&error);
+
+        match &screen.operation_status {
+            ProfileOperationStatus::Error { message, .. } => {
+                assert!(message.contains("No profile found"));
+            }
+            _ => panic!("Expected Error status"),
+        }
+    }
+
+    #[test]
+    fn test_clear_status() {
+        let mut screen = RiderProfileScreen::new();
+        screen.start_export();
+        assert!(screen.is_operation_in_progress());
+
+        screen.clear_status();
+        assert!(matches!(screen.operation_status, ProfileOperationStatus::Idle));
+        assert!(!screen.is_operation_in_progress());
+    }
+
+    #[test]
+    fn test_format_import_summary_with_all_changes() {
+        let result = ProfileImportResult::success(3, 1, true, true);
+        let summary = format_import_summary(&result);
+
+        assert!(summary.contains("Import complete"));
+        assert!(summary.contains("3 FTP records"));
+        assert!(summary.contains("skipped 1 duplicate"));
+        assert!(summary.contains("updated profile"));
+        assert!(summary.contains("updated avatar"));
+    }
+
+    #[test]
+    fn test_format_import_summary_ftp_only() {
+        let result = ProfileImportResult::success(5, 0, false, false);
+        let summary = format_import_summary(&result);
+
+        assert!(summary.contains("5 FTP records"));
+        assert!(!summary.contains("updated profile"));
+        assert!(!summary.contains("updated avatar"));
+    }
+
+    #[test]
+    fn test_format_import_summary_no_changes() {
+        let result = ProfileImportResult::success(0, 0, false, false);
+        let summary = format_import_summary(&result);
+
+        assert_eq!(summary, "Import complete (no changes)");
+    }
+
+    #[test]
+    fn test_format_import_summary_singular() {
+        let result = ProfileImportResult::success(1, 1, false, false);
+        let summary = format_import_summary(&result);
+
+        assert!(summary.contains("1 FTP record"));
+        assert!(summary.contains("skipped 1 duplicate"));
+        // Should NOT have plural 's'
+        assert!(!summary.contains("records"));
+        assert!(!summary.contains("duplicates"));
+    }
+
+    #[test]
+    fn test_format_export_error_database() {
+        let error = ProfileExportError::DatabaseError("connection failed".to_string());
+        let message = format_export_error(&error);
+        assert!(message.contains("Database error"));
+        assert!(message.contains("connection failed"));
+    }
+
+    #[test]
+    fn test_format_export_error_invalid_version() {
+        let error = ProfileExportError::InvalidVersion {
+            expected: "1.0".to_string(),
+            found: "2.0".to_string(),
+        };
+        let message = format_export_error(&error);
+        assert!(message.contains("Incompatible version"));
+        assert!(message.contains("1.0"));
+        assert!(message.contains("2.0"));
+    }
+
+    #[test]
+    fn test_format_export_error_io() {
+        let error = ProfileExportError::IoError("permission denied".to_string());
+        let message = format_export_error(&error);
+        assert!(message.contains("File error"));
+        assert!(message.contains("permission denied"));
     }
 }
