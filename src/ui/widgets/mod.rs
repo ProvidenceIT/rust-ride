@@ -16,6 +16,7 @@ pub mod power_curve_chart;
 pub mod sensor_status;
 pub mod shortcut_overlay;
 pub mod smo2_display;
+pub mod sync_notification;
 pub mod tilt_indicator;
 pub mod upcoming_workouts;
 pub mod voice_indicator;
@@ -49,6 +50,10 @@ pub use power_curve_chart::{
 pub use sensor_status::{SensorConnectionCard, SensorStatusIndicator, SensorStatusSummary};
 pub use shortcut_overlay::ShortcutOverlay;
 pub use smo2_display::{SmO2Display, SmO2Placeholder, SmO2WidgetSize};
+pub use sync_notification::{
+    SyncNotificationAction, SyncNotificationConfig, SyncNotificationItem, SyncNotificationQueue,
+    SyncNotificationType, SyncNotificationWidget,
+};
 pub use tilt_indicator::{TiltIndicator, TiltIndicatorConfig};
 pub use upcoming_workouts::{
     UpcomingWorkoutsAction, UpcomingWorkoutsCompact, UpcomingWorkoutsConfig, UpcomingWorkoutsWidget,

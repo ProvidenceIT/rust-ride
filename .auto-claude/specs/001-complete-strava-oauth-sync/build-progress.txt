@@ -1,6 +1,6 @@
 # Build Progress: Complete Strava OAuth Sync
 
-## Status: Phase 2 In Progress
+## Status: Phase 3 Complete, Phase 4 Pending
 
 ## Implementation Plan Created
 Date: 2026-01-02
@@ -10,7 +10,7 @@ The implementation plan has been created with 4 phases and 23 subtasks total.
 
 ### Completed Subtasks
 
-**Phase 1: Core OAuth & API Implementation** (7/7 completed ✓)
+**Phase 1: Core OAuth & API Implementation** (7/7 completed)
 - [x] 1.1: Implement real OAuth token exchange
 - [x] 1.2: Implement token refresh functionality
 - [x] 1.3: Implement secure credential storage with keyring
@@ -19,20 +19,20 @@ The implementation plan has been created with 4 phases and 23 subtasks total.
 - [x] 1.6: Implement athlete profile fetch
 - [x] 1.7: Implement Strava deauthorization
 
-**Phase 2: Sync Service & Auto-Upload** (2/6 completed)
+**Phase 2: Sync Service & Auto-Upload** (6/6 completed)
 - [x] 2.1: Create SyncService struct with platform manager
 - [x] 2.2: Implement automatic token refresh scheduler
-- [ ] 2.3: Implement ride completion hook for auto-upload
-- [ ] 2.4: Implement upload queue with persistence
-- [ ] 2.5: Implement upload status tracking in database
-- [ ] 2.6: Implement failed upload retry mechanism
+- [x] 2.3: Implement ride completion hook for auto-upload
+- [x] 2.4: Implement upload queue with persistence
+- [x] 2.5: Implement upload status tracking in database
+- [x] 2.6: Implement failed upload retry mechanism
 
-**Phase 3: UI Integration & Status Display** (0/5 pending)
-- [ ] 3.1: Create Strava connection settings screen
-- [ ] 3.2: Add auto-sync toggle to settings
-- [ ] 3.3: Show upload status in ride history
-- [ ] 3.4: Add manual retry button for failed uploads
-- [ ] 3.5: Show sync notification on ride completion
+**Phase 3: UI Integration & Status Display** (5/5 completed)
+- [x] 3.1: Create Strava connection settings screen
+- [x] 3.2: Add auto-sync toggle to settings
+- [x] 3.3: Show upload status in ride history
+- [x] 3.4: Add manual retry button for failed uploads
+- [x] 3.5: Show sync notification on ride completion
 
 **Phase 4: Testing & Polish** (0/5 pending)
 - [ ] 4.1: Add unit tests for OAuth flow
@@ -43,35 +43,39 @@ The implementation plan has been created with 4 phases and 23 subtasks total.
 
 ## Latest Changes (2026-01-02)
 
-### Subtask 2.2: Automatic Token Refresh Scheduler
-Implemented background task that proactively refreshes OAuth tokens before they expire.
+### Subtask 3.5: Show Sync Notification on Ride Completion
+Implemented toast/notification widget for displaying sync events to users.
 
 **Features Added:**
-- Background scheduler runs every 60 seconds (TOKEN_REFRESH_CHECK_INTERVAL_SECS)
-- Proactively refreshes tokens 5 minutes before expiry (TOKEN_REFRESH_BUFFER_MINUTES)
-- Retry logic with exponential backoff (30 second delay between retries)
-- Maximum 3 consecutive failures before requiring re-authorization
-- SyncEvent enum for notifying UI of token events:
-  - TokenRefreshed: Successful refresh with new expiry time
-  - TokenRefreshFailed: Failed refresh with error and retry count
-  - ReauthorizationRequired: User needs to re-authorize
-  - PlatformConnected: Platform was connected
-  - PlatformDisconnected: Platform was disconnected
-- TokenRefreshState tracking per platform for failure count and last attempt
-- Event subscription via SyncServiceHandle.subscribe_events()
+- SyncNotificationWidget: Slide-in notification from bottom-right corner
+- SyncNotificationQueue: Queue for managing pending notifications with auto-dismiss
+- SyncNotificationType enum for different notification types:
+  - Started: Shows upload in progress with spinner
+  - Completed: Shows success with optional link to view activity
+  - Failed: Shows error with retry option if not auto-retrying
+  - ReauthRequired: Prompts user to reconnect account
+  - ConnectivityChanged: Shows online/offline status changes
+- handle_event() method to convert SyncEvent to notifications
+- Platform-specific colors (Strava orange, Garmin blue, etc.)
+- Auto-dismiss after 5 seconds with progress bar
+- Queue deduplication for Started events
+- Comprehensive unit tests (14 tests)
+
+**Files Created:**
+- src/ui/widgets/sync_notification.rs
 
 **Files Modified:**
-- src/integrations/sync/service.rs
-- src/integrations/sync/mod.rs (exported SyncEvent)
+- src/ui/widgets/mod.rs (added sync_notification module and exports)
 
-### Existing Infrastructure Identified
-- StravaClient stub in src/integrations/sync/strava.rs
-- OAuth traits and handlers in src/integrations/sync/oauth.rs
-- KeyringCredentialStore stub ready for implementation
-- OAuthCallbackServer working for receiving OAuth callbacks
-- Database tables platform_syncs and sync_records already exist
-- FIT export format already defined in recording types
-- Dependencies oauth2, keyring, reqwest already in Cargo.toml
+### Previous Changes Summary
+- Phase 1: Complete OAuth token exchange, refresh, keyring storage, upload API, status polling
+- Phase 2: SyncService actor, token refresh scheduler, ride completion hook, upload queue persistence
+- Phase 3: Strava settings screen, auto-sync toggle, ride history sync badges, retry buttons
 
 ### Next Steps
-Ready to continue with subtask 2.3: Implement ride completion hook for auto-upload
+Ready for Phase 4: Testing & Polish
+- 4.1: Add unit tests for OAuth flow
+- 4.2: Add unit tests for Strava client
+- 4.3: Add integration tests for sync service
+- 4.4: Handle edge cases and error scenarios
+- 4.5: Add Strava configuration documentation
