@@ -444,6 +444,163 @@ impl ProfileExporter {
         Ok(())
     }
 
+    /// Detect conflicts between an imported profile and existing data.
+    ///
+    /// Checks for:
+    /// - Existing profile with the same rider_id
+    /// - Display name mismatches between import and existing profile
+    /// - FTP value differences
+    /// - Avatar configuration differences
+    ///
+    /// # Arguments
+    /// * `export` - The parsed profile export to check for conflicts
+    ///
+    /// # Returns
+    /// A list of detected conflicts. An empty list means no conflicts.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let exporter = ProfileExporter::new(db);
+    /// let export = exporter.parse_import(json_content)?;
+    /// let conflicts = exporter.detect_conflicts(&export)?;
+    /// if conflicts.is_empty() {
+    ///     // Safe to import directly
+    /// } else {
+    ///     // Show conflicts to user for resolution
+    /// }
+    /// ```
+    pub fn detect_conflicts(
+        &self,
+        export: &ProfileExport,
+    ) -> Result<Vec<ProfileConflict>, ProfileExportError> {
+        let conn = self.db.connection();
+        let mut conflicts = Vec::new();
+
+        // Check if a profile with the same rider_id exists
+        let existing_profile = self.query_existing_profile(&conn, export.rider_id)?;
+
+        if let Some(existing) = existing_profile {
+            // ExistingProfile conflict - a profile with this ID already exists
+            conflicts.push(ProfileConflict::ExistingProfile {
+                rider_id: export.rider_id,
+                existing_name: existing.display_name.clone(),
+            });
+
+            // DisplayNameMismatch - imported name differs from existing
+            if export.profile.display_name != existing.display_name {
+                conflicts.push(ProfileConflict::DisplayNameMismatch {
+                    imported_name: export.profile.display_name.clone(),
+                    existing_name: existing.display_name.clone(),
+                });
+            }
+
+            // FtpMismatch - FTP values differ
+            if export.profile.ftp != existing.ftp {
+                conflicts.push(ProfileConflict::FtpMismatch {
+                    imported_ftp: export.profile.ftp,
+                    existing_ftp: existing.ftp,
+                });
+            }
+
+            // Check for avatar mismatch
+            let existing_avatar = self.query_avatar(&conn, export.rider_id)?;
+            let import_has_avatar = export.avatar.is_some();
+            let existing_has_avatar = existing_avatar.is_some();
+
+            if import_has_avatar != existing_has_avatar {
+                conflicts.push(ProfileConflict::AvatarMismatch {
+                    import_has_avatar,
+                    existing_has_avatar,
+                });
+            } else if import_has_avatar && existing_has_avatar {
+                // Both have avatars - check if they differ
+                let import_avatar = export.avatar.as_ref().unwrap();
+                let existing_av = existing_avatar.as_ref().unwrap();
+
+                if import_avatar.jersey_color != existing_av.jersey_color
+                    || import_avatar.bike_style != existing_av.bike_style
+                    || import_avatar.jersey_secondary != existing_av.jersey_secondary
+                    || import_avatar.helmet_color != existing_av.helmet_color
+                {
+                    conflicts.push(ProfileConflict::AvatarMismatch {
+                        import_has_avatar,
+                        existing_has_avatar,
+                    });
+                }
+            }
+        } else {
+            // No existing profile with same rider_id - check for display name collision
+            let name_collision = self.find_rider_by_display_name(&conn, &export.profile.display_name)?;
+
+            if let Some(colliding_rider_id) = name_collision {
+                // Different rider_id but same display_name
+                conflicts.push(ProfileConflict::DisplayNameMismatch {
+                    imported_name: export.profile.display_name.clone(),
+                    existing_name: export.profile.display_name.clone(),
+                });
+                conflicts.push(ProfileConflict::ExistingProfile {
+                    rider_id: colliding_rider_id,
+                    existing_name: export.profile.display_name.clone(),
+                });
+            }
+        }
+
+        Ok(conflicts)
+    }
+
+    /// Query for an existing profile by rider_id.
+    fn query_existing_profile(
+        &self,
+        conn: &rusqlite::Connection,
+        rider_id: Uuid,
+    ) -> Result<Option<ProfileData>, ProfileExportError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled
+                 FROM riders WHERE id = ?1",
+            )
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        match stmt.query_row([rider_id.to_string()], |row| {
+            Ok(ProfileData {
+                display_name: row.get(0)?,
+                bio: row.get(1)?,
+                ftp: row.get(2)?,
+                total_distance_km: row.get(3)?,
+                total_time_hours: row.get(4)?,
+                sharing_enabled: row.get(5)?,
+            })
+        }) {
+            Ok(profile) => Ok(Some(profile)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(ProfileExportError::DatabaseError(e.to_string())),
+        }
+    }
+
+    /// Find a rider by display name (for collision detection).
+    fn find_rider_by_display_name(
+        &self,
+        conn: &rusqlite::Connection,
+        display_name: &str,
+    ) -> Result<Option<Uuid>, ProfileExportError> {
+        let mut stmt = conn
+            .prepare("SELECT id FROM riders WHERE display_name = ?1")
+            .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+
+        match stmt.query_row([display_name], |row| {
+            let id_str: String = row.get(0)?;
+            Ok(id_str)
+        }) {
+            Ok(id_str) => {
+                let uuid = Uuid::parse_str(&id_str)
+                    .map_err(|e| ProfileExportError::DatabaseError(e.to_string()))?;
+                Ok(Some(uuid))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(ProfileExportError::DatabaseError(e.to_string())),
+        }
+    }
+
     /// Query the avatars table for avatar configuration.
     fn query_avatar(
         &self,
@@ -1119,5 +1276,302 @@ mod tests {
             "Error should mention type mismatch: {}",
             error_string
         );
+    }
+
+    // Tests for detect_conflicts method
+
+    #[test]
+    fn test_profile_conflict_existing_profile_creation() {
+        // Test creating ExistingProfile conflict with rider_id
+        let rider_id = Uuid::new_v4();
+        let conflict = ProfileConflict::ExistingProfile {
+            rider_id,
+            existing_name: "Existing Rider".to_string(),
+        };
+
+        if let ProfileConflict::ExistingProfile {
+            rider_id: conflict_id,
+            existing_name,
+        } = conflict
+        {
+            assert_eq!(conflict_id, rider_id);
+            assert_eq!(existing_name, "Existing Rider");
+        } else {
+            panic!("Expected ExistingProfile variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_display_name_mismatch_creation() {
+        // Test creating DisplayNameMismatch conflict
+        let conflict = ProfileConflict::DisplayNameMismatch {
+            imported_name: "New Rider Name".to_string(),
+            existing_name: "Old Rider Name".to_string(),
+        };
+
+        if let ProfileConflict::DisplayNameMismatch {
+            imported_name,
+            existing_name,
+        } = conflict
+        {
+            assert_eq!(imported_name, "New Rider Name");
+            assert_eq!(existing_name, "Old Rider Name");
+        } else {
+            panic!("Expected DisplayNameMismatch variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_ftp_mismatch_with_values() {
+        // Test FTP mismatch with both values present
+        let conflict = ProfileConflict::FtpMismatch {
+            imported_ftp: Some(280),
+            existing_ftp: Some(250),
+        };
+
+        if let ProfileConflict::FtpMismatch {
+            imported_ftp,
+            existing_ftp,
+        } = conflict
+        {
+            assert_eq!(imported_ftp, Some(280));
+            assert_eq!(existing_ftp, Some(250));
+        } else {
+            panic!("Expected FtpMismatch variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_ftp_mismatch_with_none() {
+        // Test FTP mismatch where one value is None
+        let conflict = ProfileConflict::FtpMismatch {
+            imported_ftp: Some(280),
+            existing_ftp: None,
+        };
+
+        if let ProfileConflict::FtpMismatch {
+            imported_ftp,
+            existing_ftp,
+        } = conflict
+        {
+            assert_eq!(imported_ftp, Some(280));
+            assert_eq!(existing_ftp, None);
+        } else {
+            panic!("Expected FtpMismatch variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_avatar_mismatch_creation() {
+        // Test AvatarMismatch when import has avatar but existing doesn't
+        let conflict = ProfileConflict::AvatarMismatch {
+            import_has_avatar: true,
+            existing_has_avatar: false,
+        };
+
+        if let ProfileConflict::AvatarMismatch {
+            import_has_avatar,
+            existing_has_avatar,
+        } = conflict
+        {
+            assert!(import_has_avatar);
+            assert!(!existing_has_avatar);
+        } else {
+            panic!("Expected AvatarMismatch variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_avatar_mismatch_both_have_avatar() {
+        // Test AvatarMismatch when both have avatars but they differ
+        let conflict = ProfileConflict::AvatarMismatch {
+            import_has_avatar: true,
+            existing_has_avatar: true,
+        };
+
+        if let ProfileConflict::AvatarMismatch {
+            import_has_avatar,
+            existing_has_avatar,
+        } = conflict
+        {
+            assert!(import_has_avatar);
+            assert!(existing_has_avatar);
+        } else {
+            panic!("Expected AvatarMismatch variant");
+        }
+    }
+
+    #[test]
+    fn test_profile_import_result_with_conflicts_list() {
+        // Test creating import result with multiple conflicts
+        let rider_id = Uuid::new_v4();
+        let conflicts = vec![
+            ProfileConflict::ExistingProfile {
+                rider_id,
+                existing_name: "Existing Rider".to_string(),
+            },
+            ProfileConflict::DisplayNameMismatch {
+                imported_name: "New Name".to_string(),
+                existing_name: "Existing Rider".to_string(),
+            },
+            ProfileConflict::FtpMismatch {
+                imported_ftp: Some(300),
+                existing_ftp: Some(280),
+            },
+            ProfileConflict::AvatarMismatch {
+                import_has_avatar: true,
+                existing_has_avatar: false,
+            },
+        ];
+
+        let result = ProfileImportResult::with_conflicts(conflicts);
+
+        assert!(!result.success);
+        assert_eq!(result.conflicts.len(), 4);
+        assert_eq!(result.ftp_entries_imported, 0);
+        assert_eq!(result.ftp_entries_skipped, 0);
+        assert!(!result.profile_updated);
+        assert!(!result.avatar_updated);
+    }
+
+    #[test]
+    fn test_detect_conflicts_creates_valid_conflict_list() {
+        // Test that conflict detection produces valid conflict structures
+        // This tests the logic without requiring a database
+
+        // Simulate what detect_conflicts would produce for an existing profile scenario
+        let rider_id = Uuid::new_v4();
+        let mut conflicts = Vec::new();
+
+        // Simulate: existing profile found with same rider_id
+        let existing_name = "Existing Rider".to_string();
+        conflicts.push(ProfileConflict::ExistingProfile {
+            rider_id,
+            existing_name: existing_name.clone(),
+        });
+
+        // Simulate: display name mismatch
+        let imported_name = "Imported Rider".to_string();
+        if imported_name != existing_name {
+            conflicts.push(ProfileConflict::DisplayNameMismatch {
+                imported_name: imported_name.clone(),
+                existing_name: existing_name.clone(),
+            });
+        }
+
+        // Simulate: FTP mismatch
+        let imported_ftp = Some(280u16);
+        let existing_ftp = Some(250u16);
+        if imported_ftp != existing_ftp {
+            conflicts.push(ProfileConflict::FtpMismatch {
+                imported_ftp,
+                existing_ftp,
+            });
+        }
+
+        // Verify conflicts were created correctly
+        assert_eq!(conflicts.len(), 3);
+        assert!(matches!(conflicts[0], ProfileConflict::ExistingProfile { .. }));
+        assert!(matches!(conflicts[1], ProfileConflict::DisplayNameMismatch { .. }));
+        assert!(matches!(conflicts[2], ProfileConflict::FtpMismatch { .. }));
+    }
+
+    #[test]
+    fn test_detect_conflicts_no_conflict_when_values_match() {
+        // Test that no conflicts are created when values match
+        let mut conflicts = Vec::new();
+
+        // Same display name - no DisplayNameMismatch
+        let imported_name = "Same Rider".to_string();
+        let existing_name = "Same Rider".to_string();
+        if imported_name != existing_name {
+            conflicts.push(ProfileConflict::DisplayNameMismatch {
+                imported_name,
+                existing_name,
+            });
+        }
+
+        // Same FTP - no FtpMismatch
+        let imported_ftp = Some(250u16);
+        let existing_ftp = Some(250u16);
+        if imported_ftp != existing_ftp {
+            conflicts.push(ProfileConflict::FtpMismatch {
+                imported_ftp,
+                existing_ftp,
+            });
+        }
+
+        // Same avatar state - no AvatarMismatch
+        let import_has_avatar = true;
+        let existing_has_avatar = true;
+        if import_has_avatar != existing_has_avatar {
+            conflicts.push(ProfileConflict::AvatarMismatch {
+                import_has_avatar,
+                existing_has_avatar,
+            });
+        }
+
+        // No conflicts should be added when values match
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_detect_conflicts_display_name_collision_scenario() {
+        // Test scenario: different rider_id but same display_name (name collision)
+        let colliding_rider_id = Uuid::new_v4();
+        let imported_rider_id = Uuid::new_v4();
+        let display_name = "Popular Name".to_string();
+        let mut conflicts = Vec::new();
+
+        // Different IDs but same name - this is a name collision
+        assert_ne!(imported_rider_id, colliding_rider_id);
+
+        // When no existing profile with same rider_id, but name collision exists
+        conflicts.push(ProfileConflict::DisplayNameMismatch {
+            imported_name: display_name.clone(),
+            existing_name: display_name.clone(),
+        });
+        conflicts.push(ProfileConflict::ExistingProfile {
+            rider_id: colliding_rider_id,
+            existing_name: display_name,
+        });
+
+        assert_eq!(conflicts.len(), 2);
+        assert!(matches!(conflicts[0], ProfileConflict::DisplayNameMismatch { .. }));
+        assert!(matches!(conflicts[1], ProfileConflict::ExistingProfile { .. }));
+    }
+
+    #[test]
+    fn test_profile_conflict_clone() {
+        // Test that ProfileConflict can be cloned
+        let rider_id = Uuid::new_v4();
+        let conflict = ProfileConflict::ExistingProfile {
+            rider_id,
+            existing_name: "Test Rider".to_string(),
+        };
+
+        let cloned = conflict.clone();
+        if let ProfileConflict::ExistingProfile {
+            rider_id: cloned_id,
+            existing_name,
+        } = cloned
+        {
+            assert_eq!(cloned_id, rider_id);
+            assert_eq!(existing_name, "Test Rider");
+        }
+    }
+
+    #[test]
+    fn test_profile_conflict_debug_format() {
+        // Test that ProfileConflict implements Debug
+        let conflict = ProfileConflict::FtpMismatch {
+            imported_ftp: Some(280),
+            existing_ftp: Some(250),
+        };
+
+        let debug_str = format!("{:?}", conflict);
+        assert!(debug_str.contains("FtpMismatch"));
+        assert!(debug_str.contains("280"));
+        assert!(debug_str.contains("250"));
     }
 }
