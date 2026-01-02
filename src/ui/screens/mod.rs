@@ -23,6 +23,7 @@ pub mod route_browser;
 pub mod route_import;
 pub mod sensor_setup;
 pub mod settings;
+pub mod settings_strava;
 pub mod streaming;
 pub mod training_plans;
 pub mod workout_library;
@@ -54,6 +55,9 @@ pub use route_browser::{RouteBrowserAction, RouteBrowserScreen, RouteSortOrder};
 pub use route_import::{RouteImportAction, RouteImportScreen};
 pub use sensor_setup::SensorSetupScreen;
 pub use settings::{SettingsAction, SettingsScreen};
+pub use settings_strava::{
+    StravaConnectionState, StravaSettingsAction, StravaSettingsScreen,
+};
 pub use streaming::{StreamingAction, StreamingScreen};
 pub use training_plans::{PlanSortOrder, TrainingPlansAction, TrainingPlansScreen};
 pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};
@@ -81,6 +85,8 @@ pub enum Screen {
     RideDetail,
     /// Settings screen
     Settings,
+    /// Strava settings screen
+    StravaSettings,
     /// World selection screen
     WorldSelect,
     /// Avatar customization screen
