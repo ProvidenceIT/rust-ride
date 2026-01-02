@@ -1,8 +1,14 @@
 //! Text-to-Speech Provider
 //!
 //! Cross-platform TTS using the tts crate.
+//!
+//! Platform-specific backends:
+//! - Windows: SAPI (Speech API)
+//! - macOS: AVSpeechSynthesizer (or NSSpeechSynthesizer)
+//! - Linux: speech-dispatcher
 
 use super::AudioError;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 /// Voice information
@@ -61,11 +67,24 @@ pub trait TtsProvider: Send + Sync {
 }
 
 /// Default TTS provider using the tts crate
+///
+/// Note: The underlying `tts::Tts` is not `Send` on all platforms (especially macOS).
+/// This implementation uses a mutex-protected Option to handle this, with actual
+/// thread-safety improvements planned for subtask 1.4.
 pub struct DefaultTtsProvider {
+    /// The underlying TTS engine (lazily initialized)
+    /// Protected by mutex since Tts is not Send+Sync on all platforms
+    engine: Mutex<Option<tts::Tts>>,
+    /// Whether TTS has been initialized
+    initialized: AtomicBool,
+    /// Speech rate (0.5 - 2.0, where 1.0 is normal)
     rate: Mutex<f32>,
+    /// Volume (0.0 - 1.0)
     volume: Mutex<f32>,
+    /// Current voice ID
     current_voice: Mutex<Option<String>>,
-    is_speaking: Mutex<bool>,
+    /// Whether currently speaking (tracked separately for thread-safety)
+    is_speaking: AtomicBool,
 }
 
 impl Default for DefaultTtsProvider {
@@ -76,25 +95,118 @@ impl Default for DefaultTtsProvider {
 
 impl DefaultTtsProvider {
     /// Create a new TTS provider
+    ///
+    /// The TTS engine is not initialized until `initialize()` is called.
     pub fn new() -> Self {
         Self {
+            engine: Mutex::new(None),
+            initialized: AtomicBool::new(false),
             rate: Mutex::new(1.0),
             volume: Mutex::new(1.0),
             current_voice: Mutex::new(None),
-            is_speaking: Mutex::new(false),
+            is_speaking: AtomicBool::new(false),
+        }
+    }
+
+    /// Ensure TTS is initialized, initializing lazily if needed
+    fn ensure_initialized(&self) -> Result<(), AudioError> {
+        if self.initialized.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.initialize()
+    }
+
+    /// Apply the current rate setting to the TTS engine
+    fn apply_rate(&self, tts: &mut tts::Tts) {
+        let rate = *self.rate.lock().unwrap();
+        // The tts crate expects rate as a value where 1.0 is normal
+        // Our range is 0.5-2.0, which maps well to the crate's expectations
+        if let Err(e) = tts.set_rate(rate) {
+            tracing::warn!("Failed to set TTS rate: {}", e);
+        }
+    }
+
+    /// Apply the current volume setting to the TTS engine
+    fn apply_volume(&self, tts: &mut tts::Tts) {
+        let volume = *self.volume.lock().unwrap();
+        // Volume is 0.0-1.0 in both our API and the tts crate
+        if let Err(e) = tts.set_volume(volume) {
+            tracing::warn!("Failed to set TTS volume: {}", e);
         }
     }
 }
 
 impl TtsProvider for DefaultTtsProvider {
     fn initialize(&self) -> Result<(), AudioError> {
+        // Check if already initialized
+        if self.initialized.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
         tracing::info!("Initializing TTS provider");
 
-        // TODO: Actually initialize TTS
-        // let tts = tts::Tts::default()
-        //     .map_err(|e| AudioError::TtsInitFailed(e.to_string()))?;
+        // Platform-specific initialization notes:
+        // - Windows: Uses SAPI (Speech API), generally reliable
+        // - macOS: Uses AVSpeechSynthesizer, well-supported
+        // - Linux: Uses speech-dispatcher, requires speechd installed
 
-        Ok(())
+        let tts_result = tts::Tts::default();
+
+        match tts_result {
+            Ok(mut tts_engine) => {
+                // Log the backend being used
+                #[cfg(target_os = "windows")]
+                tracing::info!("TTS initialized with Windows SAPI backend");
+                #[cfg(target_os = "macos")]
+                tracing::info!("TTS initialized with macOS speech backend");
+                #[cfg(target_os = "linux")]
+                tracing::info!("TTS initialized with Linux speech-dispatcher backend");
+                #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+                tracing::info!("TTS initialized with platform backend");
+
+                // Apply initial rate and volume settings
+                self.apply_rate(&mut tts_engine);
+                self.apply_volume(&mut tts_engine);
+
+                // Store the engine
+                let mut engine_guard = self.engine.lock().unwrap();
+                *engine_guard = Some(tts_engine);
+
+                // Mark as initialized
+                self.initialized.store(true, Ordering::Release);
+
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("{}", e);
+
+                // Provide platform-specific troubleshooting hints
+                #[cfg(target_os = "linux")]
+                tracing::error!(
+                    "TTS initialization failed: {}. On Linux, ensure speech-dispatcher is installed: \
+                     sudo apt install speech-dispatcher",
+                    error_msg
+                );
+
+                #[cfg(target_os = "windows")]
+                tracing::error!(
+                    "TTS initialization failed: {}. Windows SAPI should be available by default. \
+                     Try running: Add-WindowsCapability -Online -Name Language.Speech~~~en-US~0.0.1.0",
+                    error_msg
+                );
+
+                #[cfg(target_os = "macos")]
+                tracing::error!(
+                    "TTS initialization failed: {}. macOS speech synthesis should be available by default.",
+                    error_msg
+                );
+
+                #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+                tracing::error!("TTS initialization failed: {}", error_msg);
+
+                Err(AudioError::TtsInitFailed(error_msg))
+            }
+        }
     }
 
     fn get_voices(&self) -> Vec<VoiceInfo> {
@@ -163,20 +275,54 @@ impl TtsProvider for DefaultTtsProvider {
             return Ok(());
         }
 
-        *self.is_speaking.lock().unwrap() = true;
+        // Ensure TTS is initialized
+        self.ensure_initialized()?;
+
+        self.is_speaking.store(true, Ordering::Release);
 
         tracing::debug!("TTS speaking: {}", text);
 
-        // TODO: Actually speak using TTS
-        // tts.speak(text, false)?;
+        let result = {
+            let mut engine_guard = self.engine.lock().unwrap();
+            if let Some(ref mut tts) = *engine_guard {
+                // Apply current settings before speaking
+                self.apply_rate(tts);
+                self.apply_volume(tts);
 
-        // Simulate speech duration
-        let duration = std::time::Duration::from_millis((text.len() as u64 * 50).min(10000));
-        std::thread::sleep(duration);
+                // Speak the text (interrupt=false to queue if already speaking)
+                match tts.speak(text, false) {
+                    Ok(_utterance_id) => {
+                        // Wait for speech to complete by polling is_speaking
+                        // This is a blocking implementation; async version is separate
+                        loop {
+                            match tts.is_speaking() {
+                                Ok(true) => {
+                                    std::thread::sleep(std::time::Duration::from_millis(50));
+                                }
+                                Ok(false) => break,
+                                Err(e) => {
+                                    tracing::warn!("Error checking TTS speaking state: {}", e);
+                                    // Estimate duration based on text length as fallback
+                                    let estimated_ms = (text.len() as u64 * 60).min(10000);
+                                    std::thread::sleep(std::time::Duration::from_millis(estimated_ms));
+                                    break;
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("TTS speak failed: {}", e);
+                        Err(AudioError::PlaybackFailed(e.to_string()))
+                    }
+                }
+            } else {
+                Err(AudioError::TtsInitFailed("TTS engine not initialized".to_string()))
+            }
+        };
 
-        *self.is_speaking.lock().unwrap() = false;
-
-        Ok(())
+        self.is_speaking.store(false, Ordering::Release);
+        result
     }
 
     async fn speak_async(&self, text: &str) -> Result<(), AudioError> {
@@ -184,26 +330,119 @@ impl TtsProvider for DefaultTtsProvider {
             return Ok(());
         }
 
-        *self.is_speaking.lock().unwrap() = true;
+        // Ensure TTS is initialized
+        self.ensure_initialized()?;
+
+        self.is_speaking.store(true, Ordering::Release);
 
         tracing::debug!("TTS speaking async: {}", text);
 
-        // TODO: Actually speak using TTS asynchronously
-        let duration = std::time::Duration::from_millis((text.len() as u64 * 50).min(10000));
-        tokio::time::sleep(duration).await;
+        // The TTS crate's operations are blocking, so we need to handle this carefully.
+        // Since tts::Tts is not Send, we cannot easily move it to a spawn_blocking task.
+        // For now, we'll do the speak call synchronously but use async sleep for waiting.
+        //
+        // Note: Subtask 1.4 will implement proper thread-based TTS handling.
 
-        *self.is_speaking.lock().unwrap() = false;
+        let speak_result = {
+            let mut engine_guard = self.engine.lock().unwrap();
+            if let Some(ref mut tts) = *engine_guard {
+                // Apply current settings before speaking
+                self.apply_rate(tts);
+                self.apply_volume(tts);
 
+                // Initiate speech (non-blocking, just starts the speech)
+                match tts.speak(text, false) {
+                    Ok(_utterance_id) => Ok(()),
+                    Err(e) => {
+                        tracing::error!("TTS speak failed: {}", e);
+                        Err(AudioError::PlaybackFailed(e.to_string()))
+                    }
+                }
+            } else {
+                Err(AudioError::TtsInitFailed("TTS engine not initialized".to_string()))
+            }
+        };
+
+        // If speak initiation failed, return early
+        if let Err(e) = speak_result {
+            self.is_speaking.store(false, Ordering::Release);
+            return Err(e);
+        }
+
+        // Poll for speech completion asynchronously
+        loop {
+            // Check speaking state
+            let still_speaking = {
+                let engine_guard = self.engine.lock().unwrap();
+                if let Some(ref tts) = *engine_guard {
+                    match tts.is_speaking() {
+                        Ok(speaking) => speaking,
+                        Err(e) => {
+                            tracing::warn!("Error checking TTS speaking state: {}", e);
+                            // Assume not speaking on error, fall back to time-based wait
+                            let estimated_ms = (text.len() as u64 * 60).min(10000);
+                            tokio::time::sleep(std::time::Duration::from_millis(estimated_ms)).await;
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if !still_speaking {
+                break;
+            }
+
+            // Yield control while waiting
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        self.is_speaking.store(false, Ordering::Release);
         Ok(())
     }
 
     fn stop(&self) {
-        *self.is_speaking.lock().unwrap() = false;
-        // TODO: Actually stop TTS
+        tracing::debug!("TTS stop requested");
+
+        // Try to stop the TTS engine
+        let mut engine_guard = self.engine.lock().unwrap();
+        if let Some(ref mut tts) = *engine_guard {
+            if let Err(e) = tts.stop() {
+                tracing::warn!("Failed to stop TTS: {}", e);
+            }
+        }
+
+        self.is_speaking.store(false, Ordering::Release);
     }
 
     fn is_speaking(&self) -> bool {
-        *self.is_speaking.lock().unwrap()
+        // First check our tracked state
+        if !self.is_speaking.load(Ordering::Acquire) {
+            return false;
+        }
+
+        // If we think we're speaking, verify with the TTS engine
+        let engine_guard = self.engine.lock().unwrap();
+        if let Some(ref tts) = *engine_guard {
+            match tts.is_speaking() {
+                Ok(speaking) => {
+                    // Update our state if TTS engine says we're not speaking
+                    if !speaking {
+                        drop(engine_guard);
+                        self.is_speaking.store(false, Ordering::Release);
+                    }
+                    speaking
+                }
+                Err(_) => {
+                    // On error, trust our tracked state
+                    true
+                }
+            }
+        } else {
+            // No engine means not speaking
+            false
+        }
     }
 }
 
@@ -305,6 +544,8 @@ mod tests {
         assert!(!provider.is_speaking());
         assert_eq!(provider.get_rate(), 1.0);
         assert_eq!(provider.get_volume(), 1.0);
+        // Not initialized until initialize() is called
+        assert!(!provider.initialized.load(Ordering::Acquire));
     }
 
     #[test]
@@ -315,6 +556,50 @@ mod tests {
 
         provider.set_rate(0.1);
         assert_eq!(provider.get_rate(), 0.5);
+
+        // Normal rate should pass through
+        provider.set_rate(1.5);
+        assert_eq!(provider.get_rate(), 1.5);
+    }
+
+    #[test]
+    fn test_volume_clamping() {
+        let provider = DefaultTtsProvider::new();
+        provider.set_volume(1.5);
+        assert_eq!(provider.get_volume(), 1.0);
+
+        provider.set_volume(-0.5);
+        assert_eq!(provider.get_volume(), 0.0);
+
+        // Normal volume should pass through
+        provider.set_volume(0.75);
+        assert_eq!(provider.get_volume(), 0.75);
+    }
+
+    #[test]
+    fn test_empty_text_speak() {
+        let provider = DefaultTtsProvider::new();
+        // Empty text should return Ok without initializing TTS
+        let result = provider.speak("");
+        assert!(result.is_ok());
+        assert!(!provider.initialized.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_voice_setting() {
+        let provider = DefaultTtsProvider::new();
+
+        // Initially no voice is set
+        assert!(provider.get_current_voice().is_none());
+
+        // Set a valid voice (from the placeholder list)
+        let result = provider.set_voice("default");
+        assert!(result.is_ok());
+        assert_eq!(provider.get_current_voice(), Some("default".to_string()));
+
+        // Invalid voice should fail
+        let result = provider.set_voice("nonexistent_voice");
+        assert!(result.is_err());
     }
 
     #[test]
