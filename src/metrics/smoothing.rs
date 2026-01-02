@@ -292,6 +292,36 @@ mod tests {
     }
 
     #[test]
+    fn test_rolling_average_10s() {
+        let mut avg = RollingAverage::ten_second();
+
+        // Add first 9 values (not yet full)
+        for i in 1..=9 {
+            let value = 100 + (i as u16 * 10); // 110, 120, ... 190
+            avg.add(value);
+            assert!(!avg.is_full(), "Should not be full with {} samples", i);
+        }
+
+        // Check partial average: (110+120+...+190)/9 = 1350/9 = 150
+        assert_eq!(avg.average(), Some(150));
+
+        // 10th value - now full
+        assert_eq!(avg.add(200), Some(155)); // (110+120+...+190+200)/10 = 1550/10 = 155
+        assert!(avg.is_full());
+
+        // 11th value - first drops off
+        // (120+130+...+200+210) / 10 = (1550 - 110 + 210) / 10 = 1650/10 = 165
+        assert_eq!(avg.add(210), Some(165));
+        assert!(avg.is_full());
+
+        // Test reset
+        avg.reset();
+        assert!(avg.is_empty());
+        assert!(!avg.is_full());
+        assert_eq!(avg.average(), None);
+    }
+
+    #[test]
     fn test_normalized_power() {
         let mut np_calc = NormalizedPowerCalculator::new();
 
