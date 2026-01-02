@@ -5,7 +5,10 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::storage::Database;
 
 /// Export format for rider profile data.
 ///
@@ -213,6 +216,26 @@ pub enum ProfileExportError {
         /// The version found in the import file.
         found: String,
     },
+}
+
+/// Profile exporter for creating and importing profile backups.
+///
+/// Provides methods to export rider profiles to JSON and import them back,
+/// following the pattern from `LeaderboardExporter`.
+pub struct ProfileExporter {
+    db: Arc<Database>,
+}
+
+impl ProfileExporter {
+    /// Create a new profile exporter with the given database connection.
+    pub fn new(db: Arc<Database>) -> Self {
+        Self { db }
+    }
+
+    /// Get a reference to the database.
+    pub fn database(&self) -> &Arc<Database> {
+        &self.db
+    }
 }
 
 #[cfg(test)]
