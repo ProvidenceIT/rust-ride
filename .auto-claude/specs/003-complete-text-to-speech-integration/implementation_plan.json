@@ -27,20 +27,20 @@
           "title": "Implement voice enumeration and selection",
           "description": "Replace the hardcoded voice list with actual system voice enumeration from the tts crate. Implement get_voices() to return real voices with proper language codes, and implement set_voice() to actually change the TTS voice.",
           "file_paths": ["src/audio/tts.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "dependencies": ["1.1"],
-          "notes": "Voice IDs are platform-specific. Need to map between tts::Voice and VoiceInfo."
+          "notes": "COMPLETED: Implemented real voice enumeration using tts.voices() and voice selection using tts.set_voice(). get_voices() maps tts::Voice to VoiceInfo with id, name, language, and is_default. set_voice() finds the matching voice by ID and actually sets it in the TTS engine. Tests updated to work with dynamic voice lists and handle CI environments."
         },
         {
           "subtask_id": "1.3",
           "title": "Implement rate and volume controls",
           "description": "Wire up set_rate() and set_volume() to actually affect TTS output. The tts crate supports rate and volume settings. Ensure proper clamping and normalization between our 0-1 range and the tts crate's expected ranges.",
           "file_paths": ["src/audio/tts.rs"],
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "dependencies": ["1.1"],
-          "notes": "The tts crate uses Normal, Slow, Fast rate values. Need to map our f32 values appropriately."
+          "notes": "COMPLETED: Rate and volume controls were already implemented in subtask 1.1. set_rate() clamps to 0.5-2.0 (where 1.0 is normal speed), set_volume() clamps to 0.0-1.0. Both are applied via apply_rate() and apply_volume() helper methods, called during initialization and before each speak/speak_async operation. The tts crate 0.26 uses f32 values directly for both."
         },
         {
           "subtask_id": "1.4",

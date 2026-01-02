@@ -5,10 +5,10 @@ Finish the TTS module implementation to provide voice announcements during worko
 
 ## Current Status: In Progress
 
-### Phase 1: Core TTS Implementation (1/4 subtasks)
+### Phase 1: Core TTS Implementation (3/4 subtasks)
 - [x] 1.1 Implement TTS crate integration
-- [ ] 1.2 Implement voice enumeration and selection
-- [ ] 1.3 Implement rate and volume controls
+- [x] 1.2 Implement voice enumeration and selection
+- [x] 1.3 Implement rate and volume controls
 - [ ] 1.4 Add TTS state management and thread safety
 
 ### Phase 2: Audio Engine Integration (0/3 subtasks)
