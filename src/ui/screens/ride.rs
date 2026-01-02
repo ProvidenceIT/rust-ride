@@ -1025,6 +1025,16 @@ impl RideScreen {
                     .with_size(size)
                     .show(ui);
             }
+            MetricType::Cadence3s => {
+                MetricDisplay::cadence_3s(self.metrics.cadence_3s_avg)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Cadence10s => {
+                MetricDisplay::cadence_10s(self.metrics.cadence_10s_avg)
+                    .with_size(size)
+                    .show(ui);
+            }
             MetricType::Speed => {
                 MetricDisplay::speed(self.metrics.speed)
                     .with_size(size)
