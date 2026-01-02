@@ -28,6 +28,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::ipc::messages::{ErrorCode, IpcError, IpcRequest, IpcResponse};
+use crate::recording::types::ExportFormat;
 
 use super::state::{DaemonState, DaemonStatus, LiveMetrics, SessionInfo, SessionType, WorkoutInfo};
 use chrono::Utc;
@@ -532,6 +533,10 @@ async fn handle_status_live(id: String, state: Arc<RwLock<DaemonState>>) -> IpcR
 // =============================================================================
 
 /// Handle RideExport command - exports a ride to file
+///
+/// Supports FIT, TCX, and CSV export formats. FIT is the default and recommended
+/// format for maximum compatibility with Garmin Connect, TrainingPeaks, and other
+/// fitness platforms.
 async fn handle_ride_export(
     id: String,
     params: serde_json::Value,
@@ -550,13 +555,39 @@ async fn handle_ride_export(
         }
     };
 
-    let format = params
+    // Parse format string to ExportFormat enum (defaults to FIT)
+    let format_str = params
         .get("format")
         .and_then(|v| v.as_str())
         .unwrap_or("fit")
         .to_lowercase();
 
+    let export_format = match format_str.as_str() {
+        "fit" => ExportFormat::Fit,
+        "tcx" => ExportFormat::Tcx,
+        "csv" => ExportFormat::Csv,
+        _ => {
+            return IpcResponse::error(
+                id,
+                IpcError {
+                    code: ErrorCode::InvalidFormat,
+                    message: format!(
+                        "Invalid export format '{}'. Supported formats: fit, tcx, csv",
+                        format_str
+                    ),
+                },
+            );
+        }
+    };
+
     let output_path = params.get("output_path").and_then(|v| v.as_str());
+
+    // Determine file extension based on format
+    let extension = match export_format {
+        ExportFormat::Fit => "fit",
+        ExportFormat::Tcx => "tcx",
+        ExportFormat::Csv => "csv",
+    };
 
     // Generate output path if not provided
     let export_path = if let Some(path) = output_path {
@@ -566,7 +597,7 @@ async fn handle_ride_export(
         let home = directories::UserDirs::new()
             .map(|d| d.home_dir().to_path_buf())
             .unwrap_or_else(|| PathBuf::from("/tmp"));
-        let filename = format!("ride_{}.{}", ride_id, format);
+        let filename = format!("ride_{}.{}", ride_id, extension);
         home.join("RustRide").join("exports").join(filename)
     };
 
@@ -583,22 +614,39 @@ async fn handle_ride_export(
         }
     }
 
-    // TODO: Actually export the ride from database
-    // For now, return success with the path that would be used
+    // Log the export request with format info
     info!(
-        "Export requested: ride {} to {} as {}",
+        "Export requested: ride {} to {} as {:?}",
         ride_id,
         export_path.display(),
-        format
+        export_format
     );
+
+    // TODO: Load ride and samples from database using:
+    //   let db = Database::open_default()?;
+    //   let ride_uuid = Uuid::parse_str(&ride_id)?;
+    //   let (ride, samples) = db.get_ride_with_samples(&ride_uuid)?;
+    //
+    // Then export based on format:
+    //   match export_format {
+    //       ExportFormat::Fit => {
+    //           crate::recording::export_fit_to_file(&ride, &samples, &export_path)?;
+    //       }
+    //       ExportFormat::Tcx => {
+    //           crate::recording::export_tcx_to_file(&ride, &samples, &export_path)?;
+    //       }
+    //       ExportFormat::Csv => {
+    //           crate::recording::export_csv_to_file(&ride, &samples, &export_path)?;
+    //       }
+    //   }
 
     IpcResponse::success(
         id,
         serde_json::json!({
             "ride_id": ride_id,
-            "format": format,
+            "format": extension,
             "path": export_path.display().to_string(),
-            "message": "Export handler ready (integration pending)"
+            "message": "Export handler ready (database integration pending)"
         }),
     )
 }

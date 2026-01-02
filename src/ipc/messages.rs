@@ -101,6 +101,8 @@ pub enum ErrorCode {
     WorkoutParseError,
     /// Failed to export ride
     ExportFailed,
+    /// Invalid export format specified
+    InvalidFormat,
     /// Ride ID not found
     RideNotFound,
     /// BLE adapter not available
@@ -122,6 +124,7 @@ impl ErrorCode {
             ErrorCode::WorkoutNotFound => 6,
             ErrorCode::WorkoutParseError => 1,
             ErrorCode::ExportFailed => 1,
+            ErrorCode::InvalidFormat => 1,
             ErrorCode::RideNotFound => 6,
             ErrorCode::NoBleAdapter => 1,
             ErrorCode::PermissionDenied => 1,
