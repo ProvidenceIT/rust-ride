@@ -3,23 +3,23 @@
   "spec": "008-rolling-cadence-average-display",
   "state": "building",
   "subtasks": {
-    "completed": 1,
+    "completed": 2,
     "total": 13,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Extend RollingAverage with 10-second factory method",
+    "current": "Add cadence fields to AggregatedMetrics",
     "id": null,
-    "total": 2
+    "total": 1
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 3,
+    "number": 4,
     "started_at": "2026-01-02T23:53:05.610628"
   },
-  "last_update": "2026-01-02T23:58:42.494894"
+  "last_update": "2026-01-03T00:00:23.749342"
 }

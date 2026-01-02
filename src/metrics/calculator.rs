@@ -23,6 +23,10 @@ pub struct AggregatedMetrics {
     pub power_30s_avg: Option<u16>,
     /// Current cadence
     pub cadence: Option<u8>,
+    /// 3-second rolling average cadence
+    pub cadence_3s_avg: Option<u8>,
+    /// 10-second rolling average cadence
+    pub cadence_10s_avg: Option<u8>,
     /// Current heart rate
     pub heart_rate: Option<u8>,
     /// Current speed in km/h

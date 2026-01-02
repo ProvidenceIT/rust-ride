@@ -35,11 +35,12 @@
           "title": "Add test for 10-second rolling average",
           "file": "src/metrics/smoothing.rs",
           "description": "Add unit test for ten_second() rolling average to verify correct window size and averaging behavior",
-          "status": "pending",
+          "status": "completed",
           "tests": [
             "test_rolling_average_10s"
           ],
-          "notes": "Follow pattern of test_rolling_average_3s"
+          "notes": "Added test_rolling_average_10s test that verifies: window fills correctly with 10 samples, is_full() returns false until 10th sample, averaging behavior works correctly, oldest values drop off properly, and reset() clears state. Committed as da2e1a4.",
+          "updated_at": "2026-01-02T22:59:59.224649+00:00"
         }
       ]
     },
@@ -209,5 +210,5 @@
     "issues": [],
     "tests_passed": []
   },
-  "last_updated": "2026-01-02T22:58:15.483023+00:00"
+  "last_updated": "2026-01-02T22:59:59.224649+00:00"
 }
