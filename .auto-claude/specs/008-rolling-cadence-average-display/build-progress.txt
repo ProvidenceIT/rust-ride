@@ -8,15 +8,15 @@ Add 3-second and 10-second rolling cadence averages to the metrics display, matc
 ## Implementation Overview
 
 ### Phase 1: Extend RollingAverage (smoothing.rs)
-- [ ] 1.1 Add ten_second() factory method
-- [ ] 1.2 Add test for 10-second rolling average
+- [x] 1.1 Add ten_second() factory method (28a8d87)
+- [x] 1.2 Add test for 10-second rolling average (da2e1a4)
 
 ### Phase 2: Extend AggregatedMetrics (calculator.rs)
-- [ ] 2.1 Add cadence_3s_avg and cadence_10s_avg fields
+- [x] 2.1 Add cadence_3s_avg and cadence_10s_avg fields (72dd961)
 
 ### Phase 3: MetricsCalculator cadence smoothing (calculator.rs)
-- [ ] 3.1 Add cadence_3s and cadence_10s RollingAverage fields
-- [ ] 3.2 Process cadence through rolling averages in process()
+- [x] 3.1 Add cadence_3s and cadence_10s RollingAverage fields (2e1c253)
+- [x] 3.2 Process cadence through rolling averages in process() (63e7bd0)
 - [ ] 3.3 Add cadence smoothing tests
 
 ### Phase 4: UI metric types (config.rs, metric_display.rs, ride.rs)

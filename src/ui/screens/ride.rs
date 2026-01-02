@@ -922,13 +922,14 @@ impl RideScreen {
 
                 ui.add_space(48.0);
 
-                // Cadence
+                // Cadence (smoothed with raw fallback)
                 ui.vertical(|ui| {
                     ui.label(RichText::new("CADENCE").size(16.0).weak());
                     ui.horizontal(|ui| {
                         let cad_text = self
                             .metrics
-                            .cadence
+                            .cadence_3s_avg
+                            .or(self.metrics.cadence)
                             .map(|c| c.to_string())
                             .unwrap_or_else(|| "--".to_string());
                         ui.label(RichText::new(cad_text).size(96.0).strong());
