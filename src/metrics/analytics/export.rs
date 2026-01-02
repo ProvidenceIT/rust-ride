@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use super::critical_power::CpModel;
 use super::pdc::PdcPoint;
+use super::rider_type::{PowerProfile, RiderType};
 use super::training_load::DailyLoad;
+use super::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
 
 /// A single point on the power duration curve for export.
 ///
@@ -250,6 +252,215 @@ impl From<CpModel> for CpModelExport {
     }
 }
 
+/// Export format for VO2max estimation data.
+///
+/// Contains the estimated VO2max value, fitness classification, and estimation method.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Vo2maxExport {
+    /// Estimated VO2max in ml/kg/min.
+    pub vo2max: f32,
+    /// Fitness classification (human-readable string).
+    pub classification: String,
+    /// Method used for estimation (human-readable string).
+    pub method: String,
+    /// When this estimate was calculated (if tracked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calculated_at: Option<DateTime<Utc>>,
+}
+
+impl Vo2maxExport {
+    /// Create a new VO2max export.
+    pub fn new(vo2max: f32, classification: &str, method: &str) -> Self {
+        Self {
+            vo2max,
+            classification: classification.to_string(),
+            method: method.to_string(),
+            calculated_at: None,
+        }
+    }
+
+    /// Create a new VO2max export with timestamp.
+    pub fn with_timestamp(
+        vo2max: f32,
+        classification: &str,
+        method: &str,
+        calculated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            vo2max,
+            classification: classification.to_string(),
+            method: method.to_string(),
+            calculated_at: Some(calculated_at),
+        }
+    }
+
+    /// Convert FitnessLevel to human-readable string.
+    pub fn fitness_level_to_string(level: FitnessLevel) -> &'static str {
+        match level {
+            FitnessLevel::Untrained => "Untrained",
+            FitnessLevel::Recreational => "Recreational",
+            FitnessLevel::Trained => "Trained",
+            FitnessLevel::WellTrained => "Well-Trained",
+            FitnessLevel::Elite => "Elite",
+            FitnessLevel::WorldClass => "World-Class",
+        }
+    }
+
+    /// Convert Vo2maxMethod to human-readable string.
+    pub fn method_to_string(method: Vo2maxMethod) -> &'static str {
+        match method {
+            Vo2maxMethod::FiveMinutePower => "5-minute power (Hawley-Noakes)",
+            Vo2maxMethod::FtpBased => "FTP-based estimation",
+            Vo2maxMethod::CriticalPowerBased => "Critical Power-based",
+        }
+    }
+}
+
+impl From<Vo2maxResult> for Vo2maxExport {
+    fn from(result: Vo2maxResult) -> Self {
+        Self {
+            vo2max: result.vo2max,
+            classification: Self::fitness_level_to_string(result.classification).to_string(),
+            method: Self::method_to_string(result.method).to_string(),
+            calculated_at: None,
+        }
+    }
+}
+
+/// Export format for power profile percentages.
+///
+/// Contains power values at key durations as percentages of FTP.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PowerProfileExport {
+    /// 5-second power as % of FTP (neuromuscular capacity).
+    pub neuromuscular_pct: f32,
+    /// 1-minute power as % of FTP (anaerobic capacity).
+    pub anaerobic_pct: f32,
+    /// 5-minute power as % of FTP (VO2max capacity).
+    pub vo2max_pct: f32,
+    /// FTP reference (always 100%).
+    pub threshold_pct: f32,
+}
+
+impl PowerProfileExport {
+    /// Create a new power profile export.
+    pub fn new(neuromuscular_pct: f32, anaerobic_pct: f32, vo2max_pct: f32) -> Self {
+        Self {
+            neuromuscular_pct,
+            anaerobic_pct,
+            vo2max_pct,
+            threshold_pct: 100.0,
+        }
+    }
+}
+
+impl From<PowerProfile> for PowerProfileExport {
+    fn from(profile: PowerProfile) -> Self {
+        Self {
+            neuromuscular_pct: profile.neuromuscular,
+            anaerobic_pct: profile.anaerobic,
+            vo2max_pct: profile.vo2max,
+            threshold_pct: profile.threshold,
+        }
+    }
+}
+
+/// Export format for fitness profile data.
+///
+/// Contains VO2max, FTP, rider type classification, and power profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FitnessProfileExport {
+    /// Estimated VO2max data (if available).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vo2max: Option<Vo2maxExport>,
+    /// Functional Threshold Power in watts (if known).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ftp_watts: Option<u16>,
+    /// Rider type classification (human-readable string).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rider_type: Option<String>,
+    /// Power profile percentages at key durations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub power_profile: Option<PowerProfileExport>,
+    /// When this profile was last updated (if tracked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+impl FitnessProfileExport {
+    /// Create a new empty fitness profile export.
+    pub fn new() -> Self {
+        Self {
+            vo2max: None,
+            ftp_watts: None,
+            rider_type: None,
+            power_profile: None,
+            updated_at: None,
+        }
+    }
+
+    /// Set the VO2max data.
+    pub fn with_vo2max(mut self, vo2max: Vo2maxExport) -> Self {
+        self.vo2max = Some(vo2max);
+        self
+    }
+
+    /// Set the FTP value.
+    pub fn with_ftp(mut self, ftp_watts: u16) -> Self {
+        self.ftp_watts = Some(ftp_watts);
+        self
+    }
+
+    /// Set the rider type.
+    pub fn with_rider_type(mut self, rider_type: RiderType) -> Self {
+        self.rider_type = Some(Self::rider_type_to_string(rider_type).to_string());
+        self
+    }
+
+    /// Set the rider type from a string.
+    pub fn with_rider_type_string(mut self, rider_type: impl Into<String>) -> Self {
+        self.rider_type = Some(rider_type.into());
+        self
+    }
+
+    /// Set the power profile.
+    pub fn with_power_profile(mut self, power_profile: PowerProfileExport) -> Self {
+        self.power_profile = Some(power_profile);
+        self
+    }
+
+    /// Set the update timestamp.
+    pub fn with_updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
+        self.updated_at = Some(updated_at);
+        self
+    }
+
+    /// Convert RiderType enum to human-readable string.
+    pub fn rider_type_to_string(rider_type: RiderType) -> &'static str {
+        match rider_type {
+            RiderType::Sprinter => "Sprinter",
+            RiderType::Pursuiter => "Pursuiter",
+            RiderType::TimeTrialist => "Time Trialist",
+            RiderType::AllRounder => "All-Rounder",
+            RiderType::Unknown => "Unknown",
+        }
+    }
+
+    /// Check if the profile has any data.
+    pub fn has_data(&self) -> bool {
+        self.vo2max.is_some()
+            || self.ftp_watts.is_some()
+            || self.rider_type.is_some()
+            || self.power_profile.is_some()
+    }
+}
+
+impl Default for FitnessProfileExport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Export format for analytics data.
 ///
 /// Contains all analytics data for a user with metadata for portability
@@ -271,6 +482,9 @@ pub struct AnalyticsExport {
     /// Critical Power model data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cp_model: Option<CpModelExport>,
+    /// Fitness profile data (VO2max, FTP, rider type, power profile).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fitness_profile: Option<FitnessProfileExport>,
 }
 
 impl AnalyticsExport {
@@ -286,6 +500,7 @@ impl AnalyticsExport {
             pdc: None,
             training_load: None,
             cp_model: None,
+            fitness_profile: None,
         }
     }
 
@@ -304,6 +519,12 @@ impl AnalyticsExport {
     /// Set the CP model data for export.
     pub fn with_cp_model(mut self, cp_model: CpModelExport) -> Self {
         self.cp_model = Some(cp_model);
+        self
+    }
+
+    /// Set the fitness profile data for export.
+    pub fn with_fitness_profile(mut self, fitness_profile: FitnessProfileExport) -> Self {
+        self.fitness_profile = Some(fitness_profile);
         self
     }
 }
@@ -1027,5 +1248,406 @@ mod tests {
 
         assert_eq!(model1, model2);
         assert_ne!(model1, model3);
+    }
+
+    // ============ Vo2maxExport Tests ============
+
+    #[test]
+    fn test_vo2max_export_new() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based estimation");
+
+        assert_eq!(vo2max.vo2max, 55.0);
+        assert_eq!(vo2max.classification, "Well-Trained");
+        assert_eq!(vo2max.method, "FTP-based estimation");
+        assert!(vo2max.calculated_at.is_none());
+    }
+
+    #[test]
+    fn test_vo2max_export_with_timestamp() {
+        let timestamp = Utc::now();
+        let vo2max = Vo2maxExport::with_timestamp(
+            60.0,
+            "Elite",
+            "5-minute power (Hawley-Noakes)",
+            timestamp,
+        );
+
+        assert_eq!(vo2max.vo2max, 60.0);
+        assert_eq!(vo2max.classification, "Elite");
+        assert_eq!(vo2max.calculated_at, Some(timestamp));
+    }
+
+    #[test]
+    fn test_vo2max_export_from_result() {
+        use super::super::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
+
+        let result = Vo2maxResult {
+            vo2max: 52.0,
+            classification: FitnessLevel::Trained,
+            method: Vo2maxMethod::FtpBased,
+        };
+        let export: Vo2maxExport = result.into();
+
+        assert_eq!(export.vo2max, 52.0);
+        assert_eq!(export.classification, "Trained");
+        assert_eq!(export.method, "FTP-based estimation");
+    }
+
+    #[test]
+    fn test_vo2max_export_serialize_without_timestamp() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based estimation");
+        let json = serde_json::to_string(&vo2max).expect("should serialize");
+
+        assert!(!json.contains("calculated_at"));
+        assert!(json.contains("vo2max"));
+        assert!(json.contains("classification"));
+        assert!(json.contains("method"));
+    }
+
+    #[test]
+    fn test_vo2max_export_serialize_deserialize() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based estimation");
+
+        let json = serde_json::to_string_pretty(&vo2max).expect("should serialize");
+        let deserialized: Vo2maxExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.vo2max, 55.0);
+        assert_eq!(deserialized.classification, "Well-Trained");
+        assert_eq!(deserialized.method, "FTP-based estimation");
+    }
+
+    #[test]
+    fn test_fitness_level_to_string() {
+        use super::super::vo2max::FitnessLevel;
+
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::Untrained), "Untrained");
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::Recreational), "Recreational");
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::Trained), "Trained");
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::WellTrained), "Well-Trained");
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::Elite), "Elite");
+        assert_eq!(Vo2maxExport::fitness_level_to_string(FitnessLevel::WorldClass), "World-Class");
+    }
+
+    #[test]
+    fn test_vo2max_method_to_string() {
+        use super::super::vo2max::Vo2maxMethod;
+
+        assert_eq!(Vo2maxExport::method_to_string(Vo2maxMethod::FiveMinutePower), "5-minute power (Hawley-Noakes)");
+        assert_eq!(Vo2maxExport::method_to_string(Vo2maxMethod::FtpBased), "FTP-based estimation");
+        assert_eq!(Vo2maxExport::method_to_string(Vo2maxMethod::CriticalPowerBased), "Critical Power-based");
+    }
+
+    // ============ PowerProfileExport Tests ============
+
+    #[test]
+    fn test_power_profile_export_new() {
+        let profile = PowerProfileExport::new(185.0, 130.0, 95.0);
+
+        assert_eq!(profile.neuromuscular_pct, 185.0);
+        assert_eq!(profile.anaerobic_pct, 130.0);
+        assert_eq!(profile.vo2max_pct, 95.0);
+        assert_eq!(profile.threshold_pct, 100.0);
+    }
+
+    #[test]
+    fn test_power_profile_export_from_power_profile() {
+        let profile = PowerProfile {
+            neuromuscular: 175.0,
+            anaerobic: 125.0,
+            vo2max: 90.0,
+            threshold: 100.0,
+        };
+        let export: PowerProfileExport = profile.into();
+
+        assert_eq!(export.neuromuscular_pct, 175.0);
+        assert_eq!(export.anaerobic_pct, 125.0);
+        assert_eq!(export.vo2max_pct, 90.0);
+        assert_eq!(export.threshold_pct, 100.0);
+    }
+
+    #[test]
+    fn test_power_profile_export_serialize_deserialize() {
+        let profile = PowerProfileExport::new(185.0, 130.0, 95.0);
+
+        let json = serde_json::to_string_pretty(&profile).expect("should serialize");
+        let deserialized: PowerProfileExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.neuromuscular_pct, 185.0);
+        assert_eq!(deserialized.anaerobic_pct, 130.0);
+        assert_eq!(deserialized.vo2max_pct, 95.0);
+        assert_eq!(deserialized.threshold_pct, 100.0);
+    }
+
+    // ============ FitnessProfileExport Tests ============
+
+    #[test]
+    fn test_fitness_profile_export_new() {
+        let profile = FitnessProfileExport::new();
+
+        assert!(profile.vo2max.is_none());
+        assert!(profile.ftp_watts.is_none());
+        assert!(profile.rider_type.is_none());
+        assert!(profile.power_profile.is_none());
+        assert!(profile.updated_at.is_none());
+        assert!(!profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_default() {
+        let profile = FitnessProfileExport::default();
+        assert!(!profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_ftp() {
+        let profile = FitnessProfileExport::new().with_ftp(280);
+
+        assert_eq!(profile.ftp_watts, Some(280));
+        assert!(profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_rider_type() {
+        let profile = FitnessProfileExport::new().with_rider_type(RiderType::Sprinter);
+
+        assert_eq!(profile.rider_type, Some("Sprinter".to_string()));
+        assert!(profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_rider_type_string() {
+        let profile = FitnessProfileExport::new().with_rider_type_string("Custom Type");
+
+        assert_eq!(profile.rider_type, Some("Custom Type".to_string()));
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_vo2max() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based");
+        let profile = FitnessProfileExport::new().with_vo2max(vo2max);
+
+        assert!(profile.vo2max.is_some());
+        assert_eq!(profile.vo2max.as_ref().unwrap().vo2max, 55.0);
+        assert!(profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_power_profile() {
+        let power_profile = PowerProfileExport::new(180.0, 125.0, 92.0);
+        let profile = FitnessProfileExport::new().with_power_profile(power_profile);
+
+        assert!(profile.power_profile.is_some());
+        assert_eq!(profile.power_profile.as_ref().unwrap().neuromuscular_pct, 180.0);
+        assert!(profile.has_data());
+    }
+
+    #[test]
+    fn test_fitness_profile_export_with_updated_at() {
+        let timestamp = Utc::now();
+        let profile = FitnessProfileExport::new().with_updated_at(timestamp);
+
+        assert_eq!(profile.updated_at, Some(timestamp));
+    }
+
+    #[test]
+    fn test_fitness_profile_export_full_builder() {
+        let timestamp = Utc::now();
+        let vo2max = Vo2maxExport::new(58.0, "Well-Trained", "FTP-based");
+        let power_profile = PowerProfileExport::new(175.0, 128.0, 94.0);
+
+        let profile = FitnessProfileExport::new()
+            .with_ftp(275)
+            .with_rider_type(RiderType::TimeTrialist)
+            .with_vo2max(vo2max)
+            .with_power_profile(power_profile)
+            .with_updated_at(timestamp);
+
+        assert_eq!(profile.ftp_watts, Some(275));
+        assert_eq!(profile.rider_type, Some("Time Trialist".to_string()));
+        assert!(profile.vo2max.is_some());
+        assert!(profile.power_profile.is_some());
+        assert_eq!(profile.updated_at, Some(timestamp));
+        assert!(profile.has_data());
+    }
+
+    #[test]
+    fn test_rider_type_to_string() {
+        assert_eq!(FitnessProfileExport::rider_type_to_string(RiderType::Sprinter), "Sprinter");
+        assert_eq!(FitnessProfileExport::rider_type_to_string(RiderType::Pursuiter), "Pursuiter");
+        assert_eq!(FitnessProfileExport::rider_type_to_string(RiderType::TimeTrialist), "Time Trialist");
+        assert_eq!(FitnessProfileExport::rider_type_to_string(RiderType::AllRounder), "All-Rounder");
+        assert_eq!(FitnessProfileExport::rider_type_to_string(RiderType::Unknown), "Unknown");
+    }
+
+    #[test]
+    fn test_fitness_profile_export_serialize_empty() {
+        let profile = FitnessProfileExport::new();
+        let json = serde_json::to_string(&profile).expect("should serialize");
+
+        // Empty profile should have minimal JSON (all fields skipped)
+        assert!(!json.contains("vo2max"));
+        assert!(!json.contains("ftp_watts"));
+        assert!(!json.contains("rider_type"));
+        assert!(!json.contains("power_profile"));
+        assert!(!json.contains("updated_at"));
+    }
+
+    #[test]
+    fn test_fitness_profile_export_serialize_with_data() {
+        let profile = FitnessProfileExport::new()
+            .with_ftp(280)
+            .with_rider_type(RiderType::AllRounder);
+
+        let json = serde_json::to_string(&profile).expect("should serialize");
+
+        assert!(json.contains("ftp_watts"));
+        assert!(json.contains("rider_type"));
+        assert!(json.contains("280"));
+        assert!(json.contains("All-Rounder"));
+    }
+
+    #[test]
+    fn test_fitness_profile_export_serialize_deserialize_roundtrip() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based");
+        let power_profile = PowerProfileExport::new(175.0, 128.0, 94.0);
+        let profile = FitnessProfileExport::new()
+            .with_ftp(270)
+            .with_rider_type(RiderType::Pursuiter)
+            .with_vo2max(vo2max)
+            .with_power_profile(power_profile);
+
+        let json = serde_json::to_string_pretty(&profile).expect("should serialize");
+        let deserialized: FitnessProfileExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.ftp_watts, Some(270));
+        assert_eq!(deserialized.rider_type, Some("Pursuiter".to_string()));
+        assert!(deserialized.vo2max.is_some());
+        assert_eq!(deserialized.vo2max.as_ref().unwrap().vo2max, 55.0);
+        assert!(deserialized.power_profile.is_some());
+        assert_eq!(deserialized.power_profile.as_ref().unwrap().neuromuscular_pct, 175.0);
+    }
+
+    // ============ FitnessProfileExport Integration with AnalyticsExport Tests ============
+
+    #[test]
+    fn test_analytics_export_with_fitness_profile() {
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(265)
+            .with_rider_type(RiderType::Sprinter);
+
+        let export = AnalyticsExport::new("test-user").with_fitness_profile(fitness_profile);
+
+        assert!(export.fitness_profile.is_some());
+        let fp = export.fitness_profile.as_ref().unwrap();
+        assert_eq!(fp.ftp_watts, Some(265));
+        assert_eq!(fp.rider_type, Some("Sprinter".to_string()));
+    }
+
+    #[test]
+    fn test_analytics_export_without_fitness_profile_skips_field() {
+        let export = AnalyticsExport::new("test-user");
+        let json = serde_json::to_string(&export).expect("should serialize");
+
+        assert!(!json.contains("\"fitness_profile\""));
+    }
+
+    #[test]
+    fn test_analytics_export_with_fitness_profile_includes_field() {
+        let fitness_profile = FitnessProfileExport::new().with_ftp(280);
+        let export = AnalyticsExport::new("test-user").with_fitness_profile(fitness_profile);
+        let json = serde_json::to_string(&export).expect("should serialize");
+
+        assert!(json.contains("\"fitness_profile\""));
+        assert!(json.contains("\"ftp_watts\""));
+        assert!(json.contains("280"));
+    }
+
+    #[test]
+    fn test_analytics_export_with_fitness_profile_roundtrip() {
+        let timestamp = Utc::now();
+        let vo2max = Vo2maxExport::with_timestamp(60.0, "Elite", "5-minute power", timestamp);
+        let power_profile = PowerProfileExport::new(190.0, 135.0, 98.0);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(290)
+            .with_rider_type(RiderType::TimeTrialist)
+            .with_vo2max(vo2max)
+            .with_power_profile(power_profile);
+
+        let export = AnalyticsExport::new("test-user").with_fitness_profile(fitness_profile);
+
+        let json = serde_json::to_string_pretty(&export).expect("should serialize");
+        let deserialized: AnalyticsExport = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(deserialized.user_id, export.user_id);
+        assert!(deserialized.fitness_profile.is_some());
+
+        let fp = deserialized.fitness_profile.unwrap();
+        assert_eq!(fp.ftp_watts, Some(290));
+        assert_eq!(fp.rider_type, Some("Time Trialist".to_string()));
+        assert!(fp.vo2max.is_some());
+        assert!(fp.power_profile.is_some());
+    }
+
+    #[test]
+    fn test_analytics_export_with_all_data_types_including_fitness() {
+        let pdc = PdcExport::from_points(vec![PdcPointExport::new(60, 350)]);
+        let training_load = TrainingLoadExport::from_days(vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            100.0,
+            75.0,
+            80.0,
+            5.0,
+        )]);
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(275)
+            .with_rider_type(RiderType::AllRounder);
+
+        let export = AnalyticsExport::new("test-user")
+            .with_pdc(pdc)
+            .with_training_load(training_load)
+            .with_cp_model(cp_model)
+            .with_fitness_profile(fitness_profile);
+
+        assert!(export.pdc.is_some());
+        assert!(export.training_load.is_some());
+        assert!(export.cp_model.is_some());
+        assert!(export.fitness_profile.is_some());
+
+        let json = serde_json::to_string(&export).expect("should serialize");
+        assert!(json.contains("\"pdc\""));
+        assert!(json.contains("\"training_load\""));
+        assert!(json.contains("\"cp_model\""));
+        assert!(json.contains("\"fitness_profile\""));
+    }
+
+    #[test]
+    fn test_fitness_profile_export_equality() {
+        let profile1 = FitnessProfileExport::new().with_ftp(280);
+        let profile2 = FitnessProfileExport::new().with_ftp(280);
+        let profile3 = FitnessProfileExport::new().with_ftp(290);
+
+        assert_eq!(profile1, profile2);
+        assert_ne!(profile1, profile3);
+    }
+
+    #[test]
+    fn test_power_profile_export_equality() {
+        let profile1 = PowerProfileExport::new(175.0, 125.0, 90.0);
+        let profile2 = PowerProfileExport::new(175.0, 125.0, 90.0);
+        let profile3 = PowerProfileExport::new(180.0, 125.0, 90.0);
+
+        assert_eq!(profile1, profile2);
+        assert_ne!(profile1, profile3);
+    }
+
+    #[test]
+    fn test_vo2max_export_equality() {
+        let vo2max1 = Vo2maxExport::new(55.0, "Trained", "FTP-based");
+        let vo2max2 = Vo2maxExport::new(55.0, "Trained", "FTP-based");
+        let vo2max3 = Vo2maxExport::new(60.0, "Trained", "FTP-based");
+
+        assert_eq!(vo2max1, vo2max2);
+        assert_ne!(vo2max1, vo2max3);
     }
 }
