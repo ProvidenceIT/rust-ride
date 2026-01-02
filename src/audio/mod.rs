@@ -26,7 +26,7 @@ pub use engine::{AudioEngine, DefaultAudioEngine};
 pub use tones::{
     CuePattern, Tone, ToneError, ToneGenerator, ZoneChange, ZoneChangeDetector, ZoneDirection,
 };
-pub use tts::{DefaultTtsProvider, TtsProvider, VoiceInfo};
+pub use tts::{DefaultTtsProvider, ThreadSafeTtsProvider, TtsProvider, VoiceInfo};
 
 /// Errors that can occur during audio operations
 #[derive(Debug, Error)]
