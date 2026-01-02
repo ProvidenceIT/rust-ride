@@ -478,8 +478,16 @@ impl StravaClient {
     }
 
     /// Deauthorize application
+    ///
+    /// Revokes the application's access to the user's Strava account by POSTing
+    /// to the deauthorize endpoint. This invalidates the access token on Strava's
+    /// side and clears the local token.
+    ///
+    /// # Returns
+    /// Ok(()) if deauthorization was successful or the token was already invalid.
+    /// The local token is cleared regardless of the API response.
     pub async fn deauthorize(&self) -> Result<(), SyncError> {
-        let _token = self
+        let token = self
             .access_token
             .read()
             .await
@@ -488,10 +496,66 @@ impl StravaClient {
 
         tracing::info!("Deauthorizing Strava");
 
-        // TODO: POST https://www.strava.com/oauth/deauthorize
-        // Body: access_token={token}
+        // POST to Strava's deauthorize endpoint (note: this is at oauth path, not api/v3)
+        let url = "https://www.strava.com/oauth/deauthorize";
 
+        let response = self
+            .http_client
+            .post(url)
+            .bearer_auth(&token)
+            .send()
+            .await;
+
+        // Always clear local token, even if the API call fails
+        // This ensures the user can disconnect even with network issues
         self.clear_token().await;
+
+        // Now handle the response
+        let response = response.map_err(|e| {
+            tracing::warn!(
+                "Failed to call Strava deauthorize endpoint: {}. Local token cleared.",
+                e
+            );
+            SyncError::NetworkError(format!("Failed to deauthorize: {}", e))
+        })?;
+
+        let status_code = response.status();
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!(
+                "Strava API rate limit exceeded during deauthorization. Local token cleared."
+            );
+            // Token is already cleared locally, so this is still a success from user perspective
+            return Ok(());
+        }
+
+        // Handle unauthorized (401) - token was already invalid/revoked
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::info!("Strava token was already invalid or revoked. Local token cleared.");
+            return Ok(());
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            if let Ok(error_response) = serde_json::from_str::<StravaApiError>(&body) {
+                tracing::warn!(
+                    "Strava deauthorize returned error: {}. Local token cleared.",
+                    error_response
+                );
+            } else {
+                tracing::warn!(
+                    "Strava deauthorize returned status {}: {}. Local token cleared.",
+                    status_code,
+                    body
+                );
+            }
+            // Still consider this a success since local token is cleared
+            return Ok(());
+        }
+
+        tracing::info!("Successfully deauthorized from Strava");
 
         Ok(())
     }
@@ -799,5 +863,29 @@ mod tests {
 
         assert_eq!(response.id, 12345678);
         assert_eq!(response.username, Some("cyclist123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_without_token_returns_not_configured() {
+        let client = StravaClient::new();
+
+        let result = client.deauthorize().await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_clears_local_token() {
+        let client = StravaClient::new();
+        client.set_access_token("test_token".to_string()).await;
+        assert!(client.is_configured());
+
+        // Note: This test will make a real network call that will fail,
+        // but the important thing is that the token gets cleared.
+        // In a real scenario, you'd use a mock HTTP client.
+        let _ = client.deauthorize().await;
+
+        // Token should be cleared regardless of network outcome
+        assert!(!client.is_configured());
     }
 }
