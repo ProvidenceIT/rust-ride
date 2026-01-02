@@ -458,7 +458,7 @@ impl RideSummaryScreen {
                     ui.add_space(16.0);
 
                     ui.label(
-                        RichText::new("FIT format is recommended for Garmin Connect upload. TCX works with Strava and TrainingPeaks.")
+                        RichText::new("FIT is the preferred format for Garmin Connect, TrainingPeaks, and other platforms supporting native FIT. TCX works with Strava and legacy systems. CSV is for spreadsheet analysis.")
                             .weak()
                             .size(12.0),
                     );
