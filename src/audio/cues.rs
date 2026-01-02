@@ -79,7 +79,7 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
 
     templates.insert(
         AlertType::IntervalCountdown,
-        CueTemplate::simple("{seconds} seconds"),
+        CueTemplate::simple("{countdown}"),
     );
 
     templates.insert(
@@ -251,6 +251,8 @@ impl CueBuilder {
                 result = result.replace("{duration}", &format_duration(*duration_secs));
             }
             AlertData::Countdown { seconds_remaining } => {
+                result = result.replace("{countdown}", &format_countdown(*seconds_remaining));
+                // Also support legacy {seconds} placeholder
                 result = result.replace("{seconds}", &seconds_remaining.to_string());
             }
             AlertData::ZoneChange {
@@ -311,6 +313,15 @@ fn format_duration(secs: u32) -> String {
         let hours = secs / 3600;
         let mins = (secs % 3600) / 60;
         format!("{} hours {} minutes", hours, mins)
+    }
+}
+
+/// Format countdown seconds with proper singular/plural handling
+fn format_countdown(seconds: u32) -> String {
+    match seconds {
+        1 => "1".to_string(),
+        2 | 3 => seconds.to_string(),
+        _ => format!("{} seconds", seconds),
     }
 }
 
@@ -401,5 +412,45 @@ mod tests {
         let context = AlertContext::interval_change("Threshold", Some(280), 120);
         let message = builder.build(AlertType::IntervalChange, &context);
         assert_eq!(message, "Threshold interval, 280 watts, 2 minutes");
+    }
+
+    #[test]
+    fn test_format_countdown() {
+        // Test countdown formatting for all COUNTDOWN_THRESHOLDS [10, 5, 3, 2, 1]
+        assert_eq!(format_countdown(10), "10 seconds");
+        assert_eq!(format_countdown(5), "5 seconds");
+        assert_eq!(format_countdown(3), "3");
+        assert_eq!(format_countdown(2), "2");
+        assert_eq!(format_countdown(1), "1");
+    }
+
+    #[test]
+    fn test_cue_builder_countdown_announcements() {
+        let builder = CueBuilder::new();
+
+        // Test 10 seconds countdown
+        let context = AlertContext::countdown(10);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "10 seconds");
+
+        // Test 5 seconds countdown
+        let context = AlertContext::countdown(5);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "5 seconds");
+
+        // Test 3 seconds countdown (short form for urgency)
+        let context = AlertContext::countdown(3);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "3");
+
+        // Test 2 seconds countdown (short form for urgency)
+        let context = AlertContext::countdown(2);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "2");
+
+        // Test 1 second countdown (short form for urgency)
+        let context = AlertContext::countdown(1);
+        let message = builder.build(AlertType::IntervalCountdown, &context);
+        assert_eq!(message, "1");
     }
 }
