@@ -235,6 +235,40 @@ impl TrainingLoadExport {
         }
     }
 
+    /// Filter training load data to a specific date range.
+    ///
+    /// Returns a new `TrainingLoadExport` containing only the days within
+    /// the specified date range (inclusive on both ends).
+    ///
+    /// # Arguments
+    ///
+    /// * `start_date` - The start of the date range (inclusive)
+    /// * `end_date` - The end of the date range (inclusive)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let training_load = TrainingLoadExport::from_days(vec![
+    ///     DailyLoadExport::new(NaiveDate::from_ymd_opt(2024, 6, 13).unwrap(), 90.0, 70.0, 75.0, 5.0),
+    ///     DailyLoadExport::new(NaiveDate::from_ymd_opt(2024, 6, 14).unwrap(), 100.0, 75.0, 78.0, 3.0),
+    ///     DailyLoadExport::new(NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(), 80.0, 78.0, 79.0, 1.0),
+    ///     DailyLoadExport::new(NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(), 110.0, 85.0, 80.0, -5.0),
+    /// ]);
+    /// let start = NaiveDate::from_ymd_opt(2024, 6, 14).unwrap();
+    /// let end = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+    /// let filtered = training_load.filter_by_date_range(start, end);
+    /// assert_eq!(filtered.len(), 2); // Only June 14 and 15
+    /// ```
+    pub fn filter_by_date_range(&self, start_date: NaiveDate, end_date: NaiveDate) -> Self {
+        let filtered_days: Vec<DailyLoadExport> = self
+            .days
+            .iter()
+            .filter(|d| d.date >= start_date && d.date <= end_date)
+            .cloned()
+            .collect();
+        Self { days: filtered_days }
+    }
+
     /// Export the training load data to CSV format.
     ///
     /// Returns a CSV string with headers: `date,tss,atl,ctl,tsb,acwr`
@@ -3415,5 +3449,602 @@ mod tests {
 
         let cp = deserialized.cp_model.unwrap();
         assert_eq!(cp.w_prime_joules, 35000);
+    }
+
+    // ============ P3.3: Training Load CSV Export with Date Filtering Tests ============
+
+    #[test]
+    fn test_training_load_filter_by_date_range_basic() {
+        // Create training load data spanning a week
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 10).unwrap(),
+                80.0,
+                60.0,
+                70.0,
+                10.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 11).unwrap(),
+                90.0,
+                65.0,
+                72.0,
+                7.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 12).unwrap(),
+                100.0,
+                70.0,
+                74.0,
+                4.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 13).unwrap(),
+                110.0,
+                75.0,
+                76.0,
+                1.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 14).unwrap(),
+                120.0,
+                80.0,
+                78.0,
+                -2.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to middle 3 days
+        let start = NaiveDate::from_ymd_opt(2024, 6, 11).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 13).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert_eq!(filtered.len(), 3);
+        assert_eq!(
+            filtered.days[0].date,
+            NaiveDate::from_ymd_opt(2024, 6, 11).unwrap()
+        );
+        assert_eq!(
+            filtered.days[1].date,
+            NaiveDate::from_ymd_opt(2024, 6, 12).unwrap()
+        );
+        assert_eq!(
+            filtered.days[2].date,
+            NaiveDate::from_ymd_opt(2024, 6, 13).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_training_load_filter_by_date_range_inclusive_boundaries() {
+        // Verify that start and end dates are both inclusive
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                90.0,
+                78.0,
+                83.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to exact range - should include both boundary dates
+        let start = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 17).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert_eq!(filtered.len(), 3);
+        assert_eq!(filtered.days[0].date, start);
+        assert_eq!(filtered.days[2].date, end);
+    }
+
+    #[test]
+    fn test_training_load_filter_by_date_range_single_day() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                90.0,
+                78.0,
+                83.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to a single day
+        let date = NaiveDate::from_ymd_opt(2024, 6, 16).unwrap();
+        let filtered = training_load.filter_by_date_range(date, date);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered.days[0].date, date);
+        assert!((filtered.days[0].tss - 110.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_training_load_filter_by_date_range_empty_result() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to range with no data
+        let start = NaiveDate::from_ymd_opt(2024, 7, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 7, 31).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert!(filtered.is_empty());
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_training_load_filter_by_date_range_before_data() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to range before available data
+        let start = NaiveDate::from_ymd_opt(2024, 5, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 5, 31).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_training_load_filter_by_date_range_after_data() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to range after available data
+        let start = NaiveDate::from_ymd_opt(2024, 7, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 7, 31).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_training_load_filter_preserves_data_values() {
+        let days = vec![
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.5,
+                75.25,
+                80.75,
+                5.5,
+                0.93,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        let date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let filtered = training_load.filter_by_date_range(date, date);
+
+        assert_eq!(filtered.len(), 1);
+        let day = &filtered.days[0];
+        assert!((day.tss - 100.5).abs() < 0.001);
+        assert!((day.atl - 75.25).abs() < 0.001);
+        assert!((day.ctl - 80.75).abs() < 0.001);
+        assert!((day.tsb - 5.5).abs() < 0.001);
+        assert!(day.acwr.is_some());
+        assert!((day.acwr.unwrap() - 0.93).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_training_load_filter_then_csv_export() {
+        // Test the full workflow: filter then export to CSV
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 10).unwrap(),
+                80.0,
+                60.0,
+                70.0,
+                10.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 11).unwrap(),
+                90.0,
+                65.0,
+                72.0,
+                7.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 12).unwrap(),
+                100.0,
+                70.0,
+                74.0,
+                4.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 13).unwrap(),
+                110.0,
+                75.0,
+                76.0,
+                1.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to 2 days
+        let start = NaiveDate::from_ymd_opt(2024, 6, 11).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        // Export filtered data to CSV
+        let csv = filtered.to_csv();
+        let lines: Vec<&str> = csv.lines().collect();
+
+        // Should have header + 2 data rows
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "date,tss,atl,ctl,tsb,acwr");
+        assert!(lines[1].starts_with("2024-06-11,"));
+        assert!(lines[2].starts_with("2024-06-12,"));
+    }
+
+    #[test]
+    fn test_training_load_filter_csv_with_all_columns() {
+        // Test that CSV export includes all columns after filtering
+        let days = vec![
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                150.0,
+                95.0,
+                85.0,
+                -10.0,
+                1.12,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        let date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let filtered = training_load.filter_by_date_range(date, date);
+        let csv = filtered.to_csv();
+        let lines: Vec<&str> = csv.lines().collect();
+
+        assert_eq!(lines.len(), 2);
+        // Verify all columns present with correct values
+        // date,tss,atl,ctl,tsb,acwr
+        let data_line = lines[1];
+        let parts: Vec<&str> = data_line.split(',').collect();
+        assert_eq!(parts.len(), 6);
+        assert_eq!(parts[0], "2024-06-15"); // date
+        assert_eq!(parts[1], "150.00"); // tss
+        assert_eq!(parts[2], "95.00"); // atl
+        assert_eq!(parts[3], "85.00"); // ctl
+        assert_eq!(parts[4], "-10.00"); // tsb
+        assert_eq!(parts[5], "1.12"); // acwr
+    }
+
+    #[test]
+    fn test_training_load_filter_csv_maintains_chronological_order() {
+        // Create data in non-chronological order
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                120.0,
+                85.0,
+                82.0,
+                -3.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                80.0,
+                78.0,
+                81.0,
+                3.0,
+            ),
+        ];
+        // from_days should sort them
+        let training_load = TrainingLoadExport::from_days(days);
+
+        let start = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 17).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        // Verify sorting is maintained after filtering
+        assert_eq!(
+            filtered.days[0].date,
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap()
+        );
+        assert_eq!(
+            filtered.days[1].date,
+            NaiveDate::from_ymd_opt(2024, 6, 16).unwrap()
+        );
+        assert_eq!(
+            filtered.days[2].date,
+            NaiveDate::from_ymd_opt(2024, 6, 17).unwrap()
+        );
+
+        // Verify CSV also maintains order
+        let csv = filtered.to_csv();
+        let lines: Vec<&str> = csv.lines().collect();
+        assert!(lines[1].starts_with("2024-06-15,"));
+        assert!(lines[2].starts_with("2024-06-16,"));
+        assert!(lines[3].starts_with("2024-06-17,"));
+    }
+
+    #[test]
+    fn test_training_load_filter_csv_decimal_precision_preserved() {
+        // Test that decimal precision is maintained through filter + CSV export
+        let days = vec![
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                123.456, // Should round to 123.46
+                78.991,  // Should round to 78.99
+                82.005,  // Should round to 82.01 (rounding)
+                3.009,   // Should round to 3.01
+                0.963,   // Should round to 0.96
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        let date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let filtered = training_load.filter_by_date_range(date, date);
+        let csv = filtered.to_csv();
+
+        let lines: Vec<&str> = csv.lines().collect();
+        // Values should have 2 decimal places
+        assert_eq!(lines[1], "2024-06-15,123.46,78.99,82.00,3.01,0.96");
+    }
+
+    #[test]
+    fn test_training_load_filter_empty_training_load() {
+        let training_load = TrainingLoadExport::new();
+
+        let start = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert!(filtered.is_empty());
+        let csv = filtered.to_csv();
+        // Should still have header
+        assert_eq!(csv, "date,tss,atl,ctl,tsb,acwr\n");
+    }
+
+    #[test]
+    fn test_training_load_filter_partial_overlap_start() {
+        // Range overlaps with beginning of data
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                90.0,
+                78.0,
+                83.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Range starts before data, ends in middle
+        let start = NaiveDate::from_ymd_opt(2024, 6, 10).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 16).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered.days[0].date,
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap()
+        );
+        assert_eq!(
+            filtered.days[1].date,
+            NaiveDate::from_ymd_opt(2024, 6, 16).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_training_load_filter_partial_overlap_end() {
+        // Range overlaps with end of data
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(),
+                110.0,
+                80.0,
+                82.0,
+                2.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 17).unwrap(),
+                90.0,
+                78.0,
+                83.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Range starts in middle, ends after data
+        let start = NaiveDate::from_ymd_opt(2024, 6, 16).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 25).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered.days[0].date,
+            NaiveDate::from_ymd_opt(2024, 6, 16).unwrap()
+        );
+        assert_eq!(
+            filtered.days[1].date,
+            NaiveDate::from_ymd_opt(2024, 6, 17).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_training_load_filter_date_range_method_after_filter() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 10).unwrap(),
+                80.0,
+                60.0,
+                70.0,
+                10.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 20).unwrap(),
+                120.0,
+                85.0,
+                82.0,
+                -3.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+
+        // Filter to middle date only
+        let start = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 6, 18).unwrap();
+        let filtered = training_load.filter_by_date_range(start, end);
+
+        // date_range() should reflect filtered data
+        let range = filtered.date_range().unwrap();
+        assert_eq!(range.0, NaiveDate::from_ymd_opt(2024, 6, 15).unwrap());
+        assert_eq!(range.1, NaiveDate::from_ymd_opt(2024, 6, 15).unwrap());
+    }
+
+    #[test]
+    fn test_training_load_csv_export_all_columns_format() {
+        // Comprehensive test of CSV format with all column types
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                0.0,    // Zero TSS (rest day)
+                50.0,
+                60.0,
+                10.0,
+            ),
+            DailyLoadExport::with_acwr(
+                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                200.0,   // High TSS
+                75.0,
+                62.0,
+                -13.0,   // Negative TSB
+                1.21,    // High ACWR (injury risk zone)
+            ),
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 1, 3).unwrap(),
+                50.0,
+                70.0,
+                63.0,
+                -7.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let csv = training_load.to_csv();
+
+        // Verify CSV structure
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4); // header + 3 data rows
+
+        // Verify header
+        assert_eq!(lines[0], "date,tss,atl,ctl,tsb,acwr");
+
+        // Verify zero values are formatted correctly
+        assert!(lines[1].contains("0.00,50.00,60.00,10.00,"));
+
+        // Verify ACWR is present when available
+        assert!(lines[2].ends_with(",1.21"));
+
+        // Verify ACWR is empty when not available
+        assert!(lines[3].ends_with(","));
+
+        // Verify negative values
+        assert!(lines[2].contains("-13.00"));
     }
 }
