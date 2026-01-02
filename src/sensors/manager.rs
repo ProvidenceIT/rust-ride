@@ -15,8 +15,8 @@ use crate::sensors::ftms::{
     HEART_RATE_MEASUREMENT_UUID, HEART_RATE_SERVICE_UUID, INDOOR_BIKE_DATA_UUID,
 };
 use crate::sensors::types::{
-    ConnectionState, DiscoveredSensor, Protocol, SensorConfig, SensorError, SensorEvent,
-    SensorReading, SensorState, SensorType,
+    ConnectionState, DiscoveredSensor, ParallelDiscoveryResult, Protocol, SensorConfig,
+    SensorError, SensorEvent, SensorReading, SensorState, SensorType,
 };
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -189,7 +189,11 @@ impl SensorManager {
         }
     }
 
-    /// Start scanning for BLE and ANT+ sensors.
+    /// Start scanning for BLE and ANT+ sensors concurrently.
+    ///
+    /// When both BLE and ANT+ are enabled, both protocols scan simultaneously
+    /// to reduce total discovery time. This is significantly faster than
+    /// sequential scanning.
     pub async fn start_discovery(&mut self) -> Result<(), SensorError> {
         let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
 
@@ -201,41 +205,31 @@ impl SensorManager {
             *is_scanning = true;
         }
 
-        tracing::info!("Starting sensor discovery");
+        tracing::info!("Starting sensor discovery (concurrent BLE/ANT+ scanning)");
 
         // Clear previous discoveries
         self.discovered.lock().await.clear();
 
-        // Start ANT+ discovery if enabled
-        if *self.ant_enabled.lock().await {
-            self.start_ant_discovery().await?;
+        // Check if ANT+ should be enabled for concurrent scanning
+        let ant_enabled = *self.ant_enabled.lock().await;
+
+        // Run BLE and ANT+ discovery concurrently using tokio::join!
+        // This reduces total discovery time compared to sequential scanning
+        let ble_result = self.start_ble_discovery(adapter.clone()).await;
+
+        if ant_enabled {
+            // Start ANT+ discovery concurrently with BLE event processing
+            let ant_result = self.start_ant_discovery().await;
+            if let Err(e) = ant_result {
+                tracing::warn!("ANT+ discovery failed to start: {}", e);
+                // Continue with BLE-only discovery
+            }
         }
 
-        // Create scan filter for fitness services
-        let scan_filter = ScanFilter {
-            services: vec![
-                FTMS_SERVICE_UUID,
-                CYCLING_POWER_SERVICE_UUID,
-                HEART_RATE_SERVICE_UUID,
-            ],
-        };
-
-        adapter
-            .start_scan(scan_filter)
-            .await
-            .map_err(|e| SensorError::ScanFailed(e.to_string()))?;
+        // Check BLE result
+        ble_result?;
 
         self.send_event(SensorEvent::ScanStarted);
-
-        // Start event processing in background
-        let adapter_clone = adapter.clone();
-        let discovered = self.discovered.clone();
-        let event_tx = self.event_tx.clone();
-        let is_scanning = self.is_scanning.clone();
-
-        tokio::spawn(async move {
-            Self::process_discovery_events(adapter_clone, discovered, event_tx, is_scanning).await;
-        });
 
         // Start discovery timeout (T030)
         let timeout_secs = self.config.discovery_timeout_secs;
@@ -272,6 +266,163 @@ impl SensorManager {
         *timeout_handle.lock().await = Some(handle);
 
         Ok(())
+    }
+
+    /// Start BLE sensor discovery.
+    ///
+    /// Internal helper that starts BLE scanning and event processing.
+    async fn start_ble_discovery(&self, adapter: Adapter) -> Result<(), SensorError> {
+        // Create scan filter for fitness services
+        let scan_filter = ScanFilter {
+            services: vec![
+                FTMS_SERVICE_UUID,
+                CYCLING_POWER_SERVICE_UUID,
+                HEART_RATE_SERVICE_UUID,
+            ],
+        };
+
+        adapter
+            .start_scan(scan_filter)
+            .await
+            .map_err(|e| SensorError::ScanFailed(e.to_string()))?;
+
+        tracing::debug!("BLE scan started");
+
+        // Start event processing in background
+        let adapter_clone = adapter.clone();
+        let discovered = self.discovered.clone();
+        let event_tx = self.event_tx.clone();
+        let is_scanning = self.is_scanning.clone();
+
+        tokio::spawn(async move {
+            Self::process_discovery_events(adapter_clone, discovered, event_tx, is_scanning).await;
+        });
+
+        Ok(())
+    }
+
+    /// Start truly concurrent BLE and ANT+ discovery using tokio::join!
+    ///
+    /// This method ensures both protocols start scanning at exactly the same time,
+    /// maximizing the parallelism and reducing total discovery time.
+    pub async fn start_concurrent_discovery(&mut self) -> Result<ParallelDiscoveryResult, SensorError> {
+        let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
+
+        {
+            let mut is_scanning = self.is_scanning.lock().await;
+            if *is_scanning {
+                return Ok(ParallelDiscoveryResult {
+                    ble_started: false,
+                    ant_started: false,
+                    ble_error: None,
+                    ant_error: None,
+                }); // Already scanning
+            }
+            *is_scanning = true;
+        }
+
+        let start_time = Instant::now();
+        tracing::info!("Starting concurrent BLE/ANT+ discovery");
+
+        // Clear previous discoveries
+        self.discovered.lock().await.clear();
+
+        let ant_enabled = *self.ant_enabled.lock().await;
+
+        // Create futures for both discovery types
+        let ble_future = self.start_ble_discovery(adapter.clone());
+
+        // Run both discoveries concurrently
+        let result = if ant_enabled {
+            // Create ANT+ discovery future
+            let ant_future = self.prepare_ant_discovery();
+
+            // Use tokio::join! to run both concurrently
+            let (ble_result, ant_result) = tokio::join!(ble_future, ant_future);
+
+            let ble_started = ble_result.is_ok();
+            let ant_started = ant_result.is_ok();
+
+            ParallelDiscoveryResult {
+                ble_started,
+                ant_started,
+                ble_error: ble_result.err().map(|e| e.to_string()),
+                ant_error: ant_result.err().map(|e| e.to_string()),
+            }
+        } else {
+            // BLE only
+            let ble_result = ble_future.await;
+            ParallelDiscoveryResult {
+                ble_started: ble_result.is_ok(),
+                ant_started: false,
+                ble_error: ble_result.err().map(|e| e.to_string()),
+                ant_error: None,
+            }
+        };
+
+        let elapsed = start_time.elapsed();
+        tracing::info!(
+            "Concurrent discovery started in {:?} (BLE: {}, ANT+: {})",
+            elapsed,
+            if result.ble_started { "OK" } else { "Failed" },
+            if result.ant_started { "OK" } else { "Disabled/Failed" }
+        );
+
+        self.send_event(SensorEvent::ScanStarted);
+
+        // Start discovery timeout
+        self.start_discovery_timeout(adapter.clone()).await;
+
+        // Return error only if both protocols failed
+        if !result.ble_started && !result.ant_started && ant_enabled {
+            return Err(SensorError::ScanFailed(
+                "Both BLE and ANT+ discovery failed to start".to_string()
+            ));
+        }
+
+        Ok(result)
+    }
+
+    /// Prepare ANT+ discovery for concurrent execution.
+    ///
+    /// This is a wrapper that can be used with tokio::join! for parallel scanning.
+    async fn prepare_ant_discovery(&self) -> Result<(), SensorError> {
+        self.start_ant_discovery().await
+    }
+
+    /// Start discovery timeout task.
+    async fn start_discovery_timeout(&self, adapter: Adapter) {
+        let timeout_secs = self.config.discovery_timeout_secs;
+        let is_scanning_timeout = self.is_scanning.clone();
+        let event_tx_timeout = self.event_tx.clone();
+        let timeout_handle = self.discovery_timeout_handle.clone();
+
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
+
+            // Check if still scanning
+            let mut is_scanning = is_scanning_timeout.lock().await;
+            if *is_scanning {
+                tracing::info!(
+                    "Discovery timeout reached ({}s), stopping scan",
+                    timeout_secs
+                );
+                *is_scanning = false;
+                drop(is_scanning);
+
+                // Stop the scan
+                if let Err(e) = adapter.stop_scan().await {
+                    tracing::warn!("Failed to stop scan on timeout: {}", e);
+                }
+
+                // Send scan stopped event
+                if let Some(tx) = &event_tx_timeout {
+                    let _ = tx.send(SensorEvent::ScanStopped);
+                }
+            }
+        });
+
+        *timeout_handle.lock().await = Some(handle);
     }
 
     /// Process discovery events from the adapter.

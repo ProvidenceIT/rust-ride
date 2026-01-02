@@ -16,6 +16,7 @@ mod import_tcx_test;
 mod leaderboard_test;
 mod npc_ai_test;
 mod npc_spawner_test;
+mod parallel_discovery_test;
 mod power_profile_tests;
 mod ride_history_test;
 mod ride_summary_test;

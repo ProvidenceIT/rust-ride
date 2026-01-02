@@ -258,6 +258,38 @@ impl Default for SensorConfig {
     }
 }
 
+/// Result of parallel BLE/ANT+ discovery.
+///
+/// Indicates which protocols were successfully started and any errors.
+#[derive(Debug, Clone, Default)]
+pub struct ParallelDiscoveryResult {
+    /// Whether BLE discovery was successfully started
+    pub ble_started: bool,
+    /// Whether ANT+ discovery was successfully started
+    pub ant_started: bool,
+    /// Error message if BLE failed to start
+    pub ble_error: Option<String>,
+    /// Error message if ANT+ failed to start
+    pub ant_error: Option<String>,
+}
+
+impl ParallelDiscoveryResult {
+    /// Check if at least one protocol started successfully.
+    pub fn any_started(&self) -> bool {
+        self.ble_started || self.ant_started
+    }
+
+    /// Check if both protocols started successfully.
+    pub fn all_started(&self) -> bool {
+        self.ble_started && self.ant_started
+    }
+
+    /// Check if there were any errors.
+    pub fn has_errors(&self) -> bool {
+        self.ble_error.is_some() || self.ant_error.is_some()
+    }
+}
+
 /// A sensor saved in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedSensor {

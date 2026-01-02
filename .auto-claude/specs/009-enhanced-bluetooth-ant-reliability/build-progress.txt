@@ -1,0 +1,95 @@
+# Build Progress: Enhanced Bluetooth/ANT+ Reliability
+
+## Status: In Progress
+
+## Completed Subtasks
+
+### 1.1 - Add parallel BLE/ANT+ discovery (COMPLETED)
+- Modified `src/sensors/manager.rs` to implement concurrent BLE/ANT+ scanning
+- Added `start_concurrent_discovery()` method using `tokio::join!` for true parallelism
+- Added `start_ble_discovery()` helper method for BLE-specific scanning
+- Added `prepare_ant_discovery()` wrapper for concurrent execution
+- Added `start_discovery_timeout()` helper to manage discovery timeout
+- Created `ParallelDiscoveryResult` struct in `src/sensors/types.rs`
+- Added unit tests in `tests/unit/parallel_discovery_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
+## Status: Planning Complete
+
+## Implementation Plan Created
+- 6 phases with 24 total subtasks
+- Estimated effort: 3-4 days
+
+## Phases Overview
+
+### Phase 1: Enhanced Discovery & Fast Connection (4 subtasks)
+- Parallel BLE/ANT+ discovery
+- Device caching for fast reconnection
+- Progressive discovery timeout
+- Priority-based connection queue
+
+### Phase 2: Robust Automatic Reconnection (4 subtasks)
+- Exponential backoff for reconnection
+- Connection health monitoring
+- Reconnection state machine
+- Persistent reconnection across restarts
+
+### Phase 3: Connection Quality Monitoring & UI (5 subtasks)
+- ConnectionQuality tracking module
+- RSSI polling for connected sensors
+- ConnectionQualityIndicator UI widget
+- Quality indicators in sensor setup screen
+- Quality indicator in ride HUD
+
+### Phase 4: Sensor Conflict Resolution (5 subtasks)
+- DualProtocolDetector implementation
+- Protocol preference storage
+- Sensor conflict detector
+- Conflict resolution dialog UI
+- Automatic primary sensor failover
+
+### Phase 5: Power Meter Pairing Improvements (4 subtasks)
+- Power meter wake-up detection
+- Extended discovery for power meters
+- Calibration reminder system
+- Zero-offset calibration flow
+
+### Phase 6: Integration & Testing (4 subtasks)
+- Full discovery flow integration test
+- Reconnection stress test
+- CLI commands update
+- Troubleshooting documentation
+
+## Key Files to Modify
+- src/sensors/manager.rs (core modifications)
+- src/sensors/types.rs (new types)
+- src/sensors/mod.rs (module exports)
+- src/ui/screens/sensor_setup.rs (UI improvements)
+- src/ui/widgets/sensor_status.rs (quality indicators)
+
+## New Files to Create
+- src/sensors/cache.rs (device caching)
+- src/sensors/connection_queue.rs (priority queue)
+- src/sensors/reconnection.rs (backoff logic)
+- src/sensors/health.rs (connection health)
+- src/sensors/connection_state.rs (state machine)
+- src/sensors/persistence.rs (session persistence)
+- src/sensors/quality.rs (quality tracking)
+- src/sensors/dual_protocol.rs (dual protocol detection)
+- src/sensors/conflict.rs (conflict detection)
+- src/sensors/power_meter.rs (power meter specifics)
+- src/sensors/calibration.rs (calibration tracking)
+- src/ui/widgets/connection_quality.rs (quality widget)
+- src/ui/dialogs/sensor_conflict.rs (conflict dialog)
+- src/ui/dialogs/calibration.rs (calibration dialog)
+
+## Dependencies
+- btleplug (BLE communication)
+- rusb (ANT+ USB dongle)
+- tokio (async runtime)
+- crossbeam (channel communication)
+
+## Notes
+- Existing codebase has foundation for discovery and reconnection
+- Focus on improving reliability, adding quality monitoring
+- Better UX for conflict resolution and power meter pairing
