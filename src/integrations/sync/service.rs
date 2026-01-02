@@ -6,12 +6,18 @@
 //! - Platform connections (Strava, etc.)
 //! - Token refresh scheduling
 //! - Upload queue management
+//! - Persistent queue with offline support
 
 use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenResponse, TokenStatus};
 use super::strava::StravaClient;
 use super::{PlatformConfig, SyncConfig, SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
+use crate::storage::sync_store::{
+    delete_fit_from_queue, load_fit_from_queue, save_fit_for_queue, StoredUploadQueueEntry, SyncStore,
+};
+use crate::storage::Database;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -28,6 +34,21 @@ const MAX_REFRESH_FAILURES: u32 = 3;
 
 /// Delay between refresh retries (in seconds)
 const REFRESH_RETRY_DELAY_SECS: u64 = 30;
+
+/// How often to process the upload queue (in seconds)
+const QUEUE_PROCESS_INTERVAL_SECS: u64 = 30;
+
+/// How often to check connectivity (in seconds)
+const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 60;
+
+/// Maximum number of upload retries before giving up
+const MAX_UPLOAD_RETRIES: i32 = 5;
+
+/// Base delay for exponential backoff (in seconds)
+const BASE_RETRY_DELAY_SECS: i64 = 30;
+
+/// URL to use for connectivity checks
+const CONNECTIVITY_CHECK_URL: &str = "https://www.strava.com";
 
 /// Events emitted by the SyncService for external consumers
 #[derive(Debug, Clone)]
@@ -54,6 +75,37 @@ pub enum SyncEvent {
     /// Platform was disconnected
     PlatformDisconnected {
         platform: SyncPlatform,
+    },
+    /// Upload started
+    UploadStarted {
+        record_id: Uuid,
+        ride_id: Uuid,
+        platform: SyncPlatform,
+    },
+    /// Upload completed successfully
+    UploadCompleted {
+        record_id: Uuid,
+        ride_id: Uuid,
+        platform: SyncPlatform,
+        external_id: Option<String>,
+        external_url: Option<String>,
+    },
+    /// Upload failed
+    UploadFailed {
+        record_id: Uuid,
+        ride_id: Uuid,
+        platform: SyncPlatform,
+        error: String,
+        retry_count: i32,
+        will_retry: bool,
+    },
+    /// Connectivity changed
+    ConnectivityChanged {
+        is_online: bool,
+    },
+    /// Queue processing started
+    QueueProcessingStarted {
+        pending_count: usize,
     },
 }
 
@@ -110,6 +162,10 @@ pub enum SyncMessage {
     },
     /// Internal message to trigger token refresh check
     CheckTokenRefresh,
+    /// Internal message to process the upload queue
+    ProcessQueue,
+    /// Internal message to check connectivity
+    CheckConnectivity,
     /// Shutdown the service
     Shutdown,
 }
@@ -342,9 +398,9 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
     configs: Arc<RwLock<SyncConfig>>,
     /// Connected platforms with tokens
     connected: HashMap<SyncPlatform, TokenResponse>,
-    /// Upload queue
+    /// Upload queue (in-memory cache of database queue)
     upload_queue: Vec<UploadQueueEntry>,
-    /// Sync records (in-memory, will be persisted in future subtask)
+    /// Sync records (in-memory cache)
     sync_records: HashMap<Uuid, SyncRecord>,
     /// Last sync times per platform
     last_sync: HashMap<SyncPlatform, DateTime<Utc>>,
@@ -352,6 +408,12 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
     refresh_state: HashMap<SyncPlatform, TokenRefreshState>,
     /// Event sender for notifying external consumers
     event_sender: mpsc::Sender<SyncEvent>,
+    /// Database path for persistent storage
+    db_path: Option<PathBuf>,
+    /// Current connectivity status
+    is_online: bool,
+    /// Whether the queue is currently being processed
+    is_processing_queue: bool,
 }
 
 /// Client for a specific platform
@@ -369,6 +431,19 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         oauth_handler: Arc<O>,
         credential_store: Arc<C>,
         config: SyncConfig,
+    ) -> SyncServiceHandle {
+        Self::spawn_with_db(oauth_handler, credential_store, config, None)
+    }
+
+    /// Create a new SyncService with database persistence.
+    ///
+    /// The service will start running in the background immediately and
+    /// will persist the upload queue to the specified database.
+    pub fn spawn_with_db(
+        oauth_handler: Arc<O>,
+        credential_store: Arc<C>,
+        config: SyncConfig,
+        db_path: Option<PathBuf>,
     ) -> SyncServiceHandle {
         let (sender, receiver) = mpsc::channel(64);
         let (event_sender, event_receiver) = mpsc::channel(32);
@@ -390,6 +465,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             last_sync: HashMap::new(),
             refresh_state: HashMap::new(),
             event_sender,
+            db_path,
+            is_online: true, // Assume online initially
+            is_processing_queue: false,
         };
 
         // Spawn the service actor
@@ -401,9 +479,49 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             Self::token_refresh_scheduler(refresh_sender).await;
         });
 
+        // Spawn the queue processor scheduler
+        let queue_sender = sender.clone();
+        tokio::spawn(async move {
+            Self::queue_processor_scheduler(queue_sender).await;
+        });
+
+        // Spawn the connectivity checker
+        let connectivity_sender = sender.clone();
+        tokio::spawn(async move {
+            Self::connectivity_checker_scheduler(connectivity_sender).await;
+        });
+
         SyncServiceHandle {
             sender,
             event_receiver: Arc::new(RwLock::new(Some(event_receiver))),
+        }
+    }
+
+    /// Background task that periodically triggers queue processing.
+    async fn queue_processor_scheduler(sender: mpsc::Sender<SyncMessage>) {
+        let mut interval = tokio::time::interval(Duration::from_secs(QUEUE_PROCESS_INTERVAL_SECS));
+
+        loop {
+            interval.tick().await;
+
+            if sender.send(SyncMessage::ProcessQueue).await.is_err() {
+                tracing::debug!("Queue processor scheduler stopping: service channel closed");
+                break;
+            }
+        }
+    }
+
+    /// Background task that periodically checks connectivity.
+    async fn connectivity_checker_scheduler(sender: mpsc::Sender<SyncMessage>) {
+        let mut interval = tokio::time::interval(Duration::from_secs(CONNECTIVITY_CHECK_INTERVAL_SECS));
+
+        loop {
+            interval.tick().await;
+
+            if sender.send(SyncMessage::CheckConnectivity).await.is_err() {
+                tracing::debug!("Connectivity checker stopping: service channel closed");
+                break;
+            }
         }
     }
 
@@ -429,6 +547,12 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
 
         // Load stored credentials on startup
         self.load_stored_credentials().await;
+
+        // Load pending uploads from database on startup
+        self.load_pending_uploads_from_db().await;
+
+        // Check initial connectivity
+        self.check_connectivity().await;
 
         while let Some(message) = self.receiver.recv().await {
             match message {
@@ -483,6 +607,12 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 SyncMessage::CheckTokenRefresh => {
                     self.handle_token_refresh_check().await;
                 }
+                SyncMessage::ProcessQueue => {
+                    self.process_upload_queue().await;
+                }
+                SyncMessage::CheckConnectivity => {
+                    self.check_connectivity().await;
+                }
                 SyncMessage::Shutdown => {
                     tracing::info!("SyncService shutting down");
                     break;
@@ -491,6 +621,502 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         }
 
         tracing::info!("SyncService stopped");
+    }
+
+    /// Load pending uploads from the database on startup.
+    async fn load_pending_uploads_from_db(&mut self) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => {
+                tracing::debug!("No database path configured, skipping pending upload load");
+                return;
+            }
+        };
+
+        match Database::open(&db_path) {
+            Ok(db) => {
+                let conn = db.connection();
+                let store = SyncStore::new(conn);
+
+                // Initialize the upload queue table if needed
+                if let Err(e) = store.init_upload_queue_table() {
+                    tracing::warn!("Failed to initialize upload queue table: {}", e);
+                    return;
+                }
+
+                match store.get_pending_entries() {
+                    Ok(entries) => {
+                        tracing::info!("Loaded {} pending uploads from database", entries.len());
+
+                        for entry in entries {
+                            // Convert stored entry to UploadQueueEntry
+                            if let Some(queue_entry) = self.stored_entry_to_queue_entry(&entry) {
+                                self.upload_queue.push(queue_entry.clone());
+                                self.sync_records.insert(queue_entry.record.id, queue_entry.record);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load pending uploads: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to open database for loading pending uploads: {}", e);
+            }
+        }
+    }
+
+    /// Convert a stored upload queue entry to an in-memory UploadQueueEntry.
+    fn stored_entry_to_queue_entry(&self, stored: &StoredUploadQueueEntry) -> Option<UploadQueueEntry> {
+        // Parse platform
+        let platform = match stored.platform.as_str() {
+            "Strava" => SyncPlatform::Strava,
+            "GarminConnect" => SyncPlatform::GarminConnect,
+            "TrainingPeaks" => SyncPlatform::TrainingPeaks,
+            "IntervalsIcu" => SyncPlatform::IntervalsIcu,
+            _ => {
+                tracing::warn!("Unknown platform in stored entry: {}", stored.platform);
+                return None;
+            }
+        };
+
+        // Load FIT data from file
+        let fit_data = match load_fit_from_queue(&stored.fit_file_path) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::warn!("Failed to load FIT file for queue entry {}: {}", stored.id, e);
+                return None;
+            }
+        };
+
+        // Parse status
+        let status = match stored.status.as_str() {
+            "pending" => SyncRecordStatus::Pending,
+            "uploading" => SyncRecordStatus::Uploading,
+            "completed" => SyncRecordStatus::Completed,
+            "failed" => SyncRecordStatus::Failed,
+            "cancelled" => SyncRecordStatus::Cancelled,
+            _ => SyncRecordStatus::Pending,
+        };
+
+        // Parse created_at
+        let created_at = DateTime::parse_from_rfc3339(&stored.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        // Parse completed_at
+        let completed_at = stored.completed_at.as_ref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok()
+        });
+
+        // Parse next_retry
+        let next_retry = stored.next_retry_at.as_ref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok()
+        });
+
+        let record = SyncRecord {
+            id: stored.id,
+            ride_id: stored.ride_id,
+            platform,
+            status,
+            external_id: stored.external_activity_id.clone(),
+            external_url: stored.external_activity_url.clone(),
+            created_at,
+            completed_at,
+            error_message: stored.error_message.clone(),
+            retry_count: stored.retry_count as u32,
+        };
+
+        Some(UploadQueueEntry {
+            record,
+            fit_data,
+            activity_name: stored.activity_name.clone(),
+            next_retry,
+        })
+    }
+
+    /// Check network connectivity by attempting to reach Strava's API.
+    async fn check_connectivity(&mut self) {
+        let was_online = self.is_online;
+
+        // Try a simple HTTP HEAD request to check connectivity
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+
+        match client.head(CONNECTIVITY_CHECK_URL).send().await {
+            Ok(_) => {
+                self.is_online = true;
+                if !was_online {
+                    tracing::info!("Network connectivity restored");
+                    self.emit_event(SyncEvent::ConnectivityChanged { is_online: true });
+
+                    // Trigger immediate queue processing when coming back online
+                    if let Err(e) = self.sender.try_send(SyncMessage::ProcessQueue) {
+                        tracing::debug!("Failed to trigger queue processing after reconnect: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                self.is_online = false;
+                if was_online {
+                    tracing::warn!("Network connectivity lost: {}", e);
+                    self.emit_event(SyncEvent::ConnectivityChanged { is_online: false });
+                }
+            }
+        }
+    }
+
+    /// Process the upload queue, attempting to upload pending entries.
+    async fn process_upload_queue(&mut self) {
+        // Skip if already processing or offline
+        if self.is_processing_queue || !self.is_online {
+            return;
+        }
+
+        // Get pending entries that are ready to process
+        let pending_entries: Vec<UploadQueueEntry> = self
+            .upload_queue
+            .iter()
+            .filter(|e| {
+                e.record.status == SyncRecordStatus::Pending && self.is_entry_ready_to_process(e)
+            })
+            .cloned()
+            .collect();
+
+        if pending_entries.is_empty() {
+            return;
+        }
+
+        self.is_processing_queue = true;
+        self.emit_event(SyncEvent::QueueProcessingStarted {
+            pending_count: pending_entries.len(),
+        });
+
+        tracing::info!("Processing {} pending uploads", pending_entries.len());
+
+        for entry in pending_entries {
+            // Check if platform is connected
+            if !self.connected.contains_key(&entry.record.platform) {
+                tracing::debug!(
+                    "Skipping upload {} - platform {:?} not connected",
+                    entry.record.id,
+                    entry.record.platform
+                );
+                continue;
+            }
+
+            // Check connectivity again before each upload
+            if !self.is_online {
+                tracing::info!("Upload queue processing stopped - offline");
+                break;
+            }
+
+            self.process_single_upload(&entry).await;
+        }
+
+        self.is_processing_queue = false;
+    }
+
+    /// Check if an upload queue entry is ready to be processed (respecting retry delay).
+    fn is_entry_ready_to_process(&self, entry: &UploadQueueEntry) -> bool {
+        if let Some(next_retry) = entry.next_retry {
+            Utc::now() >= next_retry
+        } else {
+            true
+        }
+    }
+
+    /// Process a single upload from the queue.
+    async fn process_single_upload(&mut self, entry: &UploadQueueEntry) {
+        let record_id = entry.record.id;
+        let ride_id = entry.record.ride_id;
+        let platform = entry.record.platform;
+
+        // Emit upload started event
+        self.emit_event(SyncEvent::UploadStarted {
+            record_id,
+            ride_id,
+            platform,
+        });
+
+        // Update status to uploading
+        self.update_queue_entry_status(record_id, SyncRecordStatus::Uploading, None);
+
+        // Attempt the upload
+        let result = match platform {
+            SyncPlatform::Strava => {
+                if let Some(PlatformClient::Strava(client)) = self.clients.get(&platform) {
+                    client
+                        .upload_activity(
+                            &entry.fit_data,
+                            entry.activity_name.as_deref(),
+                            None, // description
+                        )
+                        .await
+                } else {
+                    Err(SyncError::NotConfigured(platform))
+                }
+            }
+            _ => Err(SyncError::NotConfigured(platform)),
+        };
+
+        match result {
+            Ok(upload_record) => {
+                tracing::info!(
+                    "Upload {} completed successfully (external_id: {:?})",
+                    record_id,
+                    upload_record.external_id
+                );
+
+                // Update queue entry with success
+                self.mark_upload_completed(
+                    record_id,
+                    upload_record.external_id.clone(),
+                    upload_record.external_url.clone(),
+                );
+
+                // Emit success event
+                self.emit_event(SyncEvent::UploadCompleted {
+                    record_id,
+                    ride_id,
+                    platform,
+                    external_id: upload_record.external_id,
+                    external_url: upload_record.external_url,
+                });
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                let current_retry = self
+                    .upload_queue
+                    .iter()
+                    .find(|e| e.record.id == record_id)
+                    .map(|e| e.record.retry_count as i32)
+                    .unwrap_or(0);
+
+                let will_retry = current_retry < MAX_UPLOAD_RETRIES && self.is_retryable_error(&e);
+
+                tracing::warn!(
+                    "Upload {} failed (attempt {}/{}): {} (will_retry: {})",
+                    record_id,
+                    current_retry + 1,
+                    MAX_UPLOAD_RETRIES,
+                    error_msg,
+                    will_retry
+                );
+
+                if will_retry {
+                    // Calculate next retry time with exponential backoff
+                    let backoff = BASE_RETRY_DELAY_SECS * (2_i64.pow(current_retry as u32));
+                    let next_retry = Utc::now() + ChronoDuration::seconds(backoff);
+                    self.mark_upload_failed_with_retry(record_id, &error_msg, next_retry);
+                } else {
+                    // Permanent failure
+                    self.mark_upload_permanently_failed(record_id, &error_msg);
+                }
+
+                // Emit failure event
+                self.emit_event(SyncEvent::UploadFailed {
+                    record_id,
+                    ride_id,
+                    platform,
+                    error: error_msg,
+                    retry_count: current_retry + 1,
+                    will_retry,
+                });
+            }
+        }
+    }
+
+    /// Check if an error is retryable (e.g., network issues).
+    fn is_retryable_error(&self, error: &SyncError) -> bool {
+        matches!(
+            error,
+            SyncError::NetworkError(_) | SyncError::ApiError(_)
+        )
+    }
+
+    /// Update queue entry status in memory and database.
+    fn update_queue_entry_status(
+        &mut self,
+        record_id: Uuid,
+        status: SyncRecordStatus,
+        error_message: Option<&str>,
+    ) {
+        // Update in-memory queue
+        if let Some(entry) = self.upload_queue.iter_mut().find(|e| e.record.id == record_id) {
+            entry.record.status = status;
+            entry.record.error_message = error_message.map(String::from);
+        }
+
+        // Update sync records
+        if let Some(record) = self.sync_records.get_mut(&record_id) {
+            record.status = status;
+            record.error_message = error_message.map(String::from);
+        }
+
+        // Update database
+        self.persist_queue_entry_status(record_id, status, error_message);
+    }
+
+    /// Mark an upload as completed.
+    fn mark_upload_completed(
+        &mut self,
+        record_id: Uuid,
+        external_id: Option<String>,
+        external_url: Option<String>,
+    ) {
+        // Update in-memory queue
+        if let Some(entry) = self.upload_queue.iter_mut().find(|e| e.record.id == record_id) {
+            entry.record.status = SyncRecordStatus::Completed;
+            entry.record.external_id = external_id.clone();
+            entry.record.external_url = external_url.clone();
+            entry.record.completed_at = Some(Utc::now());
+        }
+
+        // Update sync records
+        if let Some(record) = self.sync_records.get_mut(&record_id) {
+            record.status = SyncRecordStatus::Completed;
+            record.external_id = external_id.clone();
+            record.external_url = external_url.clone();
+            record.completed_at = Some(Utc::now());
+        }
+
+        // Update database
+        self.persist_queue_entry_completed(record_id, external_id.as_deref(), external_url.as_deref());
+    }
+
+    /// Mark an upload as failed with retry scheduled.
+    fn mark_upload_failed_with_retry(
+        &mut self,
+        record_id: Uuid,
+        error_message: &str,
+        next_retry: DateTime<Utc>,
+    ) {
+        // Update in-memory queue
+        if let Some(entry) = self.upload_queue.iter_mut().find(|e| e.record.id == record_id) {
+            entry.record.status = SyncRecordStatus::Pending; // Back to pending for retry
+            entry.record.error_message = Some(error_message.to_string());
+            entry.record.retry_count += 1;
+            entry.next_retry = Some(next_retry);
+        }
+
+        // Update sync records
+        if let Some(record) = self.sync_records.get_mut(&record_id) {
+            record.status = SyncRecordStatus::Pending;
+            record.error_message = Some(error_message.to_string());
+            record.retry_count += 1;
+        }
+
+        // Update database
+        self.persist_queue_entry_failed(record_id, error_message, Some(next_retry));
+    }
+
+    /// Mark an upload as permanently failed (no more retries).
+    fn mark_upload_permanently_failed(&mut self, record_id: Uuid, error_message: &str) {
+        // Update in-memory queue
+        if let Some(entry) = self.upload_queue.iter_mut().find(|e| e.record.id == record_id) {
+            entry.record.status = SyncRecordStatus::Failed;
+            entry.record.error_message = Some(error_message.to_string());
+        }
+
+        // Update sync records
+        if let Some(record) = self.sync_records.get_mut(&record_id) {
+            record.status = SyncRecordStatus::Failed;
+            record.error_message = Some(error_message.to_string());
+        }
+
+        // Update database
+        self.persist_queue_entry_permanently_failed(record_id, error_message);
+    }
+
+    /// Persist queue entry status to database.
+    fn persist_queue_entry_status(
+        &self,
+        record_id: Uuid,
+        status: SyncRecordStatus,
+        error_message: Option<&str>,
+    ) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        let status_str = match status {
+            SyncRecordStatus::Pending => "pending",
+            SyncRecordStatus::Uploading => "uploading",
+            SyncRecordStatus::Completed => "completed",
+            SyncRecordStatus::Failed => "failed",
+            SyncRecordStatus::Cancelled => "cancelled",
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+            if let Err(e) = store.update_status(&record_id, status_str, error_message) {
+                tracing::warn!("Failed to persist queue entry status: {}", e);
+            }
+        }
+    }
+
+    /// Persist completed upload to database.
+    fn persist_queue_entry_completed(
+        &self,
+        record_id: Uuid,
+        external_id: Option<&str>,
+        external_url: Option<&str>,
+    ) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+            if let Err(e) = store.mark_completed(&record_id, external_id, external_url) {
+                tracing::warn!("Failed to persist completed upload: {}", e);
+            }
+        }
+    }
+
+    /// Persist failed upload with retry info to database.
+    fn persist_queue_entry_failed(
+        &self,
+        record_id: Uuid,
+        error_message: &str,
+        next_retry: Option<DateTime<Utc>>,
+    ) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+            if let Err(e) = store.mark_failed(&record_id, error_message, next_retry) {
+                tracing::warn!("Failed to persist failed upload: {}", e);
+            }
+        }
+    }
+
+    /// Persist permanently failed upload to database.
+    fn persist_queue_entry_permanently_failed(&self, record_id: Uuid, error_message: &str) {
+        let db_path = match &self.db_path {
+            Some(path) => path.clone(),
+            None => return,
+        };
+
+        if let Ok(db) = Database::open(&db_path) {
+            let store = SyncStore::new(db.connection());
+            if let Err(e) = store.mark_permanently_failed(&record_id, error_message) {
+                tracing::warn!("Failed to persist permanently failed upload: {}", e);
+            }
+        }
     }
 
     /// Handle token refresh check for all connected platforms.
@@ -812,7 +1438,61 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             retry_count: 0,
         };
 
-        // Add to queue
+        // Get platform name for storage
+        let platform_name = match platform {
+            SyncPlatform::Strava => "Strava",
+            SyncPlatform::GarminConnect => "GarminConnect",
+            SyncPlatform::TrainingPeaks => "TrainingPeaks",
+            SyncPlatform::IntervalsIcu => "IntervalsIcu",
+            #[cfg(target_os = "macos")]
+            SyncPlatform::HealthKit => "HealthKit",
+        };
+
+        // Save FIT data to file and persist to database if available
+        let fit_file_path = if self.db_path.is_some() {
+            match save_fit_for_queue(&ride_id, platform_name, &fit_data) {
+                Ok(path) => {
+                    // Persist to database
+                    let stored_entry = StoredUploadQueueEntry {
+                        id: record.id,
+                        ride_id,
+                        platform: platform_name.to_string(),
+                        fit_file_path: path.to_string_lossy().to_string(),
+                        activity_name: activity_name.clone(),
+                        status: "pending".to_string(),
+                        error_message: None,
+                        external_activity_id: None,
+                        external_activity_url: None,
+                        retry_count: 0,
+                        next_retry_at: None,
+                        created_at: record.created_at.to_rfc3339(),
+                        completed_at: None,
+                    };
+
+                    if let Some(db_path) = &self.db_path {
+                        if let Ok(db) = Database::open(db_path) {
+                            let store = SyncStore::new(db.connection());
+                            if let Err(e) = store.init_upload_queue_table() {
+                                tracing::warn!("Failed to init upload queue table: {}", e);
+                            }
+                            if let Err(e) = store.add_to_queue(&stored_entry) {
+                                tracing::warn!("Failed to persist upload to database: {}", e);
+                            }
+                        }
+                    }
+
+                    Some(path)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to save FIT file for queue: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Add to in-memory queue
         let entry = UploadQueueEntry {
             record: record.clone(),
             fit_data,
@@ -821,18 +1501,23 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         };
         self.upload_queue.push(entry);
 
-        // Store record
+        // Store record in memory
         self.sync_records.insert(record.id, record.clone());
 
         tracing::info!(
-            "Queued upload for ride {} to {:?} (record: {})",
+            "Queued upload for ride {} to {:?} (record: {}, persisted: {})",
             ride_id,
             platform,
-            record.id
+            record.id,
+            fit_file_path.is_some()
         );
 
-        // Try to process immediately if possible
-        // Note: Actual processing will be handled in the upload queue processor (subtask 2.4)
+        // Trigger queue processing if online
+        if self.is_online {
+            if let Err(e) = self.sender.try_send(SyncMessage::ProcessQueue) {
+                tracing::debug!("Failed to trigger immediate queue processing: {:?}", e);
+            }
+        }
 
         Ok(record)
     }
@@ -876,7 +1561,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
 
     /// Handle cancel upload request
     fn handle_cancel_upload(&mut self, record_id: Uuid) -> bool {
-        // Remove from queue
+        // Remove from in-memory queue
         let initial_len = self.upload_queue.len();
         self.upload_queue.retain(|e| e.record.id != record_id);
 
@@ -884,6 +1569,17 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         if let Some(record) = self.sync_records.get_mut(&record_id) {
             if record.status == SyncRecordStatus::Pending {
                 record.status = SyncRecordStatus::Cancelled;
+
+                // Persist cancellation to database
+                if let Some(db_path) = &self.db_path {
+                    if let Ok(db) = Database::open(db_path) {
+                        let store = SyncStore::new(db.connection());
+                        if let Err(e) = store.cancel_entry(&record_id) {
+                            tracing::warn!("Failed to persist upload cancellation: {}", e);
+                        }
+                    }
+                }
+
                 return true;
             }
         }
@@ -923,6 +1619,24 @@ pub fn create_sync_service(
         Arc::new(oauth_handler),
         Arc::new(credential_store),
         config,
+    )
+}
+
+/// Create a SyncService with database persistence for upload queue.
+///
+/// The upload queue will be persisted to the specified database path,
+/// allowing pending uploads to survive app restarts.
+pub fn create_sync_service_with_db(
+    oauth_handler: super::oauth::DefaultOAuthHandler,
+    config: SyncConfig,
+    db_path: PathBuf,
+) -> SyncServiceHandle {
+    let credential_store = KeyringCredentialStore::new("RustRide");
+    SyncService::spawn_with_db(
+        Arc::new(oauth_handler),
+        Arc::new(credential_store),
+        config,
+        Some(db_path),
     )
 }
 
