@@ -532,6 +532,31 @@ impl AnalyticsExport {
         self.fitness_profile = Some(fitness_profile);
         self
     }
+
+    /// Serialize the analytics export to pretty-printed JSON.
+    ///
+    /// Returns the full analytics export as a formatted JSON string with
+    /// indentation for human readability.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the pretty-printed JSON string on success,
+    /// or an [`ExportError::SerializationFailed`] if serialization fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let export = AnalyticsExport::new("user-123")
+    ///     .with_pdc(pdc_data)
+    ///     .with_training_load(load_data);
+    ///
+    /// let json = export.export_json()?;
+    /// std::fs::write("analytics.json", json)?;
+    /// ```
+    pub fn export_json(&self) -> Result<String, ExportError> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| ExportError::SerializationFailed(e.to_string()))
+    }
 }
 
 /// Analytics data exporter.
@@ -642,6 +667,27 @@ impl AnalyticsExporter {
         }
 
         Ok(export)
+    }
+
+    /// Export all analytics data for a user to pretty-printed JSON.
+    ///
+    /// This is a convenience method that builds the export and serializes it
+    /// to JSON in a single call. Equivalent to:
+    /// ```ignore
+    /// exporter.build_export(user_id)?.export_json()
+    /// ```
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID to export analytics for
+    ///
+    /// # Returns
+    ///
+    /// Returns a pretty-printed JSON string containing all available analytics
+    /// data for the user, or an error if building or serializing fails.
+    pub fn export_json(&self, user_id: Uuid) -> Result<String, ExportError> {
+        let export = self.build_export(user_id)?;
+        export.export_json()
     }
 }
 
@@ -1785,5 +1831,202 @@ mod tests {
 
         assert_eq!(vo2max1, vo2max2);
         assert_ne!(vo2max1, vo2max3);
+    }
+
+    // ============ export_json() Tests ============
+
+    #[test]
+    fn test_export_json_empty_export() {
+        let export = AnalyticsExport::new("test-user");
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should be pretty-printed (contains newlines)
+        assert!(json.contains('\n'));
+
+        // Should contain required fields
+        assert!(json.contains("\"exported_at\""));
+        assert!(json.contains("\"export_version\""));
+        assert!(json.contains("\"user_id\""));
+        assert!(json.contains("\"test-user\""));
+    }
+
+    #[test]
+    fn test_export_json_with_pdc() {
+        let pdc = PdcExport::from_points(vec![
+            PdcPointExport::new(60, 350),
+            PdcPointExport::new(300, 280),
+        ]);
+        let export = AnalyticsExport::new("user-123").with_pdc(pdc);
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should contain PDC data
+        assert!(json.contains("\"pdc\""));
+        assert!(json.contains("\"points\""));
+        assert!(json.contains("\"duration_secs\""));
+        assert!(json.contains("\"power_watts\""));
+    }
+
+    #[test]
+    fn test_export_json_with_training_load() {
+        let days = vec![
+            DailyLoadExport::new(
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                100.0,
+                75.0,
+                80.0,
+                5.0,
+            ),
+        ];
+        let training_load = TrainingLoadExport::from_days(days);
+        let export = AnalyticsExport::new("user-456").with_training_load(training_load);
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should contain training load data
+        assert!(json.contains("\"training_load\""));
+        assert!(json.contains("\"days\""));
+        assert!(json.contains("\"tss\""));
+        assert!(json.contains("\"atl\""));
+        assert!(json.contains("\"ctl\""));
+        assert!(json.contains("\"tsb\""));
+    }
+
+    #[test]
+    fn test_export_json_with_cp_model() {
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+        let export = AnalyticsExport::new("user-789").with_cp_model(cp_model);
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should contain CP model data
+        assert!(json.contains("\"cp_model\""));
+        assert!(json.contains("\"cp_watts\""));
+        assert!(json.contains("\"w_prime_joules\""));
+        assert!(json.contains("\"r_squared\""));
+    }
+
+    #[test]
+    fn test_export_json_with_fitness_profile() {
+        let vo2max = Vo2maxExport::new(55.0, "Well-Trained", "FTP-based");
+        let power_profile = PowerProfileExport::new(175.0, 128.0, 94.0);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(275)
+            .with_rider_type(RiderType::TimeTrialist)
+            .with_vo2max(vo2max)
+            .with_power_profile(power_profile);
+
+        let export = AnalyticsExport::new("user-fitness").with_fitness_profile(fitness_profile);
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should contain fitness profile data
+        assert!(json.contains("\"fitness_profile\""));
+        assert!(json.contains("\"ftp_watts\""));
+        assert!(json.contains("\"rider_type\""));
+        assert!(json.contains("\"vo2max\""));
+        assert!(json.contains("\"power_profile\""));
+        assert!(json.contains("Time Trialist"));
+    }
+
+    #[test]
+    fn test_export_json_with_all_data() {
+        let pdc = PdcExport::from_points(vec![PdcPointExport::new(60, 350)]);
+        let training_load = TrainingLoadExport::from_days(vec![DailyLoadExport::new(
+            NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+            100.0,
+            75.0,
+            80.0,
+            5.0,
+        )]);
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+        let fitness_profile = FitnessProfileExport::new().with_ftp(280);
+
+        let export = AnalyticsExport::new("full-export-user")
+            .with_pdc(pdc)
+            .with_training_load(training_load)
+            .with_cp_model(cp_model)
+            .with_fitness_profile(fitness_profile);
+
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Should contain all data sections
+        assert!(json.contains("\"pdc\""));
+        assert!(json.contains("\"training_load\""));
+        assert!(json.contains("\"cp_model\""));
+        assert!(json.contains("\"fitness_profile\""));
+    }
+
+    #[test]
+    fn test_export_json_is_pretty_printed() {
+        let export = AnalyticsExport::new("test-user");
+        let result = export.export_json();
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+
+        // Pretty-printed JSON should have:
+        // - Multiple lines
+        // - Indentation (spaces at beginning of lines)
+        let lines: Vec<&str> = json.lines().collect();
+        assert!(lines.len() > 1, "Pretty-printed JSON should have multiple lines");
+
+        // Check that there's indentation (lines starting with spaces)
+        let has_indentation = lines.iter().any(|line| line.starts_with("  "));
+        assert!(has_indentation, "Pretty-printed JSON should have indentation");
+    }
+
+    #[test]
+    fn test_export_json_roundtrip() {
+        let pdc = PdcExport::from_points(vec![PdcPointExport::new(60, 350)]);
+        let cp_model = CpModelExport::new(250, 20000, 0.98);
+        let fitness_profile = FitnessProfileExport::new()
+            .with_ftp(280)
+            .with_rider_type(RiderType::AllRounder);
+
+        let export = AnalyticsExport::new("roundtrip-user")
+            .with_pdc(pdc)
+            .with_cp_model(cp_model)
+            .with_fitness_profile(fitness_profile);
+
+        // Export to JSON
+        let json = export.export_json().expect("should export");
+
+        // Parse back
+        let deserialized: AnalyticsExport =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        // Verify data integrity
+        assert_eq!(deserialized.user_id, "roundtrip-user");
+        assert!(deserialized.pdc.is_some());
+        assert!(deserialized.cp_model.is_some());
+        assert!(deserialized.fitness_profile.is_some());
+
+        let pdc = deserialized.pdc.unwrap();
+        assert_eq!(pdc.len(), 1);
+        assert_eq!(pdc.points[0].duration_secs, 60);
+        assert_eq!(pdc.points[0].power_watts, 350);
+
+        let cp = deserialized.cp_model.unwrap();
+        assert_eq!(cp.cp_watts, 250);
+        assert_eq!(cp.w_prime_joules, 20000);
+
+        let fp = deserialized.fitness_profile.unwrap();
+        assert_eq!(fp.ftp_watts, Some(280));
+        assert_eq!(fp.rider_type, Some("All-Rounder".to_string()));
     }
 }
