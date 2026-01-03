@@ -4,7 +4,12 @@
       "description": "ZoneTracker has cadence zone tracking with set_cadence_zones(), update_cadence() (with debounce and CadenceZoneChange events), current_cadence_zone(), and current_cadence_zone_name() methods following the same pattern as HR zone tracking.",
       "category": "implementation",
       "discovered_at": "2026-01-03T05:32:27.510170+00:00"
+    },
+    "src/metrics/calculator.rs": {
+      "description": "MetricsCalculator::process() now calculates cadence_zone when cadence_zones is set, following the same pattern as power_zone and hr_zone calculation. The zone is calculated using zones.get_zone(cadence) when cadence_rpm is present in the SensorReading.",
+      "category": "metrics",
+      "discovered_at": "2026-01-03T05:39:36.833458+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:32:27.510170+00:00"
+  "last_updated": "2026-01-03T05:39:36.833458+00:00"
 }

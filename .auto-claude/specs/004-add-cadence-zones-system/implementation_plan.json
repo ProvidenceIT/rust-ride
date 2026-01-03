@@ -173,40 +173,46 @@
           "id": "3.1",
           "title": "Add cadence_zone to AggregatedMetrics",
           "description": "Add cadence_zone field to AggregatedMetrics struct.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/calculator.rs"
           ],
           "acceptance_criteria": [
             "cadence_zone: Option<u8> field added to AggregatedMetrics",
             "Field documented with comment"
-          ]
+          ],
+          "notes": "Added cadence_zone: Option<u8> field to AggregatedMetrics struct in calculator.rs following the existing pattern of power_zone and hr_zone fields. Field is documented with comment \"/// Current cadence zone (1-5)\". Committed as 7a1b07b.",
+          "updated_at": "2026-01-03T05:35:26.849841+00:00"
         },
         {
           "id": "3.2",
           "title": "Add cadence zones to MetricsCalculator",
           "description": "Add cadence_zones field and set_cadence_zones() method to MetricsCalculator.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/calculator.rs"
           ],
           "acceptance_criteria": [
             "cadence_zones: Option<CadenceZones> field added",
             "set_cadence_zones(&mut self, zones: CadenceZones) method added"
-          ]
+          ],
+          "notes": "Added CadenceZones import, cadence_zones: Option<CadenceZones> field to MetricsCalculator struct, initialized to None in new(), and added set_cadence_zones(&mut self, zones: CadenceZones) method following the existing pattern for power_zones and hr_zones. Committed as ab1e6a0.",
+          "updated_at": "2026-01-03T05:37:39.076644+00:00"
         },
         {
           "id": "3.3",
           "title": "Calculate cadence zone in process()",
           "description": "Update MetricsCalculator::process() to calculate and set cadence_zone when cadence data is available.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/calculator.rs"
           ],
           "acceptance_criteria": [
             "When cadence is processed, calculate cadence zone if cadence_zones is set",
             "Update current_metrics.cadence_zone"
-          ]
+          ],
+          "notes": "Updated MetricsCalculator::process() to calculate and set cadence_zone when cadence data is available. When cadence_rpm is present in a SensorReading, the code now checks if cadence_zones is set, and if so, calculates the cadence zone using zones.get_zone(cadence) and stores it in current_metrics.cadence_zone. Follows the same pattern as HR zone calculation. Committed as d619ec4.",
+          "updated_at": "2026-01-03T05:39:30.316970+00:00"
         }
       ]
     },
@@ -414,5 +420,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T05:34:09.576889+00:00"
+  "last_updated": "2026-01-03T05:39:30.316970+00:00"
 }
