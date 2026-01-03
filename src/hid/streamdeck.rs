@@ -728,4 +728,394 @@ mod tests {
         // Should only get 6 events (not 7 even though report has 7 bytes)
         assert_eq!(events.len(), 6);
     }
+
+    // ============================================
+    // Additional comprehensive tests for edge cases
+    // ============================================
+
+    #[test]
+    fn test_all_buttons_pressed_original() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All 15 buttons pressed at once
+        let mut report = vec![0x01]; // Report ID
+        report.extend(vec![0x01; 15]); // All 15 buttons pressed
+
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 15);
+        for i in 0..15 {
+            assert!(events.iter().any(|e| e.button_code == i && e.pressed));
+        }
+    }
+
+    #[test]
+    fn test_all_buttons_released_original() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // First press all buttons
+        let mut report_pressed = vec![0x01];
+        report_pressed.extend(vec![0x01; 15]);
+        let _ = parser.parse_report(&device_id, &report_pressed, timestamp);
+
+        // Then release all buttons
+        let mut report_released = vec![0x01];
+        report_released.extend(vec![0x00; 15]);
+        let events = parser.parse_report(&device_id, &report_released, timestamp);
+
+        assert_eq!(events.len(), 15);
+        for event in &events {
+            assert!(!event.pressed);
+        }
+    }
+
+    #[test]
+    fn test_all_buttons_pressed_xl() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Xl);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // XL has 32 buttons with 4-byte header
+        let mut report = vec![0x01, 0x00, 0x00, 0x00]; // Header
+        report.extend(vec![0x01; 32]); // All 32 buttons pressed
+
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 32);
+        for i in 0..32 {
+            assert!(events.iter().any(|e| e.button_code == i && e.pressed));
+        }
+    }
+
+    #[test]
+    fn test_all_buttons_pressed_mini() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Mini);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Mini has 6 buttons
+        let report = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 6);
+        for i in 0..6 {
+            assert!(events.iter().any(|e| e.button_code == i && e.pressed));
+        }
+    }
+
+    #[test]
+    fn test_rapid_press_release_sequence() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Simulate rapid button 0 press/release cycles
+        for cycle in 0..10 {
+            // Press
+            let report_press = [0x01, 0x01, 0x00, 0x00, 0x00, 0x00];
+            let events = parser.parse_report(&device_id, &report_press, timestamp);
+            assert_eq!(events.len(), 1, "Cycle {}: press should generate 1 event", cycle);
+            assert!(events[0].pressed);
+            assert_eq!(events[0].button_code, 0);
+
+            // Release
+            let report_release = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+            let events = parser.parse_report(&device_id, &report_release, timestamp);
+            assert_eq!(events.len(), 1, "Cycle {}: release should generate 1 event", cycle);
+            assert!(!events[0].pressed);
+            assert_eq!(events[0].button_code, 0);
+        }
+    }
+
+    #[test]
+    fn test_alternating_buttons() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press odd buttons (1, 3, 5, 7, 9, 11, 13)
+        let report1 = [0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00];
+        let events = parser.parse_report(&device_id, &report1, timestamp);
+        assert_eq!(events.len(), 7);
+        for event in &events {
+            assert!(event.button_code % 2 == 1);
+            assert!(event.pressed);
+        }
+
+        // Switch to even buttons (0, 2, 4, 6, 8, 10, 12, 14)
+        let report2 = [0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01];
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+        // Should have 7 releases + 8 presses = 15 events
+        assert_eq!(events.len(), 15);
+    }
+
+    #[test]
+    fn test_pedal_all_pressed_released() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Pedal);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press all 3 pedals
+        let report_press = [0x01, 0x01, 0x01];
+        let events = parser.parse_report(&device_id, &report_press, timestamp);
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().all(|e| e.pressed));
+
+        // Release all 3 pedals
+        let report_release = [0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report_release, timestamp);
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().all(|e| !e.pressed));
+    }
+
+    #[test]
+    fn test_mk2_all_buttons_pressed() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Mk2);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // MK.2 has 4-byte header + 15 button bytes
+        let mut report = vec![0x01, 0x00, 0x00, 0x00]; // Header
+        report.extend(vec![0x01; 15]); // All 15 buttons pressed
+
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        assert_eq!(events.len(), 15);
+    }
+
+    #[test]
+    fn test_simultaneous_press_release() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press buttons 0 and 1
+        let report1 = [0x01, 0x01, 0x01, 0x00, 0x00, 0x00];
+        let _ = parser.parse_report(&device_id, &report1, timestamp);
+
+        // Release button 0 while pressing button 2
+        let report2 = [0x01, 0x00, 0x01, 0x01, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+
+        assert_eq!(events.len(), 2);
+        // Button 0 released
+        assert!(events.iter().any(|e| e.button_code == 0 && !e.pressed));
+        // Button 2 pressed
+        assert!(events.iter().any(|e| e.button_code == 2 && e.pressed));
+    }
+
+    #[test]
+    fn test_no_buttons_pressed_initial_state() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All buttons released (initial state)
+        let report = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        // No events since initial state is all released
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_button_boundary_original() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press first button (0)
+        let mut report = vec![0x01];
+        report.extend(vec![0x00; 15]);
+        report[1] = 0x01;
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 0);
+
+        // Reset and press last button (14)
+        parser.reset_states();
+        report[1] = 0x00;
+        report[15] = 0x01;
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 14);
+    }
+
+    #[test]
+    fn test_button_boundary_xl() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Xl);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press first button (0) - XL has 4-byte header
+        let mut report = vec![0x01, 0x00, 0x00, 0x00];
+        report.extend(vec![0x00; 32]);
+        report[4] = 0x01; // First button
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 0);
+
+        // Reset and press last button (31)
+        parser.reset_states();
+        report[4] = 0x00;
+        report[35] = 0x01; // Last button (4 header + 31 = 35)
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 31);
+    }
+
+    #[test]
+    fn test_grid_coordinates_all_models() {
+        // Test grid coordinate conversion for all models
+        for model in [
+            StreamDeckModel::Original,
+            StreamDeckModel::Mini,
+            StreamDeckModel::Xl,
+            StreamDeckModel::Mk2,
+            StreamDeckModel::Pedal,
+        ] {
+            let parser = StreamDeckParser::new(model);
+            let (rows, cols) = model.grid_layout();
+            let button_count = model.button_count();
+
+            // Test all valid buttons have valid grid coords
+            for i in 0..button_count {
+                let coords = parser.button_to_grid(i);
+                assert!(coords.is_some(), "Model {:?}: button {} should have valid coords", model, i);
+
+                let (row, col) = coords.unwrap();
+                assert!(row < rows, "Model {:?}: row {} out of range", model, row);
+                assert!(col < cols, "Model {:?}: col {} out of range", model, col);
+
+                // Verify round-trip
+                let back_to_button = parser.grid_to_button(row, col);
+                assert_eq!(back_to_button, Some(i), "Model {:?}: round-trip failed for button {}", model, i);
+            }
+
+            // Test out-of-range button
+            assert!(parser.button_to_grid(button_count).is_none());
+        }
+    }
+
+    #[test]
+    fn test_short_report_handling() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report too short for header
+        let events = parser.parse_report(&device_id, &[0x01], timestamp);
+        // Should handle gracefully (no panic, may return empty or partial)
+        assert!(events.len() <= 1);
+    }
+
+    #[test]
+    fn test_report_with_extra_bytes() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report with extra trailing bytes
+        let mut report = vec![0x01];
+        report.extend(vec![0x01; 15]); // 15 buttons pressed
+        report.extend(vec![0xFF; 10]); // Extra garbage bytes
+
+        let events = parser.parse_report(&device_id, &report, timestamp);
+        // Should only process 15 buttons, ignoring extras
+        assert_eq!(events.len(), 15);
+    }
+
+    #[test]
+    fn test_device_id_preserved() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        let report = [0x01, 0x01, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].device_id, device_id);
+    }
+
+    #[test]
+    fn test_timestamp_preserved() {
+        let mut parser = StreamDeckParser::new(StreamDeckModel::Original);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        let report = [0x01, 0x01, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].timestamp, timestamp);
+    }
+
+    #[test]
+    fn test_button_labels_all_models() {
+        // Verify button labels are reasonable for all models
+        for model in [
+            StreamDeckModel::Original,
+            StreamDeckModel::Mini,
+            StreamDeckModel::Xl,
+            StreamDeckModel::Mk2,
+            StreamDeckModel::Pedal,
+        ] {
+            let parser = StreamDeckParser::new(model);
+            let button_count = model.button_count();
+
+            for i in 0..button_count {
+                let label = parser.button_label(i);
+                assert!(!label.is_empty(), "Model {:?}: button {} has empty label", model, i);
+
+                match model {
+                    StreamDeckModel::Pedal => {
+                        assert!(label.contains("Pedal"), "Pedal button {} should have 'Pedal' in label", i);
+                    }
+                    _ => {
+                        assert!(label.contains("Button") || label.contains("R"), "Button {} label should contain 'Button' or 'R'", i);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_uses_new_report_format() {
+        assert!(!StreamDeckModel::Original.uses_new_report_format());
+        assert!(!StreamDeckModel::Mini.uses_new_report_format());
+        assert!(StreamDeckModel::Mk2.uses_new_report_format());
+        assert!(StreamDeckModel::Xl.uses_new_report_format());
+        assert!(!StreamDeckModel::Pedal.uses_new_report_format());
+    }
+
+    #[test]
+    fn test_button_data_offset() {
+        assert_eq!(StreamDeckModel::Original.button_data_offset(), 1);
+        assert_eq!(StreamDeckModel::Mini.button_data_offset(), 1);
+        assert_eq!(StreamDeckModel::Mk2.button_data_offset(), 4);
+        assert_eq!(StreamDeckModel::Xl.button_data_offset(), 4);
+        assert_eq!(StreamDeckModel::Pedal.button_data_offset(), 0);
+    }
+
+    #[test]
+    fn test_expected_report_size() {
+        assert_eq!(StreamDeckModel::Original.expected_report_size(), 17);
+        assert_eq!(StreamDeckModel::Mini.expected_report_size(), 17);
+        assert_eq!(StreamDeckModel::Mk2.expected_report_size(), 17);
+        assert_eq!(StreamDeckModel::Xl.expected_report_size(), 36);
+        assert_eq!(StreamDeckModel::Pedal.expected_report_size(), 3);
+    }
+
+    #[test]
+    fn test_model_names() {
+        assert_eq!(StreamDeckModel::Original.name(), "Stream Deck");
+        assert_eq!(StreamDeckModel::Mini.name(), "Stream Deck Mini");
+        assert_eq!(StreamDeckModel::Xl.name(), "Stream Deck XL");
+        assert_eq!(StreamDeckModel::Mk2.name(), "Stream Deck MK.2");
+        assert_eq!(StreamDeckModel::Pedal.name(), "Stream Deck Pedal");
+    }
 }

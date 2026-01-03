@@ -1162,4 +1162,504 @@ mod tests {
         assert!(codes.contains(&8));
         assert!(codes.contains(&15));
     }
+
+    // ============================================
+    // Additional comprehensive tests for edge cases
+    // ============================================
+
+    #[test]
+    fn test_all_buttons_pressed_bitmap() {
+        let mut parser = GenericHidParser::gamepad(32);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All 32 buttons pressed (4 bytes of 0xFF)
+        let report = [0xFF, 0xFF, 0xFF, 0xFF];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 32);
+        for i in 0..32u8 {
+            assert!(events.iter().any(|e| e.button_code == i && e.pressed));
+        }
+    }
+
+    #[test]
+    fn test_all_buttons_released_bitmap() {
+        let mut parser = GenericHidParser::gamepad(32);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // First press all buttons
+        let report_press = [0xFF, 0xFF, 0xFF, 0xFF];
+        let _ = parser.parse_report(&device_id, &report_press, timestamp);
+
+        // Then release all
+        let report_release = [0x00, 0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report_release, timestamp);
+
+        assert_eq!(events.len(), 32);
+        for event in &events {
+            assert!(!event.pressed);
+        }
+    }
+
+    #[test]
+    fn test_all_buttons_byte_per_button() {
+        let config = GenericDeviceConfig::byte_per_button(8);
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All 8 buttons pressed
+        let report = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 8);
+        for i in 0..8u8 {
+            assert!(events.iter().any(|e| e.button_code == i && e.pressed));
+        }
+    }
+
+    #[test]
+    fn test_rapid_press_release_bitmap() {
+        let mut parser = GenericHidParser::gamepad(8);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Rapid press/release cycles
+        for cycle in 0..10 {
+            // Press button 0
+            let events = parser.parse_report(&device_id, &[0x01], timestamp);
+            assert_eq!(events.len(), 1, "Cycle {}: press failed", cycle);
+            assert!(events[0].pressed);
+
+            // Release button 0
+            let events = parser.parse_report(&device_id, &[0x00], timestamp);
+            assert_eq!(events.len(), 1, "Cycle {}: release failed", cycle);
+            assert!(!events[0].pressed);
+        }
+    }
+
+    #[test]
+    fn test_alternating_buttons_bitmap() {
+        let mut parser = GenericHidParser::gamepad(8);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Alternating pattern: 0b10101010 = buttons 1, 3, 5, 7
+        let report1 = [0xAA];
+        let events = parser.parse_report(&device_id, &report1, timestamp);
+        assert_eq!(events.len(), 4);
+        for event in &events {
+            assert!(event.button_code % 2 == 1);
+        }
+
+        // Switch to 0b01010101 = buttons 0, 2, 4, 6
+        let report2 = [0x55];
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+        // 4 releases + 4 presses
+        assert_eq!(events.len(), 8);
+    }
+
+    #[test]
+    fn test_keyboard_multiple_keys_pressed() {
+        let mut parser = GenericHidParser::keyboard();
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press multiple keys: A, B, C (0x04, 0x05, 0x06)
+        let report = [0x00, 0x00, 0x04, 0x05, 0x06, 0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().any(|e| e.button_code == 0x04 && e.pressed));
+        assert!(events.iter().any(|e| e.button_code == 0x05 && e.pressed));
+        assert!(events.iter().any(|e| e.button_code == 0x06 && e.pressed));
+    }
+
+    #[test]
+    fn test_keyboard_all_slots_filled() {
+        let mut parser = GenericHidParser::keyboard();
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All 6 key slots filled
+        let report = [0x00, 0x00, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 6);
+    }
+
+    #[test]
+    fn test_keyboard_modifier_combinations() {
+        let mut parser = GenericHidParser::keyboard();
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All modifiers pressed: 0xFF = all 8 modifiers
+        let report = [0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 8);
+        for event in &events {
+            assert!(event.button_code >= 128 && event.button_code < 136);
+            assert!(event.pressed);
+        }
+    }
+
+    #[test]
+    fn test_keyboard_rollover_key_changes() {
+        let mut parser = GenericHidParser::keyboard();
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press A and B
+        let report1 = [0x00, 0x00, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00];
+        let _ = parser.parse_report(&device_id, &report1, timestamp);
+
+        // Release A, keep B, press C
+        let report2 = [0x00, 0x00, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|e| e.button_code == 0x04 && !e.pressed)); // A released
+        assert!(events.iter().any(|e| e.button_code == 0x06 && e.pressed)); // C pressed
+    }
+
+    #[test]
+    fn test_consumer_control_multiple_presses() {
+        let config = GenericDeviceConfig {
+            format: GenericReportFormat::ConsumerControl,
+            button_count: 32,
+            button_data_offset: 0,
+            has_report_id: false,
+            expected_report_id: None,
+        };
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Volume Up pressed (0x00E9)
+        let report1 = [0xE9, 0x00];
+        let events = parser.parse_report(&device_id, &report1, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 1); // Volume Up maps to 1
+        assert!(events[0].pressed);
+
+        // Release
+        let report2 = [0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+        assert_eq!(events.len(), 1);
+        assert!(!events[0].pressed);
+
+        // Volume Down pressed (0x00EA)
+        let report3 = [0xEA, 0x00];
+        let events = parser.parse_report(&device_id, &report3, timestamp);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 2); // Volume Down maps to 2
+    }
+
+    #[test]
+    fn test_button_count_limit_bitmap() {
+        // Only track 4 buttons even if report has more data
+        let mut parser = GenericHidParser::gamepad(4);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // All 8 bits set, but only first 4 should matter
+        let report = [0xFF];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 4);
+        for event in &events {
+            assert!(event.button_code < 4);
+        }
+    }
+
+    #[test]
+    fn test_button_count_limit_byte_per_button() {
+        let config = GenericDeviceConfig::byte_per_button(2);
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report has 4 bytes but only first 2 should matter
+        let report = [0x01, 0x01, 0x01, 0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 2);
+        for event in &events {
+            assert!(event.button_code < 2);
+        }
+    }
+
+    #[test]
+    fn test_byte_per_button_various_values() {
+        let config = GenericDeviceConfig::byte_per_button(4);
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Different non-zero values should all count as pressed
+        let report = [0x01, 0x7F, 0xFF, 0x80];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 4);
+        assert!(events.iter().all(|e| e.pressed));
+    }
+
+    #[test]
+    fn test_report_id_filtering() {
+        let config = GenericDeviceConfig::gamepad_with_report_id(8, 0x02);
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Wrong report ID should be ignored
+        let report_wrong = [0x01, 0xFF];
+        let events = parser.parse_report(&device_id, &report_wrong, timestamp);
+        assert!(events.is_empty());
+
+        // Correct report ID should work
+        let report_correct = [0x02, 0x01];
+        let events = parser.parse_report(&device_id, &report_correct, timestamp);
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn test_device_id_preserved() {
+        let mut parser = GenericHidParser::gamepad(8);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        let report = [0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].device_id, device_id);
+    }
+
+    #[test]
+    fn test_timestamp_preserved() {
+        let mut parser = GenericHidParser::gamepad(8);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        let report = [0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].timestamp, timestamp);
+    }
+
+    #[test]
+    fn test_detect_format_empty() {
+        assert_eq!(detect_report_format(&[]), GenericReportFormat::Unknown);
+    }
+
+    #[test]
+    fn test_detect_format_long_report() {
+        // Long report with non-binary values
+        let report = [0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90];
+        assert_eq!(detect_report_format(&report), GenericReportFormat::Unknown);
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let config = GenericDeviceConfig::default();
+        assert_eq!(config.format, GenericReportFormat::Bitmap);
+        assert_eq!(config.button_count, 32);
+        assert_eq!(config.button_data_offset, 0);
+        assert!(!config.has_report_id);
+        assert!(config.expected_report_id.is_none());
+    }
+
+    #[test]
+    fn test_keyboard_config() {
+        let config = GenericDeviceConfig::keyboard();
+        assert_eq!(config.format, GenericReportFormat::KeyboardScanCode);
+        assert_eq!(config.button_count, 128);
+    }
+
+    #[test]
+    fn test_known_devices_count() {
+        // Verify we have known devices
+        assert!(!KNOWN_GENERIC_DEVICES.is_empty());
+        assert!(KNOWN_GENERIC_DEVICES.len() >= 3);
+    }
+
+    #[test]
+    fn test_known_device_profiles() {
+        for profile in KNOWN_GENERIC_DEVICES {
+            // Verify each profile has reasonable values
+            assert!(profile.vendor_id != 0);
+            assert!(profile.product_id != 0);
+            assert!(!profile.name.is_empty());
+            assert!(profile.config.button_count > 0);
+        }
+    }
+
+    #[test]
+    fn test_report_format_names() {
+        assert_eq!(GenericReportFormat::Bitmap.name(), "Bitmap");
+        assert_eq!(GenericReportFormat::BytePerButton.name(), "Byte-per-button");
+        assert_eq!(GenericReportFormat::KeyboardScanCode.name(), "Keyboard");
+        assert_eq!(GenericReportFormat::ConsumerControl.name(), "Consumer Control");
+        assert_eq!(GenericReportFormat::Unknown.name(), "Unknown");
+    }
+
+    #[test]
+    fn test_all_keyboard_scancodes_named() {
+        // Test that common scancodes have names
+        let common_scancodes = [
+            0x04, 0x05, 0x06, 0x07, 0x08, // A-E
+            0x28, 0x29, 0x2A, 0x2B, 0x2C, // Enter, Escape, Backspace, Tab, Space
+            0x3A, 0x3B, 0x3C, 0x3D,       // F1-F4
+        ];
+
+        for scancode in common_scancodes {
+            let name = keyboard_scancode_name(scancode);
+            assert!(!name.starts_with("Key 0x"), "Scancode 0x{:02X} should have a name", scancode);
+        }
+    }
+
+    #[test]
+    fn test_unknown_scancode_format() {
+        // Unknown scancode should return formatted hex
+        let name = keyboard_scancode_name(0x99);
+        assert!(name.starts_with("Key 0x"));
+        assert!(name.contains("99"));
+    }
+
+    #[test]
+    fn test_button_labels_gamepad() {
+        let parser = GenericHidParser::gamepad(8);
+        for i in 0..8 {
+            let label = parser.button_label(i);
+            assert!(label.contains("Button"));
+            assert!(label.contains(&format!("{}", i + 1)));
+        }
+    }
+
+    #[test]
+    fn test_button_labels_keyboard() {
+        let parser = GenericHidParser::keyboard();
+
+        // Test regular keys
+        assert_eq!(parser.button_label(0x04), "A");
+        assert_eq!(parser.button_label(0x28), "Enter");
+
+        // Test modifiers
+        assert_eq!(parser.button_label(128), "Left Ctrl");
+        assert_eq!(parser.button_label(129), "Left Shift");
+    }
+
+    #[test]
+    fn test_button_labels_consumer() {
+        let config = GenericDeviceConfig {
+            format: GenericReportFormat::ConsumerControl,
+            ..Default::default()
+        };
+        let parser = GenericHidParser::new(config);
+
+        assert_eq!(parser.button_label(0), "Mute");
+        assert_eq!(parser.button_label(1), "Volume Up");
+        assert_eq!(parser.button_label(2), "Volume Down");
+        assert_eq!(parser.button_label(6), "Play/Pause");
+    }
+
+    #[test]
+    fn test_simultaneous_press_release_bitmap() {
+        let mut parser = GenericHidParser::gamepad(8);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Press buttons 0 and 1
+        let report1 = [0x03];
+        let _ = parser.parse_report(&device_id, &report1, timestamp);
+
+        // Release button 0, keep button 1, press button 2
+        let report2 = [0x06]; // 0b00000110
+        let events = parser.parse_report(&device_id, &report2, timestamp);
+
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|e| e.button_code == 0 && !e.pressed));
+        assert!(events.iter().any(|e| e.button_code == 2 && e.pressed));
+    }
+
+    #[test]
+    fn test_offset_with_short_report() {
+        let config = GenericDeviceConfig {
+            format: GenericReportFormat::BytePerButton,
+            button_count: 4,
+            button_data_offset: 10, // Offset larger than report
+            has_report_id: false,
+            expected_report_id: None,
+        };
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report shorter than offset
+        let report = [0x01, 0x01, 0x01];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        // Should handle gracefully
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_format_fallback() {
+        let config = GenericDeviceConfig {
+            format: GenericReportFormat::Unknown,
+            button_count: 8,
+            button_data_offset: 0,
+            has_report_id: false,
+            expected_report_id: None,
+        };
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Should fall back to bitmap parsing
+        let report = [0x05]; // Buttons 0 and 2
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|e| e.button_code == 0));
+        assert!(events.iter().any(|e| e.button_code == 2));
+    }
+
+    #[test]
+    fn test_keyboard_short_report() {
+        let mut parser = GenericHidParser::keyboard();
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report too short for keyboard (< 3 bytes)
+        let report = [0x00, 0x00];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_consumer_control_short_report() {
+        let config = GenericDeviceConfig {
+            format: GenericReportFormat::ConsumerControl,
+            button_count: 32,
+            button_data_offset: 0,
+            has_report_id: false,
+            expected_report_id: None,
+        };
+        let mut parser = GenericHidParser::new(config);
+        let device_id = Uuid::new_v4();
+        let timestamp = Instant::now();
+
+        // Report too short
+        let report = [0xE9];
+        let events = parser.parse_report(&device_id, &report, timestamp);
+
+        assert!(events.is_empty());
+    }
 }
