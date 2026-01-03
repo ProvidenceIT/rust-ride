@@ -1692,3 +1692,659 @@ fn test_import_from_file_wrong_version() {
     // Cleanup
     std::fs::remove_dir_all(&temp_dir).ok();
 }
+
+// =============================================================================
+// Round-Trip Export/Import Tests (T025)
+// =============================================================================
+
+/// Helper to query full FTP history from database, ordered by detected_at DESC.
+fn query_ftp_history_from_db(db: &Database, rider_id: Uuid) -> Vec<(u16, String, String, String, bool)> {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare(
+            "SELECT ftp_watts, method, confidence, detected_at, accepted
+             FROM ftp_estimates
+             WHERE user_id = ?1
+             ORDER BY detected_at DESC",
+        )
+        .expect("Prepare FTP history query");
+
+    let rows = stmt
+        .query_map([rider_id.to_string()], |row| {
+            Ok((
+                row.get::<_, u16>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, bool>(4)?,
+            ))
+        })
+        .expect("Query FTP history");
+
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+/// Helper to query full profile data from database.
+fn query_full_profile_from_db(
+    db: &Database,
+    rider_id: Uuid,
+) -> Option<(String, Option<String>, Option<u16>, f64, f64, bool)> {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare(
+            "SELECT display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled
+             FROM riders WHERE id = ?1",
+        )
+        .ok()?;
+
+    stmt.query_row([rider_id.to_string()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<u16>>(2)?,
+            row.get::<_, f64>(3)?,
+            row.get::<_, f64>(4)?,
+            row.get::<_, bool>(5)?,
+        ))
+    })
+    .ok()
+}
+
+/// Helper to query full avatar configuration from database.
+fn query_full_avatar_from_db(
+    db: &Database,
+    rider_id: Uuid,
+) -> Option<(String, String, Option<String>, Option<String>)> {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare(
+            "SELECT jersey_color, bike_style, jersey_secondary, helmet_color
+             FROM avatars WHERE user_id = ?1",
+        )
+        .ok()?;
+
+    stmt.query_row([rider_id.to_string()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    })
+    .ok()
+}
+
+/// Test round-trip: export complete profile, import to fresh DB, verify all data matches.
+#[test]
+fn test_roundtrip_complete_profile() {
+    // Source database with complete profile
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create complete rider profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "RoundTripRider".to_string(),
+        avatar_id: Some("avatar_123".to_string()),
+        bio: Some("Complete profile for round-trip testing.".to_string()),
+        ftp: Some(285),
+        total_distance_km: 5432.1,
+        total_time_hours: 271.5,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Add FTP history entries with different timestamps
+    let date1 = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap().to_rfc3339();
+    let date2 = Utc.with_ymd_and_hms(2024, 4, 20, 14, 30, 0).unwrap().to_rfc3339();
+    let date3 = Utc.with_ymd_and_hms(2024, 7, 10, 8, 0, 0).unwrap().to_rfc3339();
+    let date4 = Utc.with_ymd_and_hms(2024, 10, 5, 16, 15, 0).unwrap().to_rfc3339();
+
+    insert_test_ftp_estimate(&source_db, rider_id, 250, "ramp_test", "high", &date1, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 265, "20min_test", "high", &date2, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 275, "ramp_test", "medium", &date3, false);
+    insert_test_ftp_estimate(&source_db, rider_id, 285, "manual", "high", &date4, true);
+
+    // Add avatar configuration
+    let avatar_config = AvatarConfig {
+        jersey_color: [0, 128, 255], // Blue
+        bike_style: BikeStyle::TT,
+        jersey_secondary: Some([255, 255, 0]), // Yellow
+        helmet_color: Some([64, 64, 64]), // Dark gray
+    };
+    insert_test_avatar(&source_db, rider_id, &avatar_config);
+
+    // Export from source database
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    // Verify export has all expected data
+    assert_eq!(export.rider_id, rider_id);
+    assert_eq!(export.profile.display_name, "RoundTripRider");
+    assert_eq!(export.profile.bio, Some("Complete profile for round-trip testing.".to_string()));
+    assert_eq!(export.profile.ftp, Some(285));
+    assert!((export.profile.total_distance_km - 5432.1).abs() < 0.01);
+    assert!((export.profile.total_time_hours - 271.5).abs() < 0.01);
+    assert!(export.profile.sharing_enabled);
+    assert_eq!(export.ftp_history.len(), 4);
+    assert!(export.avatar.is_some());
+
+    // Create fresh destination database
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    // Import to destination database
+    let result = dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert!(result.avatar_updated);
+    assert_eq!(result.ftp_entries_imported, 4);
+    assert_eq!(result.ftp_entries_skipped, 0);
+
+    // Verify profile data matches original
+    let imported_profile = query_full_profile_from_db(&dest_db, rider_id);
+    assert!(imported_profile.is_some(), "Profile should exist in destination DB");
+    let (name, bio, ftp, distance, time, sharing) = imported_profile.unwrap();
+    assert_eq!(name, "RoundTripRider");
+    assert_eq!(bio, Some("Complete profile for round-trip testing.".to_string()));
+    assert_eq!(ftp, Some(285));
+    assert!((distance - 5432.1).abs() < 0.01);
+    assert!((time - 271.5).abs() < 0.01);
+    assert!(sharing);
+
+    // Verify avatar matches
+    let imported_avatar = query_full_avatar_from_db(&dest_db, rider_id);
+    assert!(imported_avatar.is_some(), "Avatar should exist in destination DB");
+    let (jersey, bike_style, secondary, helmet) = imported_avatar.unwrap();
+    // Colors are stored as hex strings in the export format
+    assert!(!jersey.is_empty());
+    assert_eq!(bike_style, "tt_bike");
+    assert!(secondary.is_some());
+    assert!(helmet.is_some());
+
+    // Verify FTP history count
+    let ftp_count = count_ftp_entries(&dest_db, rider_id);
+    assert_eq!(ftp_count, 4, "Should have all 4 FTP entries");
+}
+
+/// Test round-trip preserves FTP history ordering (most recent first).
+#[test]
+fn test_roundtrip_ftp_history_ordering_preserved() {
+    // Source database
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create rider profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "OrderTestRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(300),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Add FTP history in non-chronological order (to test sorting)
+    let jan = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let mar = Utc.with_ymd_and_hms(2024, 3, 15, 12, 0, 0).unwrap().to_rfc3339();
+    let jun = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let sep = Utc.with_ymd_and_hms(2024, 9, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let dec = Utc.with_ymd_and_hms(2024, 12, 15, 12, 0, 0).unwrap().to_rfc3339();
+
+    // Insert in random order
+    insert_test_ftp_estimate(&source_db, rider_id, 280, "ramp_test", "high", &jun, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 250, "20min_test", "high", &jan, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 300, "manual", "medium", &dec, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 265, "ramp_test", "high", &mar, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 290, "20min_test", "high", &sep, false);
+
+    // Export from source
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    // Verify export FTP history is ordered by detected_at DESC (most recent first)
+    assert_eq!(export.ftp_history.len(), 5);
+    assert_eq!(export.ftp_history[0].ftp_watts, 300, "December (most recent) should be first");
+    assert_eq!(export.ftp_history[1].ftp_watts, 290, "September should be second");
+    assert_eq!(export.ftp_history[2].ftp_watts, 280, "June should be third");
+    assert_eq!(export.ftp_history[3].ftp_watts, 265, "March should be fourth");
+    assert_eq!(export.ftp_history[4].ftp_watts, 250, "January (oldest) should be last");
+
+    // Create fresh destination database and import
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    let result = dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert_eq!(result.ftp_entries_imported, 5);
+
+    // Query FTP history from destination and verify ordering
+    let imported_history = query_ftp_history_from_db(&dest_db, rider_id);
+    assert_eq!(imported_history.len(), 5);
+
+    // Should be ordered DESC by detected_at
+    assert_eq!(imported_history[0].0, 300, "December should be first after import");
+    assert_eq!(imported_history[1].0, 290, "September should be second after import");
+    assert_eq!(imported_history[2].0, 280, "June should be third after import");
+    assert_eq!(imported_history[3].0, 265, "March should be fourth after import");
+    assert_eq!(imported_history[4].0, 250, "January should be last after import");
+}
+
+/// Test round-trip with JSON serialization/deserialization (file-based).
+#[test]
+fn test_roundtrip_via_json_file() {
+    // Source database
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let rider = Rider {
+        id: rider_id,
+        display_name: "JSONRoundTrip".to_string(),
+        avatar_id: Some("avatar_json".to_string()),
+        bio: Some("Testing JSON file round-trip".to_string()),
+        ftp: Some(275),
+        total_distance_km: 2500.0,
+        total_time_hours: 125.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Add FTP history
+    let date1 = Utc.with_ymd_and_hms(2024, 2, 1, 10, 0, 0).unwrap().to_rfc3339();
+    let date2 = Utc.with_ymd_and_hms(2024, 5, 15, 14, 0, 0).unwrap().to_rfc3339();
+    let date3 = Utc.with_ymd_and_hms(2024, 8, 20, 16, 30, 0).unwrap().to_rfc3339();
+
+    insert_test_ftp_estimate(&source_db, rider_id, 260, "ramp_test", "high", &date1, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 270, "20min_test", "medium", &date2, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 275, "manual", "low", &date3, false);
+
+    // Add avatar
+    let avatar_config = AvatarConfig {
+        jersey_color: [200, 100, 50],
+        bike_style: BikeStyle::Gravel,
+        jersey_secondary: None,
+        helmet_color: Some([0, 0, 0]),
+    };
+    insert_test_avatar(&source_db, rider_id, &avatar_config);
+
+    // Create temp directory for file-based round-trip
+    let temp_dir = std::env::temp_dir().join(format!("roundtrip_json_{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).expect("Create temp dir");
+    let export_path = temp_dir.join("profile_export.json");
+
+    // Export to file
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    source_exporter
+        .export_to_file(rider_id, &export_path)
+        .expect("Export to file should succeed");
+
+    // Verify file exists and is valid JSON
+    assert!(export_path.exists());
+    let content = std::fs::read_to_string(&export_path).expect("Read export file");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("Valid JSON");
+    assert_eq!(
+        parsed.get("profile").unwrap().get("display_name").and_then(|v| v.as_str()),
+        Some("JSONRoundTrip")
+    );
+
+    // Import to fresh database from file
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    let result = dest_exporter
+        .import_from_file(&export_path, ConflictResolution::Merge)
+        .expect("Import from file should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert!(result.avatar_updated);
+    assert_eq!(result.ftp_entries_imported, 3);
+
+    // Verify imported data
+    let imported_profile = query_full_profile_from_db(&dest_db, rider_id);
+    let (name, bio, ftp, distance, time, sharing) = imported_profile.unwrap();
+    assert_eq!(name, "JSONRoundTrip");
+    assert_eq!(bio, Some("Testing JSON file round-trip".to_string()));
+    assert_eq!(ftp, Some(275));
+    assert!((distance - 2500.0).abs() < 0.01);
+    assert!((time - 125.0).abs() < 0.01);
+    assert!(!sharing);
+
+    // Verify avatar
+    let avatar = query_full_avatar_from_db(&dest_db, rider_id);
+    assert!(avatar.is_some());
+    let (_, bike, _, _) = avatar.unwrap();
+    assert_eq!(bike, "gravel");
+
+    // Verify FTP history ordered correctly
+    let history = query_ftp_history_from_db(&dest_db, rider_id);
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0].0, 275, "Most recent should be first");
+    assert_eq!(history[2].0, 260, "Oldest should be last");
+
+    // Cleanup
+    std::fs::remove_dir_all(&temp_dir).ok();
+}
+
+/// Test round-trip with minimal profile (no FTP history, no avatar).
+#[test]
+fn test_roundtrip_minimal_profile() {
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create minimal profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "MinimalRoundTrip".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: None,
+        total_distance_km: 0.0,
+        total_time_hours: 0.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // No FTP history, no avatar
+
+    // Export
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    assert_eq!(export.profile.display_name, "MinimalRoundTrip");
+    assert!(export.profile.bio.is_none());
+    assert!(export.profile.ftp.is_none());
+    assert!(export.ftp_history.is_empty());
+    assert!(export.avatar.is_none());
+
+    // Import to fresh database
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    let result = dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert!(!result.avatar_updated);
+    assert_eq!(result.ftp_entries_imported, 0);
+
+    // Verify imported data
+    let profile = query_full_profile_from_db(&dest_db, rider_id);
+    let (name, bio, ftp, distance, time, sharing) = profile.unwrap();
+    assert_eq!(name, "MinimalRoundTrip");
+    assert!(bio.is_none());
+    assert!(ftp.is_none());
+    assert!((distance - 0.0).abs() < 0.01);
+    assert!((time - 0.0).abs() < 0.01);
+    assert!(!sharing);
+
+    // Verify no avatar or FTP history
+    assert!(query_full_avatar_from_db(&dest_db, rider_id).is_none());
+    assert_eq!(count_ftp_entries(&dest_db, rider_id), 0);
+}
+
+/// Test round-trip preserves FTP entry attributes (method, confidence, accepted).
+#[test]
+fn test_roundtrip_ftp_entry_attributes_preserved() {
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let rider = Rider {
+        id: rider_id,
+        display_name: "FTPAttributeTest".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(290),
+        total_distance_km: 500.0,
+        total_time_hours: 25.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Add FTP entries with various attributes
+    let date1 = Utc.with_ymd_and_hms(2024, 3, 1, 9, 0, 0).unwrap().to_rfc3339();
+    let date2 = Utc.with_ymd_and_hms(2024, 6, 1, 15, 0, 0).unwrap().to_rfc3339();
+    let date3 = Utc.with_ymd_and_hms(2024, 9, 1, 11, 30, 0).unwrap().to_rfc3339();
+
+    insert_test_ftp_estimate(&source_db, rider_id, 270, "ramp_test", "high", &date1, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 280, "20min_test", "medium", &date2, false);
+    insert_test_ftp_estimate(&source_db, rider_id, 290, "manual", "low", &date3, true);
+
+    // Export
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    // Import to fresh database
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    // Query and verify all FTP entry attributes
+    let history = query_ftp_history_from_db(&dest_db, rider_id);
+    assert_eq!(history.len(), 3);
+
+    // Most recent entry (290, manual, low, accepted)
+    let (watts0, method0, conf0, _, accepted0) = &history[0];
+    assert_eq!(*watts0, 290);
+    assert_eq!(method0, "manual");
+    assert_eq!(conf0, "low");
+    assert!(*accepted0);
+
+    // Middle entry (280, 20min_test, medium, not accepted)
+    let (watts1, method1, conf1, _, accepted1) = &history[1];
+    assert_eq!(*watts1, 280);
+    assert_eq!(method1, "20min_test");
+    assert_eq!(conf1, "medium");
+    assert!(!*accepted1);
+
+    // Oldest entry (270, ramp_test, high, accepted)
+    let (watts2, method2, conf2, _, accepted2) = &history[2];
+    assert_eq!(*watts2, 270);
+    assert_eq!(method2, "ramp_test");
+    assert_eq!(conf2, "high");
+    assert!(*accepted2);
+}
+
+/// Test round-trip with special characters in display name and bio.
+#[test]
+fn test_roundtrip_special_characters() {
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let rider = Rider {
+        id: rider_id,
+        display_name: "Rider\"Quote'Test<>&".to_string(),
+        avatar_id: None,
+        bio: Some("Bio with\nnewlines\tand\ttabs \"quotes\" <tags> &amps;".to_string()),
+        ftp: Some(260),
+        total_distance_km: 100.0,
+        total_time_hours: 5.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Export
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let json = source_exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
+
+    // Import to fresh database from JSON string
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    let export = dest_exporter.parse_import(&json).expect("Parse should succeed");
+    dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    // Verify special characters preserved
+    let profile = query_full_profile_from_db(&dest_db, rider_id);
+    let (name, bio, _, _, _, _) = profile.unwrap();
+    assert_eq!(name, "Rider\"Quote'Test<>&");
+    assert!(bio.as_ref().unwrap().contains('\n'));
+    assert!(bio.as_ref().unwrap().contains('\t'));
+    assert!(bio.unwrap().contains("\"quotes\""));
+}
+
+/// Test round-trip with unicode characters.
+#[test]
+fn test_roundtrip_unicode_characters() {
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let rider = Rider {
+        id: rider_id,
+        display_name: "骑手🚴‍♂️Çÿçlîst".to_string(),
+        avatar_id: None,
+        bio: Some("Emoji: 💪🏔️ • Accents: àéïõü • 日本語テスト".to_string()),
+        ftp: Some(280),
+        total_distance_km: 888.8,
+        total_time_hours: 44.4,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    // Export
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    // Import to fresh database
+    let dest_db = create_test_database();
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+
+    dest_exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    // Verify unicode preserved
+    let profile = query_full_profile_from_db(&dest_db, rider_id);
+    let (name, bio, _, _, _, _) = profile.unwrap();
+    assert!(name.contains("骑手"));
+    assert!(name.contains("🚴"));
+    assert!(name.contains("Çÿç"));
+    assert!(bio.as_ref().unwrap().contains("💪"));
+    assert!(bio.as_ref().unwrap().contains("日本語"));
+}
+
+/// Test round-trip with Replace strategy clears and replaces FTP history.
+#[test]
+fn test_roundtrip_replace_strategy() {
+    let source_db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create source profile with specific FTP history
+    let rider = Rider {
+        id: rider_id,
+        display_name: "ReplaceRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(280),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&source_db, &rider);
+
+    let date1 = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let date2 = Utc.with_ymd_and_hms(2024, 8, 1, 12, 0, 0).unwrap().to_rfc3339();
+    insert_test_ftp_estimate(&source_db, rider_id, 270, "ramp_test", "high", &date1, true);
+    insert_test_ftp_estimate(&source_db, rider_id, 280, "20min_test", "high", &date2, true);
+
+    // Export
+    let source_exporter = ProfileExporter::new(Arc::new(source_db));
+    let export = source_exporter
+        .build_export(rider_id)
+        .expect("Export should succeed");
+
+    // Create destination database with existing (different) profile
+    let dest_db = create_test_database();
+    let existing_rider = Rider {
+        id: rider_id,
+        display_name: "OldRider".to_string(),
+        avatar_id: None,
+        bio: Some("Old bio".to_string()),
+        ftp: Some(220),
+        total_distance_km: 500.0,
+        total_time_hours: 25.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&dest_db, &existing_rider);
+
+    // Add different FTP history to destination
+    let old_date = Utc.with_ymd_and_hms(2023, 1, 1, 12, 0, 0).unwrap().to_rfc3339();
+    insert_test_ftp_estimate(&dest_db, rider_id, 200, "manual", "low", &old_date, false);
+
+    // Import with Replace strategy
+    let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
+    let result = dest_exporter
+        .import_profile(&export, ConflictResolution::Replace)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert_eq!(result.ftp_entries_imported, 2);
+
+    // Verify profile replaced
+    let profile = query_full_profile_from_db(&dest_db, rider_id);
+    let (name, _, ftp, _, _, sharing) = profile.unwrap();
+    assert_eq!(name, "ReplaceRider");
+    assert_eq!(ftp, Some(280));
+    assert!(sharing);
+
+    // Verify old FTP history deleted and new imported
+    let history = query_ftp_history_from_db(&dest_db, rider_id);
+    assert_eq!(history.len(), 2, "Should have only imported entries, not old ones");
+    assert_eq!(history[0].0, 280);
+    assert_eq!(history[1].0, 270);
+}
