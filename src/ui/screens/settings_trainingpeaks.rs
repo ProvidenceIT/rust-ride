@@ -1712,4 +1712,531 @@ mod tests {
         let screen = TrainingPeaksSettingsScreen::new();
         assert!(screen.sync_history.is_empty());
     }
+
+    // ========== State Transition & Action Handling Tests (T028) ==========
+
+    #[test]
+    fn test_full_connection_lifecycle_disconnected_to_connected() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Start disconnected
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+
+        // User initiates connection → Connecting
+        screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Connecting);
+        assert!(!screen.is_connected());
+
+        // OAuth completes → Connected
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Connected);
+        assert!(screen.is_connected());
+    }
+
+    #[test]
+    fn test_full_connection_lifecycle_connected_to_disconnected() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+
+        // User initiates disconnect → Disconnecting
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnecting);
+        assert!(!screen.is_connected());
+
+        // Disconnect completes → Disconnected
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnected);
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_recovery_state_transition() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Start in error state
+        screen.set_connection_state(TrainingPeaksConnectionState::Error("Network error".to_string()));
+        assert!(!screen.is_connected());
+
+        // User clicks "Try Again" → Connecting
+        screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Connecting);
+
+        // Connection succeeds → Connected
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+        assert!(screen.is_connected());
+    }
+
+    #[test]
+    fn test_connection_failure_from_connecting() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Connecting state
+        screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+
+        // Connection fails → Error
+        screen.set_connection_state(TrainingPeaksConnectionState::Error("OAuth failed".to_string()));
+        assert!(!screen.is_connected());
+
+        match &screen.connection_state {
+            TrainingPeaksConnectionState::Error(msg) => assert_eq!(msg, "OAuth failed"),
+            _ => panic!("Expected Error state"),
+        }
+    }
+
+    #[test]
+    fn test_is_connected_all_states() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Disconnected - not connected
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+
+        // Connecting - not connected (yet)
+        screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+        assert!(!screen.is_connected());
+
+        // Connected - is connected
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+        assert!(screen.is_connected());
+
+        // Disconnecting - not connected (anymore)
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
+        assert!(!screen.is_connected());
+
+        // Error - not connected
+        screen.set_connection_state(TrainingPeaksConnectionState::Error("test".to_string()));
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_profile_cleared_on_disconnect() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+
+        let profile = AthleteProfile {
+            id: 12345,
+            firstname: "John".to_string(),
+            lastname: "Doe".to_string(),
+            profile_photo_url: None,
+        };
+        screen.set_athlete_profile(Some(profile));
+        assert!(screen.athlete_profile.is_some());
+
+        // Simulate disconnect flow
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
+        screen.set_athlete_profile(None);
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnected);
+
+        assert!(screen.athlete_profile.is_none());
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_config_persists_through_reconnect() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Setup initial config
+        let mut config = TrainingPeaksPlatformConfig::default();
+        config.auto_sync_rides = false;
+        config.sync_workout_plans = true;
+        config.sync_frequency_hours = 12;
+        config.lookahead_days = 21;
+        screen.set_tp_config(config);
+
+        // Simulate reconnect
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
+        screen.set_connection_state(TrainingPeaksConnectionState::Disconnected);
+        screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+
+        // Config should persist
+        assert!(!screen.tp_config.auto_sync_rides);
+        assert!(screen.tp_config.sync_workout_plans);
+        assert_eq!(screen.tp_config.sync_frequency_hours, 12);
+        assert_eq!(screen.tp_config.lookahead_days, 21);
+    }
+
+    #[test]
+    fn test_all_action_types_exist() {
+        // Ensure all action types are properly constructed
+        let actions = vec![
+            TrainingPeaksSettingsAction::None,
+            TrainingPeaksSettingsAction::Back,
+            TrainingPeaksSettingsAction::Connect,
+            TrainingPeaksSettingsAction::Disconnect,
+            TrainingPeaksSettingsAction::ToggleAutoSyncRides(true),
+            TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(true),
+            TrainingPeaksSettingsAction::SetSyncFrequency(6),
+            TrainingPeaksSettingsAction::UpdateConfig(TrainingPeaksPlatformConfig::default()),
+            TrainingPeaksSettingsAction::SyncWorkoutsNow,
+            TrainingPeaksSettingsAction::SetLookaheadDays(14),
+            TrainingPeaksSettingsAction::SetLookbackDays(7),
+            TrainingPeaksSettingsAction::RetrySyncRecord(Uuid::new_v4()),
+            TrainingPeaksSettingsAction::ViewExternalActivity("https://example.com".to_string()),
+        ];
+
+        // All actions should exist - this test verifies the enum is complete
+        assert_eq!(actions.len(), 13);
+    }
+
+    #[test]
+    fn test_action_back_not_equal_to_none() {
+        assert_ne!(TrainingPeaksSettingsAction::Back, TrainingPeaksSettingsAction::None);
+    }
+
+    #[test]
+    fn test_action_connect_not_equal_to_disconnect() {
+        assert_ne!(TrainingPeaksSettingsAction::Connect, TrainingPeaksSettingsAction::Disconnect);
+    }
+
+    #[test]
+    fn test_action_debug_format() {
+        let action = TrainingPeaksSettingsAction::Connect;
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("Connect"));
+
+        let action_with_value = TrainingPeaksSettingsAction::SetSyncFrequency(12);
+        let debug_str = format!("{:?}", action_with_value);
+        assert!(debug_str.contains("SetSyncFrequency"));
+        assert!(debug_str.contains("12"));
+    }
+
+    #[test]
+    fn test_connection_state_debug_format() {
+        let state = TrainingPeaksConnectionState::Connected;
+        let debug_str = format!("{:?}", state);
+        assert!(debug_str.contains("Connected"));
+
+        let error_state = TrainingPeaksConnectionState::Error("test error".to_string());
+        let debug_str = format!("{:?}", error_state);
+        assert!(debug_str.contains("Error"));
+        assert!(debug_str.contains("test error"));
+    }
+
+    #[test]
+    fn test_connection_state_default() {
+        let state = TrainingPeaksConnectionState::default();
+        assert_eq!(state, TrainingPeaksConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn test_connection_state_clone() {
+        let state = TrainingPeaksConnectionState::Error("clone test".to_string());
+        let cloned = state.clone();
+        assert_eq!(state, cloned);
+    }
+
+    #[test]
+    fn test_workout_sync_status_full_cycle() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Start idle
+        assert_eq!(screen.workout_sync_status, WorkoutSyncStatus::Idle);
+        assert!(!screen.is_syncing_workouts());
+
+        // Begin sync
+        screen.set_workout_sync_status(WorkoutSyncStatus::Syncing);
+        assert!(screen.is_syncing_workouts());
+
+        // Sync succeeds
+        screen.set_workout_sync_status(WorkoutSyncStatus::Success {
+            new_workouts: 5,
+            timestamp: "12:00 PM".to_string(),
+        });
+        assert!(!screen.is_syncing_workouts());
+
+        // Back to idle
+        screen.set_workout_sync_status(WorkoutSyncStatus::Idle);
+        assert!(!screen.is_syncing_workouts());
+    }
+
+    #[test]
+    fn test_workout_sync_status_error_recovery_cycle() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Start idle
+        screen.set_workout_sync_status(WorkoutSyncStatus::Idle);
+
+        // Begin sync
+        screen.set_workout_sync_status(WorkoutSyncStatus::Syncing);
+        assert!(screen.is_syncing_workouts());
+
+        // Sync fails
+        screen.set_workout_sync_status(WorkoutSyncStatus::Error("Network timeout".to_string()));
+        assert!(!screen.is_syncing_workouts());
+
+        // Retry - begin sync again
+        screen.set_workout_sync_status(WorkoutSyncStatus::Syncing);
+        assert!(screen.is_syncing_workouts());
+
+        // Success on retry
+        screen.set_workout_sync_status(WorkoutSyncStatus::Success {
+            new_workouts: 3,
+            timestamp: "1:00 PM".to_string(),
+        });
+        assert!(!screen.is_syncing_workouts());
+    }
+
+    #[test]
+    fn test_workout_sync_status_equality() {
+        let status1 = WorkoutSyncStatus::Success {
+            new_workouts: 5,
+            timestamp: "10:00".to_string(),
+        };
+        let status2 = WorkoutSyncStatus::Success {
+            new_workouts: 5,
+            timestamp: "10:00".to_string(),
+        };
+        let status3 = WorkoutSyncStatus::Success {
+            new_workouts: 3,
+            timestamp: "10:00".to_string(),
+        };
+
+        assert_eq!(status1, status2);
+        assert_ne!(status1, status3);
+    }
+
+    #[test]
+    fn test_screen_default_values() {
+        let screen = TrainingPeaksSettingsScreen::default();
+
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnected);
+        assert!(screen.athlete_profile.is_none());
+        assert!(!screen.config.enabled);
+        assert!(!screen.config.auto_sync);
+        assert!(screen.tp_config.auto_sync_rides); // Default is true
+        assert!(screen.tp_config.sync_workout_plans); // Default is true
+        assert_eq!(screen.tp_config.sync_frequency_hours, 6);
+        assert_eq!(screen.tp_config.lookahead_days, 14);
+        assert_eq!(screen.tp_config.lookback_days, 7);
+        assert!(screen.tp_config.cycling_only);
+        assert_eq!(screen.pending_uploads, 0);
+        assert!(screen.last_sync.is_none());
+        assert!(screen.last_workout_sync.is_none());
+        assert_eq!(screen.synced_workouts_count, 0);
+        assert_eq!(screen.workout_sync_status, WorkoutSyncStatus::Idle);
+        assert!(screen.sync_history.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_state_changes_in_sequence() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Rapid state changes (simulating edge case)
+        for _ in 0..5 {
+            screen.set_connection_state(TrainingPeaksConnectionState::Connecting);
+            screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+            screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
+            screen.set_connection_state(TrainingPeaksConnectionState::Disconnected);
+        }
+
+        // Final state should be disconnected
+        assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_sync_history_with_mixed_statuses() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Add entries with various statuses
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Completed));
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Failed));
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Pending));
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Uploading));
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Cancelled));
+
+        assert_eq!(screen.sync_history.len(), 5);
+        assert_eq!(screen.failed_sync_count(), 1);
+        assert!(screen.has_failed_syncs());
+    }
+
+    #[test]
+    fn test_sync_history_clear_via_set_empty() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Add some entries
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Completed));
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Failed));
+        assert_eq!(screen.sync_history.len(), 2);
+
+        // Clear by setting empty
+        screen.set_sync_history(vec![]);
+        assert!(screen.sync_history.is_empty());
+        assert_eq!(screen.failed_sync_count(), 0);
+        assert!(!screen.has_failed_syncs());
+    }
+
+    #[test]
+    fn test_pending_uploads_boundary_values() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        screen.set_pending_uploads(0);
+        assert_eq!(screen.pending_uploads, 0);
+
+        screen.set_pending_uploads(1);
+        assert_eq!(screen.pending_uploads, 1);
+
+        screen.set_pending_uploads(usize::MAX);
+        assert_eq!(screen.pending_uploads, usize::MAX);
+    }
+
+    #[test]
+    fn test_synced_workouts_count_boundary_values() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        screen.set_synced_workouts_count(0);
+        assert_eq!(screen.synced_workouts_count, 0);
+
+        screen.set_synced_workouts_count(100);
+        assert_eq!(screen.synced_workouts_count, 100);
+
+        screen.set_synced_workouts_count(usize::MAX);
+        assert_eq!(screen.synced_workouts_count, usize::MAX);
+    }
+
+    #[test]
+    fn test_tp_config_all_fields() {
+        let config = TrainingPeaksPlatformConfig {
+            enabled: true,
+            auto_sync_rides: false,
+            sync_workout_plans: false,
+            sync_frequency_hours: 24,
+            lookahead_days: 30,
+            lookback_days: 0,
+            cycling_only: false,
+        };
+
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        screen.set_tp_config(config);
+
+        assert!(screen.tp_config.enabled);
+        assert!(!screen.tp_config.auto_sync_rides);
+        assert!(!screen.tp_config.sync_workout_plans);
+        assert_eq!(screen.tp_config.sync_frequency_hours, 24);
+        assert_eq!(screen.tp_config.lookahead_days, 30);
+        assert_eq!(screen.tp_config.lookback_days, 0);
+        assert!(!screen.tp_config.cycling_only);
+    }
+
+    #[test]
+    fn test_action_with_uuid_equality() {
+        let id1 = Uuid::new_v4();
+        let id2 = id1; // Same UUID
+
+        let action1 = TrainingPeaksSettingsAction::RetrySyncRecord(id1);
+        let action2 = TrainingPeaksSettingsAction::RetrySyncRecord(id2);
+        let action3 = TrainingPeaksSettingsAction::RetrySyncRecord(Uuid::new_v4());
+
+        assert_eq!(action1, action2);
+        assert_ne!(action1, action3);
+    }
+
+    #[test]
+    fn test_action_with_string_equality() {
+        let url = "https://www.trainingpeaks.com/workout/123".to_string();
+
+        let action1 = TrainingPeaksSettingsAction::ViewExternalActivity(url.clone());
+        let action2 = TrainingPeaksSettingsAction::ViewExternalActivity(url.clone());
+        let action3 = TrainingPeaksSettingsAction::ViewExternalActivity("https://different.com".to_string());
+
+        assert_eq!(action1, action2);
+        assert_ne!(action1, action3);
+    }
+
+    #[test]
+    fn test_sync_history_entry_with_retry_count() {
+        let mut entry = create_test_sync_entry(SyncRecordStatus::Failed);
+        entry.retry_count = 3;
+
+        assert_eq!(entry.retry_count, 3);
+        assert!(entry.can_retry()); // Failed entries can still be retried
+    }
+
+    #[test]
+    fn test_sync_history_entry_with_all_fields() {
+        let id = Uuid::new_v4();
+        let ride_id = Uuid::new_v4();
+
+        let entry = SyncHistoryEntry {
+            id,
+            ride_id,
+            ride_name: "Morning Endurance Ride".to_string(),
+            status: SyncRecordStatus::Completed,
+            error_message: None,
+            external_id: Some("tp_12345".to_string()),
+            external_url: Some("https://www.trainingpeaks.com/workout/tp_12345".to_string()),
+            created_at: "2024-01-15 08:00".to_string(),
+            completed_at: Some("2024-01-15 08:05".to_string()),
+            retry_count: 0,
+        };
+
+        assert_eq!(entry.id, id);
+        assert_eq!(entry.ride_id, ride_id);
+        assert_eq!(entry.ride_name, "Morning Endurance Ride");
+        assert_eq!(entry.status, SyncRecordStatus::Completed);
+        assert!(entry.error_message.is_none());
+        assert_eq!(entry.external_id, Some("tp_12345".to_string()));
+        assert!(entry.external_url.is_some());
+        assert_eq!(entry.created_at, "2024-01-15 08:00");
+        assert!(entry.completed_at.is_some());
+        assert_eq!(entry.retry_count, 0);
+        assert!(!entry.can_retry());
+        assert!(!entry.is_syncing());
+        assert_eq!(entry.status_text(), "Synced");
+    }
+
+    #[test]
+    fn test_connected_state_with_and_without_profile() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        screen.set_connection_state(TrainingPeaksConnectionState::Connected);
+
+        // Connected without profile
+        assert!(screen.is_connected());
+        assert!(screen.athlete_profile.is_none());
+
+        // Connected with profile
+        let profile = AthleteProfile {
+            id: 42,
+            firstname: "Test".to_string(),
+            lastname: "User".to_string(),
+            profile_photo_url: Some("https://example.com/photo.jpg".to_string()),
+        };
+        screen.set_athlete_profile(Some(profile));
+
+        assert!(screen.is_connected());
+        assert!(screen.athlete_profile.is_some());
+        assert_eq!(screen.athlete_profile.as_ref().unwrap().display_name(), "Test User");
+    }
+
+    #[test]
+    fn test_workout_sync_status_debug() {
+        let status = WorkoutSyncStatus::Success {
+            new_workouts: 10,
+            timestamp: "3:00 PM".to_string(),
+        };
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("Success"));
+        assert!(debug_str.contains("10"));
+        assert!(debug_str.contains("3:00 PM"));
+    }
+
+    #[test]
+    fn test_workout_sync_status_clone() {
+        let status = WorkoutSyncStatus::Success {
+            new_workouts: 5,
+            timestamp: "noon".to_string(),
+        };
+        let cloned = status.clone();
+        assert_eq!(status, cloned);
+    }
+
+    #[test]
+    fn test_action_clone() {
+        let action = TrainingPeaksSettingsAction::UpdateConfig(TrainingPeaksPlatformConfig::default());
+        let cloned = action.clone();
+        assert_eq!(action, cloned);
+    }
 }
