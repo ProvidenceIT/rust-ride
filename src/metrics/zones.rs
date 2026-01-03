@@ -436,6 +436,46 @@ impl Default for CadenceZones {
     }
 }
 
+impl CadenceZones {
+    /// Get the zone for a given cadence value.
+    pub fn get_zone(&self, rpm: u8) -> u8 {
+        if rpm <= self.z1_low.max_rpm {
+            1
+        } else if rpm <= self.z2_economy.max_rpm {
+            2
+        } else if rpm <= self.z3_natural.max_rpm {
+            3
+        } else if rpm <= self.z4_fast.max_rpm {
+            4
+        } else {
+            5
+        }
+    }
+
+    /// Get the zone range for a given zone number (1-5).
+    pub fn get_zone_range(&self, zone: u8) -> Option<&CadenceZoneRange> {
+        match zone {
+            1 => Some(&self.z1_low),
+            2 => Some(&self.z2_economy),
+            3 => Some(&self.z3_natural),
+            4 => Some(&self.z4_fast),
+            5 => Some(&self.z5_sprint),
+            _ => None,
+        }
+    }
+
+    /// Get all zones as a vector.
+    pub fn all_zones(&self) -> Vec<&CadenceZoneRange> {
+        vec![
+            &self.z1_low,
+            &self.z2_economy,
+            &self.z3_natural,
+            &self.z4_fast,
+            &self.z5_sprint,
+        ]
+    }
+}
+
 /// Events emitted when zones change.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
