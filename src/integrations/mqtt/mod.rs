@@ -11,7 +11,11 @@ use uuid::Uuid;
 
 // Re-export main types
 pub use client::{ConnectionState, DefaultMqttClient, MqttClient, MqttTestResult, test_mqtt_connection};
-pub use fan::{DefaultFanController, FanController, FanProfile, FanState, PayloadFormat};
+pub use fan::{
+    DefaultFanController, FanController, FanProfile, FanProfileSettings, FanState, PayloadFormat,
+    // Database helper functions
+    delete_fan_profile, load_active_fan_profile, load_fan_profiles, save_fan_profile, save_fan_profiles,
+};
 
 // Re-export credential store
 pub use crate::integrations::mqtt::MqttCredentialStore;
