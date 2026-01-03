@@ -234,6 +234,39 @@ impl CompanionQrCode {
     pub fn error_correction_level(&self) -> EcLevel {
         EcLevel::M
     }
+
+    /// Get the raw module data for custom rendering.
+    ///
+    /// Returns a 2D vector where `true` represents a dark module
+    /// and `false` represents a light module. This is useful for
+    /// rendering the QR code in custom UI frameworks like egui.
+    ///
+    /// The outer vector contains rows, and each inner vector contains
+    /// the columns for that row. The size is `module_count() x module_count()`.
+    ///
+    /// # Returns
+    ///
+    /// A 2D vector of booleans representing the QR code modules.
+    pub fn to_module_data(&self) -> Vec<Vec<bool>> {
+        let size = self.module_count();
+        let mut data = Vec::with_capacity(size);
+
+        for y in 0..size {
+            let mut row = Vec::with_capacity(size);
+            for x in 0..size {
+                // qrcode crate: Dark = true/filled, Light = false/empty
+                row.push(self.qr_code[(x, y)] == qrcode::Color::Dark);
+            }
+            data.push(row);
+        }
+
+        data
+    }
+
+    /// Get the WebSocket URL encoded in this QR code.
+    pub fn url(&self) -> &str {
+        &self.connection_data.url
+    }
 }
 
 /// Generate a QR code for companion app pairing.
@@ -420,5 +453,40 @@ mod tests {
         .unwrap();
 
         assert_eq!(qr.error_correction_level(), EcLevel::M);
+    }
+
+    #[test]
+    fn test_to_module_data() {
+        let qr = CompanionQrCode::from_url_and_pin(
+            "ws://192.168.1.100:9876".to_string(),
+            Some("123456".to_string()),
+        )
+        .unwrap();
+
+        let module_data = qr.to_module_data();
+
+        // Should be a square 2D array
+        let size = qr.module_count();
+        assert_eq!(module_data.len(), size);
+        for row in &module_data {
+            assert_eq!(row.len(), size);
+        }
+
+        // Should contain both dark (true) and light (false) modules
+        let has_dark = module_data.iter().any(|row| row.iter().any(|&m| m));
+        let has_light = module_data.iter().any(|row| row.iter().any(|&m| !m));
+        assert!(has_dark);
+        assert!(has_light);
+    }
+
+    #[test]
+    fn test_url_accessor() {
+        let qr = CompanionQrCode::from_url_and_pin(
+            "ws://10.0.0.5:9876".to_string(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(qr.url(), "ws://10.0.0.5:9876");
     }
 }

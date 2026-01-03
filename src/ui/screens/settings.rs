@@ -123,6 +123,14 @@ pub struct SettingsScreen {
     companion_current_pin: Option<String>,
     /// T047: Server running status
     companion_server_running: bool,
+    /// T048: Cached QR code module data for rendering
+    companion_qr_data: Option<Vec<Vec<bool>>>,
+    /// T048: Connection URL for display and copy
+    companion_connection_url: Option<String>,
+    /// T048: Flag indicating PIN regeneration was requested
+    pub regenerate_pin_requested: bool,
+    /// T048: Flag indicating URL copy was requested
+    pub copy_url_requested: bool,
 }
 
 /// Configuration for a specific alert type (voice vs. sound)
@@ -485,6 +493,10 @@ impl SettingsScreen {
             companion_port_input: "9876".to_string(),
             companion_current_pin: None,
             companion_server_running: false,
+            companion_qr_data: None,
+            companion_connection_url: None,
+            regenerate_pin_requested: false,
+            copy_url_requested: false,
         }
     }
 
@@ -526,10 +538,40 @@ impl SettingsScreen {
     }
 
     /// Update companion server status.
-    /// T047: Update UI to reflect server running state and current PIN.
+    /// T047, T048: Update UI to reflect server running state, current PIN, QR data, and URL.
     pub fn set_companion_status(&mut self, is_running: bool, current_pin: Option<String>) {
         self.companion_server_running = is_running;
         self.companion_current_pin = current_pin;
+    }
+
+    /// T048: Set companion QR code data for display.
+    ///
+    /// The QR data is a 2D vector of booleans where `true` represents a dark module.
+    /// The URL is the WebSocket connection URL for copying.
+    pub fn set_companion_qr_data(
+        &mut self,
+        qr_data: Option<Vec<Vec<bool>>>,
+        connection_url: Option<String>,
+    ) {
+        self.companion_qr_data = qr_data;
+        self.companion_connection_url = connection_url;
+    }
+
+    /// T048: Check if PIN regeneration was requested.
+    pub fn take_regenerate_pin_request(&mut self) -> bool {
+        let requested = self.regenerate_pin_requested;
+        self.regenerate_pin_requested = false;
+        requested
+    }
+
+    /// T048: Check if URL copy was requested.
+    pub fn take_copy_url_request(&mut self) -> Option<String> {
+        if self.copy_url_requested {
+            self.copy_url_requested = false;
+            self.companion_connection_url.clone()
+        } else {
+            None
+        }
     }
 
     /// Set FTP confidence from auto-detection.
@@ -3175,12 +3217,124 @@ impl SettingsScreen {
                                         .color(Color32::GRAY),
                                 );
                             }
+                            // T048: Regenerate PIN button
+                            if ui
+                                .button("🔄 Regenerate PIN")
+                                .on_hover_text("Generate a new random PIN")
+                                .clicked()
+                            {
+                                self.regenerate_pin_requested = true;
+                            }
                         });
                         ui.label(
                             RichText::new("Share this PIN with your mobile device to connect")
                                 .small()
                                 .color(Color32::GRAY),
                         );
+                    }
+
+                    // T048: QR Code and URL section (when server is running)
+                    if self.companion_server_running {
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("Quick Pairing").strong());
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            // QR Code display
+                            if let Some(ref qr_data) = self.companion_qr_data {
+                                // Render QR code using egui rectangles
+                                let module_count = qr_data.len();
+                                if module_count > 0 {
+                                    let qr_size = 160.0; // Total QR code size in pixels
+                                    let module_size = qr_size / module_count as f32;
+                                    let quiet_zone = 2; // Quiet zone in modules
+
+                                    // Reserve space for QR code with quiet zone
+                                    let total_size = qr_size + (quiet_zone as f32 * module_size * 2.0);
+                                    let (response, painter) = ui.allocate_painter(
+                                        egui::vec2(total_size, total_size),
+                                        egui::Sense::hover(),
+                                    );
+
+                                    let rect = response.rect;
+                                    let offset = egui::vec2(
+                                        quiet_zone as f32 * module_size,
+                                        quiet_zone as f32 * module_size,
+                                    );
+
+                                    // Draw white background with quiet zone
+                                    painter.rect_filled(rect, 4.0, Color32::WHITE);
+
+                                    // Draw QR code modules
+                                    for (y, row) in qr_data.iter().enumerate() {
+                                        for (x, &is_dark) in row.iter().enumerate() {
+                                            if is_dark {
+                                                let module_rect = egui::Rect::from_min_size(
+                                                    rect.min + offset + egui::vec2(
+                                                        x as f32 * module_size,
+                                                        y as f32 * module_size,
+                                                    ),
+                                                    egui::vec2(module_size, module_size),
+                                                );
+                                                painter.rect_filled(
+                                                    module_rect,
+                                                    0.0,
+                                                    Color32::BLACK,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Placeholder when QR not available
+                                ui.group(|ui| {
+                                    ui.set_min_size(egui::vec2(160.0, 160.0));
+                                    ui.centered_and_justified(|ui| {
+                                        ui.label(
+                                            RichText::new("QR code loading...")
+                                                .color(Color32::GRAY)
+                                                .italics(),
+                                        );
+                                    });
+                                });
+                            }
+
+                            ui.add_space(16.0);
+
+                            // Connection info and buttons on the right side
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    RichText::new("Scan QR code to connect")
+                                        .color(Color32::GRAY)
+                                        .small(),
+                                );
+                                ui.add_space(8.0);
+
+                                // Connection URL display
+                                if let Some(ref url) = self.companion_connection_url {
+                                    ui.horizontal(|ui| {
+                                        ui.label("URL:");
+                                        ui.label(
+                                            RichText::new(url)
+                                                .monospace()
+                                                .small()
+                                                .color(Color32::from_rgb(100, 149, 237)),
+                                        );
+                                    });
+                                }
+
+                                ui.add_space(8.0);
+
+                                // Copy URL button
+                                if ui
+                                    .button("📋 Copy URL")
+                                    .on_hover_text("Copy connection URL to clipboard")
+                                    .clicked()
+                                {
+                                    self.copy_url_requested = true;
+                                }
+                            });
+                        });
                     }
 
                     ui.add_space(12.0);
