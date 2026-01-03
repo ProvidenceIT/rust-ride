@@ -602,4 +602,556 @@ mod tests {
         assert_eq!(escape_xml_attr("<tag>"), "&lt;tag&gt;");
         assert_eq!(escape_xml_attr("Say \"Hello\""), "Say &quot;Hello&quot;");
     }
+
+    // Round-trip tests - verify export can be parsed back
+
+    #[test]
+    fn test_round_trip_simple_steady_state() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Round Trip Test".to_string(), segments);
+
+        // Export to ZWO
+        let zwo_xml = export_zwo(&original).unwrap();
+
+        // Parse it back
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        // Verify key properties match
+        assert_eq!(parsed.name, original.name);
+        assert_eq!(parsed.segments.len(), original.segments.len());
+        assert_eq!(parsed.segments[0].duration_seconds, original.segments[0].duration_seconds);
+        assert_eq!(parsed.segments[0].segment_type, original.segments[0].segment_type);
+
+        // Power target should be equivalent
+        match &parsed.segments[0].power_target {
+            PowerTarget::PercentFtp { percent } => assert_eq!(*percent, 75),
+            _ => panic!("Expected PercentFtp power target"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_warmup_with_power_range() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 600,
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(40),
+                PowerTarget::percent_ftp(70),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Warmup Round Trip".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Warmup);
+        assert_eq!(parsed.segments[0].duration_seconds, 600);
+
+        // Verify power range
+        match &parsed.segments[0].power_target {
+            PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        PowerTarget::PercentFtp { percent: start_pct },
+                        PowerTarget::PercentFtp { percent: end_pct },
+                    ) => {
+                        assert_eq!(*start_pct, 40);
+                        assert_eq!(*end_pct, 70);
+                    }
+                    _ => panic!("Expected PercentFtp in range"),
+                }
+            }
+            _ => panic!("Expected Range power target"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_cooldown_with_power_range() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 300,
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(60),
+                PowerTarget::percent_ftp(40),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Cooldown Round Trip".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Cooldown);
+
+        match &parsed.segments[0].power_target {
+            PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        PowerTarget::PercentFtp { percent: start_pct },
+                        PowerTarget::PercentFtp { percent: end_pct },
+                    ) => {
+                        assert_eq!(*start_pct, 60);
+                        assert_eq!(*end_pct, 40);
+                    }
+                    _ => panic!("Expected PercentFtp in range"),
+                }
+            }
+            _ => panic!("Expected Range power target"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_with_metadata() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 120,
+            power_target: PowerTarget::percent_ftp(90),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let mut original = Workout::new("Metadata Round Trip".to_string(), segments);
+        original.author = Some("Test Author".to_string());
+        original.description = Some("A test workout description".to_string());
+        original.tags = vec!["Endurance".to_string(), "Sweet Spot".to_string()];
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.name, "Metadata Round Trip");
+        assert_eq!(parsed.author, Some("Test Author".to_string()));
+        assert_eq!(parsed.description, Some("A test workout description".to_string()));
+        assert_eq!(parsed.tags.len(), 2);
+        assert!(parsed.tags.contains(&"Endurance".to_string()));
+        assert!(parsed.tags.contains(&"Sweet Spot".to_string()));
+    }
+
+    #[test]
+    fn test_round_trip_complex_workout() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        // Create a complex workout with multiple segment types
+        let segments = vec![
+            // Warmup
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            // Main set - SteadyState
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900,
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: Some(CadenceTarget { min_rpm: 85, max_rpm: 95 }),
+                text_event: None,
+            },
+            // Ramp
+            WorkoutSegment {
+                segment_type: SegmentType::Ramp,
+                duration_seconds: 180,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(80),
+                    PowerTarget::percent_ftp(100),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            // FreeRide
+            WorkoutSegment {
+                segment_type: SegmentType::FreeRide,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(0),
+                cadence_target: None,
+                text_event: None,
+            },
+            // Cooldown
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+        let mut original = Workout::new("Complex Workout".to_string(), segments);
+        original.author = Some("RustRide".to_string());
+        original.description = Some("A complex test workout with multiple segment types".to_string());
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        // Verify overall structure
+        assert_eq!(parsed.name, "Complex Workout");
+        assert_eq!(parsed.segments.len(), 5);
+        assert_eq!(parsed.total_duration_seconds, 600 + 900 + 180 + 300 + 600);
+
+        // Verify segment types preserved
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Warmup);
+        assert_eq!(parsed.segments[1].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[2].segment_type, SegmentType::Ramp);
+        assert_eq!(parsed.segments[3].segment_type, SegmentType::FreeRide);
+        assert_eq!(parsed.segments[4].segment_type, SegmentType::Cooldown);
+
+        // Verify durations
+        assert_eq!(parsed.segments[0].duration_seconds, 600);
+        assert_eq!(parsed.segments[1].duration_seconds, 900);
+        assert_eq!(parsed.segments[2].duration_seconds, 180);
+        assert_eq!(parsed.segments[3].duration_seconds, 300);
+        assert_eq!(parsed.segments[4].duration_seconds, 600);
+    }
+
+    #[test]
+    fn test_round_trip_with_cadence_range() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(85),
+            cadence_target: Some(CadenceTarget { min_rpm: 80, max_rpm: 100 }),
+            text_event: None,
+        }];
+        let original = Workout::new("Cadence Test".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        // Verify cadence is preserved
+        let cadence = parsed.segments[0].cadence_target.as_ref().expect("Should have cadence");
+        assert_eq!(cadence.min_rpm, 80);
+        assert_eq!(cadence.max_rpm, 100);
+    }
+
+    #[test]
+    fn test_round_trip_with_single_cadence() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(90),
+            cadence_target: Some(CadenceTarget { min_rpm: 90, max_rpm: 90 }),
+            text_event: None,
+        }];
+        let original = Workout::new("Single Cadence Test".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+
+        // Verify XML contains single cadence format
+        assert!(zwo_xml.contains("Cadence=\"90\""));
+        assert!(!zwo_xml.contains("CadenceLow"));
+        assert!(!zwo_xml.contains("CadenceHigh"));
+
+        // Parse it back - note: parser may add a range around single cadence
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+        let cadence = parsed.segments[0].cadence_target.as_ref().expect("Should have cadence");
+        // Parser adds ±5 RPM tolerance to single cadence values
+        assert!(cadence.min_rpm <= 90 && cadence.max_rpm >= 90);
+    }
+
+    #[test]
+    fn test_round_trip_freeride() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::FreeRide,
+            duration_seconds: 900,
+            power_target: PowerTarget::percent_ftp(0),
+            cadence_target: Some(CadenceTarget { min_rpm: 80, max_rpm: 100 }),
+            text_event: None,
+        }];
+        let original = Workout::new("FreeRide Test".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::FreeRide);
+        assert_eq!(parsed.segments[0].duration_seconds, 900);
+    }
+
+    #[test]
+    fn test_round_trip_ramp() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Ramp,
+            duration_seconds: 240,
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(50),
+                PowerTarget::percent_ftp(100),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Ramp Test".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Ramp);
+        assert_eq!(parsed.segments[0].duration_seconds, 240);
+
+        match &parsed.segments[0].power_target {
+            PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        PowerTarget::PercentFtp { percent: start_pct },
+                        PowerTarget::PercentFtp { percent: end_pct },
+                    ) => {
+                        assert_eq!(*start_pct, 50);
+                        assert_eq!(*end_pct, 100);
+                    }
+                    _ => panic!("Expected PercentFtp in range"),
+                }
+            }
+            _ => panic!("Expected Range power target for Ramp"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_special_characters_in_metadata() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 60,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let mut original = Workout::new("Test & <Special> Chars".to_string(), segments);
+        original.author = Some("Author with & <chars>".to_string());
+        original.description = Some("Description with \"quotes\" and <angle> brackets & ampersands".to_string());
+        original.tags = vec!["Tag & More".to_string()];
+
+        let zwo_xml = export_zwo(&original).unwrap();
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+
+        assert_eq!(parsed.name, "Test & <Special> Chars");
+        assert_eq!(parsed.author, Some("Author with & <chars>".to_string()));
+        assert_eq!(
+            parsed.description,
+            Some("Description with \"quotes\" and <angle> brackets & ampersands".to_string())
+        );
+        assert!(parsed.tags.contains(&"Tag & More".to_string()));
+    }
+
+    // Edge case tests
+
+    #[test]
+    fn test_export_very_long_duration() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 7200, // 2 hours
+            power_target: PowerTarget::percent_ftp(65),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Long Endurance Ride".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+        assert!(result.contains("Duration=\"7200\""));
+    }
+
+    #[test]
+    fn test_export_high_power_value() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(200), // VO2 max sprint
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Sprint Test".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+        assert!(result.contains("Power=\"2.00\""));
+    }
+
+    #[test]
+    fn test_export_low_power_value() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(25), // Very easy recovery
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Recovery Spin".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+        assert!(result.contains("Power=\"0.25\""));
+    }
+
+    #[test]
+    fn test_export_many_segments() {
+        let mut segments = Vec::new();
+        for i in 0..50 {
+            segments.push(WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 60,
+                power_target: PowerTarget::percent_ftp(50 + (i % 50) as u8),
+                cadence_target: None,
+                text_event: None,
+            });
+        }
+        let workout = Workout::new("Many Segments".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        // Should have 50 SteadyState elements
+        let count = result.matches("<SteadyState").count();
+        assert_eq!(count, 50);
+    }
+
+    #[test]
+    fn test_export_workout_no_author() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(80),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("No Author".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(!result.contains("<author>"));
+    }
+
+    #[test]
+    fn test_export_workout_no_description() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(80),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("No Description".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(!result.contains("<description>"));
+    }
+
+    #[test]
+    fn test_export_workout_no_tags() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(80),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("No Tags".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(!result.contains("<tag"));
+    }
+
+    #[test]
+    fn test_export_xml_structure_valid() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600,
+                power_target: PowerTarget::percent_ftp(85),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+        let mut workout = Workout::new("Structure Test".to_string(), segments);
+        workout.author = Some("Test".to_string());
+        workout.description = Some("Test description".to_string());
+        workout.tags = vec!["Tag1".to_string()];
+
+        let result = export_zwo(&workout).unwrap();
+
+        // Verify basic XML structure
+        assert!(result.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(result.contains("<workout_file>"));
+        assert!(result.contains("</workout_file>"));
+        assert!(result.contains("<workout>"));
+        assert!(result.contains("</workout>"));
+
+        // Verify element order (metadata before workout)
+        let name_pos = result.find("<name>").unwrap();
+        let workout_pos = result.find("<workout>").unwrap();
+        assert!(name_pos < workout_pos);
+    }
+
+    #[test]
+    fn test_intervals_exported_as_steady_state_round_trip() {
+        use crate::workouts::parser_zwo::parse_zwo;
+
+        // Create a workout with an Intervals segment
+        // This simulates what we get when we have expanded intervals
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+        let original = Workout::new("Intervals as SteadyState".to_string(), segments);
+
+        let zwo_xml = export_zwo(&original).unwrap();
+
+        // Verify exported as SteadyState (since Intervals is for internal representation)
+        assert!(zwo_xml.contains("<SteadyState Duration=\"30\" Power=\"1.20\"/>"));
+        assert!(zwo_xml.contains("<SteadyState Duration=\"30\" Power=\"0.50\"/>"));
+
+        // Parse it back - should come back as SteadyState
+        let parsed = parse_zwo(&zwo_xml).unwrap();
+        assert_eq!(parsed.segments.len(), 2);
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[1].segment_type, SegmentType::SteadyState);
+    }
 }
