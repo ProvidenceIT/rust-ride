@@ -1,8 +1,19 @@
-//! Zone indicator widget for power and heart rate zones.
+//! Zone indicator widget for power, heart rate, and cadence zones.
 //!
 //! T108: Implement zone indicator widget with color band
 
 use egui::{Color32, Pos2, Rect, RichText, Ui, Vec2};
+
+/// Enum to specify the type of zone for zone_badge rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneType {
+    /// Power zones (7 zones)
+    Power,
+    /// Heart rate zones (5 zones)
+    HeartRate,
+    /// Cadence zones (5 zones)
+    Cadence,
+}
 
 use crate::metrics::zones::{
     CadenceZones, Color, HRZones, PowerZones, CADENCE_ZONE_COLORS, HR_ZONE_COLORS,
@@ -246,15 +257,21 @@ impl ZoneIndicator {
     }
 
     /// Render a compact zone badge (just the zone number with color).
-    pub fn zone_badge(ui: &mut Ui, label: &str, zone: Option<u8>, is_power: bool) {
+    ///
+    /// # Arguments
+    /// * `ui` - The UI context
+    /// * `label` - The label to display before the zone badge
+    /// * `zone` - The current zone number (1-based), or None if no zone
+    /// * `zone_type` - The type of zone (Power, HeartRate, or Cadence)
+    pub fn zone_badge(ui: &mut Ui, label: &str, zone: Option<u8>, zone_type: ZoneType) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(label).size(12.0).weak());
 
             if let Some(z) = zone {
-                let colors = if is_power {
-                    &POWER_ZONE_COLORS[..]
-                } else {
-                    &HR_ZONE_COLORS[..]
+                let colors: &[Color] = match zone_type {
+                    ZoneType::Power => &POWER_ZONE_COLORS[..],
+                    ZoneType::HeartRate => &HR_ZONE_COLORS[..],
+                    ZoneType::Cadence => &CADENCE_ZONE_COLORS[..],
                 };
                 let max_zone = colors.len();
 
