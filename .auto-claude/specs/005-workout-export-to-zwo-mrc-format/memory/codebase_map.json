@@ -1,0 +1,45 @@
+{
+  "discovered_files": {
+    "src/workouts/parser_zwo.rs": {
+      "description": "ZWO parser converts XML to Workout struct. Uses quick_xml. Segment types: Warmup, Cooldown, SteadyState, FreeRide, Ramp, IntervalsT. Power as decimal (0.75 = 75% FTP).",
+      "category": "parsing",
+      "discovered_at": "2026-01-03T05:17:20.833893+00:00"
+    },
+    "src/workouts/parser_mrc.rs": {
+      "description": "MRC parser converts text format to Workout struct. Sections: [COURSE HEADER], [COURSE DATA], [COURSE TEXT]. Course data is time (minutes) + power (percent FTP).",
+      "category": "parsing",
+      "discovered_at": "2026-01-03T05:17:20.896459+00:00"
+    },
+    "src/recording/exporter_csv.rs": {
+      "description": "Export pattern: export_X() returns String content, export_X_to_file() writes to path, generate_X_filename() creates default filename. Error type is ExportError.",
+      "category": "patterns",
+      "discovered_at": "2026-01-03T05:17:20.945971+00:00"
+    },
+    "src/workouts/types.rs": {
+      "description": "WorkoutExportError enum added with variants: IoError (with #[from] std::io::Error), InvalidWorkout(String), EmptyWorkout, FormattingError(String). Mirrors WorkoutParseError pattern. Exported from mod.rs.",
+      "category": "error_types",
+      "discovered_at": "2026-01-03T05:19:45.224791+00:00"
+    },
+    "src/workouts/exporter_zwo.rs": {
+      "description": "ZWO exporter test module now has 42 total tests covering: segment_to_xml (all segment types, cadence), export_zwo (simple, metadata, escaping, multiple segments), filename generation, round-trip tests (export -> parse -> verify), and edge cases (long duration, high/low power, many segments). Round-trip tests verify that exported ZWO XML can be parsed back and produce equivalent workouts.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T05:39:51.138037+00:00"
+    },
+    "src/workouts/exporter_mrc.rs": {
+      "description": "MRC exporter test module now has 53 comprehensive tests covering: helper functions (power_to_percent, segments_to_course_data, extract_text_events, format_text_event), export functions (export_mrc, export_mrc_with_ftp), filename generation, edge cases (long duration, high/low power, many segments, fractional minutes), and 8 round-trip tests that verify export -> parse -> verify produces equivalent workouts.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T05:56:49.379037+00:00"
+    },
+    "src/workouts/mod.rs": {
+      "description": "Workouts module now exports all exporter functions (export_zwo, export_mrc, etc.) alongside parser functions (parse_zwo, parse_mrc). Pattern follows: module declarations first, then pub use for types and functions.",
+      "category": "module_structure",
+      "discovered_at": "2026-01-03T05:25:57.256735+00:00"
+    },
+    "tests/unit/workout_export_test.rs": {
+      "description": "Comprehensive integration tests for workout export round-trips. Contains 28 test cases verifying ZWO and MRC exports can be parsed back to produce equivalent workouts. Tests cover simple, complex, and interval workouts, plus edge cases like long durations, many segments, and extreme power values. Helper functions create_simple_workout(), create_complex_workout(), and create_interval_workout() provide reusable test fixtures.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T06:03:45.477764+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T06:03:45.477764+00:00"
+}

@@ -1,0 +1,178 @@
+# Build Progress - Workout Export to ZWO/MRC Format
+
+## Planning Complete - 2026-01-03
+
+### Codebase Analysis Summary
+- Reviewed existing parsers: parser_zwo.rs, parser_mrc.rs
+- Reviewed export pattern from recording module: exporter_csv.rs
+- Analyzed Workout and WorkoutSegment types in types.rs
+
+### Key Patterns Identified
+1. Parser pattern: parse_zwo(content) -> Result<Workout, WorkoutParseError>
+2. Exporter pattern: export_csv(data) -> Result<String, ExportError>
+3. File helpers: export_X_to_file(), generate_X_filename()
+
+### Implementation Plan Created
+- 4 phases with 13 subtasks total
+- Phase 1: Core Export Infrastructure (4 subtasks)
+- Phase 2: ZWO Export Implementation (4 subtasks)
+- Phase 3: MRC Export Implementation (5 subtasks)
+- Phase 4: Integration and Validation (2 subtasks)
+
+### Files to Create
+- src/workouts/exporter_zwo.rs
+- src/workouts/exporter_mrc.rs
+- tests/unit/workout_export_test.rs
+
+### Files to Modify
+- src/workouts/types.rs (add WorkoutExportError)
+- src/workouts/mod.rs (add module exports)
+
+---
+
+## Subtask 3.1 Complete - 2026-01-03
+
+### Implemented segments_to_course_data helper function
+
+Created helper function to convert WorkoutSegment list to MRC COURSE DATA points for the MRC exporter.
+
+**Core Functions Added:**
+- `segments_to_course_data(segments, ftp)` - Converts segments to (time_minutes, power_percent) tuples
+- `power_to_percent(power, ftp)` - Converts PowerTarget to percent FTP value
+
+**CourseDataPoint struct:**
+- `minutes: f32` - Time in minutes
+- `power_percent: u8` - Power as percentage of FTP
+
+**Segment Handling:**
+- **SteadyState, Intervals**: Two points at same power (start and end)
+- **FreeRide**: Two points at 0% power
+- **Warmup, Cooldown, Ramp with Range**: Two points at start and end power values
+- **Warmup, Cooldown, Ramp without Range**: Two points at same power
+
+**Power Conversion:**
+- PercentFtp targets: Returns percent directly
+- Absolute targets: Converts using FTP parameter (default 200W)
+- Range targets: Returns start power for `power_to_percent()`
+
+**Tests Added (17 new tests):**
+- `test_power_to_percent_ftp` - PercentFtp targets
+- `test_power_to_percent_absolute_default_ftp` - Absolute with default FTP
+- `test_power_to_percent_absolute_with_ftp` - Absolute with custom FTP
+- `test_power_to_percent_range` - Range targets
+- `test_segments_to_course_data_steady_state` - Basic steady state
+- `test_segments_to_course_data_warmup_with_range` - Warmup with power range
+- `test_segments_to_course_data_cooldown_with_range` - Cooldown with power range
+- `test_segments_to_course_data_ramp_with_range` - Ramp with power range
+- `test_segments_to_course_data_freeride` - FreeRide segments
+- `test_segments_to_course_data_intervals` - Intervals segments
+- `test_segments_to_course_data_time_accumulation` - Multiple segments with correct timing
+- `test_segments_to_course_data_complex_workout` - Full warmup-main-cooldown workout
+- `test_segments_to_course_data_absolute_power_with_ftp` - Absolute power conversion
+- `test_segments_to_course_data_warmup_without_range` - Edge case handling
+- `test_segments_to_course_data_empty_segments` - Empty input
+
+**All acceptance criteria met:**
+- ✅ Converts segments to (time_minutes, power_percent) tuples
+- ✅ SteadyState creates two points at same power
+- ✅ Ramp/Warmup/Cooldown with Range creates points at start and end power
+- ✅ Time accumulates correctly across segments
+- ✅ Handles PercentFtp power targets directly
+- ✅ Handles Absolute power targets by converting to percentage (using optional FTP parameter)
+
+---
+
+## Subtask 2.2 Complete - 2026-01-03
+
+### Implemented export_zwo function
+
+The main `export_zwo` function now converts Workout structs to ZWO XML strings:
+
+**Features:**
+- XML declaration (`<?xml version="1.0"?>`)
+- `<workout_file>` root element
+- Metadata elements: `<name>`, `<author>`, `<description>` (when present)
+- Tags as `<tag name="..."/>` elements
+- `<workout>` element containing all segment elements
+
+**Helper Functions Added:**
+- `escape_xml()` - escapes &, <, > in text content
+- `escape_xml_attr()` - escapes &, <, >, " in attribute values
+
+**Tests Added (6 new tests):**
+- `test_export_zwo_simple_workout`
+- `test_export_zwo_with_metadata`
+- `test_export_zwo_escapes_special_chars`
+- `test_export_zwo_multiple_segments`
+- `test_escape_xml`
+- `test_escape_xml_attr`
+
+---
+
+## Subtask 3.4 Complete - 2026-01-03
+
+### Verified export_mrc_to_file and generate_mrc_filename
+
+These functions were already implemented as part of subtask 1.3 during module creation (same pattern as ZWO in subtask 2.3).
+
+**export_mrc_to_file:**
+- Calls `export_mrc()` to generate MRC content string
+- Writes content to specified path using `std::fs::write()`
+- Returns `Result<(), WorkoutExportError>` with IoError on write failure
+
+**generate_mrc_filename:**
+- Creates sanitized filename from workout name
+- Appends `.mrc` extension
+- Uses `sanitize_filename()` helper to replace invalid chars
+
+**sanitize_filename helper:**
+- Replaces filesystem-invalid characters: `/ \ : * ? " < > |`
+- Replaces each with underscore `_`
+- Trims whitespace
+
+**Existing Tests (from subtask 1.3):**
+- `test_generate_mrc_filename_simple`
+- `test_generate_mrc_filename_sanitizes_invalid_chars`
+- `test_sanitize_filename`
+- `test_export_mrc_empty_workout_error`
+
+**All acceptance criteria met:**
+- ✅ export_mrc_to_file writes content to specified path
+- ✅ generate_mrc_filename creates filename from workout name with .mrc extension
+- ✅ Filename sanitized to remove invalid filesystem characters
+
+---
+
+## Subtask 2.3 Complete - 2026-01-03
+
+### Verified export_zwo_to_file and generate_zwo_filename
+
+These functions were already implemented as part of subtask 1.2 during module creation.
+
+**export_zwo_to_file:**
+- Calls `export_zwo()` to generate XML content
+- Writes content to specified path using `std::fs::write()`
+- Returns `Result<(), WorkoutExportError>` with IoError on write failure
+
+**generate_zwo_filename:**
+- Creates sanitized filename from workout name
+- Appends `.zwo` extension
+- Uses `sanitize_filename()` helper to replace invalid chars
+
+**sanitize_filename helper:**
+- Replaces filesystem-invalid characters: `/ \ : * ? " < > |`
+- Replaces each with underscore `_`
+- Trims whitespace
+
+**Existing Tests (from subtask 1.2):**
+- `test_generate_zwo_filename_simple`
+- `test_generate_zwo_filename_sanitizes_invalid_chars`
+- `test_sanitize_filename`
+
+**All acceptance criteria met:**
+- ✅ export_zwo_to_file writes XML content to specified path
+- ✅ generate_zwo_filename creates filename from workout name with .zwo extension
+- ✅ Filename sanitized to remove invalid filesystem characters
+
+---
+
