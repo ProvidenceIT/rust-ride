@@ -24,13 +24,13 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 - [x] T010: Define TrainingPeaks workout API types (2h) ✅
 - [x] T011: Implement scheduled workouts fetch (2.5h) ✅
 - [x] T012: Implement workout detail fetch (2h) ✅
-- [ ] T013: Create TrainingPeaks to internal workout converter (3h)
-- [ ] T014: Add workout plan sync manager (2.5h)
+- [x] T013: Create TrainingPeaks to internal workout converter (3h) ✅
+- [x] T014: Add workout plan sync manager (2.5h) ✅
 
 ## Phase 4: Workout Library Integration (5 hours)
 - [x] T015: Add TrainingPeaks source to WorkoutFormat (0.5h) ✅ (done as part of T010)
-- [ ] T016: Store TrainingPeaks workouts in database (2h)
-- [ ] T017: Add workout sync status tracking (1.5h)
+- [x] T016: Store TrainingPeaks workouts in database (2h) ✅
+- [x] T017: Add workout sync status tracking (1.5h) ✅
 - [ ] T018: Display TrainingPeaks badge in workout library (1h)
 
 ## Phase 5: Settings UI Integration (7.5 hours)
@@ -288,3 +288,75 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
   - test_get_workout_details_with_repeat_steps - nested repeat structure
   - test_get_workout_details_without_structure - simple workouts without steps
 - Manual verification required (cargo test not available in this environment)
+
+### 2026-01-03 - T016: Store TrainingPeaks Workouts in Database
+- Added database migration v9 -> v10 in src/storage/schema.rs:
+  - Extended workouts table with: external_id TEXT, external_platform TEXT,
+    scheduled_date TEXT, planned_tss REAL, planned_if REAL
+  - Created trainingpeaks_workout_sync table for sync tracking with
+    external_workout_id, local_workout_id, scheduled_date, synced_at,
+    last_modified, sync_hash
+  - Added indexes for efficient lookups on external ID and scheduled date
+- Updated src/storage/database.rs:
+  - Added MIGRATION_V9_TO_V10 import
+  - Added migration logic for v9 -> v10
+  - Updated into_workout() to handle TrainingPeaks format
+- Implemented TrainingPeaksWorkoutStore in src/workouts/library.rs:
+  - StoredTrainingPeaksWorkout struct for workout + sync metadata
+  - TrainingPeaksSyncRecord struct for sync tracking
+  - save_imported_workout() - persists workout with external ID and TP metadata
+  - is_workout_synced() - checks if external ID already synced
+  - get_local_workout_id() - maps external ID to local UUID
+  - get_by_external_id() - retrieves workout by TP external ID
+  - get_workouts_by_date_range() - queries workouts by scheduled date
+  - get_all_synced_workouts() - lists all synced TP workouts
+  - get_sync_records() - gets sync tracking records
+  - count_synced() - counts synced workouts
+  - delete_synced_workout() - deletes sync record and workout
+  - clear_all_synced() - removes all synced workouts
+  - Uses ON CONFLICT for upsert behavior on re-sync
+- Added 12 comprehensive tests for TrainingPeaksWorkoutStore
+- Commit: d5497f6
+
+### 2026-01-03 - T017: Add Workout Sync Status Tracking (Already Complete)
+- Verified that workout sync tracking was already implemented in commit 3ec8087
+- Implementation in src/storage/sync_store.rs:
+  - TrainingPeaksWorkoutSyncSummary: Overview of sync status with:
+    - total_synced: Total workouts synced
+    - synced_in_range: Workouts in current date range
+    - last_sync_at: Last sync timestamp
+    - auto_sync_enabled: Auto-sync flag
+    - earliest/latest_scheduled_date: Date range of synced workouts
+  - TrainingPeaksWorkoutSyncEntry: Individual sync record with:
+    - id: Unique sync entry ID
+    - external_workout_id: TrainingPeaks workout ID
+    - local_workout_id: Local database workout UUID
+    - scheduled_date: Scheduled date from TrainingPeaks
+    - synced_at: Sync timestamp
+    - last_modified: TrainingPeaks modification date
+    - sync_hash: Content hash for change detection
+  - TrainingPeaksWorkoutSyncConfig: Auto-sync configuration with:
+    - auto_sync_enabled: Enable/disable auto-sync
+    - lookahead_days: Days to look ahead (default 14)
+    - lookback_days: Days to look back (default 7)
+    - sync_interval_hours: Sync frequency (default 6 hours)
+    - cycling_only: Filter for bike workouts only
+- SyncStore methods added:
+  - get_trainingpeaks_workout_sync_summary(): Get sync overview
+  - get_all_trainingpeaks_workout_syncs(): Get all sync entries
+  - get_trainingpeaks_workout_syncs_by_date_range(): Query by date
+  - get_trainingpeaks_workout_sync_by_external_id(): Lookup by TP ID
+  - get_trainingpeaks_workout_sync_by_local_id(): Lookup by local ID
+  - record_trainingpeaks_workout_sync(): Upsert sync entry
+  - is_trainingpeaks_workout_synced(): Check if workout synced
+  - get_local_workout_id_for_trainingpeaks(): External->local ID map
+  - get_external_workout_id_for_local(): Local->external ID map
+  - is_trainingpeaks_workout_sync_due(): Check if sync interval elapsed
+  - get_upcoming_trainingpeaks_workouts(): Future workouts
+  - get_recently_synced_trainingpeaks_workouts(): Recent syncs
+  - update_trainingpeaks_workout_sync_hash(): Update content hash
+  - delete_trainingpeaks_workout_sync(): Delete single entry
+  - clear_all_trainingpeaks_workout_syncs(): Clear all syncs
+- Comprehensive tests included for all functionality
+- Commit: 3ec8087
+- **Phase 4 (T015-T017) Complete!** Remaining: T018 (UI badge)

@@ -209,27 +209,31 @@
           "id": "T013",
           "title": "Create TrainingPeaks to internal workout converter",
           "description": "Implement conversion from TrainingPeaks workout format to internal Workout struct with WorkoutSegments. Handle power zones, duration, intervals.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T012"
           ],
           "estimated_hours": 3,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Enhanced TrainingPeaks workout conversion with: 1) Power zone support (Zone 1-7 mapped to Coggan FTP percentages), 2) Range power targets for warmup (40%\u219275%), cooldown (65%\u219240%), and ramp segments, 3) PowerZone target type handling with zone parsing from various string formats (\"Zone 3\", \"Z3\", \"3\"), 4) Watts-to-percent conversion for range targets when FTP provided. Added comprehensive tests for zone mapping, zone parsing, default Range targets, explicit range targets, and watts range conversion.",
+          "updated_at": "2026-01-03T14:35:28.771880+00:00"
         },
         {
           "id": "T014",
           "title": "Add workout plan sync manager",
           "description": "Create TrainingPeaksSyncManager to handle periodic syncing of workout plans, storing imported workouts in the workout library with TrainingPeaks source marking.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T013"
           ],
           "estimated_hours": 2.5,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Created TrainingPeaksSyncManager for periodic workout plan syncing. Implementation includes: 1) WorkoutSyncConfig for configuring sync behavior (lookahead/lookback days, FTP, auto-sync interval, cycling-only filter), 2) WorkoutSyncResult for sync statistics (fetched, converted, new, skipped, errors), 3) ImportedWorkout struct with TrainingPeaks metadata (external_id, scheduled_date, planned_tss, planned_if), 4) TrainingPeaksSyncManager with sync_workouts(), sync_workouts_for_range(), get_workout() methods, 5) Sync tracking via synced_workout_ids to detect new vs already-synced workouts, 6) is_sync_due() for periodic auto-sync support. All workouts marked with WorkoutFormat::TrainingPeaks source. Added 25+ comprehensive tests covering config, result tracking, manager operations, and HTTP-mocked sync scenarios. Re-exported types via mod.rs.",
+          "updated_at": "2026-01-03T14:42:33.380871+00:00"
         }
       ]
     },
@@ -255,7 +259,7 @@
           "id": "T016",
           "title": "Store TrainingPeaks workouts in database",
           "description": "Extend workout storage to save TrainingPeaks-sourced workouts with external ID reference for sync tracking.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T014",
             "T015"
@@ -264,20 +268,24 @@
           "files": [
             "src/storage/schema.rs",
             "src/workouts/library.rs"
-          ]
+          ],
+          "notes": "Added database migration v9 -> v10 with: 1) New columns in workouts table: external_id, external_platform, scheduled_date, planned_tss, planned_if, 2) New trainingpeaks_workout_sync table for sync tracking. Implemented TrainingPeaksWorkoutStore in src/workouts/library.rs with methods: save_imported_workout(), is_workout_synced(), get_local_workout_id(), get_by_external_id(), get_workouts_by_date_range(), get_all_synced_workouts(), get_sync_records(), count_synced(), delete_synced_workout(), clear_all_synced(). Added 12 comprehensive tests. Commit: d5497f6",
+          "updated_at": "2026-01-03T14:50:32.811071+00:00"
         },
         {
           "id": "T017",
           "title": "Add workout sync status tracking",
           "description": "Track which workouts have been synced from TrainingPeaks, including last sync time and external workout ID mapping.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T016"
           ],
           "estimated_hours": 1.5,
           "files": [
             "src/storage/sync_store.rs"
-          ]
+          ],
+          "notes": "TrainingPeaks workout sync tracking already implemented in commit 3ec8087. Implementation includes: TrainingPeaksWorkoutSyncSummary (overview with total count, last sync time, date range), TrainingPeaksWorkoutSyncEntry (individual sync record mapping external to local workout IDs with metadata), TrainingPeaksWorkoutSyncConfig (auto-sync settings). SyncStore methods: get_trainingpeaks_workout_sync_summary(), record/get/delete workout syncs, is_trainingpeaks_workout_synced(), get_local_workout_id_for_trainingpeaks(), get_external_workout_id_for_local(), get_upcoming_trainingpeaks_workouts(), get_recently_synced_trainingpeaks_workouts(), is_trainingpeaks_workout_sync_due(), update_trainingpeaks_workout_sync_hash(). Comprehensive tests included.",
+          "updated_at": "2026-01-03T15:01:17.438397+00:00"
         },
         {
           "id": "T018",
@@ -509,5 +517,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T14:28:08.011995+00:00"
+  "last_updated": "2026-01-03T15:01:17.438397+00:00"
 }

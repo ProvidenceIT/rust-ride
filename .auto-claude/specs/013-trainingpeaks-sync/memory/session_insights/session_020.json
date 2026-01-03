@@ -1,0 +1,26 @@
+{
+  "session_number": 20,
+  "timestamp": "2026-01-03T14:58:19.938168+00:00",
+  "subtasks_completed": [],
+  "discoveries": {
+    "file_insights": [],
+    "patterns_discovered": [],
+    "gotchas_discovered": [],
+    "approach_outcome": {
+      "success": false,
+      "approach_used": "Implemented subtask: T017",
+      "why_it_worked": null,
+      "why_it_failed": null,
+      "alternatives_tried": []
+    },
+    "recommendations": [],
+    "subtask_id": "T017",
+    "success": false,
+    "changed_files": []
+  },
+  "what_worked": [],
+  "what_failed": [
+    "Failed to complete subtask: T017"
+  ],
+  "recommendations_for_next_session": []
+}

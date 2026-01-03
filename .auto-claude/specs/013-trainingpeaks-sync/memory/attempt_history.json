@@ -71,11 +71,257 @@
         }
       ],
       "status": "completed"
+    },
+    "T007": {
+      "attempts": [
+        {
+          "session": 8,
+          "timestamp": "2026-01-03T15:03:05.769544",
+          "approach": "Implemented: Implement check_upload_status() to poll TrainingPeaks for upload processing status. TrainingPeaks ma",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T008": {
+      "attempts": [
+        {
+          "session": 9,
+          "timestamp": "2026-01-03T15:09:11.119904",
+          "approach": "Implemented: Update SyncService to support TrainingPeaks uploads alongside Strava. Add TrainingPeaks to the platf",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T009": {
+      "attempts": [
+        {
+          "session": 10,
+          "timestamp": "2026-01-03T15:12:01.603659",
+          "approach": "Implemented: Implement detection and handling of duplicate activity uploads, returning appropriate DuplicateActiv",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T010": {
+      "attempts": [
+        {
+          "session": 11,
+          "timestamp": "2026-01-03T15:18:44.111847",
+          "approach": "Implemented: Create types for TrainingPeaks workout API responses: TPWorkout, TPWorkoutStep, TPWorkoutTarget. Map",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T011": {
+      "attempts": [
+        {
+          "session": 12,
+          "timestamp": "2026-01-03T15:23:46.962125",
+          "approach": "Implemented: Add get_scheduled_workouts() method to fetch workouts scheduled for a date range. TrainingPeaks API:",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T012": {
+      "attempts": [
+        {
+          "session": 13,
+          "timestamp": "2026-01-03T15:28:57.207063",
+          "approach": "Implemented: Add get_workout_details() to fetch full workout structure with steps/intervals from TrainingPeaks AP",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T013": {
+      "attempts": [
+        {
+          "session": 14,
+          "timestamp": "2026-01-03T15:35:56.611869",
+          "approach": "Implemented: Implement conversion from TrainingPeaks workout format to internal Workout struct with WorkoutSegmen",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T014": {
+      "attempts": [
+        {
+          "session": 15,
+          "timestamp": "2026-01-03T15:42:50.564184",
+          "approach": "Implemented: Create TrainingPeaksSyncManager to handle periodic syncing of workout plans, storing imported workou",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T016": {
+      "attempts": [
+        {
+          "session": 16,
+          "timestamp": "2026-01-03T15:51:28.146596",
+          "approach": "Implemented: Extend workout storage to save TrainingPeaks-sourced workouts with external ID reference for sync tr",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T017": {
+      "attempts": [
+        {
+          "session": 17,
+          "timestamp": "2026-01-03T15:57:54.106947",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 18,
+          "timestamp": "2026-01-03T15:58:04.596503",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 19,
+          "timestamp": "2026-01-03T15:58:12.286259",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 20,
+          "timestamp": "2026-01-03T15:58:19.936167",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 21,
+          "timestamp": "2026-01-03T15:58:27.534115",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 22,
+          "timestamp": "2026-01-03T15:58:35.731089",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 23,
+          "timestamp": "2026-01-03T15:58:43.248097",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 24,
+          "timestamp": "2026-01-03T15:58:51.173591",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 25,
+          "timestamp": "2026-01-03T15:58:59.295216",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 26,
+          "timestamp": "2026-01-03T15:59:06.785541",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 27,
+          "timestamp": "2026-01-03T15:59:14.511526",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 28,
+          "timestamp": "2026-01-03T15:59:22.107095",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 29,
+          "timestamp": "2026-01-03T15:59:29.994528",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 30,
+          "timestamp": "2026-01-03T15:59:37.415199",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 31,
+          "timestamp": "2026-01-03T15:59:44.898385",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 32,
+          "timestamp": "2026-01-03T15:59:52.538790",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 33,
+          "timestamp": "2026-01-03T16:00:00.082288",
+          "approach": "Session ended without progress",
+          "success": false,
+          "error": "Subtask status is pending"
+        },
+        {
+          "session": 34,
+          "timestamp": "2026-01-03T16:02:51.017999",
+          "approach": "Implemented: Track which workouts have been synced from TrainingPeaks, including last sync time and external work",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
-  "stuck_subtasks": [],
+  "stuck_subtasks": [
+    {
+      "subtask_id": "T017",
+      "reason": "Failed after 3 attempts",
+      "escalated_at": "2026-01-03T15:58:12.308675",
+      "attempt_count": 3
+    }
+  ],
   "metadata": {
     "created_at": "2026-01-03T14:31:22.767041",
-    "last_updated": "2026-01-03T15:00:34.753959"
+    "last_updated": "2026-01-03T16:02:51.017999"
   }
 }
