@@ -30,6 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 use uuid::Uuid;
 
+use super::discovery::CompanionMdnsAdvertiser;
 use super::handlers::handle_request;
 use super::types::{
     CompanionClient, CompanionConfig, CompanionError, CompanionErrorCode, CompanionEvent,
@@ -97,6 +98,8 @@ pub struct CompanionServer {
     server_addr: Arc<RwLock<Option<SocketAddr>>>,
     /// Channel to send commands to the server task.
     command_tx: Arc<RwLock<Option<mpsc::Sender<ServerCommand>>>>,
+    /// mDNS service advertiser for auto-discovery.
+    mdns_advertiser: CompanionMdnsAdvertiser,
 }
 
 impl CompanionServer {
@@ -112,6 +115,7 @@ impl CompanionServer {
             event_tx,
             server_addr: Arc::new(RwLock::new(None)),
             command_tx: Arc::new(RwLock::new(None)),
+            mdns_advertiser: CompanionMdnsAdvertiser::new(),
         }
     }
 
@@ -176,6 +180,11 @@ impl CompanionServer {
         });
 
         tracing::info!("Companion server started on {}", local_addr);
+
+        // Start mDNS advertisement for auto-discovery
+        if let Err(e) = self.mdns_advertiser.start(local_addr.port(), None).await {
+            tracing::warn!("Failed to start mDNS advertisement: {}. Server will still work but won't be auto-discoverable.", e);
+        }
 
         Ok(())
     }
@@ -501,6 +510,11 @@ impl CompanionServer {
             return Ok(()); // Not running
         }
 
+        // Stop mDNS advertisement
+        if let Err(e) = self.mdns_advertiser.stop().await {
+            tracing::warn!("Failed to stop mDNS advertisement: {}", e);
+        }
+
         // Notify all clients of disconnection
         let _ = self.event_tx.send(CompanionEvent::Disconnecting {
             reason: "Server shutting down".to_string(),
@@ -599,6 +613,21 @@ impl CompanionServer {
     /// Get server configuration.
     pub fn config(&self) -> &CompanionConfig {
         &self.config
+    }
+
+    /// Check if mDNS advertisement is active.
+    pub async fn is_mdns_running(&self) -> bool {
+        self.mdns_advertiser.is_running().await
+    }
+
+    /// Get the mDNS service type being advertised.
+    pub fn mdns_service_type(&self) -> &'static str {
+        self.mdns_advertiser.service_type()
+    }
+
+    /// Get the companion protocol version.
+    pub fn protocol_version(&self) -> &'static str {
+        self.mdns_advertiser.protocol_version()
     }
 
     /// Generate a random 6-digit PIN.
