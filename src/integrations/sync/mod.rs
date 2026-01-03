@@ -6,6 +6,7 @@ pub mod garmin;
 pub mod oauth;
 pub mod service;
 pub mod strava;
+pub mod trainingpeaks;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
