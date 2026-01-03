@@ -918,6 +918,475 @@ value_template: "{{ trigger.payload | int }}"
 
 ---
 
+## Tasmota and Smart Plug Integration
+
+This section provides detailed instructions for using Tasmota-flashed devices and other smart plugs to control fans with RustRide. This is one of the most cost-effective ways to add smart fan control to your training setup.
+
+### What is Tasmota?
+
+[Tasmota](https://tasmota.github.io/) is open-source firmware for ESP8266/ESP32-based devices. When flashed onto compatible smart plugs, switches, or dimmers, it enables full local control via MQTT without cloud dependencies.
+
+**Benefits of Tasmota:**
+- No cloud account required - fully local control
+- Native MQTT support with configurable topics
+- Works with most ESP8266/ESP32 smart devices
+- Active community with regular updates
+- Completely free and open source
+
+### Supported Device Types
+
+Tasmota-based fan control works with several device categories:
+
+| Device Type | Fan Control | Speed Control | Best For |
+|-------------|-------------|---------------|----------|
+| **Smart Plug (on/off)** | Yes | No (on/off only) | Simple box fans |
+| **Smart Dimmer Plug** | Yes | Yes (0-100%) | Dimmable fans, LED-controlled fans |
+| **Smart Dimmer Switch** | Yes | Yes (0-100%) | Wall-mounted fans with dimmers |
+| **PWM Controller Module** | Yes | Yes (0-100%) | DIY projects, 12V/24V fans |
+
+### Compatible Devices
+
+The following devices are known to work well with Tasmota for fan control:
+
+**Smart Plugs (On/Off Only):**
+- Sonoff S31 / S31 Lite
+- Sonoff S26
+- Gosund WP3 / WP6
+- Teckin SP10 / SP20
+- KMC Smart Plug
+
+**Dimmer Plugs/Switches (Variable Speed):**
+- Sonoff D1 Dimmer
+- Martin Jerry Dimmer
+- Treatlife Dimmer
+- Zemismart Dimmer
+
+**PWM Controllers:**
+- Sonoff 4CH Pro (for multi-fan setups)
+- Generic ESP8266 modules with MOSFETs
+
+> **Note:** Always verify Tasmota compatibility before purchasing. Check the [Tasmota Device Templates](https://templates.blakadder.com/) database.
+
+### Flashing Tasmota
+
+#### Prerequisites
+
+1. **Compatible device** from the list above (or check templates database)
+2. **USB-to-serial adapter** (CP2102 or CH340 based) - for devices requiring serial flashing
+3. **Tasmota firmware** - download from [tasmota.github.io](https://tasmota.github.io/docs/Download/)
+
+#### Flashing Methods
+
+**Method 1: Tasmota Web Installer (Easiest)**
+
+For newer devices or those with existing Tuya firmware:
+
+1. Open [https://tasmota.github.io/install/](https://tasmota.github.io/install/) in Chrome or Edge
+2. Connect your device via USB (if supported)
+3. Click "Connect" and select your device
+4. Click "Install Tasmota" and wait for completion
+
+**Method 2: Tuya Convert (Over-the-Air)**
+
+For unmodified Tuya-based devices:
+
+1. Set up Tuya Convert on a Raspberry Pi or Linux machine
+2. Put your device in pairing mode (usually long-press the button)
+3. Follow the Tuya Convert prompts to flash Tasmota
+
+> **Warning:** Newer devices may have patched firmware that blocks Tuya Convert.
+
+**Method 3: Serial Flashing (Most Reliable)**
+
+For devices requiring hardware modification:
+
+1. Open the device (void warranty)
+2. Identify TX, RX, GND, 3.3V, and GPIO0 pins
+3. Connect your USB-to-serial adapter:
+   - TX → RX
+   - RX → TX
+   - GND → GND
+   - 3.3V → 3.3V
+4. Ground GPIO0 to enter flash mode
+5. Use [Tasmotizer](https://github.com/tasmota/tasmotizer) to flash
+
+### Configuring Tasmota for RustRide
+
+After flashing, configure your Tasmota device for MQTT control.
+
+#### Step 1: Initial WiFi Setup
+
+1. Connect to the Tasmota device's WiFi access point (e.g., "tasmota-XXXX")
+2. Your device should automatically open a configuration page
+3. Enter your home WiFi credentials
+4. Save and wait for the device to connect to your network
+
+#### Step 2: Find the Device IP
+
+1. Check your router's DHCP client list
+2. Or use a network scanner app
+3. Access the Tasmota web interface at `http://<device-ip>`
+
+#### Step 3: Configure MQTT Settings
+
+In the Tasmota web interface:
+
+1. Go to **Configuration** > **Configure MQTT**
+2. Configure these settings:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **Host** | Your MQTT broker IP | e.g., `192.168.1.100` |
+| **Port** | `1883` | Standard MQTT port |
+| **User** | Your MQTT username | e.g., `rustride` |
+| **Password** | Your MQTT password | Same as broker config |
+| **Topic** | `training_fan` | Unique name for this device |
+| **Full Topic** | `%prefix%/%topic%/` | Leave default |
+
+3. Click **Save**
+4. The device will restart and connect to your MQTT broker
+
+#### Step 4: Verify MQTT Connection
+
+In the Tasmota web console (main page > Console), you should see:
+
+```
+MQT: Connecting to 192.168.1.100:1883...
+MQT: Connected
+```
+
+Test with mosquitto_sub:
+
+```bash
+# Subscribe to all Tasmota messages for your device
+mosquitto_sub -h your-broker -t "stat/training_fan/#" -v
+```
+
+### Configuration by Device Type
+
+#### On/Off Smart Plugs
+
+For simple on/off plugs controlling a regular fan:
+
+**Tasmota Topics:**
+- Command: `cmnd/training_fan/POWER`
+- Status: `stat/training_fan/POWER`
+
+**RustRide Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `cmnd/training_fan/POWER` |
+| **Add /set Suffix** | No |
+| **Payload Format** | Custom |
+
+**Zone Speed Mapping (On/Off Only):**
+
+Since on/off plugs can't vary speed, configure zones to turn fan on/off at a threshold:
+
+| Zone | Speed Setting | Effect |
+|------|---------------|--------|
+| Zone 1 | 0% | Fan OFF |
+| Zone 2 | 0% | Fan OFF |
+| Zone 3 | 100% | Fan ON |
+| Zone 4 | 100% | Fan ON |
+| Zone 5 | 100% | Fan ON |
+| Zone 6 | 100% | Fan ON |
+| Zone 7 | 100% | Fan ON |
+
+**Tasmota Rules (Optional):**
+
+Create a rule to handle numeric payloads:
+
+```
+Rule1 ON Dimmer#Data>0 DO Power 1 ENDON ON Dimmer#Data==0 DO Power 0 ENDON
+Rule1 1
+```
+
+This allows RustRide to send speed values (0-100) and have the plug turn on for any value > 0.
+
+#### Dimmer Plugs and Switches
+
+For dimmers that provide true variable speed control:
+
+**Tasmota Topics:**
+- Command: `cmnd/training_fan/Dimmer`
+- Status: `stat/training_fan/RESULT`
+
+**RustRide Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `cmnd/training_fan/Dimmer` |
+| **Add /set Suffix** | No |
+| **Payload Format** | Speed Only |
+
+**Testing:**
+
+In Tasmota console, test the dimmer:
+
+```
+Dimmer 50
+```
+
+The device should set to 50% brightness/power.
+
+Verify via MQTT:
+
+```bash
+mosquitto_pub -h your-broker -t "cmnd/training_fan/Dimmer" -m "75"
+```
+
+**Zone Speed Mapping (Variable):**
+
+| Zone | Speed | Fan Level |
+|------|-------|-----------|
+| Zone 1 | 0% | Off |
+| Zone 2 | 20% | Gentle breeze |
+| Zone 3 | 40% | Low |
+| Zone 4 | 55% | Medium |
+| Zone 5 | 70% | High |
+| Zone 6 | 85% | Very High |
+| Zone 7 | 100% | Maximum |
+
+#### PWM Controllers
+
+For dedicated PWM fan control (12V/24V fans):
+
+**Tasmota Configuration:**
+
+1. In Tasmota console, configure PWM:
+   ```
+   SetOption15 1
+   ```
+   This enables PWM control via Dimmer commands.
+
+2. Set PWM frequency for smooth fan operation:
+   ```
+   PwmFrequency 25000
+   ```
+   (25kHz is ideal for most PC fans)
+
+**RustRide Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `cmnd/training_fan/Dimmer` |
+| **Add /set Suffix** | No |
+| **Payload Format** | Speed Only |
+
+**Alternative: Direct PWM Control**
+
+For more granular control:
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `cmnd/training_fan/PWM1` |
+| **Add /set Suffix** | No |
+| **Payload Format** | Speed Only |
+
+PWM values 0-1023 correspond to 0-100% duty cycle.
+
+### Alternative: Shelly Devices
+
+Shelly devices offer another excellent option for smart fan control. They come with built-in MQTT support without requiring reflashing.
+
+#### Shelly Plug S / Shelly Plug US
+
+**Enable MQTT:**
+
+1. Access Shelly web interface at device IP
+2. Go to **Internet & Security** > **Advanced - Developer Settings**
+3. Enable **MQTT**
+4. Configure broker settings:
+   - Server: `your-broker-ip:1883`
+   - Username/Password: Your MQTT credentials
+
+**RustRide Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `shellies/shellyplug-s-XXXXXX/relay/0/command` |
+| **Add /set Suffix** | No |
+| **Payload Format** | Custom |
+
+**Payload mapping:**
+- `on` = Turn on
+- `off` = Turn off
+
+> **Note:** Basic Shelly plugs only support on/off control. Use Shelly Dimmer for variable speed.
+
+#### Shelly Dimmer 2
+
+For variable speed fan control:
+
+**RustRide Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `shellies/shellydimmer2-XXXXXX/light/0/set` |
+| **Add /set Suffix** | No |
+| **Payload Format** | JSON Speed + On/Off |
+
+**Payload format:**
+```json
+{"brightness": 75, "turn": "on"}
+```
+
+### Alternative: Tuya/Smart Life Devices with LocalTuya
+
+If you have Tuya devices and don't want to flash custom firmware, you can use LocalTuya integration with Home Assistant to bridge to MQTT.
+
+**Setup Steps:**
+
+1. Install LocalTuya in Home Assistant
+2. Add your Tuya devices locally (requires device ID and local key)
+3. Create MQTT automation in Home Assistant (see Home Assistant section)
+4. Configure RustRide to send commands through Home Assistant
+
+### Multi-Fan Setups with Tasmota
+
+For controlling multiple fans with a single Tasmota device:
+
+#### Sonoff 4CH Pro Setup
+
+Control up to 4 fans independently:
+
+**Topics for each channel:**
+- Fan 1: `cmnd/training_fans/POWER1`
+- Fan 2: `cmnd/training_fans/POWER2`
+- Fan 3: `cmnd/training_fans/POWER3`
+- Fan 4: `cmnd/training_fans/POWER4`
+
+**RustRide Configuration:**
+
+Create a separate fan profile for each fan, with different zones triggering different channels:
+
+**Profile: "Main Fan"**
+- Topic: `cmnd/training_fans/POWER1`
+
+**Profile: "Secondary Fan"**
+- Topic: `cmnd/training_fans/POWER2`
+
+**Tasmota Rule for Synchronized Control:**
+
+To control all fans together with one command:
+
+```
+Rule1 ON Dimmer#Data DO Backlog Power1 %value% ; Power2 %value% ; Power3 %value% ENDON
+Rule1 1
+```
+
+### Tasmota Console Commands Reference
+
+Useful Tasmota commands for fan control setup:
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `Status` | Show device status | `Status` |
+| `Status 5` | Show network status | `Status 5` |
+| `Status 6` | Show MQTT status | `Status 6` |
+| `Power` | Toggle power | `Power` |
+| `Power ON` | Turn on | `Power ON` |
+| `Power OFF` | Turn off | `Power OFF` |
+| `Dimmer` | Show current dimmer level | `Dimmer` |
+| `Dimmer 50` | Set dimmer to 50% | `Dimmer 50` |
+| `Topic` | Show current topic | `Topic` |
+| `Topic newtopic` | Set new topic | `Topic training_fan` |
+| `Restart 1` | Restart device | `Restart 1` |
+
+### Troubleshooting Tasmota Integration
+
+#### Device Not Connecting to MQTT
+
+1. **Check WiFi connection:**
+   ```
+   Status 5
+   ```
+   Verify the device has an IP address.
+
+2. **Check MQTT configuration:**
+   ```
+   Status 6
+   ```
+   Look for "MQTT Connected" status.
+
+3. **Verify broker address:**
+   - Ensure the broker IP is reachable from the device
+   - Try using the broker's hostname vs. IP
+
+4. **Check credentials:**
+   - Verify username and password match your broker configuration
+   - Check Mosquitto logs for authentication failures
+
+#### Fan Not Responding to Commands
+
+1. **Test directly in Tasmota console:**
+   ```
+   Dimmer 50
+   ```
+   If the device responds, the issue is MQTT configuration.
+
+2. **Monitor MQTT traffic:**
+   ```bash
+   mosquitto_sub -h your-broker -t "cmnd/training_fan/#" -v
+   ```
+   Verify messages are being received.
+
+3. **Check topic spelling:**
+   - Topics are case-sensitive
+   - No trailing slashes
+
+4. **Verify payload format:**
+   - Tasmota expects numeric values for Dimmer (0-100)
+   - Use "Speed Only" payload format in RustRide
+
+#### Dimmer Not Working (Always On/Off)
+
+1. **Verify device supports dimming:**
+   - Some devices are relay-only (on/off)
+   - Check the Tasmota template for your device
+
+2. **Enable dimmer functionality:**
+   ```
+   SetOption15 1
+   ```
+
+3. **Check minimum brightness:**
+   - Some devices have a minimum dimmer level
+   - Try setting a minimum zone speed of 10-15%
+
+#### WiFi Disconnection Issues
+
+1. **Enable WiFi fast reconnect:**
+   ```
+   SetOption56 1
+   ```
+
+2. **Set a static IP:**
+   In Tasmota web UI: Configuration > Configure WiFi > Static IP
+
+3. **Check WiFi signal strength:**
+   ```
+   Status 5
+   ```
+   Look for RSSI value (should be > -70 dBm)
+
+#### Device Reboots or Crashes
+
+1. **Check power supply:**
+   - Ensure adequate power for your device
+   - Some fans draw significant startup current
+
+2. **Update Tasmota firmware:**
+   - Check for latest stable release
+   - Use OTA update in web UI
+
+3. **Check for overcurrent:**
+   - Verify your fan's power draw is within device limits
+
+---
+
 ## Advanced: Custom Fan Devices
 
 ### DIY ESP8266/ESP32 Fan Controller
