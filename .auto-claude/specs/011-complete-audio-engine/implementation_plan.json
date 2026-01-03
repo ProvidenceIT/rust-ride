@@ -1,0 +1,432 @@
+{
+  "feature": "Complete Audio Engine",
+  "description": "Finish the audio engine implementation using rodio for sound effects, audio cues, and background audio during rides. Includes countdown sounds, achievement chimes, and optional workout music playback.",
+  "created_at": "2026-01-03T05:14:12.855Z",
+  "updated_at": "2026-01-03T06:11:25.070Z",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Core Rodio Integration",
+      "description": "Implement the core rodio audio playback functionality in the AudioEngine, including sound file loading and tone generation integration.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Implement RodioAudioBackend for sound file playback",
+          "description": "Create a RodioAudioBackend struct that manages the rodio OutputStream and Sink. Implement methods for loading and playing WAV/MP3 sound files from the assets/sounds directory. Handle audio device initialization with proper error recovery.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "RodioAudioBackend initializes rodio OutputStream on creation",
+            "Can load WAV and MP3 files from disk",
+            "Plays sounds without blocking the main thread",
+            "Handles missing audio device gracefully with error logging"
+          ],
+          "files": [
+            "src/audio/backend.rs",
+            "src/audio/mod.rs"
+          ],
+          "estimated_effort": "medium",
+          "notes": "Implemented RodioAudioBackend in src/audio/backend.rs with: OutputStream/Sink management, WAV/MP3 loading, sound caching, non-blocking playback, volume control, mute functionality, and graceful error recovery for missing audio devices. Created assets/sounds directory structure. Exported types from mod.rs.",
+          "updated_at": "2026-01-03T05:36:03.087094+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Integrate ToneGenerator with AudioEngine",
+          "description": "Connect the existing ToneGenerator to the DefaultAudioEngine so that play_tone() actually produces audio output. Replace the TODO stub with actual tone generation using the existing tones.rs implementation.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "play_tone() produces audible sine wave output",
+            "Volume from AudioConfig is applied to tones",
+            "Tones can be interrupted by higher-priority audio"
+          ],
+          "files": [
+            "src/audio/engine.rs"
+          ],
+          "estimated_effort": "small",
+          "notes": "Connected RodioAudioBackend to DefaultAudioEngine so play_tone() produces actual audio output. Implemented: play_tone() with rodio SineWave, volume propagation from AudioConfig, mute state handling, backend initialization in initialize(), stop_all() integration, audio_backend() accessor, AudioItem::tone() helper. Added comprehensive tests for backend integration.",
+          "updated_at": "2026-01-03T05:42:11.236989+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Implement sound file loading and caching in AudioEngine",
+          "description": "Replace the play_sound() TODO stub with actual implementation. Load sound files on-demand from assets/sounds/, cache decoded audio in memory for fast replay. Support named sound effects like 'countdown_tick', 'achievement_chime', etc.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "play_sound('name') loads and plays corresponding audio file",
+            "Sound files are cached after first load",
+            "Volume controls affect sound playback",
+            "Unknown sound names log warning and don't crash"
+          ],
+          "files": [
+            "src/audio/engine.rs",
+            "src/audio/sounds.rs"
+          ],
+          "estimated_effort": "medium",
+          "notes": "Replaced play_sound() TODO stub with actual backend integration. play_sound('name') now loads and plays corresponding audio files via RodioAudioBackend. Sound files are cached after first load. Volume controls affect sound playback. Unknown sound names log a warning and don't crash. Uses spawn_blocking for non-blocking async playback. Added unit tests for sound audio items and sound effects configuration.",
+          "updated_at": "2026-01-03T05:45:25.696943+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Create sound asset definitions and placeholder files",
+          "description": "Define the sound asset catalog (countdown_tick, interval_change, achievement_bronze/silver/gold, workout_start, workout_complete, etc.). Create the assets/sounds directory structure. Generate placeholder tone-based sounds programmatically if no real audio files are available.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "assets/sounds/ directory exists with sound file definitions",
+            "SoundAssets enum/struct lists all available sounds",
+            "Sound catalog includes at least: countdown ticks, achievement chimes, interval alerts",
+            "Fallback to generated tones if audio files missing"
+          ],
+          "files": [
+            "src/audio/sounds.rs",
+            "assets/sounds/.gitkeep"
+          ],
+          "estimated_effort": "medium",
+          "notes": "Created comprehensive sound asset catalog with: SoundAsset enum (31 sounds in 8 categories - Countdown, Interval, Achievement, Milestone, Workout, Zone, Alert, Connection), SoundCategory enum for grouping, SoundDefinition struct with metadata (description, critical flag, volume multiplier), SoundCatalog API for querying sounds, fallback tone sequences for all sounds when audio files missing, achievement tones with increasing complexity by tier, countdown tones with increasing urgency (pitch). Updated assets/sounds/.gitkeep with complete documentation of expected sound files.",
+          "updated_at": "2026-01-03T05:51:27.714843+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Countdown Sound System",
+      "description": "Implement the interval countdown audio cues with configurable countdown thresholds and sound patterns.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Add countdown tone patterns to CuePattern",
+          "description": "Extend the CuePattern enum with countdown-specific patterns: countdown ticks for 10/5/3/2/1 seconds, distinct patterns for the final 3-2-1 countdown. Configure frequency and duration for clear audio feedback.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "CuePattern has countdown variants (CountdownTick, CountdownFinal3, etc.)",
+            "Each countdown second has a distinct but consistent sound",
+            "Final 3-2-1 countdown has escalating urgency",
+            "Countdown sounds are short (<200ms) to not overlap with speech"
+          ],
+          "files": [
+            "src/audio/tones.rs"
+          ],
+          "estimated_effort": "small",
+          "notes": "Extended CuePattern enum with 5 countdown-specific patterns: CountdownTick10 (G4, 60ms), CountdownTick5 (A4, 80ms), CountdownFinal3 (B4, 100ms), CountdownFinal2 (C5, 120ms double-beep), CountdownFinal1 (D5, 150ms triple-beep). Added escalating frequencies (G4→D5) and durations for urgency. All patterns under 200ms. Added helper methods: for_countdown_seconds(), is_countdown_pattern(), is_final_countdown(). Comprehensive unit tests verify distinct sounds, duration limits, and escalating frequencies.",
+          "updated_at": "2026-01-03T05:55:42.511101+00:00"
+        },
+        {
+          "id": "2.2",
+          "title": "Implement countdown audio trigger in WorkoutAudioBridge",
+          "description": "Enhance the IntervalCountdown event handling in WorkoutAudioBridge to trigger appropriate countdown sounds. Use tone patterns for countdown ticks and optionally voice for larger numbers (10 seconds, 5 seconds).",
+          "status": "completed",
+          "acceptance_criteria": [
+            "IntervalCountdown events trigger countdown sounds",
+            "Voice announcement for 10s and 5s remaining",
+            "Tone-only for final 3-2-1",
+            "Configuration option to disable countdown sounds"
+          ],
+          "files": [
+            "src/audio/workout_bridge.rs"
+          ],
+          "estimated_effort": "small",
+          "notes": "Enhanced WorkoutAudioBridge with AudioEngine parameter for countdown tone playback. Implemented differentiated countdown handling: 10s/5s get voice+tone, 3s/2s/1s get tone-only (using CuePattern::for_countdown_seconds() from 2.1). Added countdown_sounds_enabled and countdown_voice_enabled config options. Added handle_countdown() and play_countdown_tone() methods. Updated all tests with MockAudioEngine and added new countdown-specific tests.",
+          "updated_at": "2026-01-03T06:03:52.783079+00:00"
+        },
+        {
+          "id": "2.3",
+          "title": "Add countdown sound configuration options",
+          "description": "Extend AudioConfig and WorkoutAudioBridgeConfig with countdown-specific settings: enable/disable countdown sounds, countdown thresholds (which seconds to announce), volume level for countdown vs speech.",
+          "status": "completed",
+          "acceptance_criteria": [
+            "countdown_enabled config option",
+            "countdown_thresholds configurable (default: [10, 5, 3, 2, 1])",
+            "countdown_volume separate from master volume",
+            "Settings persist to user configuration"
+          ],
+          "files": [
+            "src/audio/mod.rs",
+            "src/audio/workout_bridge.rs"
+          ],
+          "estimated_effort": "small",
+          "notes": "Extended AudioConfig and WorkoutAudioBridgeConfig with countdown-specific settings:\\n\\nAudioConfig additions:\\n- countdown_enabled: bool (default: true) - Master enable for countdown sounds\\n- countdown_volume: u8 (default: 100) - Separate volume level for countdown audio\\n\\nWorkoutAudioBridgeConfig additions:\\n- countdown_thresholds: Vec<u32> (default: [10, 5, 3, 2, 1]) - Which seconds to announce\\n- countdown_voice_thresholds: Vec<u32> (default: [10, 5]) - Subset that receive voice announcements\\n\\nUpdated handle_countdown() to use configurable thresholds dynamically instead of hardcoded match arms. Added serde Serialize/Deserialize with defaults for backward compatibility. Added comprehensive tests for new options and serialization.",
+          "updated_at": "2026-01-03T06:10:33.193920+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Achievement and Milestone Audio",
+      "description": "Connect the achievement notification system to audio playback for celebratory feedback.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Create achievement chime patterns by tier",
+          "description": "Define CuePatterns for achievement unlocks with variation by tier: Bronze (simple chime), Silver (richer harmony), Gold (triumphant fanfare), Platinum (epic celebration). Also create patterns for level-up notifications.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "CuePattern::AchievementBronze, Silver, Gold, Platinum exist",
+            "CuePattern::LevelUp exists",
+            "Each tier has progressively more impressive sound",
+            "Sounds are satisfying but not annoying on repeated plays"
+          ],
+          "files": [
+            "src/audio/tones.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "3.2",
+          "title": "Create AchievementAudioBridge",
+          "description": "Create a bridge component that monitors the NotificationQueue from the achievements module and triggers appropriate audio (chime + optional voice announcement). Handle concurrent achievements gracefully.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "New achievement notifications trigger tier-appropriate chime",
+            "Optional voice announcement ('Achievement unlocked: [name]')",
+            "Multiple rapid achievements queue audio properly",
+            "Level-up notifications have distinct celebration sound"
+          ],
+          "files": [
+            "src/audio/achievement_bridge.rs",
+            "src/audio/mod.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "3.3",
+          "title": "Add milestone celebration sounds",
+          "description": "Implement audio feedback for distance/time/calorie milestones. Create distinct but subtle sounds for milestone achievements to provide feedback without being intrusive during the ride.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Distance milestones (5km, 10km, etc.) trigger subtle chime",
+            "Time milestones (15min, 30min, etc.) trigger feedback",
+            "Personal records have celebratory sound",
+            "Milestone sounds configurable (enable/disable by type)"
+          ],
+          "files": [
+            "src/audio/tones.rs",
+            "src/audio/alerts.rs"
+          ],
+          "estimated_effort": "small"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Volume Control and Audio Settings",
+      "description": "Implement comprehensive volume control with separate levels for different audio types.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Implement per-category volume controls",
+          "description": "Extend AudioConfig with separate volume levels for: master, voice/TTS, sound effects, countdown tones, achievement sounds. Implement volume mixing in the audio backend.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Master volume affects all audio",
+            "Separate volume for voice, effects, and tones",
+            "Volume changes apply immediately to playing audio",
+            "Volume levels persist in user settings"
+          ],
+          "files": [
+            "src/audio/mod.rs",
+            "src/audio/engine.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "4.2",
+          "title": "Add mute functionality with quick toggle",
+          "description": "Implement mute/unmute functionality that can be triggered quickly during a ride. Maintain separate mute states for different audio categories if desired.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Global mute toggle available",
+            "Mute state persists across audio items in queue",
+            "Unmuting resumes at previous volume",
+            "Visual indicator when audio is muted"
+          ],
+          "files": [
+            "src/audio/engine.rs",
+            "src/audio/mod.rs"
+          ],
+          "estimated_effort": "small"
+        },
+        {
+          "id": "4.3",
+          "title": "Create audio settings UI panel",
+          "description": "Add an audio settings section to the settings UI with sliders for each volume category, toggles for audio features (countdown sounds, achievement chimes, voice announcements), and test buttons to preview sounds.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Volume sliders for master/voice/effects categories",
+            "Toggles for countdown, achievement, voice features",
+            "Test buttons to preview each sound type",
+            "Settings save automatically on change"
+          ],
+          "files": [
+            "src/ui/settings/audio_settings.rs",
+            "src/ui/settings/mod.rs"
+          ],
+          "estimated_effort": "medium"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Platform Reliability and Testing",
+      "description": "Ensure audio engine works reliably across all supported platforms with proper error handling and comprehensive tests.",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Implement platform-specific audio initialization",
+          "description": "Handle audio device initialization differences across Windows, macOS, and Linux. Implement fallback behavior when audio devices are unavailable. Add audio device hot-plug support where possible.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Audio initializes correctly on Windows/macOS/Linux",
+            "Graceful fallback when no audio device present",
+            "Error messages suggest platform-specific fixes",
+            "Can recover when audio device becomes available"
+          ],
+          "files": [
+            "src/audio/backend.rs",
+            "src/audio/engine.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "5.2",
+          "title": "Add audio synchronization safeguards",
+          "description": "Implement timing safeguards to prevent audio lag, overlap, and desync issues. Add audio item expiration to drop stale queued audio. Ensure countdown sounds stay synchronized with workout timing.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Audio queue items expire after max_queue_time",
+            "High-priority audio interrupts lower priority cleanly",
+            "No audio pileup when events come faster than playback",
+            "Countdown sounds play at correct timing relative to interval changes"
+          ],
+          "files": [
+            "src/audio/engine.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "5.3",
+          "title": "Create comprehensive audio integration tests",
+          "description": "Write integration tests that verify the complete audio pipeline from workout events through to tone generation. Create mock audio backend for CI testing without actual audio output.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Tests for WorkoutAudioBridge event processing",
+            "Tests for AchievementAudioBridge notifications",
+            "Tests for volume control and muting",
+            "Tests for audio queue priority and expiration",
+            "CI-compatible mock backend tests"
+          ],
+          "files": [
+            "tests/integration/audio_integration_test.rs"
+          ],
+          "estimated_effort": "medium"
+        },
+        {
+          "id": "5.4",
+          "title": "Document audio system and create examples",
+          "description": "Write documentation for the audio module explaining configuration options, extending the system with new sounds, and troubleshooting common issues. Create example code for common audio scenarios.",
+          "status": "pending",
+          "acceptance_criteria": [
+            "Module-level documentation in src/audio/mod.rs",
+            "Configuration guide for audio settings",
+            "Troubleshooting guide for platform-specific issues",
+            "Example code for triggering custom audio alerts"
+          ],
+          "files": [
+            "src/audio/mod.rs",
+            "docs/audio.md"
+          ],
+          "estimated_effort": "small"
+        }
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "ac-1",
+      "description": "Countdown sounds play before interval changes",
+      "phases": [
+        "phase-2"
+      ]
+    },
+    {
+      "id": "ac-2",
+      "description": "Achievement and milestone chimes work",
+      "phases": [
+        "phase-3"
+      ]
+    },
+    {
+      "id": "ac-3",
+      "description": "Audio volume controls function correctly",
+      "phases": [
+        "phase-4"
+      ]
+    },
+    {
+      "id": "ac-4",
+      "description": "Audio engine initializes reliably on all platforms",
+      "phases": [
+        "phase-1",
+        "phase-5"
+      ]
+    },
+    {
+      "id": "ac-5",
+      "description": "No audio lag or synchronization issues",
+      "phases": [
+        "phase-5"
+      ]
+    }
+  ],
+  "dependencies": {
+    "external": [
+      {
+        "name": "rodio",
+        "version": "0.17",
+        "purpose": "Audio playback for sound effects and tones",
+        "already_in_cargo": true
+      },
+      {
+        "name": "tts",
+        "version": "0.26",
+        "purpose": "Text-to-speech for voice announcements",
+        "already_in_cargo": true
+      }
+    ],
+    "internal": [
+      {
+        "module": "achievements",
+        "dependency": "NotificationQueue for achievement audio bridge"
+      },
+      {
+        "module": "workouts",
+        "dependency": "WorkoutEvent for workout audio bridge"
+      }
+    ]
+  },
+  "risks": [
+    {
+      "description": "Audio device may not be available on all systems (especially CI/headless)",
+      "mitigation": "Implement graceful fallback with error logging, mock backend for tests"
+    },
+    {
+      "description": "TTS may have platform-specific issues (Linux requires speech-dispatcher)",
+      "mitigation": "Already handled in existing ThreadSafeTtsProvider with platform hints"
+    },
+    {
+      "description": "Audio timing may drift during long workouts",
+      "mitigation": "Use audio queue expiration and priority system to keep audio fresh"
+    }
+  ],
+  "notes": [
+    "Existing implementation has TTS, ToneGenerator, and AlertManager largely complete",
+    "Main gaps are actual rodio sound file playback and achievement audio integration",
+    "ToneGenerator already uses rodio for sine wave generation - this can be extended",
+    "AudioEngine has the structure but TODOs in play_sound() and play_tone() methods"
+  ],
+  "last_updated": "2026-01-03T06:10:33.193920+00:00"
+}

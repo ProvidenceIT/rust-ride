@@ -1,0 +1,34 @@
+{
+  "project_root": "C:\\sourcecode\\rust-ride",
+  "project_type": "single",
+  "services": {
+    "main": {
+      "name": "main",
+      "path": "C:\\sourcecode\\rust-ride",
+      "language": "Rust",
+      "framework": null,
+      "type": "unknown",
+      "package_manager": "cargo",
+      "key_directories": {
+        "src": {
+          "path": "src",
+          "purpose": "Source code"
+        },
+        "tests": {
+          "path": "tests",
+          "purpose": "Tests"
+        }
+      },
+      "entry_point": "src/main.rs",
+      "test_directory": "tests"
+    }
+  },
+  "infrastructure": {
+    "ci": "GitHub Actions",
+    "ci_workflows": [
+      "ci.yml",
+      "release.yml"
+    ]
+  },
+  "conventions": {}
+}

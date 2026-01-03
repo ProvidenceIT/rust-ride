@@ -1,0 +1,8 @@
+{
+  "feature": "Complete MQTT Smart Fan Control",
+  "description": "# Complete MQTT Smart Fan Control\n\nFinish the MQTT client implementation for smart fan integration. Fans should automatically adjust speed based on power output, heart rate, or manual control.\n\n## Rationale\nSmart fan integration improves training comfort and is a differentiating feature for a comprehensive training setup. Most competitors don't offer this level of home automation integration.\n\n## User Stories\n- As a cyclist, I want my smart fan to speed up when I'm working hard so that I stay cool without manual adjustment\n- As a user with home automation, I want MQTT integration so that RustRide works with my existing setup\n\n## Acceptance Criteria\n- [ ] MQTT connection to broker works reliably\n- [ ] Fan speed adjusts based on configured trigger (power/HR)\n- [ ] Manual fan control override available\n- [ ] Reconnection on connection loss\n- [ ] Clear setup documentation for common smart fan setups\n",
+  "created_at": "2026-01-03T05:14:14.624Z",
+  "updated_at": "2026-01-03T05:14:14.624Z",
+  "status": "pending",
+  "phases": []
+}

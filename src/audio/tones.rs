@@ -26,6 +26,66 @@ pub mod frequencies {
     pub const SUCCESS: f32 = 1046.50; // C6
     /// Error tone for issues
     pub const ERROR: f32 = 220.00; // A3
+
+    // Countdown-specific frequencies with escalating urgency
+    /// Countdown tick at 10 seconds - gentle reminder (G4)
+    pub const COUNTDOWN_10: f32 = 392.00; // G4
+    /// Countdown tick at 5 seconds - attention (A4)
+    pub const COUNTDOWN_5: f32 = 440.00; // A4
+    /// Final countdown 3 seconds - preparation (B4)
+    pub const COUNTDOWN_3: f32 = 493.88; // B4
+    /// Final countdown 2 seconds - alert (C5)
+    pub const COUNTDOWN_2: f32 = 523.25; // C5
+    /// Final countdown 1 second - urgent (D5)
+    pub const COUNTDOWN_1: f32 = 587.33; // D5
+
+    // Achievement-specific frequencies for tiered celebration
+    // Each tier uses progressively higher and richer frequency combinations
+    /// Bronze achievement base tone (E4) - simple, modest
+    pub const ACHIEVEMENT_BRONZE: f32 = 329.63; // E4
+    /// Silver achievement base tone (G4) - brighter
+    pub const ACHIEVEMENT_SILVER_BASE: f32 = 392.00; // G4
+    /// Silver achievement higher tone (B4)
+    pub const ACHIEVEMENT_SILVER_HIGH: f32 = 493.88; // B4
+    /// Gold achievement base tone (C5) - triumphant
+    pub const ACHIEVEMENT_GOLD_BASE: f32 = 523.25; // C5
+    /// Gold achievement mid tone (E5)
+    pub const ACHIEVEMENT_GOLD_MID: f32 = 659.25; // E5
+    /// Gold achievement high tone (G5) - fanfare peak
+    pub const ACHIEVEMENT_GOLD_HIGH: f32 = 783.99; // G5
+    /// Platinum achievement base tone (G5) - epic
+    pub const ACHIEVEMENT_PLATINUM_BASE: f32 = 783.99; // G5
+    /// Platinum achievement high tone (B5)
+    pub const ACHIEVEMENT_PLATINUM_HIGH: f32 = 987.77; // B5
+    /// Platinum achievement peak tone (D6) - soaring celebration
+    pub const ACHIEVEMENT_PLATINUM_PEAK: f32 = 1174.66; // D6
+    /// Level-up base tone (D5)
+    pub const LEVEL_UP_BASE: f32 = 587.33; // D5
+    /// Level-up mid tone (F#5)
+    pub const LEVEL_UP_MID: f32 = 739.99; // F#5
+    /// Level-up high tone (A5) - ascending progression
+    pub const LEVEL_UP_HIGH: f32 = 880.00; // A5
+
+    // Milestone-specific frequencies - subtle, non-intrusive
+    // These are designed to be noticeable but not distracting during intense efforts
+    /// Distance milestone base tone (A4) - gentle notification
+    pub const MILESTONE_DISTANCE: f32 = 440.00; // A4
+    /// Distance milestone accent tone (C#5)
+    pub const MILESTONE_DISTANCE_ACCENT: f32 = 554.37; // C#5
+    /// Time milestone base tone (B4) - clock-like
+    pub const MILESTONE_TIME: f32 = 493.88; // B4
+    /// Time milestone accent tone (D5)
+    pub const MILESTONE_TIME_ACCENT: f32 = 587.33; // D5
+    /// Calorie milestone tone (E5) - energetic
+    pub const MILESTONE_CALORIES: f32 = 659.25; // E5
+    /// Calorie milestone accent (G5)
+    pub const MILESTONE_CALORIES_ACCENT: f32 = 783.99; // G5
+    /// Personal record base tone (F#5) - triumphant
+    pub const PERSONAL_RECORD_BASE: f32 = 739.99; // F#5
+    /// Personal record mid tone (A5)
+    pub const PERSONAL_RECORD_MID: f32 = 880.00; // A5
+    /// Personal record peak tone (C#6) - celebratory peak
+    pub const PERSONAL_RECORD_PEAK: f32 = 1108.73; // C#6
 }
 
 /// T078: Standard tone durations in milliseconds.
@@ -40,6 +100,58 @@ pub mod durations {
     pub const LONG: u64 = 500;
     /// Very long tone (1000ms)
     pub const VERY_LONG: u64 = 1000;
+
+    // Countdown-specific durations (all under 200ms to not overlap with speech)
+    /// Countdown tick at 10 seconds - brief (60ms)
+    pub const COUNTDOWN_TICK_10: u64 = 60;
+    /// Countdown tick at 5 seconds - slightly longer (80ms)
+    pub const COUNTDOWN_TICK_5: u64 = 80;
+    /// Final countdown 3 seconds (100ms)
+    pub const COUNTDOWN_FINAL_3: u64 = 100;
+    /// Final countdown 2 seconds (120ms)
+    pub const COUNTDOWN_FINAL_2: u64 = 120;
+    /// Final countdown 1 second - most impactful (150ms)
+    pub const COUNTDOWN_FINAL_1: u64 = 150;
+
+    // Achievement-specific durations (progressively longer for higher tiers)
+    // These are designed to be satisfying but not annoying on repeated plays
+    /// Bronze achievement tone duration (150ms) - simple chime
+    pub const ACHIEVEMENT_BRONZE: u64 = 150;
+    /// Silver achievement note duration (120ms) - two-note harmony
+    pub const ACHIEVEMENT_SILVER_NOTE: u64 = 120;
+    /// Gold achievement note duration (100ms) - three-note fanfare
+    pub const ACHIEVEMENT_GOLD_NOTE: u64 = 100;
+    /// Gold achievement final note duration (250ms) - triumphant ending
+    pub const ACHIEVEMENT_GOLD_FINAL: u64 = 250;
+    /// Platinum achievement note duration (80ms) - rapid epic celebration
+    pub const ACHIEVEMENT_PLATINUM_NOTE: u64 = 80;
+    /// Platinum achievement sustain duration (150ms) - harmonic sustain
+    pub const ACHIEVEMENT_PLATINUM_SUSTAIN: u64 = 150;
+    /// Platinum achievement finale duration (350ms) - epic conclusion
+    pub const ACHIEVEMENT_PLATINUM_FINALE: u64 = 350;
+    /// Level-up note duration (100ms)
+    pub const LEVEL_UP_NOTE: u64 = 100;
+    /// Level-up final note duration (200ms) - ascending completion
+    pub const LEVEL_UP_FINAL: u64 = 200;
+    /// Standard pause between achievement notes (40ms)
+    pub const ACHIEVEMENT_PAUSE: u64 = 40;
+    /// Short pause between quick notes (25ms)
+    pub const ACHIEVEMENT_PAUSE_SHORT: u64 = 25;
+
+    // Milestone-specific durations - subtle and non-intrusive
+    // Shorter than achievement sounds to avoid interrupting workout focus
+    /// Distance milestone note duration (100ms) - gentle two-note chime
+    pub const MILESTONE_DISTANCE_NOTE: u64 = 100;
+    /// Time milestone note duration (80ms) - clock-like tick
+    pub const MILESTONE_TIME_NOTE: u64 = 80;
+    /// Calorie milestone note duration (90ms)
+    pub const MILESTONE_CALORIE_NOTE: u64 = 90;
+    /// Personal record note duration (100ms) - more celebratory
+    pub const PERSONAL_RECORD_NOTE: u64 = 100;
+    /// Personal record finale duration (200ms) - triumphant ending
+    pub const PERSONAL_RECORD_FINALE: u64 = 200;
+    /// Milestone pause between notes (30ms)
+    pub const MILESTONE_PAUSE: u64 = 30;
 }
 
 /// T078: Predefined cue patterns.
@@ -63,8 +175,43 @@ pub enum CuePattern {
     Success,
     /// Error tone
     Error,
-    /// Countdown tick
+    /// Generic countdown tick (legacy, use specific countdown patterns for new code)
     CountdownTick,
+
+    // Countdown-specific patterns with escalating urgency
+    /// Countdown tick at 10 seconds - gentle reminder
+    CountdownTick10,
+    /// Countdown tick at 5 seconds - attention
+    CountdownTick5,
+    /// Final countdown 3 seconds - preparation begins
+    CountdownFinal3,
+    /// Final countdown 2 seconds - almost there
+    CountdownFinal2,
+    /// Final countdown 1 second - imminent transition
+    CountdownFinal1,
+
+    // Achievement patterns by tier - progressively more impressive
+    /// Bronze achievement - simple chime (single tone)
+    AchievementBronze,
+    /// Silver achievement - richer harmony (two-tone ascending)
+    AchievementSilver,
+    /// Gold achievement - triumphant fanfare (three-tone ascending progression)
+    AchievementGold,
+    /// Platinum achievement - epic celebration (multi-note with harmonic buildup)
+    AchievementPlatinum,
+    /// Level-up notification - distinct ascending progression
+    LevelUp,
+
+    // Milestone patterns - subtle, non-intrusive feedback
+    // Designed to be noticeable but not distracting during intense workout efforts
+    /// Distance milestone (5km, 10km, etc.) - gentle two-note chime
+    MilestoneDistance,
+    /// Time milestone (15min, 30min, 1hr) - clock-like subtle tick
+    MilestoneTime,
+    /// Calorie milestone (100, 250, 500, etc.) - energetic but subtle
+    MilestoneCalories,
+    /// Personal record achieved - celebratory ascending fanfare
+    PersonalRecord,
 }
 
 impl CuePattern {
@@ -128,12 +275,343 @@ impl CuePattern {
             CuePattern::Error => vec![Tone::new(frequencies::ERROR, durations::LONG)],
 
             CuePattern::CountdownTick => vec![Tone::new(frequencies::MEDIUM, durations::BEEP)],
+
+            // Countdown-specific patterns with escalating urgency
+            // Each pattern has a distinct frequency and duration for clear differentiation
+            CuePattern::CountdownTick10 => vec![
+                Tone::new(frequencies::COUNTDOWN_10, durations::COUNTDOWN_TICK_10),
+            ],
+
+            CuePattern::CountdownTick5 => vec![
+                Tone::new(frequencies::COUNTDOWN_5, durations::COUNTDOWN_TICK_5),
+            ],
+
+            // Final countdown patterns have double-tone patterns for increased urgency
+            CuePattern::CountdownFinal3 => vec![
+                Tone::new(frequencies::COUNTDOWN_3, durations::COUNTDOWN_FINAL_3),
+            ],
+
+            CuePattern::CountdownFinal2 => vec![
+                Tone::new(frequencies::COUNTDOWN_2, durations::COUNTDOWN_FINAL_2 / 2),
+                Tone::pause(20),
+                Tone::new(frequencies::COUNTDOWN_2, durations::COUNTDOWN_FINAL_2 / 2),
+            ],
+
+            CuePattern::CountdownFinal1 => vec![
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+                Tone::pause(15),
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+                Tone::pause(15),
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+            ],
+
+            // Achievement patterns by tier - progressively more impressive sounds
+            // Bronze: Simple, modest single-tone chime - satisfying but understated
+            CuePattern::AchievementBronze => vec![
+                Tone::new(frequencies::ACHIEVEMENT_BRONZE, durations::ACHIEVEMENT_BRONZE),
+            ],
+
+            // Silver: Two-tone ascending harmony - brighter and more rewarding
+            CuePattern::AchievementSilver => vec![
+                Tone::new(
+                    frequencies::ACHIEVEMENT_SILVER_BASE,
+                    durations::ACHIEVEMENT_SILVER_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_SILVER_HIGH,
+                    durations::ACHIEVEMENT_SILVER_NOTE + 30, // Slightly longer second note
+                ),
+            ],
+
+            // Gold: Triumphant three-note fanfare - ascending progression with emphasis
+            CuePattern::AchievementGold => vec![
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_BASE,
+                    durations::ACHIEVEMENT_GOLD_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_MID,
+                    durations::ACHIEVEMENT_GOLD_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_HIGH,
+                    durations::ACHIEVEMENT_GOLD_FINAL,
+                ),
+            ],
+
+            // Platinum: Epic celebration - rapid buildup followed by harmonic sustain
+            CuePattern::AchievementPlatinum => vec![
+                // Quick ascending buildup (three rapid notes)
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_BASE, // Start from lower
+                    durations::ACHIEVEMENT_PLATINUM_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_BASE,
+                    durations::ACHIEVEMENT_PLATINUM_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_HIGH,
+                    durations::ACHIEVEMENT_PLATINUM_SUSTAIN,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE),
+                // Epic finale - highest note with sustained celebration
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_PEAK,
+                    durations::ACHIEVEMENT_PLATINUM_FINALE,
+                ),
+            ],
+
+            // Level-up: Distinct ascending progression - celebratory but different from achievements
+            CuePattern::LevelUp => vec![
+                Tone::new(frequencies::LEVEL_UP_BASE, durations::LEVEL_UP_NOTE),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(frequencies::LEVEL_UP_MID, durations::LEVEL_UP_NOTE),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(frequencies::LEVEL_UP_HIGH, durations::LEVEL_UP_FINAL),
+            ],
+
+            // Milestone patterns - subtle, non-intrusive feedback during workouts
+            // Distance milestone: Gentle two-note ascending chime (A4 → C#5)
+            // Sounds like a soft "ding-ding" to mark distance without breaking focus
+            CuePattern::MilestoneDistance => vec![
+                Tone::new(frequencies::MILESTONE_DISTANCE, durations::MILESTONE_DISTANCE_NOTE),
+                Tone::pause(durations::MILESTONE_PAUSE),
+                Tone::new(
+                    frequencies::MILESTONE_DISTANCE_ACCENT,
+                    durations::MILESTONE_DISTANCE_NOTE + 20, // Slightly longer for emphasis
+                ),
+            ],
+
+            // Time milestone: Clock-like subtle two-tick (B4 → D5)
+            // Evokes time passing without being intrusive
+            CuePattern::MilestoneTime => vec![
+                Tone::new(frequencies::MILESTONE_TIME, durations::MILESTONE_TIME_NOTE),
+                Tone::pause(durations::MILESTONE_PAUSE),
+                Tone::new(
+                    frequencies::MILESTONE_TIME_ACCENT,
+                    durations::MILESTONE_TIME_NOTE + 20,
+                ),
+            ],
+
+            // Calorie milestone: Energetic two-note (E5 → G5)
+            // Slightly more upbeat to celebrate burning calories
+            CuePattern::MilestoneCalories => vec![
+                Tone::new(frequencies::MILESTONE_CALORIES, durations::MILESTONE_CALORIE_NOTE),
+                Tone::pause(durations::MILESTONE_PAUSE),
+                Tone::new(
+                    frequencies::MILESTONE_CALORIES_ACCENT,
+                    durations::MILESTONE_CALORIE_NOTE + 30,
+                ),
+            ],
+
+            // Personal record: Triumphant ascending fanfare (F#5 → A5 → C#6)
+            // More elaborate since PRs are special achievements
+            CuePattern::PersonalRecord => vec![
+                Tone::new(frequencies::PERSONAL_RECORD_BASE, durations::PERSONAL_RECORD_NOTE),
+                Tone::pause(durations::MILESTONE_PAUSE),
+                Tone::new(frequencies::PERSONAL_RECORD_MID, durations::PERSONAL_RECORD_NOTE),
+                Tone::pause(durations::MILESTONE_PAUSE),
+                Tone::new(frequencies::PERSONAL_RECORD_PEAK, durations::PERSONAL_RECORD_FINALE),
+            ],
         }
     }
 
     /// Get total duration of the pattern in milliseconds.
     pub fn total_duration_ms(&self) -> u64 {
         self.tones().iter().map(|t| t.duration_ms).sum()
+    }
+
+    /// Get the appropriate countdown pattern for a given number of seconds remaining.
+    ///
+    /// Returns `Some(CuePattern)` for countdown-relevant seconds (10, 5, 3, 2, 1),
+    /// or `None` for other values that don't have specific countdown patterns.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert!(CuePattern::for_countdown_seconds(10).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(5).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(3).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(7).is_none()); // No pattern for 7 seconds
+    /// ```
+    pub fn for_countdown_seconds(seconds: u32) -> Option<Self> {
+        match seconds {
+            10 => Some(CuePattern::CountdownTick10),
+            5 => Some(CuePattern::CountdownTick5),
+            3 => Some(CuePattern::CountdownFinal3),
+            2 => Some(CuePattern::CountdownFinal2),
+            1 => Some(CuePattern::CountdownFinal1),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a countdown-related pattern.
+    pub fn is_countdown_pattern(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::CountdownTick
+                | CuePattern::CountdownTick10
+                | CuePattern::CountdownTick5
+                | CuePattern::CountdownFinal3
+                | CuePattern::CountdownFinal2
+                | CuePattern::CountdownFinal1
+        )
+    }
+
+    /// Check if this is a final countdown pattern (3, 2, or 1 second).
+    pub fn is_final_countdown(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::CountdownFinal3 | CuePattern::CountdownFinal2 | CuePattern::CountdownFinal1
+        )
+    }
+
+    /// Get the appropriate achievement pattern for a given tier.
+    ///
+    /// Returns `Some(CuePattern)` for valid tier names (case-insensitive),
+    /// or `None` for unrecognized tiers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert_eq!(CuePattern::for_achievement_tier("bronze"), Some(CuePattern::AchievementBronze));
+    /// assert_eq!(CuePattern::for_achievement_tier("Silver"), Some(CuePattern::AchievementSilver));
+    /// assert_eq!(CuePattern::for_achievement_tier("GOLD"), Some(CuePattern::AchievementGold));
+    /// assert_eq!(CuePattern::for_achievement_tier("platinum"), Some(CuePattern::AchievementPlatinum));
+    /// assert_eq!(CuePattern::for_achievement_tier("unknown"), None);
+    /// ```
+    pub fn for_achievement_tier(tier: &str) -> Option<Self> {
+        match tier.to_lowercase().as_str() {
+            "bronze" => Some(CuePattern::AchievementBronze),
+            "silver" => Some(CuePattern::AchievementSilver),
+            "gold" => Some(CuePattern::AchievementGold),
+            "platinum" => Some(CuePattern::AchievementPlatinum),
+            _ => None,
+        }
+    }
+
+    /// Check if this is an achievement-related pattern.
+    pub fn is_achievement_pattern(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::AchievementBronze
+                | CuePattern::AchievementSilver
+                | CuePattern::AchievementGold
+                | CuePattern::AchievementPlatinum
+        )
+    }
+
+    /// Check if this is a celebration pattern (achievement, level-up, or milestone).
+    ///
+    /// Celebration patterns are those that are used for positive feedback
+    /// events like achievements, level-ups, and milestones.
+    pub fn is_celebration_pattern(&self) -> bool {
+        self.is_achievement_pattern()
+            || self.is_milestone_pattern()
+            || matches!(self, CuePattern::LevelUp | CuePattern::Success)
+    }
+
+    /// Get the tier level for achievement patterns (1=Bronze, 2=Silver, 3=Gold, 4=Platinum).
+    ///
+    /// Returns `None` for non-achievement patterns.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert_eq!(CuePattern::AchievementBronze.achievement_tier_level(), Some(1));
+    /// assert_eq!(CuePattern::AchievementPlatinum.achievement_tier_level(), Some(4));
+    /// assert_eq!(CuePattern::SingleBeep.achievement_tier_level(), None);
+    /// ```
+    pub fn achievement_tier_level(&self) -> Option<u8> {
+        match self {
+            CuePattern::AchievementBronze => Some(1),
+            CuePattern::AchievementSilver => Some(2),
+            CuePattern::AchievementGold => Some(3),
+            CuePattern::AchievementPlatinum => Some(4),
+            _ => None,
+        }
+    }
+
+    /// Get the name of the achievement tier for achievement patterns.
+    ///
+    /// Returns `None` for non-achievement patterns.
+    pub fn achievement_tier_name(&self) -> Option<&'static str> {
+        match self {
+            CuePattern::AchievementBronze => Some("Bronze"),
+            CuePattern::AchievementSilver => Some("Silver"),
+            CuePattern::AchievementGold => Some("Gold"),
+            CuePattern::AchievementPlatinum => Some("Platinum"),
+            _ => None,
+        }
+    }
+
+    /// Get the appropriate milestone pattern for a given milestone type.
+    ///
+    /// Returns `Some(CuePattern)` for valid milestone types (case-insensitive),
+    /// or `None` for unrecognized types.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert_eq!(CuePattern::for_milestone_type("distance"), Some(CuePattern::MilestoneDistance));
+    /// assert_eq!(CuePattern::for_milestone_type("Time"), Some(CuePattern::MilestoneTime));
+    /// assert_eq!(CuePattern::for_milestone_type("CALORIES"), Some(CuePattern::MilestoneCalories));
+    /// assert_eq!(CuePattern::for_milestone_type("pr"), Some(CuePattern::PersonalRecord));
+    /// assert_eq!(CuePattern::for_milestone_type("unknown"), None);
+    /// ```
+    pub fn for_milestone_type(milestone_type: &str) -> Option<Self> {
+        match milestone_type.to_lowercase().as_str() {
+            "distance" | "km" | "miles" => Some(CuePattern::MilestoneDistance),
+            "time" | "duration" | "minutes" | "hours" => Some(CuePattern::MilestoneTime),
+            "calories" | "kcal" | "cals" => Some(CuePattern::MilestoneCalories),
+            "pr" | "personal_record" | "personal record" | "pb" | "personal_best" | "record" => {
+                Some(CuePattern::PersonalRecord)
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if this is a milestone-related pattern.
+    pub fn is_milestone_pattern(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::MilestoneDistance
+                | CuePattern::MilestoneTime
+                | CuePattern::MilestoneCalories
+                | CuePattern::PersonalRecord
+        )
+    }
+
+    /// Check if this is a personal record pattern.
+    pub fn is_personal_record(&self) -> bool {
+        matches!(self, CuePattern::PersonalRecord)
+    }
+
+    /// Get the milestone type name for milestone patterns.
+    ///
+    /// Returns `None` for non-milestone patterns.
+    pub fn milestone_type_name(&self) -> Option<&'static str> {
+        match self {
+            CuePattern::MilestoneDistance => Some("Distance"),
+            CuePattern::MilestoneTime => Some("Time"),
+            CuePattern::MilestoneCalories => Some("Calories"),
+            CuePattern::PersonalRecord => Some("Personal Record"),
+            _ => None,
+        }
     }
 }
 
@@ -530,5 +1008,716 @@ mod tests {
             direction: ZoneDirection::Descending,
         };
         assert_eq!(descending.cue_pattern(), CuePattern::Descending);
+    }
+
+    #[test]
+    fn test_countdown_pattern_for_seconds() {
+        // Test that we get the correct pattern for each countdown second
+        assert_eq!(
+            CuePattern::for_countdown_seconds(10),
+            Some(CuePattern::CountdownTick10)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(5),
+            Some(CuePattern::CountdownTick5)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(3),
+            Some(CuePattern::CountdownFinal3)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(2),
+            Some(CuePattern::CountdownFinal2)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(1),
+            Some(CuePattern::CountdownFinal1)
+        );
+
+        // Test that other seconds return None
+        assert_eq!(CuePattern::for_countdown_seconds(0), None);
+        assert_eq!(CuePattern::for_countdown_seconds(4), None);
+        assert_eq!(CuePattern::for_countdown_seconds(6), None);
+        assert_eq!(CuePattern::for_countdown_seconds(7), None);
+        assert_eq!(CuePattern::for_countdown_seconds(15), None);
+    }
+
+    #[test]
+    fn test_countdown_pattern_durations_under_200ms() {
+        // All countdown patterns should be under 200ms to not overlap with speech
+        let countdown_patterns = [
+            CuePattern::CountdownTick10,
+            CuePattern::CountdownTick5,
+            CuePattern::CountdownFinal3,
+            CuePattern::CountdownFinal2,
+            CuePattern::CountdownFinal1,
+        ];
+
+        for pattern in countdown_patterns {
+            let duration = pattern.total_duration_ms();
+            assert!(
+                duration < 200,
+                "{:?} has duration {}ms which is >= 200ms",
+                pattern,
+                duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_countdown_pattern_escalating_frequencies() {
+        // Verify that final countdown frequencies escalate (higher frequency = more urgent)
+        let freq_3 = frequencies::COUNTDOWN_3;
+        let freq_2 = frequencies::COUNTDOWN_2;
+        let freq_1 = frequencies::COUNTDOWN_1;
+
+        assert!(
+            freq_2 > freq_3,
+            "Countdown 2 frequency ({}) should be > Countdown 3 frequency ({})",
+            freq_2,
+            freq_3
+        );
+        assert!(
+            freq_1 > freq_2,
+            "Countdown 1 frequency ({}) should be > Countdown 2 frequency ({})",
+            freq_1,
+            freq_2
+        );
+    }
+
+    #[test]
+    fn test_is_countdown_pattern() {
+        // Test positive cases
+        assert!(CuePattern::CountdownTick.is_countdown_pattern());
+        assert!(CuePattern::CountdownTick10.is_countdown_pattern());
+        assert!(CuePattern::CountdownTick5.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal3.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal2.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal1.is_countdown_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::SingleBeep.is_countdown_pattern());
+        assert!(!CuePattern::Alert.is_countdown_pattern());
+        assert!(!CuePattern::Success.is_countdown_pattern());
+    }
+
+    #[test]
+    fn test_is_final_countdown() {
+        // Test positive cases
+        assert!(CuePattern::CountdownFinal3.is_final_countdown());
+        assert!(CuePattern::CountdownFinal2.is_final_countdown());
+        assert!(CuePattern::CountdownFinal1.is_final_countdown());
+
+        // Test negative cases (including other countdown patterns)
+        assert!(!CuePattern::CountdownTick.is_final_countdown());
+        assert!(!CuePattern::CountdownTick10.is_final_countdown());
+        assert!(!CuePattern::CountdownTick5.is_final_countdown());
+        assert!(!CuePattern::SingleBeep.is_final_countdown());
+    }
+
+    #[test]
+    fn test_countdown_patterns_have_distinct_sounds() {
+        // Verify each countdown pattern produces different tones
+        let patterns = [
+            CuePattern::CountdownTick10,
+            CuePattern::CountdownTick5,
+            CuePattern::CountdownFinal3,
+            CuePattern::CountdownFinal2,
+            CuePattern::CountdownFinal1,
+        ];
+
+        for i in 0..patterns.len() {
+            for j in (i + 1)..patterns.len() {
+                let tones_i = patterns[i].tones();
+                let tones_j = patterns[j].tones();
+
+                // They should differ in either frequency, duration, or number of tones
+                let different = tones_i.len() != tones_j.len()
+                    || tones_i.iter().zip(tones_j.iter()).any(|(a, b)| {
+                        (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                            || a.duration_ms != b.duration_ms
+                    });
+
+                assert!(
+                    different,
+                    "{:?} and {:?} should have distinct sounds",
+                    patterns[i], patterns[j]
+                );
+            }
+        }
+    }
+
+    // ============= Achievement Pattern Tests =============
+
+    #[test]
+    fn test_achievement_pattern_for_tier() {
+        // Test that we get the correct pattern for each tier
+        assert_eq!(
+            CuePattern::for_achievement_tier("bronze"),
+            Some(CuePattern::AchievementBronze)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("silver"),
+            Some(CuePattern::AchievementSilver)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("gold"),
+            Some(CuePattern::AchievementGold)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("platinum"),
+            Some(CuePattern::AchievementPlatinum)
+        );
+
+        // Test case insensitivity
+        assert_eq!(
+            CuePattern::for_achievement_tier("BRONZE"),
+            Some(CuePattern::AchievementBronze)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("Silver"),
+            Some(CuePattern::AchievementSilver)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("GoLd"),
+            Some(CuePattern::AchievementGold)
+        );
+
+        // Test unknown tier returns None
+        assert_eq!(CuePattern::for_achievement_tier("unknown"), None);
+        assert_eq!(CuePattern::for_achievement_tier("diamond"), None);
+        assert_eq!(CuePattern::for_achievement_tier(""), None);
+    }
+
+    #[test]
+    fn test_is_achievement_pattern() {
+        // Test positive cases
+        assert!(CuePattern::AchievementBronze.is_achievement_pattern());
+        assert!(CuePattern::AchievementSilver.is_achievement_pattern());
+        assert!(CuePattern::AchievementGold.is_achievement_pattern());
+        assert!(CuePattern::AchievementPlatinum.is_achievement_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::LevelUp.is_achievement_pattern());
+        assert!(!CuePattern::SingleBeep.is_achievement_pattern());
+        assert!(!CuePattern::Success.is_achievement_pattern());
+        assert!(!CuePattern::CountdownTick10.is_achievement_pattern());
+    }
+
+    #[test]
+    fn test_is_celebration_pattern() {
+        // Test positive cases - achievements
+        assert!(CuePattern::AchievementBronze.is_celebration_pattern());
+        assert!(CuePattern::AchievementSilver.is_celebration_pattern());
+        assert!(CuePattern::AchievementGold.is_celebration_pattern());
+        assert!(CuePattern::AchievementPlatinum.is_celebration_pattern());
+
+        // Test positive cases - other celebrations
+        assert!(CuePattern::LevelUp.is_celebration_pattern());
+        assert!(CuePattern::Success.is_celebration_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::SingleBeep.is_celebration_pattern());
+        assert!(!CuePattern::Alert.is_celebration_pattern());
+        assert!(!CuePattern::Error.is_celebration_pattern());
+        assert!(!CuePattern::CountdownTick10.is_celebration_pattern());
+    }
+
+    #[test]
+    fn test_achievement_tier_level() {
+        assert_eq!(CuePattern::AchievementBronze.achievement_tier_level(), Some(1));
+        assert_eq!(CuePattern::AchievementSilver.achievement_tier_level(), Some(2));
+        assert_eq!(CuePattern::AchievementGold.achievement_tier_level(), Some(3));
+        assert_eq!(
+            CuePattern::AchievementPlatinum.achievement_tier_level(),
+            Some(4)
+        );
+
+        // Non-achievement patterns return None
+        assert_eq!(CuePattern::LevelUp.achievement_tier_level(), None);
+        assert_eq!(CuePattern::SingleBeep.achievement_tier_level(), None);
+    }
+
+    #[test]
+    fn test_achievement_tier_name() {
+        assert_eq!(
+            CuePattern::AchievementBronze.achievement_tier_name(),
+            Some("Bronze")
+        );
+        assert_eq!(
+            CuePattern::AchievementSilver.achievement_tier_name(),
+            Some("Silver")
+        );
+        assert_eq!(
+            CuePattern::AchievementGold.achievement_tier_name(),
+            Some("Gold")
+        );
+        assert_eq!(
+            CuePattern::AchievementPlatinum.achievement_tier_name(),
+            Some("Platinum")
+        );
+
+        // Non-achievement patterns return None
+        assert_eq!(CuePattern::LevelUp.achievement_tier_name(), None);
+        assert_eq!(CuePattern::SingleBeep.achievement_tier_name(), None);
+    }
+
+    #[test]
+    fn test_achievement_patterns_progressively_more_impressive() {
+        // Each higher tier should have more tones and/or longer total duration
+        let bronze_tones = CuePattern::AchievementBronze.tones();
+        let silver_tones = CuePattern::AchievementSilver.tones();
+        let gold_tones = CuePattern::AchievementGold.tones();
+        let platinum_tones = CuePattern::AchievementPlatinum.tones();
+
+        // Bronze is simplest (1 tone)
+        assert_eq!(bronze_tones.len(), 1, "Bronze should be a simple single-tone chime");
+
+        // Silver has more tones than bronze
+        assert!(
+            silver_tones.len() > bronze_tones.len(),
+            "Silver should have more tones than Bronze"
+        );
+
+        // Gold has more tones than silver
+        assert!(
+            gold_tones.len() > silver_tones.len(),
+            "Gold should have more tones than Silver"
+        );
+
+        // Platinum has more tones than gold
+        assert!(
+            platinum_tones.len() > gold_tones.len(),
+            "Platinum should have more tones than Gold"
+        );
+
+        // Verify increasing total durations
+        let bronze_duration = CuePattern::AchievementBronze.total_duration_ms();
+        let silver_duration = CuePattern::AchievementSilver.total_duration_ms();
+        let gold_duration = CuePattern::AchievementGold.total_duration_ms();
+        let platinum_duration = CuePattern::AchievementPlatinum.total_duration_ms();
+
+        assert!(
+            silver_duration > bronze_duration,
+            "Silver duration ({}) should be > Bronze duration ({})",
+            silver_duration,
+            bronze_duration
+        );
+        assert!(
+            gold_duration > silver_duration,
+            "Gold duration ({}) should be > Silver duration ({})",
+            gold_duration,
+            silver_duration
+        );
+        assert!(
+            platinum_duration > gold_duration,
+            "Platinum duration ({}) should be > Gold duration ({})",
+            platinum_duration,
+            gold_duration
+        );
+    }
+
+    #[test]
+    fn test_achievement_patterns_have_distinct_sounds() {
+        // Verify each achievement pattern produces different tones
+        let patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+            CuePattern::LevelUp,
+        ];
+
+        for i in 0..patterns.len() {
+            for j in (i + 1)..patterns.len() {
+                let tones_i = patterns[i].tones();
+                let tones_j = patterns[j].tones();
+
+                // They should differ in either frequency, duration, or number of tones
+                let different = tones_i.len() != tones_j.len()
+                    || tones_i.iter().zip(tones_j.iter()).any(|(a, b)| {
+                        (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                            || a.duration_ms != b.duration_ms
+                    });
+
+                assert!(
+                    different,
+                    "{:?} and {:?} should have distinct sounds",
+                    patterns[i], patterns[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_level_up_pattern_exists_and_is_distinct() {
+        let level_up = CuePattern::LevelUp;
+        let tones = level_up.tones();
+
+        // Level-up should have multiple tones (ascending progression)
+        assert!(
+            tones.len() > 1,
+            "LevelUp should have multiple tones for ascending progression"
+        );
+
+        // Verify it has positive duration
+        let duration = level_up.total_duration_ms();
+        assert!(duration > 0, "LevelUp should have positive duration");
+
+        // Verify it's not the same as any achievement pattern
+        let achievement_patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+        ];
+
+        for pattern in achievement_patterns {
+            let pattern_tones = pattern.tones();
+            let different = tones.len() != pattern_tones.len()
+                || tones.iter().zip(pattern_tones.iter()).any(|(a, b)| {
+                    (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                        || a.duration_ms != b.duration_ms
+                });
+
+            assert!(
+                different,
+                "LevelUp should be distinct from {:?}",
+                pattern
+            );
+        }
+    }
+
+    #[test]
+    fn test_achievement_patterns_not_annoying_duration() {
+        // Achievement sounds should be satisfying but not too long
+        // Max duration: 1000ms (1 second) for even the most epic celebration
+        let patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+            CuePattern::LevelUp,
+        ];
+
+        for pattern in patterns {
+            let duration = pattern.total_duration_ms();
+            assert!(
+                duration <= 1000,
+                "{:?} has duration {}ms which is > 1000ms (too long)",
+                pattern,
+                duration
+            );
+
+            // But they should also be long enough to be noticeable (>100ms)
+            assert!(
+                duration >= 100,
+                "{:?} has duration {}ms which is < 100ms (too short)",
+                pattern,
+                duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_achievement_frequencies_are_ascending() {
+        // For multi-tone achievements, the frequencies should generally ascend (celebratory)
+        let silver_tones: Vec<_> = CuePattern::AchievementSilver
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+        let gold_tones: Vec<_> = CuePattern::AchievementGold
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+        let platinum_tones: Vec<_> = CuePattern::AchievementPlatinum
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+
+        // Silver: Second tone should be higher than first
+        if silver_tones.len() >= 2 {
+            assert!(
+                silver_tones[1].frequency_hz > silver_tones[0].frequency_hz,
+                "Silver achievement should have ascending frequencies"
+            );
+        }
+
+        // Gold: Overall ascending trend
+        if gold_tones.len() >= 2 {
+            let first = gold_tones[0].frequency_hz;
+            let last = gold_tones[gold_tones.len() - 1].frequency_hz;
+            assert!(
+                last > first,
+                "Gold achievement should end higher than it starts"
+            );
+        }
+
+        // Platinum: Overall ascending trend ending at peak
+        if platinum_tones.len() >= 2 {
+            let first = platinum_tones[0].frequency_hz;
+            let last = platinum_tones[platinum_tones.len() - 1].frequency_hz;
+            assert!(
+                last > first,
+                "Platinum achievement should end higher than it starts"
+            );
+        }
+    }
+
+    // ============= Milestone Pattern Tests =============
+
+    #[test]
+    fn test_milestone_pattern_for_type() {
+        // Test that we get the correct pattern for each milestone type
+        assert_eq!(
+            CuePattern::for_milestone_type("distance"),
+            Some(CuePattern::MilestoneDistance)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("time"),
+            Some(CuePattern::MilestoneTime)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("calories"),
+            Some(CuePattern::MilestoneCalories)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("pr"),
+            Some(CuePattern::PersonalRecord)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("personal_record"),
+            Some(CuePattern::PersonalRecord)
+        );
+
+        // Test case insensitivity
+        assert_eq!(
+            CuePattern::for_milestone_type("DISTANCE"),
+            Some(CuePattern::MilestoneDistance)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("Time"),
+            Some(CuePattern::MilestoneTime)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("CALORIES"),
+            Some(CuePattern::MilestoneCalories)
+        );
+
+        // Test alternative type names
+        assert_eq!(
+            CuePattern::for_milestone_type("km"),
+            Some(CuePattern::MilestoneDistance)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("miles"),
+            Some(CuePattern::MilestoneDistance)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("duration"),
+            Some(CuePattern::MilestoneTime)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("kcal"),
+            Some(CuePattern::MilestoneCalories)
+        );
+        assert_eq!(
+            CuePattern::for_milestone_type("pb"),
+            Some(CuePattern::PersonalRecord)
+        );
+
+        // Test unknown type returns None
+        assert_eq!(CuePattern::for_milestone_type("unknown"), None);
+        assert_eq!(CuePattern::for_milestone_type(""), None);
+    }
+
+    #[test]
+    fn test_is_milestone_pattern() {
+        // Test positive cases
+        assert!(CuePattern::MilestoneDistance.is_milestone_pattern());
+        assert!(CuePattern::MilestoneTime.is_milestone_pattern());
+        assert!(CuePattern::MilestoneCalories.is_milestone_pattern());
+        assert!(CuePattern::PersonalRecord.is_milestone_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::AchievementGold.is_milestone_pattern());
+        assert!(!CuePattern::LevelUp.is_milestone_pattern());
+        assert!(!CuePattern::SingleBeep.is_milestone_pattern());
+        assert!(!CuePattern::CountdownTick10.is_milestone_pattern());
+    }
+
+    #[test]
+    fn test_is_personal_record() {
+        assert!(CuePattern::PersonalRecord.is_personal_record());
+
+        assert!(!CuePattern::MilestoneDistance.is_personal_record());
+        assert!(!CuePattern::MilestoneTime.is_personal_record());
+        assert!(!CuePattern::MilestoneCalories.is_personal_record());
+        assert!(!CuePattern::AchievementGold.is_personal_record());
+    }
+
+    #[test]
+    fn test_milestone_type_name() {
+        assert_eq!(
+            CuePattern::MilestoneDistance.milestone_type_name(),
+            Some("Distance")
+        );
+        assert_eq!(CuePattern::MilestoneTime.milestone_type_name(), Some("Time"));
+        assert_eq!(
+            CuePattern::MilestoneCalories.milestone_type_name(),
+            Some("Calories")
+        );
+        assert_eq!(
+            CuePattern::PersonalRecord.milestone_type_name(),
+            Some("Personal Record")
+        );
+
+        // Non-milestone patterns return None
+        assert_eq!(CuePattern::LevelUp.milestone_type_name(), None);
+        assert_eq!(CuePattern::AchievementGold.milestone_type_name(), None);
+    }
+
+    #[test]
+    fn test_milestone_patterns_are_subtle() {
+        // Milestone sounds should be shorter than achievement sounds
+        // to avoid being intrusive during workouts
+        let milestone_patterns = [
+            CuePattern::MilestoneDistance,
+            CuePattern::MilestoneTime,
+            CuePattern::MilestoneCalories,
+        ];
+
+        for pattern in milestone_patterns {
+            let duration = pattern.total_duration_ms();
+
+            // Milestones should be subtle (under 400ms for distance/time/calories)
+            assert!(
+                duration < 400,
+                "{:?} has duration {}ms which is >= 400ms (too long for a subtle milestone)",
+                pattern,
+                duration
+            );
+
+            // But still noticeable (>100ms)
+            assert!(
+                duration >= 100,
+                "{:?} has duration {}ms which is < 100ms (too short to notice)",
+                pattern,
+                duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_personal_record_more_celebratory() {
+        // Personal records are special - they should be more elaborate
+        let pr_duration = CuePattern::PersonalRecord.total_duration_ms();
+        let distance_duration = CuePattern::MilestoneDistance.total_duration_ms();
+        let time_duration = CuePattern::MilestoneTime.total_duration_ms();
+        let calorie_duration = CuePattern::MilestoneCalories.total_duration_ms();
+
+        // PR should be longer than regular milestones
+        assert!(
+            pr_duration > distance_duration,
+            "Personal record should be more elaborate than distance milestone"
+        );
+        assert!(
+            pr_duration > time_duration,
+            "Personal record should be more elaborate than time milestone"
+        );
+        assert!(
+            pr_duration > calorie_duration,
+            "Personal record should be more elaborate than calorie milestone"
+        );
+
+        // But still under 500ms to avoid being annoying
+        assert!(
+            pr_duration < 500,
+            "Personal record at {}ms is too long (>500ms)",
+            pr_duration
+        );
+    }
+
+    #[test]
+    fn test_milestone_patterns_have_distinct_sounds() {
+        // Verify each milestone pattern produces different tones
+        let patterns = [
+            CuePattern::MilestoneDistance,
+            CuePattern::MilestoneTime,
+            CuePattern::MilestoneCalories,
+            CuePattern::PersonalRecord,
+        ];
+
+        for i in 0..patterns.len() {
+            for j in (i + 1)..patterns.len() {
+                let tones_i = patterns[i].tones();
+                let tones_j = patterns[j].tones();
+
+                // They should differ in either frequency, duration, or number of tones
+                let different = tones_i.len() != tones_j.len()
+                    || tones_i.iter().zip(tones_j.iter()).any(|(a, b)| {
+                        (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                            || a.duration_ms != b.duration_ms
+                    });
+
+                assert!(
+                    different,
+                    "{:?} and {:?} should have distinct sounds",
+                    patterns[i], patterns[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_milestone_frequencies_are_ascending() {
+        // Milestone patterns should have ascending frequencies (positive feedback)
+        let patterns = [
+            CuePattern::MilestoneDistance,
+            CuePattern::MilestoneTime,
+            CuePattern::MilestoneCalories,
+            CuePattern::PersonalRecord,
+        ];
+
+        for pattern in patterns {
+            let tones: Vec<_> = pattern.tones().into_iter().filter(|t| !t.is_pause()).collect();
+
+            if tones.len() >= 2 {
+                let first = tones[0].frequency_hz;
+                let last = tones[tones.len() - 1].frequency_hz;
+                assert!(
+                    last >= first,
+                    "{:?} should have ascending or stable frequencies (first: {}, last: {})",
+                    pattern,
+                    first,
+                    last
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_milestones_included_in_celebration_patterns() {
+        // Milestone patterns should be considered celebration patterns
+        assert!(CuePattern::MilestoneDistance.is_celebration_pattern());
+        assert!(CuePattern::MilestoneTime.is_celebration_pattern());
+        assert!(CuePattern::MilestoneCalories.is_celebration_pattern());
+        assert!(CuePattern::PersonalRecord.is_celebration_pattern());
+    }
+
+    #[test]
+    fn test_personal_record_has_multiple_tones() {
+        let pr_tones = CuePattern::PersonalRecord.tones();
+        let actual_tones: Vec<_> = pr_tones.into_iter().filter(|t| !t.is_pause()).collect();
+
+        // PR should have at least 3 tones for a triumphant fanfare
+        assert!(
+            actual_tones.len() >= 3,
+            "Personal record should have at least 3 tones, has {}",
+            actual_tones.len()
+        );
     }
 }

@@ -1,0 +1,14 @@
+{
+  "sourceType": "ideation",
+  "ideationType": "code_improvements",
+  "ideaId": "ci-004",
+  "rationale": "The leaderboards module has complete import/export with LeaderboardExporter.import_json() handling conflicts and LeaderboardExport struct for data interchange. The social/profile.rs has ProfileManager with RiderProfile containing all user data. Combining these patterns enables profile portability.",
+  "category": "feature",
+  "estimatedEffort": "small",
+  "complexity": "small",
+  "affectedFiles": [
+    "src/social/profile_export.rs",
+    "src/social/profile.rs",
+    "src/social/mod.rs"
+  ]
+}

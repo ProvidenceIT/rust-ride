@@ -1,0 +1,20 @@
+{
+  "discovered_files": {
+    "src/leaderboards/export.rs": {
+      "description": "LeaderboardExporter pattern for JSON/CSV export with Arc<Database>, export structures, and ExportError enum. Use this as template for AnalyticsExporter.",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T22:57:32.872389+00:00"
+    },
+    "src/storage/analytics_store.rs": {
+      "description": "AnalyticsStore provides all data loading methods: load_pdc(), load_current_cp_model(), load_training_load_history(), load_current_vo2max(), load_rider_profile(). Uses rusqlite Connection reference.",
+      "category": "data_access",
+      "discovered_at": "2026-01-02T22:57:32.929900+00:00"
+    },
+    "src/metrics/analytics/export.rs": {
+      "description": "PdcExport.to_csv() method exports PDC data to CSV format with headers 'duration_secs,power_watts,achieved_at'. AnalyticsExporter.export_pdc_csv(user_id) loads PDC from database and returns CSV string. Returns InsufficientData error if no PDC exists.",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T23:30:17.966107+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T23:30:17.966107+00:00"
+}

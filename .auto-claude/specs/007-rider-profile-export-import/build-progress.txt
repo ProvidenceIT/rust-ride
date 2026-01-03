@@ -1,0 +1,116 @@
+# Rider Profile Export/Import - Build Progress
+
+## Overview
+Feature to add export/import functionality for rider profiles including settings, FTP history, and avatar configuration.
+
+## Plan Created: 2026-01-02T22:57:11Z
+
+## Phases Summary
+
+### Phase 1: Export Data Structures (6 subtasks)
+- Define ProfileExport, ProfileData, FtpHistoryEntry, AvatarExport structs
+- Create ImportResult and conflict resolution types
+- Create ProfileExportError enum
+- **Status**: ✅ Complete (T001-T006 all completed)
+
+### Phase 2: Export Implementation (5 subtasks)
+- Create ProfileExporter struct
+- Implement build_export, export_json, export_to_file methods
+- Wire up module exports
+- **Status**: ✅ Complete (T007-T011 all completed)
+
+### Phase 3: Import Implementation (5 subtasks)
+- Implement parse_import, detect_conflicts, import_profile, import_from_file methods
+- Handle FTP history deduplication
+- **Status**: ✅ Complete (T012-T016 all completed)
+
+### Phase 4: UI Integration (4 subtasks)
+- Add export/import buttons to rider profile screen
+- Create import confirmation dialog
+- Add status feedback
+- **Status**: Pending
+
+### Phase 5: Testing (5 subtasks)
+- Unit tests for serialization and parsing
+- Integration tests for export/import workflows
+- Round-trip testing
+- **Status**: Pending
+
+### Phase 6: Documentation (2 subtasks)
+- Module documentation
+- Export format specification
+- **Status**: Pending
+
+## Total Subtasks: 27
+## Estimated Time: ~9.3 hours (560 minutes)
+
+## Key Dependencies
+- src/leaderboards/export.rs - Pattern reference
+- src/social/profile.rs - ProfileManager
+- src/social/types.rs - RiderProfile type
+- src/world/avatar.rs - AvatarConfig type
+- src/storage/schema.rs - Database schema
+
+## Session Notes
+- Plan follows LeaderboardExporter pattern from existing codebase
+- Export format will be versioned ("1.0") for future compatibility
+- Import supports three strategies: Replace, Merge, Skip
+
+## Progress Log
+
+### 2026-01-02: T001 Completed
+- Created ProfileExport struct with versioned format
+- Created ProfileData, FtpHistoryEntry, AvatarExport structs
+- Added unit tests for serialization
+- Commit: c6d4c7c
+
+### 2026-01-03: T002 Completed
+- ProfileData struct was already created as part of T001
+- Verified all required fields present: display_name, bio, ftp, total_distance_km, total_time_hours, sharing_enabled
+- Serialize/Deserialize derives confirmed
+- No new commit required (already in T001 commit)
+
+### 2026-01-03: T003 Completed
+- FtpHistoryEntry struct was already created as part of T001
+- Verified all required fields: ftp_watts, method, confidence, detected_at, accepted
+- Fields match ftp_estimates table schema
+- No new commit required (already in T001 commit)
+
+### 2026-01-03: T004 Completed
+- AvatarExport struct was already created as part of T001
+- Verified all required fields: jersey_color (String hex), bike_style (String), jersey_secondary (Option<String>), helmet_color (Option<String>)
+- Uses portable string formats for JSON compatibility with AvatarConfig from world/avatar.rs
+- Test exists: test_profile_export_with_avatar
+- No new commit required (already in T001 commit)
+
+### 2026-01-03: T005 Completed
+- Implemented ProfileImportResult struct with success flag, import counts, update flags, and conflicts list
+- Created ProfileConflict enum with DisplayNameMismatch, ExistingProfile, FtpMismatch, AvatarMismatch variants
+- Added ConflictResolution enum with Replace, Merge, Skip strategies
+- Added 4 unit tests for the new types
+
+### 2026-01-03: T006 Completed
+- Created ProfileExportError enum with thiserror derives
+- Error variants: DatabaseError, SerializationFailed, ParseError, ProfileNotFound, InvalidVersion
+- Follows pattern from leaderboards/export.rs ExportError enum
+- Added 6 unit tests for error type verification
+- Commit: 967a4c7
+- **Phase 1 (Export Data Structures) is now complete!**
+
+### 2026-01-03: T015 Completed
+- Implemented import_from_file method on ProfileExporter
+- Reads file contents, parses JSON using parse_import, validates version
+- Imports profile data with specified conflict resolution strategy (Replace, Merge, Skip)
+- Returns ProfileImportResult with summary (ftp_entries_imported, ftp_entries_skipped, profile_updated, avatar_updated)
+- Added 7 unit tests for file I/O error handling, JSON parsing, version validation, and path type flexibility
+- Commit: e3db026
+
+### 2026-01-03: T016 Completed
+- FTP history deduplication was already implemented as part of T014
+- `import_ftp_history_merge` method checks for duplicates using `detected_at` timestamp
+- `ftp_entry_exists` method uses SQL query to detect existing entries by timestamp
+- Tracks `ftp_entries_imported` and `ftp_entries_skipped` counts in ProfileImportResult
+- Existing tests verify the functionality: `test_ftp_history_entry_timestamps_for_deduplication`, `test_profile_import_result_all_entries_skipped`
+- No new code needed (already implemented in T014)
+- **Phase 3 (Import Implementation) is now complete!**
+

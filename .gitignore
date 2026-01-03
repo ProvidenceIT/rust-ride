@@ -56,3 +56,4 @@ data/
 *.profdata
 coverage/
 tarpaulin-report.html
+.worktrees/

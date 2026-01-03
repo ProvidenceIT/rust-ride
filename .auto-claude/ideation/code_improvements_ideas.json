@@ -1,0 +1,118 @@
+{
+  "code_improvements": [
+    {
+      "id": "ci-001",
+      "type": "code_improvements",
+      "title": "Add Cadence Zones System",
+      "description": "Implement CadenceZones struct following the existing PowerZones and HRZones patterns. Cadence zones would track optimal cadence ranges for different training objectives (recovery, endurance, tempo climbing, high-cadence drills). Include zone tracking and change events similar to ZoneTracker's power/HR zone change detection.",
+      "rationale": "The zones.rs module already has well-established patterns for PowerZones (7-zone Coggan) and HRZones (5-zone Karvonen) with color coding, zone lookup, and zone change events via ZoneTracker. The MetricsCalculator already processes cadence data but doesn't have zone classification. Extending this pattern to cadence would complete the metrics trifecta.",
+      "builds_upon": ["PowerZones implementation", "HRZones implementation", "ZoneTracker zone change detection"],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/metrics/zones.rs",
+        "src/metrics/calculator.rs",
+        "src/ui/widgets/zone_indicator.rs"
+      ],
+      "existing_patterns": [
+        "PowerZones::from_ftp() zone calculation",
+        "HRZones::from_hr() Karvonen formula",
+        "ZoneTracker update_power/update_heart_rate events",
+        "ZoneRange and HRZoneRange structs with colors"
+      ],
+      "implementation_approach": "Create CadenceZoneRange and CadenceZones structs in zones.rs following HRZoneRange pattern. Define standard 5 cadence zones (50-60 grinding, 60-75 climbing, 75-90 endurance, 90-100 tempo, 100+ high cadence drills). Add update_cadence() to ZoneTracker mirroring update_heart_rate(). Update MetricsCalculator to track cadence_zone like power_zone and hr_zone.",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "ci-002",
+      "type": "code_improvements",
+      "title": "Workout Export to ZWO/MRC Format",
+      "description": "Add workout export functionality to complement existing ZWO and MRC parsers. Allow users to export built-in or custom workouts to Zwift (.zwo) or TrainerRoad (.mrc) formats for use in other applications.",
+      "rationale": "The workouts module has well-established parsers (parse_zwo, parse_mrc) that convert file content to Workout structs. The recording module shows a clear export pattern with export_csv, export_tcx, export_fit functions. Combining these patterns enables reverse conversion - Workout struct to file content.",
+      "builds_upon": ["ZWO parser (parser_zwo.rs)", "MRC parser (parser_mrc.rs)", "TCX/CSV export pattern"],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/workouts/exporter_zwo.rs",
+        "src/workouts/exporter_mrc.rs",
+        "src/workouts/mod.rs"
+      ],
+      "existing_patterns": [
+        "export_tcx(ride, samples) -> Result<String, ExportError>",
+        "export_csv(ride, samples) -> Result<String, ExportError>",
+        "quick_xml Writer for XML generation",
+        "WorkoutSegment struct with segment_type, duration, power_target"
+      ],
+      "implementation_approach": "Create exporter_zwo.rs with export_zwo(workout: &Workout) -> Result<String, ExportError> using quick_xml Writer similar to exporter_tcx.rs. Create exporter_mrc.rs with export_mrc() for text-based output. Map WorkoutSegment fields back to file format elements. Follow export_tcx's file naming pattern with generate_zwo_filename().",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "ci-003",
+      "type": "code_improvements",
+      "title": "Analytics Data Export (PDC/Training Load)",
+      "description": "Enable export of training analytics data (Power Duration Curve, training load history, CP model) to JSON/CSV formats for external analysis, backup, or sharing with coaches.",
+      "rationale": "The leaderboards/export.rs module demonstrates a complete export pattern with LeaderboardExporter that exports to JSON and CSV. The analytics module has rich data structures (PowerDurationCurve, DailyLoad, CpModel) stored via AnalyticsStore. Applying the leaderboard export pattern to analytics enables data portability.",
+      "builds_upon": ["LeaderboardExporter JSON/CSV export", "AnalyticsStore PDC/training load storage", "PowerDurationCurve and DailyLoad structs"],
+      "estimated_effort": "medium",
+      "affected_files": [
+        "src/metrics/analytics/export.rs",
+        "src/metrics/analytics/mod.rs",
+        "src/storage/analytics_store.rs"
+      ],
+      "existing_patterns": [
+        "LeaderboardExporter.export_json() with serde_json::to_string_pretty",
+        "LeaderboardExporter.export_csv() with manual CSV building",
+        "AnalyticsStore.load_pdc() returning PowerDurationCurve",
+        "AnalyticsExport struct pattern from LeaderboardExport"
+      ],
+      "implementation_approach": "Create export.rs in metrics/analytics following LeaderboardExporter pattern. Define AnalyticsExporter with export_pdc_json(), export_pdc_csv(), export_training_load_json(), export_training_load_csv(). Use existing Serialize derives on PDC/DailyLoad structs for JSON. Build CSV headers matching struct fields. Add export_version and exported_at metadata like LeaderboardExport.",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "ci-004",
+      "type": "code_improvements",
+      "title": "Rider Profile Export/Import",
+      "description": "Add export and import functionality for rider profiles including settings, FTP history, and avatar configuration. Enables profile backup and transfer between installations.",
+      "rationale": "The leaderboards module has complete import/export with LeaderboardExporter.import_json() handling conflicts and LeaderboardExport struct for data interchange. The social/profile.rs has ProfileManager with RiderProfile containing all user data. Combining these patterns enables profile portability.",
+      "builds_upon": ["LeaderboardExporter import/export pattern", "ProfileManager profile operations", "RiderProfile struct"],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/social/profile_export.rs",
+        "src/social/profile.rs",
+        "src/social/mod.rs"
+      ],
+      "existing_patterns": [
+        "LeaderboardExporter.import_json() with conflict detection",
+        "ProfileManager.get_or_create_profile()",
+        "RiderProfile with Serialize/Deserialize",
+        "serde_json for JSON serialization"
+      ],
+      "implementation_approach": "Create profile_export.rs with ProfileExporter following LeaderboardExporter structure. Define ProfileExport struct with rider data, FTP history, avatar settings, export metadata. Implement export_json() using serde_json on ProfileExport. Implement import_json() with conflict detection for existing profiles, allowing merge or replace options.",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "ci-005",
+      "type": "code_improvements",
+      "title": "Rolling Cadence Average Display",
+      "description": "Add 3-second and 10-second rolling cadence averages to the metrics display, matching the existing power averaging functionality for smoother, more readable cadence values.",
+      "rationale": "The smoothing.rs module has a well-tested RollingAverage struct with three_second() and thirty_second() factory methods used for power smoothing. MetricsCalculator applies this to power but shows raw cadence. The same pattern can smooth cadence display for better user experience.",
+      "builds_upon": ["RollingAverage struct in smoothing.rs", "MetricsCalculator power_3s rolling average", "AggregatedMetrics display fields"],
+      "estimated_effort": "trivial",
+      "affected_files": [
+        "src/metrics/calculator.rs",
+        "src/metrics/smoothing.rs"
+      ],
+      "existing_patterns": [
+        "RollingAverage::three_second() factory",
+        "power_3s: RollingAverage in MetricsCalculator",
+        "self.power_3s.add(filtered_power) usage",
+        "AggregatedMetrics power_3s_avg field"
+      ],
+      "implementation_approach": "Add RollingAverage::ten_second() factory in smoothing.rs. Add cadence_3s: RollingAverage and cadence_10s: RollingAverage to MetricsCalculator. In process() cadence handling, call cadence_3s.add() and cadence_10s.add(). Add cadence_3s_avg and cadence_10s_avg fields to AggregatedMetrics. Reset cadence averages in reset().",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    }
+  ]
+}

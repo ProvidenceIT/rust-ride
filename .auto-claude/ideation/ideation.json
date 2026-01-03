@@ -1,0 +1,743 @@
+{
+  "id": "ideation-20260102-221101",
+  "project_id": "C:\\sourcecode\\rust-ride",
+  "config": {
+    "enabled_types": [
+      "code_improvements",
+      "ui_ux_improvements",
+      "security_hardening",
+      "documentation_gaps",
+      "performance_optimizations",
+      "code_quality"
+    ],
+    "include_roadmap_context": true,
+    "include_kanban_context": true,
+    "max_ideas_per_type": 5
+  },
+  "ideas": [
+    {
+      "id": "ci-001",
+      "type": "code_improvements",
+      "title": "Add Cadence Zones System",
+      "description": "Implement CadenceZones struct following the existing PowerZones and HRZones patterns. Cadence zones would track optimal cadence ranges for different training objectives (recovery, endurance, tempo climbing, high-cadence drills). Include zone tracking and change events similar to ZoneTracker's power/HR zone change detection.",
+      "rationale": "The zones.rs module already has well-established patterns for PowerZones (7-zone Coggan) and HRZones (5-zone Karvonen) with color coding, zone lookup, and zone change events via ZoneTracker. The MetricsCalculator already processes cadence data but doesn't have zone classification. Extending this pattern to cadence would complete the metrics trifecta.",
+      "builds_upon": [
+        "PowerZones implementation",
+        "HRZones implementation",
+        "ZoneTracker zone change detection"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/metrics/zones.rs",
+        "src/metrics/calculator.rs",
+        "src/ui/widgets/zone_indicator.rs"
+      ],
+      "existing_patterns": [
+        "PowerZones::from_ftp() zone calculation",
+        "HRZones::from_hr() Karvonen formula",
+        "ZoneTracker update_power/update_heart_rate events",
+        "ZoneRange and HRZoneRange structs with colors"
+      ],
+      "implementation_approach": "Create CadenceZoneRange and CadenceZones structs in zones.rs following HRZoneRange pattern. Define standard 5 cadence zones (50-60 grinding, 60-75 climbing, 75-90 endurance, 90-100 tempo, 100+ high cadence drills). Add update_cadence() to ZoneTracker mirroring update_heart_rate(). Update MetricsCalculator to track cadence_zone like power_zone and hr_zone.",
+      "status": "archived",
+      "created_at": "2026-01-02T22:10:00.000Z",
+      "linked_task_id": "004-add-cadence-zones-system"
+    },
+    {
+      "id": "ci-002",
+      "type": "code_improvements",
+      "title": "Workout Export to ZWO/MRC Format",
+      "description": "Add workout export functionality to complement existing ZWO and MRC parsers. Allow users to export built-in or custom workouts to Zwift (.zwo) or TrainerRoad (.mrc) formats for use in other applications.",
+      "rationale": "The workouts module has well-established parsers (parse_zwo, parse_mrc) that convert file content to Workout structs. The recording module shows a clear export pattern with export_csv, export_tcx, export_fit functions. Combining these patterns enables reverse conversion - Workout struct to file content.",
+      "builds_upon": [
+        "ZWO parser (parser_zwo.rs)",
+        "MRC parser (parser_mrc.rs)",
+        "TCX/CSV export pattern"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/workouts/exporter_zwo.rs",
+        "src/workouts/exporter_mrc.rs",
+        "src/workouts/mod.rs"
+      ],
+      "existing_patterns": [
+        "export_tcx(ride, samples) -> Result<String, ExportError>",
+        "export_csv(ride, samples) -> Result<String, ExportError>",
+        "quick_xml Writer for XML generation",
+        "WorkoutSegment struct with segment_type, duration, power_target"
+      ],
+      "implementation_approach": "Create exporter_zwo.rs with export_zwo(workout: &Workout) -> Result<String, ExportError> using quick_xml Writer similar to exporter_tcx.rs. Create exporter_mrc.rs with export_mrc() for text-based output. Map WorkoutSegment fields back to file format elements. Follow export_tcx's file naming pattern with generate_zwo_filename().",
+      "status": "archived",
+      "created_at": "2026-01-02T22:10:00.000Z",
+      "linked_task_id": "005-workout-export-to-zwo-mrc-format"
+    },
+    {
+      "id": "ci-003",
+      "type": "code_improvements",
+      "title": "Analytics Data Export (PDC/Training Load)",
+      "description": "Enable export of training analytics data (Power Duration Curve, training load history, CP model) to JSON/CSV formats for external analysis, backup, or sharing with coaches.",
+      "rationale": "The leaderboards/export.rs module demonstrates a complete export pattern with LeaderboardExporter that exports to JSON and CSV. The analytics module has rich data structures (PowerDurationCurve, DailyLoad, CpModel) stored via AnalyticsStore. Applying the leaderboard export pattern to analytics enables data portability.",
+      "builds_upon": [
+        "LeaderboardExporter JSON/CSV export",
+        "AnalyticsStore PDC/training load storage",
+        "PowerDurationCurve and DailyLoad structs"
+      ],
+      "estimated_effort": "medium",
+      "affected_files": [
+        "src/metrics/analytics/export.rs",
+        "src/metrics/analytics/mod.rs",
+        "src/storage/analytics_store.rs"
+      ],
+      "existing_patterns": [
+        "LeaderboardExporter.export_json() with serde_json::to_string_pretty",
+        "LeaderboardExporter.export_csv() with manual CSV building",
+        "AnalyticsStore.load_pdc() returning PowerDurationCurve",
+        "AnalyticsExport struct pattern from LeaderboardExport"
+      ],
+      "implementation_approach": "Create export.rs in metrics/analytics following LeaderboardExporter pattern. Define AnalyticsExporter with export_pdc_json(), export_pdc_csv(), export_training_load_json(), export_training_load_csv(). Use existing Serialize derives on PDC/DailyLoad structs for JSON. Build CSV headers matching struct fields. Add export_version and exported_at metadata like LeaderboardExport.",
+      "status": "archived",
+      "created_at": "2026-01-02T22:10:00.000Z",
+      "linked_task_id": "006-analytics-data-export-pdc-training-load"
+    },
+    {
+      "id": "ci-004",
+      "type": "code_improvements",
+      "title": "Rider Profile Export/Import",
+      "description": "Add export and import functionality for rider profiles including settings, FTP history, and avatar configuration. Enables profile backup and transfer between installations.",
+      "rationale": "The leaderboards module has complete import/export with LeaderboardExporter.import_json() handling conflicts and LeaderboardExport struct for data interchange. The social/profile.rs has ProfileManager with RiderProfile containing all user data. Combining these patterns enables profile portability.",
+      "builds_upon": [
+        "LeaderboardExporter import/export pattern",
+        "ProfileManager profile operations",
+        "RiderProfile struct"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "src/social/profile_export.rs",
+        "src/social/profile.rs",
+        "src/social/mod.rs"
+      ],
+      "existing_patterns": [
+        "LeaderboardExporter.import_json() with conflict detection",
+        "ProfileManager.get_or_create_profile()",
+        "RiderProfile with Serialize/Deserialize",
+        "serde_json for JSON serialization"
+      ],
+      "implementation_approach": "Create profile_export.rs with ProfileExporter following LeaderboardExporter structure. Define ProfileExport struct with rider data, FTP history, avatar settings, export metadata. Implement export_json() using serde_json on ProfileExport. Implement import_json() with conflict detection for existing profiles, allowing merge or replace options.",
+      "status": "archived",
+      "created_at": "2026-01-02T22:10:00.000Z",
+      "linked_task_id": "007-rider-profile-export-import"
+    },
+    {
+      "id": "ci-005",
+      "type": "code_improvements",
+      "title": "Rolling Cadence Average Display",
+      "description": "Add 3-second and 10-second rolling cadence averages to the metrics display, matching the existing power averaging functionality for smoother, more readable cadence values.",
+      "rationale": "The smoothing.rs module has a well-tested RollingAverage struct with three_second() and thirty_second() factory methods used for power smoothing. MetricsCalculator applies this to power but shows raw cadence. The same pattern can smooth cadence display for better user experience.",
+      "builds_upon": [
+        "RollingAverage struct in smoothing.rs",
+        "MetricsCalculator power_3s rolling average",
+        "AggregatedMetrics display fields"
+      ],
+      "estimated_effort": "trivial",
+      "affected_files": [
+        "src/metrics/calculator.rs",
+        "src/metrics/smoothing.rs"
+      ],
+      "existing_patterns": [
+        "RollingAverage::three_second() factory",
+        "power_3s: RollingAverage in MetricsCalculator",
+        "self.power_3s.add(filtered_power) usage",
+        "AggregatedMetrics power_3s_avg field"
+      ],
+      "implementation_approach": "Add RollingAverage::ten_second() factory in smoothing.rs. Add cadence_3s: RollingAverage and cadence_10s: RollingAverage to MetricsCalculator. In process() cadence handling, call cadence_3s.add() and cadence_10s.add(). Add cadence_3s_avg and cadence_10s_avg fields to AggregatedMetrics. Reset cadence averages in reset().",
+      "status": "archived",
+      "created_at": "2026-01-02T22:10:00.000Z",
+      "linked_task_id": "008-rolling-cadence-average-display"
+    },
+    {
+      "id": "uiux-001",
+      "type": "ui_ux_improvements",
+      "title": "Home screen buttons should use AccessibleButton widget",
+      "description": "Replace standard egui::Button components on the home screen with the AccessibleButton widget to ensure consistent 44x44 minimum touch targets and accessibility features",
+      "rationale": "The codebase has a well-designed AccessibleButton widget (accessible_button.rs) that provides WCAG 2.1 compliant touch targets, focus indicators, and screen reader support. However, the home screen (home.rs) uses regular egui::Button instead, creating inconsistent accessibility support. Touch targets on the home screen may be too small for comfortable use, especially on touchscreens.",
+      "category": "accessibility",
+      "affected_components": [
+        "src/ui/screens/home.rs",
+        "src/ui/widgets/accessible_button.rs"
+      ],
+      "screenshots": [],
+      "current_state": "HomeScreen uses egui::Button::new() with add_sized() for button sizing. This approach doesn't guarantee WCAG-compliant touch targets or provide consistent focus indicators, touch feedback (ripple effects), or screen reader labels.",
+      "proposed_change": "Replace all egui::Button calls in HomeScreen::show() with AccessibleButton::new().primary() for main action buttons and AccessibleButton::new().secondary() for secondary buttons. Add accessible_label() calls for screen reader support. Example: `AccessibleButton::new(\"Start Free Ride\").primary().accessible_label(\"Start a free ride session\").min_size(Vec2::new(280.0, 60.0))`",
+      "user_benefit": "Users get consistent touch targets meeting WCAG 2.1 guidelines (44x44 minimum), proper focus indicators for keyboard navigation, touch feedback effects, and screen reader support for accessibility",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-002",
+      "type": "ui_ux_improvements",
+      "title": "Add empty state handling to RideHistoryScreen",
+      "description": "Implement a user-friendly empty state for the ride history screen when no rides exist, with a call-to-action to start riding",
+      "rationale": "The upcoming_workouts widget has a well-designed empty state pattern with icon, message, and guidance text. However, the ride history screen (ride_history.rs) lacks empty state handling, which would leave users confused when they have no ride data. Good empty states reduce user confusion and encourage next steps.",
+      "category": "usability",
+      "affected_components": [
+        "src/ui/screens/ride_history.rs"
+      ],
+      "screenshots": [],
+      "current_state": "RideHistoryScreen displays rides in a list but has no handling for when the rides Vec is empty. Users would see a blank screen with filter controls but no content explanation.",
+      "proposed_change": "Add a show_empty_state() method similar to UpcomingWorkoutsWidget pattern. Display a cycling icon (emoji), 'No rides recorded yet' heading, 'Start your first ride to see your history here' subtext, and a 'Start Riding' button that navigates to Screen::Ride. Place the check after filter application: `if filtered_rides.is_empty() { self.show_empty_state(ui); } else { /* render list */ }`",
+      "user_benefit": "New users understand the screen's purpose and are guided to take action (start their first ride) rather than seeing a confusing blank screen",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-003",
+      "type": "ui_ux_improvements",
+      "title": "Replace hardcoded colors with theme system colors in widgets",
+      "description": "Update the UpcomingWorkoutsWidget and similar widgets to use DarkTheme/LightTheme color constants instead of hardcoded RGB values",
+      "rationale": "The theme.rs defines a comprehensive color system (DarkTheme::PANEL_BG, DarkTheme::CARD_BG, etc.) and supports both dark and light modes. However, upcoming_workouts.rs and other widgets use hardcoded colors like Color32::from_rgb(30, 30, 40) and Color32::from_rgb(35, 35, 45). This means widgets won't respond to theme changes and may have inconsistent colors.",
+      "category": "visual",
+      "affected_components": [
+        "src/ui/widgets/upcoming_workouts.rs",
+        "src/ui/theme.rs"
+      ],
+      "screenshots": [],
+      "current_state": "UpcomingWorkoutsWidget uses hardcoded colors: Frame.fill(Color32::from_rgb(30, 30, 40)) for container, Color32::from_rgb(35, 35, 45) for rows, Color32::from_rgb(40, 60, 80) for 'today' highlight, Color32::from_gray(120/150) for text. These don't match the defined theme colors or respond to theme changes.",
+      "proposed_change": "Refactor to accept a Theme parameter or use ui.visuals() colors. Replace: Color32::from_rgb(30, 30, 40) -> DarkTheme::PANEL_BG or ui.visuals().faint_bg_color; Color32::from_rgb(35, 35, 45) -> DarkTheme::CARD_BG or ui.visuals().widgets.inactive.bg_fill; Color32::from_gray(120) -> DarkTheme::TEXT_MUTED. Consider adding a WidgetColors struct that resolves based on current theme.",
+      "user_benefit": "Visual consistency across the app, proper light mode support when users switch themes, and easier future color adjustments via the centralized theme system",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-004",
+      "type": "ui_ux_improvements",
+      "title": "Add tooltips to icon-only buttons and complex controls in Settings",
+      "description": "Add descriptive tooltips to icon buttons, toggles, and complex settings controls to improve discoverability",
+      "rationale": "The settings screen (settings.rs) has 53 tooltip usages but many icon-only buttons and toggle switches lack explanatory tooltips. While the AccessibleButton widget adds hover text by default, standard egui controls used in Settings may lack context. Tooltips are especially important for accessibility and for users unfamiliar with cycling training terminology.",
+      "category": "usability",
+      "affected_components": [
+        "src/ui/screens/settings.rs"
+      ],
+      "screenshots": [],
+      "current_state": "Settings screen has some tooltips but lacks them on many controls. For example, FTP confidence display, rider type classification, zone color selectors, and MQTT settings may not have sufficient context for users to understand their purpose or expected values.",
+      "proposed_change": "Audit all interactive elements in settings.rs and add .on_hover_text() with helpful descriptions. Examples: FTP input -> 'Functional Threshold Power - the highest power you can sustain for 1 hour'; Zone auto-calculate toggle -> 'When enabled, zones are automatically calculated from your FTP. Disable to customize zones manually.'; MQTT broker -> 'Address of your MQTT server for smart fan control'. Use consistent tooltip style with concise explanations.",
+      "user_benefit": "Users can understand complex training concepts and settings without leaving the app. Reduces confusion and support requests for terms like FTP, TSS, power zones",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-005",
+      "type": "ui_ux_improvements",
+      "title": "Add consistent loading skeleton placeholders for data-fetching screens",
+      "description": "Implement skeleton loading placeholders for screens that fetch data asynchronously (sensor scanning, route import, analytics)",
+      "rationale": "Currently loading states are inconsistent: weather_widget.rs has a proper loading placeholder, sensor_setup.rs uses a simple spinner, and route_import.rs also uses spinner. Skeleton screens provide better perceived performance than spinners by showing the layout users will see, reducing layout shift and improving perceived speed.",
+      "category": "performance",
+      "affected_components": [
+        "src/ui/screens/sensor_setup.rs",
+        "src/ui/screens/route_import.rs",
+        "src/ui/screens/analytics.rs"
+      ],
+      "screenshots": [],
+      "current_state": "SensorSetupScreen shows ui.spinner() while scanning for devices. RouteImportScreen shows spinner during file processing. AnalyticsScreen likely loads data asynchronously. These use simple spinners that don't preview the expected content layout.",
+      "proposed_change": "Create a SkeletonLoader widget module with common patterns: SkeletonCard (rectangular placeholder with animation), SkeletonList (multiple rows of varying widths), SkeletonChart (placeholder for graphs). Apply in sensor_setup: show skeleton cards where device tiles will appear; route_import: show skeleton representing the route preview; analytics: show skeleton charts matching the actual chart dimensions. Use subtle pulsing animation via ui.ctx().request_repaint().",
+      "user_benefit": "Faster perceived loading times, users understand what content is coming, reduced jarring layout shifts when data loads, more polished professional appearance",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "sec-001",
+      "type": "security_hardening",
+      "title": "Replace Weak Random Number Generation with Cryptographically Secure RNG",
+      "description": "The OAuth state generation in `src/integrations/sync/oauth.rs` (line 138-147) and PIN generation in `src/integrations/streaming/pin.rs` (line 51-63) both use `SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).as_nanos()` as a seed for generating security-critical tokens. This is highly predictable as an attacker can estimate the nanosecond timestamp, allowing them to predict OAuth states (CSRF bypass) or streaming PINs.",
+      "rationale": "Predictable random values in security contexts enable attackers to bypass authentication. OAuth state prediction allows CSRF attacks during the OAuth flow, while PIN prediction could grant unauthorized access to the streaming dashboard. The current implementation comments acknowledge this issue ('In production, use a proper random source').",
+      "category": "authentication",
+      "severity": "high",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/integrations/streaming/pin.rs"
+      ],
+      "vulnerability": "CWE-330: Use of Insufficiently Random Values",
+      "currentRisk": "Attacker can predict OAuth states enabling CSRF attacks during authorization, or predict streaming PINs within seconds of generation",
+      "remediation": "Replace time-based random generation with the `rand` crate using `OsRng` or `thread_rng()` with `ChaCha20Rng`. For OAuth states, use `uuid::Uuid::new_v4().to_string()` which already uses cryptographically secure randomness. For PINs: `use rand::Rng; rand::thread_rng().gen_range(0..1_000_000)` formatted as 6 digits.",
+      "references": [
+        "https://owasp.org/www-community/vulnerabilities/Insufficient_Entropy",
+        "https://cwe.mitre.org/data/definitions/330.html",
+        "https://docs.rs/rand/latest/rand/"
+      ],
+      "compliance": [
+        "OWASP-A07"
+      ]
+    },
+    {
+      "id": "sec-002",
+      "type": "security_hardening",
+      "title": "Implement Secure Credential Storage with Keyring Integration",
+      "description": "The `KeyringCredentialStore` in `src/integrations/sync/oauth.rs` (lines 303-375) has placeholder implementations with TODO comments for all methods. OAuth tokens are currently stored only in memory via `DefaultOAuthHandler.tokens` HashMap, which means credentials are lost on restart and there's no secure persistent storage. The database schema shows `access_token_encrypted` and `refresh_token_encrypted` columns in `platform_syncs` table, but encryption implementation appears to be missing.",
+      "rationale": "OAuth access tokens and refresh tokens are sensitive credentials that grant access to user fitness data on external platforms (Strava, Garmin, TrainingPeaks). Storing them without encryption or secure storage exposes users to credential theft if their system is compromised or the database file is accessed.",
+      "category": "secrets_management",
+      "severity": "high",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/storage/hardware_store.rs"
+      ],
+      "vulnerability": "CWE-312: Cleartext Storage of Sensitive Information",
+      "currentRisk": "OAuth tokens stored in plaintext in memory or database can be extracted by malware or through database file access, granting attackers access to user's Strava/Garmin accounts",
+      "remediation": "Complete the `KeyringCredentialStore` implementation using the `keyring` crate (already in Cargo.toml). For database storage, implement encryption using platform-specific secure storage: Windows DPAPI via `keyring`, macOS Keychain, or Linux Secret Service. Alternatively, use `ring` or `aes-gcm` crates for encryption with a key derived from keyring-stored master secret.",
+      "references": [
+        "https://docs.rs/keyring/latest/keyring/",
+        "https://owasp.org/www-project-cheat-sheets/cheatsheets/Secrets_Management_Cheat_Sheet.html",
+        "https://cwe.mitre.org/data/definitions/312.html"
+      ],
+      "compliance": [
+        "SOC2",
+        "OWASP-A02"
+      ]
+    },
+    {
+      "id": "sec-003",
+      "type": "security_hardening",
+      "title": "Add Rate Limiting and Brute Force Protection for Streaming PIN Authentication",
+      "description": "The PIN authenticator in `src/integrations/streaming/pin.rs` implements a basic lockout after 5 failed attempts (lines 82-86), but lacks several important protections: no lockout duration (once locked, stays locked until PIN regeneration), no per-IP rate limiting, no exponential backoff between attempts, and the lockout counter resets immediately on successful authentication (line 99). The 6-digit PIN has only 1,000,000 possible combinations.",
+      "rationale": "Without proper rate limiting, an attacker with network access to the streaming WebSocket server could attempt rapid brute-force attacks. While 5 attempts is low, the lack of time-based lockout, exponential backoff, and IP-based limiting makes the system vulnerable to distributed attacks or session-based attacks.",
+      "category": "authentication",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/integrations/streaming/pin.rs",
+        "src/integrations/streaming/server.rs"
+      ],
+      "vulnerability": "CWE-307: Improper Restriction of Excessive Authentication Attempts",
+      "currentRisk": "Attacker with local network access can attempt brute-force attacks against the streaming PIN, potentially gaining access to real-time ride data",
+      "remediation": "Implement time-based lockout (e.g., 15 minutes after 5 failures), exponential backoff between attempts, and consider IP-based rate limiting. Add audit logging for failed authentication attempts. Consider increasing PIN length to 8 digits or using alphanumeric codes for increased entropy.",
+      "references": [
+        "https://owasp.org/www-community/controls/Blocking_Brute_Force_Attacks",
+        "https://cwe.mitre.org/data/definitions/307.html"
+      ],
+      "compliance": [
+        "OWASP-A07"
+      ]
+    },
+    {
+      "id": "sec-004",
+      "type": "security_hardening",
+      "title": "Add HTTPS/TLS Support for Local Streaming Server",
+      "description": "The OAuth callback server in `src/integrations/sync/oauth.rs` (lines 403-567) and the streaming WebSocket server bind to localhost using plain HTTP (`http://localhost:{port}`). While localhost traffic is generally considered safe, sensitive data including OAuth authorization codes and real-time fitness metrics are transmitted in plaintext. The PIN is also transmitted over unencrypted WebSocket connections.",
+      "rationale": "Even on localhost, other applications or malware could potentially intercept unencrypted traffic. When the streaming server is accessed over the local network (for external displays), data travels unencrypted. OAuth best practices require HTTPS for redirect URIs to prevent authorization code interception.",
+      "category": "data_protection",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/integrations/streaming/server.rs"
+      ],
+      "vulnerability": "CWE-319: Cleartext Transmission of Sensitive Information",
+      "currentRisk": "OAuth authorization codes and streaming data (including PIN, heart rate, power data) transmitted in cleartext can be intercepted on shared networks",
+      "remediation": "Implement optional TLS support using `rustls` (already available through `reqwest`'s rustls-tls feature). Generate self-signed certificates for local use or use `rcgen` crate for certificate generation. For OAuth callbacks, consider using the loopback interface exemption in OAuth 2.0 spec while documenting the security implications.",
+      "references": [
+        "https://tools.ietf.org/html/rfc8252#section-8.3",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+        "https://cwe.mitre.org/data/definitions/319.html"
+      ],
+      "compliance": [
+        "OWASP-A02"
+      ]
+    },
+    {
+      "id": "sec-005",
+      "type": "security_hardening",
+      "title": "Secure ML API Key Storage and Transmission Logging",
+      "description": "The ML client in `src/ml/client.rs` stores the API key as a plain `String` field (line 34) passed directly to the constructor. The API key is used in Authorization headers (lines 124, 220) which could be logged in debug output. There's no validation of the API key format, no secure memory handling (key remains in memory until client is dropped), and the key source (environment variable, config file) isn't enforced to be secure.",
+      "rationale": "API keys provide access to cloud ML services and could incur costs or expose user data if compromised. Debug logging of HTTP requests could inadvertently expose the Bearer token. The API key should be securely sourced and protected from memory dumps.",
+      "category": "secrets_management",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/ml/client.rs"
+      ],
+      "vulnerability": "CWE-522: Insufficiently Protected Credentials",
+      "currentRisk": "ML API key could be exposed through debug logs, memory dumps, or insecure configuration storage, allowing unauthorized API access",
+      "remediation": "Use the `secrecy` crate to wrap the API key in `SecretString` which implements `Zeroize` for secure memory clearing and prevents accidental logging via `Debug` trait. Ensure the key is loaded from keyring or secure environment variables. Add explicit logging filters to prevent Authorization headers from appearing in traces.",
+      "references": [
+        "https://docs.rs/secrecy/latest/secrecy/",
+        "https://owasp.org/www-project-cheat-sheets/cheatsheets/Secrets_Management_Cheat_Sheet.html",
+        "https://cwe.mitre.org/data/definitions/522.html"
+      ],
+      "compliance": [
+        "SOC2",
+        "OWASP-A07"
+      ]
+    },
+    {
+      "id": "doc-001",
+      "type": "documentation_gaps",
+      "title": "Create Sensor Compatibility Guide with Troubleshooting",
+      "description": "RustRide supports BLE FTMS trainers, power meters, heart rate monitors, and ANT+ devices via sensors/manager.rs and sensors/ftms.rs, but there's no documentation listing compatible devices or troubleshooting common connection issues. The SensorError, ConnectionState, and Protocol types define many failure modes that users can't interpret.",
+      "rationale": "Sensor connectivity is the critical first step for any user. Connection issues are the #1 pain point for indoor cycling apps. A compatibility guide would reduce support burden and improve onboarding success rate. The sensor module has 13+ files with complex state machines that users need simplified guidance for.",
+      "category": "troubleshooting",
+      "targetAudience": "users",
+      "affectedAreas": [
+        "docs/SENSOR_GUIDE.md (new)",
+        "src/sensors/manager.rs",
+        "src/sensors/ftms.rs",
+        "src/sensors/ant/",
+        "src/sensors/types.rs"
+      ],
+      "currentDocumentation": "README mentions 'Bluetooth Smart Trainer Support' and 'FTMS-compatible' but no device list, platform-specific setup, or troubleshooting",
+      "proposedContent": "Create docs/SENSOR_GUIDE.md with: 1) List of tested compatible trainers/sensors by brand (Wahoo, Tacx, Elite, etc.), 2) BLE vs ANT+ protocol comparison and when to use each, 3) Platform-specific BLE setup (Windows drivers, Linux BlueZ 5.x config, macOS permissions), 4) Common error states and solutions ('sensor not found', 'disconnections during ride', 'no power data'), 5) ANT+ USB dongle requirements, 6) Debug logging (RUST_LOG=debug)",
+      "priority": "high",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-002",
+      "type": "documentation_gaps",
+      "title": "Create Comprehensive Configuration Reference",
+      "description": "The app has 1000+ lines of configuration options in storage/config.rs including SensorSettings, RecordingSettings, UiSettings, DaemonSettings, AccessibilitySettings, AudioCueSettings, and LocaleSettings. Users have no reference for available options or valid values beyond reading source code.",
+      "rationale": "Power users and those running headless/daemon mode need to customize behavior via config.toml. Options like autosave_interval_secs (5-300), max_power_filter (noise filtering), discovery_timeout_secs, and flow_mode settings are undiscoverable. The example_daemon_config() function exists but isn't user-facing.",
+      "category": "readme",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "docs/CONFIGURATION.md (new)",
+        "README.md",
+        "src/storage/config.rs"
+      ],
+      "currentDocumentation": "README shows data storage paths (~/.rustride/) but no config options documentation",
+      "proposedContent": "Create docs/CONFIGURATION.md with: 1) Full config.toml schema with all sections (sensors, recording, ui, daemon, accessibility, audio), 2) Default values and valid ranges for each option, 3) Power/HR zone configuration (7-zone Coggan model), 4) Display modes (Normal, TvMode, FlowMode) and customization, 5) Example configurations for common use cases (minimal, headless server, TV mode, accessibility), 6) Daemon-specific settings for Linux headless operation",
+      "priority": "high",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-003",
+      "type": "documentation_gaps",
+      "title": "Add Training Analytics Concepts Documentation",
+      "description": "The analytics module (src/metrics/analytics/) implements advanced training science: Power Duration Curve, Critical Power (W' model), FTP auto-detection, ATL/CTL/TSB training load (7/42 day EWMA), VO2max estimation, ACWR injury risk, and rider type classification. These have technical doc comments but no user-facing explanation.",
+      "rationale": "Users see metrics like 'TSS: 87', 'CTL: 45', 'ACWR: 1.2' (with color indicators) without understanding what they mean. The app targets 'serious indoor cyclists' who would benefit greatly from understanding the training science. The Acwr::recommendation() method provides advice but users don't know why.",
+      "category": "examples",
+      "targetAudience": "users",
+      "affectedAreas": [
+        "docs/TRAINING_METRICS.md (new)",
+        "src/metrics/analytics/training_load.rs",
+        "src/metrics/analytics/critical_power.rs",
+        "src/metrics/analytics/vo2max.rs",
+        "src/metrics/analytics/ftp_detection.rs",
+        "src/metrics/analytics/rider_type.rs"
+      ],
+      "currentDocumentation": "Module doc comments like 'ATL: 7-day exponentially weighted moving average' are technical; no practical interpretation guide exists",
+      "proposedContent": "Create docs/TRAINING_METRICS.md explaining: 1) TSS/IF/NP calculation and what values mean for training stress, 2) Understanding CTL/ATL/TSB (fitness/fatigue/form) with practical examples, 3) Interpreting ACWR status colors (Undertrained/Optimal/Caution/HighRisk thresholds), 4) How FTP auto-detection works (FtpMethod options), 5) Rider type classification interpretation, 6) VO2max estimation methodology, 7) Recommended training load ranges by experience level",
+      "priority": "medium",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-004",
+      "type": "documentation_gaps",
+      "title": "Create CONTRIBUTING.md with Developer Onboarding",
+      "description": "RustRide is MIT-licensed open-source but has no CONTRIBUTING.md. The README has basic cargo commands but no guidance on code style, PR process, testing requirements, or how the specs/ directory workflow operates. The project has GitHub Actions CI but no contributor documentation.",
+      "rationale": "The project has 304 source files, 20+ modules, and detailed feature specs in specs/ indicating active development, but external contributors have no onboarding path. This limits community growth and increases maintainer burden for code review.",
+      "category": "readme",
+      "targetAudience": "contributors",
+      "affectedAreas": [
+        "CONTRIBUTING.md (new)",
+        "README.md",
+        ".github/"
+      ],
+      "currentDocumentation": "README has 'Development' section with cargo test/fmt/clippy commands only",
+      "proposedContent": "Create CONTRIBUTING.md with: 1) Development environment setup (Rust 1.75+, platform dependencies for BLE/audio), 2) Project structure walkthrough (sensors/, metrics/, workouts/, storage/, ui/), 3) Code style (rustfmt config, clippy rules, doc comment conventions), 4) Testing requirements and how to run tests, 5) PR process and review expectations, 6) How feature specs work (specs/ directory structure), 7) Issue labels and priority system",
+      "priority": "medium",
+      "estimatedEffort": "low"
+    },
+    {
+      "id": "doc-005",
+      "type": "documentation_gaps",
+      "title": "Document Workout File Formats with Examples",
+      "description": "The workouts module (parser_zwo.rs, parser_mrc.rs) supports ZWO and MRC/ERG formats with comprehensive parsing but users have no reference for creating custom workouts. The README mentions format support briefly but doesn't document the syntax, segment types (SteadyState, Ramp, Interval, Warmup, Cooldown), or power target syntax.",
+      "rationale": "Workout customization is essential for structured training. The WorkoutSegment and PowerTarget types support rich functionality (% FTP vs absolute watts, cadence targets, text_event instructions) that users can't discover. The built-in WorkoutLibrary has categories and difficulty tiers but no documentation.",
+      "category": "examples",
+      "targetAudience": "users",
+      "affectedAreas": [
+        "docs/WORKOUT_FORMATS.md (new)",
+        "README.md",
+        "src/workouts/parser_zwo.rs",
+        "src/workouts/parser_mrc.rs",
+        "src/workouts/types.rs",
+        "src/workouts/library.rs"
+      ],
+      "currentDocumentation": "README has 6-line overview mentioning 'Steady-state intervals, Ramps, Free ride sections' without syntax details",
+      "proposedContent": "Create docs/WORKOUT_FORMATS.md with: 1) Complete ZWO XML schema with all elements (SteadyState, Ramp, IntervalsT, FreeRide, Warmup, Cooldown), 2) PowerTarget syntax (percentage FTP: OnPower='0.75' vs absolute: PowerHigh='200'), 3) Cadence targets and text_event for on-screen instructions, 4) MRC/ERG text format specification with [COURSE HEADER] sections, 5) Sample workout files for common patterns (sweet spot, VO2max, threshold), 6) How to organize files in ~/.rustride/workouts/, 7) WorkoutCategory and DifficultyTier organization",
+      "priority": "medium",
+      "estimatedEffort": "low"
+    },
+    {
+      "id": "perf-001",
+      "type": "performance_optimizations",
+      "title": "Batch PDC Point Database Inserts for 5-10x Write Performance",
+      "description": "The save_pdc_points() function in analytics_store.rs executes individual INSERT statements in a loop for each PDC point (lines 73-93). For a typical ride with 20+ PDC points, this means 20+ round-trips to SQLite. Batching these into a single transaction would dramatically improve write performance.",
+      "rationale": "Database operations are I/O bound, and SQLite in particular benefits significantly from transaction batching. Each individual INSERT incurs transaction overhead. Wrapping multiple INSERTs in a single BEGIN/COMMIT transaction can provide 5-10x speedup for bulk operations. This is especially important after ride completion when PDC extraction may generate many new personal bests.",
+      "category": "database",
+      "impact": "high",
+      "affectedAreas": [
+        "src/storage/analytics_store.rs",
+        "src/metrics/analytics/pdc.rs"
+      ],
+      "currentMetric": "20+ individual database transactions per ride completion",
+      "expectedImprovement": "5-10x faster PDC persistence (~200ms -> ~20ms), reduced disk I/O, faster ride save workflow",
+      "implementation": "1. Wrap the save_pdc_points loop in self.conn.execute_batch() or explicit BEGIN/COMMIT\n2. Consider using prepared statement with multiple value bindings\n3. Alternative: Use rusqlite's Savepoint API for nested transaction support\n4. Apply same pattern to other batch operations (daily load, ride samples)",
+      "tradeoffs": "Minor increase in code complexity. Transaction failure would roll back all points instead of partial success.",
+      "estimatedEffort": "small"
+    },
+    {
+      "id": "perf-002",
+      "type": "performance_optimizations",
+      "title": "Reduce Unnecessary Frame Repaints with Smart Repaint Strategy",
+      "description": "The main app update loop (app.rs lines 765-767, 1079) calls ctx.request_repaint() unconditionally for Ride and SensorSetup screens, causing continuous 60Hz repaints even when no data has changed. This wastes CPU/GPU resources and increases power consumption, critical for laptop users on battery.",
+      "rationale": "During a ride, sensor data typically arrives at 1-4Hz (once per second for most BLE sensors). Rendering at 60fps when data only changes at 1Hz wastes 59 frames of computation. Smart repainting should only trigger when: 1) new sensor data arrives, 2) workout interval changes, 3) user interacts with UI, or 4) animations are active.",
+      "category": "runtime",
+      "impact": "medium",
+      "affectedAreas": [
+        "src/app.rs",
+        "src/ui/screens/ride.rs",
+        "src/ui/screens/sensor_setup.rs"
+      ],
+      "currentMetric": "Continuous 60fps repaint during rides regardless of data changes",
+      "expectedImprovement": "~80% reduction in CPU usage during steady-state riding, significant battery savings on laptops, cooler operation",
+      "implementation": "1. Track last_data_timestamp and only request_repaint when data changes\n2. Use egui's request_repaint_after() with ~250ms interval for timer updates\n3. Process sensor events first, then conditionally repaint if events were processed\n4. Separate animation repaints (60fps) from data repaints (1-4fps)\n5. Consider ctx.request_repaint_after(Duration::from_millis(100)) for idle polling",
+      "tradeoffs": "Slightly more complex repaint logic. May need to ensure UI remains responsive during rapid interactions.",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "perf-003",
+      "type": "performance_optimizations",
+      "title": "Pre-allocate Mesh Vertex Buffers in Road and Terrain Generation",
+      "description": "The build_road_from_waypoints() function (renderer.rs lines 583-662) creates empty Vecs and pushes vertices/indices one by one in a loop. For routes with thousands of waypoints, this causes multiple reallocation cycles as the vectors grow.",
+      "rationale": "Vec::push() amortizes to O(1) but still causes reallocations when capacity is exceeded. For a 100km route with 1000 waypoints, the road mesh needs ~4000 vertices and ~6000 indices. Pre-allocating with Vec::with_capacity() eliminates all intermediate allocations and improves cache locality during the push loop.",
+      "category": "runtime",
+      "impact": "medium",
+      "affectedAreas": [
+        "src/world/renderer.rs"
+      ],
+      "currentMetric": "Multiple Vec reallocations during mesh generation, ~5-10 allocations per 1000 waypoints",
+      "expectedImprovement": "~50% faster mesh generation for long routes, reduced memory fragmentation, more predictable load times",
+      "implementation": "1. Calculate required capacity upfront: vertices = waypoints.len() * 4, indices = waypoints.len() * 6\n2. Replace Vec::new() with Vec::with_capacity(calculated_size)\n3. Apply to build_terrain_mesh(), build_sky_mesh(), build_avatar_mesh(), create_landmark_marker()\n4. Consider reusing vertex buffers instead of recreating on resize (object pooling)",
+      "tradeoffs": "Slightly higher initial memory allocation. Negligible in practice since meshes need that memory anyway.",
+      "estimatedEffort": "trivial"
+    },
+    {
+      "id": "perf-004",
+      "type": "performance_optimizations",
+      "title": "Replace SystemTime RNG with Fast PRNG for NPC Spawning",
+      "description": "The rand_simple() function in npc/spawner.rs (lines 185-192) uses SystemTime::now().subsec_nanos() for randomness. This syscall-based approach is slow (~100ns per call) and produces poor randomness when called rapidly, as sequential calls may get correlated values.",
+      "rationale": "SystemTime is not designed for random number generation - it's a system call that queries kernel time. For NPC spawning which may call rand_simple() dozens of times during world load, a proper PRNG like xorshift or PCG would be both faster (~2ns vs ~100ns) and produce better statistical properties for spawn distribution.",
+      "category": "runtime",
+      "impact": "low",
+      "affectedAreas": [
+        "src/world/npc/spawner.rs",
+        "Cargo.toml"
+      ],
+      "currentMetric": "~100ns per random call, poor distribution when called in rapid succession",
+      "expectedImprovement": "~50x faster random generation, better spawn distribution, more consistent NPC positioning",
+      "implementation": "1. Add 'fastrand' crate (tiny, no-std compatible) or use existing noise crate's RNG\n2. Replace rand_simple() with fastrand::f32() or similar\n3. Alternatively, seed a simple xorshift PRNG once per spawn batch\n4. Could also use noise::Seedable for deterministic world generation",
+      "tradeoffs": "Adds dependency (fastrand is ~10KB). Could also implement inline xorshift to avoid dependency.",
+      "estimatedEffort": "trivial"
+    },
+    {
+      "id": "perf-005",
+      "type": "performance_optimizations",
+      "title": "Optimize Normalized Power Calculator for Hot Path Performance",
+      "description": "The NormalizedPowerCalculator::add() method (smoothing.rs lines 194-206) uses powi(4) and powf(0.25) for every power sample. During a ride, this is called once per second for potentially hours. These floating-point power operations are computationally expensive (~20-50 cycles each).",
+      "rationale": "NP calculation is in the critical path for real-time metrics display. The formula NP = (avg(power^4))^0.25 can be optimized: 1) power^4 can be computed as (power*power)*(power*power) which is faster than powi(4), 2) the fourth root only needs to be calculated for display, not every sample. Accumulating sum of fourth powers and count, then computing root only when NP is requested, defers the expensive operation.",
+      "category": "runtime",
+      "impact": "low",
+      "affectedAreas": [
+        "src/metrics/smoothing.rs",
+        "src/metrics/calculator.rs"
+      ],
+      "currentMetric": "2 expensive FP operations (powi, powf) per sensor reading",
+      "expectedImprovement": "~3x faster per-sample processing, reduced CPU load during rides, improved battery life",
+      "implementation": "1. Replace (avg as f64).powi(4) with let sq = avg as f64 * avg as f64; sq * sq\n2. Cache the normalized_power result and only recalculate when count changes\n3. Consider using integer arithmetic for the rolling sum (power values are u16, 4th power fits in u64)\n4. Add #[inline] hint to the add() method for potential inlining",
+      "tradeoffs": "Minor increase in code complexity. The optimization is micro-level but adds up over multi-hour rides.",
+      "estimatedEffort": "trivial"
+    },
+    {
+      "id": "cq-001",
+      "type": "code_quality",
+      "title": "Refactor RustRideApp 'god object' into modular subsystems",
+      "description": "The app.rs file (1119 lines) contains a RustRideApp struct with 35+ fields handling UI state, sensor management, audio, streaming, MQTT, HID devices, achievements, and more. This 'god object' anti-pattern makes the code difficult to maintain, test, and extend.",
+      "rationale": "Large monolithic structs with many responsibilities violate the Single Responsibility Principle. They create tight coupling, make unit testing difficult, and increase cognitive load for developers. Splitting into focused subsystems enables independent testing and parallel development.",
+      "category": "code_smells",
+      "severity": "major",
+      "affectedFiles": [
+        "src/app.rs"
+      ],
+      "currentState": "Single 1119-line file with RustRideApp struct containing 35+ fields managing disparate concerns: UI screens, sensor fusion, audio engine, MQTT client, streaming server, HID devices, achievement tracking, gradient control, etc.",
+      "proposedChange": "Extract into focused manager structs: 1) AppState (core UI navigation), 2) HardwareIntegration (sensors, MQTT, streaming, HID), 3) GameplayServices (achievements, career, gradient), 4) AudioServices (engine, TTS). Use a facade pattern in RustRideApp that delegates to these subsystems.",
+      "codeExample": "// Current:\npub struct RustRideApp {\n    current_screen: Screen,\n    _sensor_manager: SensorManager,\n    _audio_engine: Arc<DefaultAudioEngine>,\n    mqtt_client: Arc<DefaultMqttClient>,\n    fan_controller: Arc<DefaultFanController<DefaultMqttClient>>,\n    streaming_server: Arc<DefaultStreamingServer>,\n    achievement_tracker: DefaultAchievementTracker,\n    // ... 30+ more fields\n}\n\n// Proposed:\npub struct RustRideApp {\n    ui: UiManager,\n    hardware: HardwareServices,\n    gameplay: GameplayServices,\n    audio: AudioServices,\n}",
+      "bestPractice": "Single Responsibility Principle and Facade Pattern - each module should have one reason to change",
+      "metrics": {
+        "lineCount": 1119,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "large",
+      "breakingChange": false,
+      "prerequisites": [
+        "Add integration tests for current behavior before refactoring"
+      ]
+    },
+    {
+      "id": "cq-002",
+      "type": "code_quality",
+      "title": "Split RideScreen into composable UI components",
+      "description": "The ride.rs file (1443 lines) handles multiple concerns: ride state management, workout rendering, full-screen mode, dynamics panel, video panel, weather widget, SmO2 display, and metric rendering. The file contains extensive UI rendering logic that could be extracted into reusable components.",
+      "rationale": "Large UI files with mixed concerns are hard to maintain and test. Extracting focused components enables reuse, simplifies testing, and makes the codebase more navigable.",
+      "category": "large_files",
+      "severity": "major",
+      "affectedFiles": [
+        "src/ui/screens/ride.rs"
+      ],
+      "currentState": "1443-line file with RideScreen struct handling ride modes, workout progress, full-screen rendering, dynamics panel, video panel, weather display, SmO2, and 13 different metric types via render_metric()",
+      "proposedChange": "Split into: 1) ride/mod.rs (core RideScreen state), 2) ride/workout_panel.rs (workout progress UI), 3) ride/fullscreen.rs (full-screen mode), 4) ride/dynamics.rs (cycling dynamics panel), 5) ride/video.rs (video sync panel). Extract render_metric() patterns into a MetricRenderer component.",
+      "codeExample": "// Current ride.rs:\nimpl RideScreen {\n    fn render_workout_progress(&self, ui: &mut Ui) { /* 90 lines */ }\n    fn render_dynamics_panel(&self, ui: &mut Ui) { /* 90 lines */ }\n    fn render_video_panel(&mut self, ui: &mut Ui) { /* 80 lines */ }\n    fn render_full_screen_mode(&mut self, ui: &mut Ui) { /* 140 lines */ }\n}\n\n// Proposed:\nmod ride {\n    mod workout_panel;\n    mod dynamics_panel;\n    mod video_panel;\n    mod fullscreen;\n}",
+      "bestPractice": "Component-based UI architecture - each component should be self-contained and reusable",
+      "metrics": {
+        "lineCount": 1443,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": null
+    },
+    {
+      "id": "cq-003",
+      "type": "code_quality",
+      "title": "Replace unwrap() calls with proper error handling",
+      "description": "The codebase contains 573 uses of unwrap() across 94 files. While some are in tests or infallible contexts, many are in production code paths that could panic on unexpected input, causing application crashes during rides.",
+      "rationale": "Using unwrap() in production code can cause panics that crash the application at runtime. For a cycling training app, mid-ride crashes due to sensor data edge cases or configuration issues would create a poor user experience and could lose ride data.",
+      "category": "code_smells",
+      "severity": "major",
+      "affectedFiles": [
+        "src/storage/database.rs",
+        "src/workouts/engine.rs",
+        "src/networking/session.rs",
+        "src/ml/cache.rs",
+        "src/achievements/checks/career.rs"
+      ],
+      "currentState": "573 unwrap() calls across 94 source files. High-risk areas include: database.rs (44 calls), workouts/engine.rs (34 calls), networking/session.rs (22 calls), ml/cache.rs (20 calls)",
+      "proposedChange": "Audit unwrap() calls and replace with: 1) ? operator for propagating errors, 2) unwrap_or_default() for safe defaults, 3) expect() with descriptive messages for truly infallible cases, 4) match/if-let for graceful degradation. Prioritize sensor data paths and ride recording code.",
+      "codeExample": "// Current (risky):\nlet value = map.get(key).unwrap();\nlet result = operation().unwrap();\n\n// Proposed (safe):\nlet value = map.get(key).ok_or(ConfigError::MissingKey(key))?;\nlet result = operation().unwrap_or_else(|e| {\n    tracing::warn!(\"Operation failed: {}, using default\", e);\n    Default::default()\n});",
+      "bestPractice": "Rust error handling best practices - use Result types and the ? operator for recoverable errors",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "large",
+      "breakingChange": false,
+      "prerequisites": [
+        "Identify which unwrap() calls are truly infallible vs risky"
+      ]
+    },
+    {
+      "id": "cq-004",
+      "type": "code_quality",
+      "title": "Remove or implement dead code marked with #[allow(dead_code)]",
+      "description": "The codebase contains 63 #[allow(dead_code)] annotations across 33 files. This indicates either incomplete feature implementations or code that was written but never integrated, creating maintenance burden and confusion.",
+      "rationale": "Dead code increases cognitive load, can lead to confusion about what's implemented vs planned, and may contain outdated logic that diverges from current patterns. Cleaning up dead code improves codebase clarity.",
+      "category": "dead_code",
+      "severity": "minor",
+      "affectedFiles": [
+        "src/sensors/manager.rs",
+        "src/integrations/weather/provider.rs",
+        "src/app.rs",
+        "src/training_plans/scheduler.rs",
+        "src/integrations/sync/oauth.rs"
+      ],
+      "currentState": "63 #[allow(dead_code)] annotations, many on handler functions for ANT+ events, OAuth flows, and weather provider callbacks that appear to be planned but not yet integrated",
+      "proposedChange": "Audit each dead_code annotation: 1) If code is for upcoming features, move to a 'pending' branch or add TODO with issue reference, 2) If code is obsolete, remove it, 3) If code should be used, integrate it properly. Focus on sensors/manager.rs (7 annotations) and integrations/ (12 annotations).",
+      "codeExample": "// Current (sensors/manager.rs):\n#[allow(dead_code)]\nfn handle_ant_heart_rate_data(&self, device_number: u16, heart_rate_bpm: u8) { ... }\n#[allow(dead_code)]\nfn handle_ant_power_data(&self, device_number: u16, power_watts: u16, ...) { ... }\n\n// Proposed: Either wire up ANT+ data handling or remove until ANT+ feature is prioritized",
+      "bestPractice": "YAGNI (You Aren't Gonna Need It) - remove code that isn't currently used",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": [
+        "Review planned features roadmap to determine what's still needed"
+      ]
+    },
+    {
+      "id": "cq-005",
+      "type": "code_quality",
+      "title": "Address TODO/FIXME comments with placeholder implementations",
+      "description": "The codebase contains 30+ TODO comments indicating unfinished functionality, particularly in audio engine, daemon handlers, TTS integration, and ML cloud API calls. Many of these are in code paths that could be reached during normal use.",
+      "rationale": "TODO comments indicate technical debt and incomplete features. When users encounter these code paths, they may experience unexpected behavior or missing functionality. Converting TODOs to tracked issues ensures they're not forgotten.",
+      "category": "dead_code",
+      "severity": "minor",
+      "affectedFiles": [
+        "src/audio/engine.rs",
+        "src/audio/tts.rs",
+        "src/daemon/handler.rs",
+        "src/app.rs",
+        "src/ml/adaptation.rs"
+      ],
+      "currentState": "30+ TODO comments including: 'TODO: Actually play the sound using rodio', 'TODO: Actually speak using TTS', 'TODO: Actually export the ride from database', 'TODO: Implement cloud API call when backend is ready'",
+      "proposedChange": "1) Convert each TODO to a GitHub issue for tracking, 2) Add proper error handling or user-facing messages when unimplemented features are invoked, 3) For audio/TTS TODOs, implement basic rodio/tts integration or disable the feature flags, 4) For ML cloud TODOs, add graceful fallback to local-only mode.",
+      "codeExample": "// Current (audio/engine.rs):\npub fn play_sound(&self, sound: &AudioEvent) -> Result<(), AudioError> {\n    // TODO: Actually play the sound using rodio\n    Ok(())\n}\n\n// Proposed:\npub fn play_sound(&self, sound: &AudioEvent) -> Result<(), AudioError> {\n    if !self.initialized {\n        return Err(AudioError::NotInitialized);\n    }\n    self.sink.append(sound.to_source()?);\n    Ok(())\n}",
+      "bestPractice": "Technical debt tracking - convert inline TODOs to tracked issues with clear acceptance criteria",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": [
+        "Set up issue tracking labels for technical debt"
+      ]
+    }
+  ],
+  "project_context": {
+    "existing_features": [],
+    "tech_stack": [],
+    "target_audience": "Serious indoor cyclists who want structured training with their smart trainer without monthly subscription fees",
+    "planned_features": [
+      "Advanced Training Analytics",
+      "Voice Control",
+      "Workout Library Expansion",
+      "TrainingPeaks Sync",
+      "Complete Strava OAuth Sync",
+      "Apple TV App",
+      "Garmin Connect Sync",
+      "Complete HID Device Support",
+      "Complete MQTT Smart Fan Control",
+      "Web Dashboard",
+      "Cloud ML API Integration",
+      "Enhanced Bluetooth/ANT+ Reliability",
+      "Complete Audio Engine",
+      "Weather API Integration",
+      "Plugin/Extension Architecture",
+      "Mobile Companion App",
+      "Complete Text-to-Speech Integration",
+      "Additional 3D Environments",
+      "FIT File Export",
+      "Real-World Route Video Playback"
+    ]
+  },
+  "summary": {
+    "total_ideas": 30,
+    "by_type": {
+      "code_improvements": 5,
+      "ui_ux_improvements": 5,
+      "security_hardening": 5,
+      "documentation_gaps": 5,
+      "performance_optimizations": 5,
+      "code_quality": 5
+    },
+    "by_status": {
+      "draft": 30
+    }
+  },
+  "generated_at": "2026-01-02T22:11:01.123579",
+  "updated_at": "2026-01-02T22:52:59.814Z"
+}

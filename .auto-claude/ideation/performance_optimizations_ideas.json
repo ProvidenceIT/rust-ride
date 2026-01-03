@@ -1,0 +1,112 @@
+{
+  "performance_optimizations": [
+    {
+      "id": "perf-001",
+      "type": "performance_optimizations",
+      "title": "Batch PDC Point Database Inserts for 5-10x Write Performance",
+      "description": "The save_pdc_points() function in analytics_store.rs executes individual INSERT statements in a loop for each PDC point (lines 73-93). For a typical ride with 20+ PDC points, this means 20+ round-trips to SQLite. Batching these into a single transaction would dramatically improve write performance.",
+      "rationale": "Database operations are I/O bound, and SQLite in particular benefits significantly from transaction batching. Each individual INSERT incurs transaction overhead. Wrapping multiple INSERTs in a single BEGIN/COMMIT transaction can provide 5-10x speedup for bulk operations. This is especially important after ride completion when PDC extraction may generate many new personal bests.",
+      "category": "database",
+      "impact": "high",
+      "affectedAreas": [
+        "src/storage/analytics_store.rs",
+        "src/metrics/analytics/pdc.rs"
+      ],
+      "currentMetric": "20+ individual database transactions per ride completion",
+      "expectedImprovement": "5-10x faster PDC persistence (~200ms -> ~20ms), reduced disk I/O, faster ride save workflow",
+      "implementation": "1. Wrap the save_pdc_points loop in self.conn.execute_batch() or explicit BEGIN/COMMIT\n2. Consider using prepared statement with multiple value bindings\n3. Alternative: Use rusqlite's Savepoint API for nested transaction support\n4. Apply same pattern to other batch operations (daily load, ride samples)",
+      "tradeoffs": "Minor increase in code complexity. Transaction failure would roll back all points instead of partial success.",
+      "estimatedEffort": "small"
+    },
+    {
+      "id": "perf-002",
+      "type": "performance_optimizations",
+      "title": "Reduce Unnecessary Frame Repaints with Smart Repaint Strategy",
+      "description": "The main app update loop (app.rs lines 765-767, 1079) calls ctx.request_repaint() unconditionally for Ride and SensorSetup screens, causing continuous 60Hz repaints even when no data has changed. This wastes CPU/GPU resources and increases power consumption, critical for laptop users on battery.",
+      "rationale": "During a ride, sensor data typically arrives at 1-4Hz (once per second for most BLE sensors). Rendering at 60fps when data only changes at 1Hz wastes 59 frames of computation. Smart repainting should only trigger when: 1) new sensor data arrives, 2) workout interval changes, 3) user interacts with UI, or 4) animations are active.",
+      "category": "runtime",
+      "impact": "medium",
+      "affectedAreas": [
+        "src/app.rs",
+        "src/ui/screens/ride.rs",
+        "src/ui/screens/sensor_setup.rs"
+      ],
+      "currentMetric": "Continuous 60fps repaint during rides regardless of data changes",
+      "expectedImprovement": "~80% reduction in CPU usage during steady-state riding, significant battery savings on laptops, cooler operation",
+      "implementation": "1. Track last_data_timestamp and only request_repaint when data changes\n2. Use egui's request_repaint_after() with ~250ms interval for timer updates\n3. Process sensor events first, then conditionally repaint if events were processed\n4. Separate animation repaints (60fps) from data repaints (1-4fps)\n5. Consider ctx.request_repaint_after(Duration::from_millis(100)) for idle polling",
+      "tradeoffs": "Slightly more complex repaint logic. May need to ensure UI remains responsive during rapid interactions.",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "perf-003",
+      "type": "performance_optimizations",
+      "title": "Pre-allocate Mesh Vertex Buffers in Road and Terrain Generation",
+      "description": "The build_road_from_waypoints() function (renderer.rs lines 583-662) creates empty Vecs and pushes vertices/indices one by one in a loop. For routes with thousands of waypoints, this causes multiple reallocation cycles as the vectors grow.",
+      "rationale": "Vec::push() amortizes to O(1) but still causes reallocations when capacity is exceeded. For a 100km route with 1000 waypoints, the road mesh needs ~4000 vertices and ~6000 indices. Pre-allocating with Vec::with_capacity() eliminates all intermediate allocations and improves cache locality during the push loop.",
+      "category": "runtime",
+      "impact": "medium",
+      "affectedAreas": [
+        "src/world/renderer.rs"
+      ],
+      "currentMetric": "Multiple Vec reallocations during mesh generation, ~5-10 allocations per 1000 waypoints",
+      "expectedImprovement": "~50% faster mesh generation for long routes, reduced memory fragmentation, more predictable load times",
+      "implementation": "1. Calculate required capacity upfront: vertices = waypoints.len() * 4, indices = waypoints.len() * 6\n2. Replace Vec::new() with Vec::with_capacity(calculated_size)\n3. Apply to build_terrain_mesh(), build_sky_mesh(), build_avatar_mesh(), create_landmark_marker()\n4. Consider reusing vertex buffers instead of recreating on resize (object pooling)",
+      "tradeoffs": "Slightly higher initial memory allocation. Negligible in practice since meshes need that memory anyway.",
+      "estimatedEffort": "trivial"
+    },
+    {
+      "id": "perf-004",
+      "type": "performance_optimizations",
+      "title": "Replace SystemTime RNG with Fast PRNG for NPC Spawning",
+      "description": "The rand_simple() function in npc/spawner.rs (lines 185-192) uses SystemTime::now().subsec_nanos() for randomness. This syscall-based approach is slow (~100ns per call) and produces poor randomness when called rapidly, as sequential calls may get correlated values.",
+      "rationale": "SystemTime is not designed for random number generation - it's a system call that queries kernel time. For NPC spawning which may call rand_simple() dozens of times during world load, a proper PRNG like xorshift or PCG would be both faster (~2ns vs ~100ns) and produce better statistical properties for spawn distribution.",
+      "category": "runtime",
+      "impact": "low",
+      "affectedAreas": [
+        "src/world/npc/spawner.rs",
+        "Cargo.toml"
+      ],
+      "currentMetric": "~100ns per random call, poor distribution when called in rapid succession",
+      "expectedImprovement": "~50x faster random generation, better spawn distribution, more consistent NPC positioning",
+      "implementation": "1. Add 'fastrand' crate (tiny, no-std compatible) or use existing noise crate's RNG\n2. Replace rand_simple() with fastrand::f32() or similar\n3. Alternatively, seed a simple xorshift PRNG once per spawn batch\n4. Could also use noise::Seedable for deterministic world generation",
+      "tradeoffs": "Adds dependency (fastrand is ~10KB). Could also implement inline xorshift to avoid dependency.",
+      "estimatedEffort": "trivial"
+    },
+    {
+      "id": "perf-005",
+      "type": "performance_optimizations",
+      "title": "Optimize Normalized Power Calculator for Hot Path Performance",
+      "description": "The NormalizedPowerCalculator::add() method (smoothing.rs lines 194-206) uses powi(4) and powf(0.25) for every power sample. During a ride, this is called once per second for potentially hours. These floating-point power operations are computationally expensive (~20-50 cycles each).",
+      "rationale": "NP calculation is in the critical path for real-time metrics display. The formula NP = (avg(power^4))^0.25 can be optimized: 1) power^4 can be computed as (power*power)*(power*power) which is faster than powi(4), 2) the fourth root only needs to be calculated for display, not every sample. Accumulating sum of fourth powers and count, then computing root only when NP is requested, defers the expensive operation.",
+      "category": "runtime",
+      "impact": "low",
+      "affectedAreas": [
+        "src/metrics/smoothing.rs",
+        "src/metrics/calculator.rs"
+      ],
+      "currentMetric": "2 expensive FP operations (powi, powf) per sensor reading",
+      "expectedImprovement": "~3x faster per-sample processing, reduced CPU load during rides, improved battery life",
+      "implementation": "1. Replace (avg as f64).powi(4) with let sq = avg as f64 * avg as f64; sq * sq\n2. Cache the normalized_power result and only recalculate when count changes\n3. Consider using integer arithmetic for the rolling sum (power values are u16, 4th power fits in u64)\n4. Add #[inline] hint to the add() method for potential inlining",
+      "tradeoffs": "Minor increase in code complexity. The optimization is micro-level but adds up over multi-hour rides.",
+      "estimatedEffort": "trivial"
+    }
+  ],
+  "metadata": {
+    "analyzedFiles": 15,
+    "projectType": "Rust desktop application with wgpu 3D rendering",
+    "criticalPaths": [
+      "Sensor data processing (1-4Hz)",
+      "Metrics calculation (per sensor reading)",
+      "3D rendering (60fps target)",
+      "Database writes (ride completion)"
+    ],
+    "keyDependencies": [
+      "wgpu (3D rendering)",
+      "rusqlite (database)",
+      "btleplug (BLE sensors)",
+      "egui/eframe (UI)"
+    ],
+    "potentialSavings": "Significant CPU reduction during rides, faster ride save, reduced battery consumption",
+    "generatedAt": "2026-01-02T22:10:00Z"
+  }
+}

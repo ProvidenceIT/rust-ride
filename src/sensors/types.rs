@@ -229,6 +229,21 @@ pub enum SensorEvent {
     ScanStopped,
     /// Error occurred
     Error(String),
+    /// Primary sensor failover occurred.
+    /// When the primary sensor for a data type disconnects and a secondary
+    /// sensor is available, the secondary is automatically promoted to primary.
+    FailoverActivated {
+        /// The data type that experienced failover (e.g., Power, HeartRate)
+        data_type: String,
+        /// The device ID of the sensor that disconnected (former primary)
+        from_device_id: String,
+        /// The name of the sensor that disconnected
+        from_sensor_name: String,
+        /// The device ID of the sensor that was promoted to primary
+        to_device_id: String,
+        /// The name of the sensor that was promoted to primary
+        to_sensor_name: String,
+    },
 }
 
 /// Configuration for the sensor manager.
@@ -244,6 +259,8 @@ pub struct SensorConfig {
     pub max_reconnect_attempts: u32,
     /// Delay between reconnection attempts in seconds
     pub reconnect_delay_secs: u64,
+    /// Progressive timeout configuration for discovery
+    pub progressive_timeout: ProgressiveTimeoutConfig,
 }
 
 impl Default for SensorConfig {
@@ -254,7 +271,387 @@ impl Default for SensorConfig {
             auto_reconnect: true,
             max_reconnect_attempts: 3,
             reconnect_delay_secs: 2,
+            progressive_timeout: ProgressiveTimeoutConfig::default(),
         }
+    }
+}
+
+/// Configuration for progressive discovery timeout.
+///
+/// Progressive timeout starts with an aggressive initial scan period,
+/// then extends the scan if sensors are still being discovered. This
+/// balances fast discovery when sensors are readily available with
+/// longer scans when sensors are slow to respond.
+///
+/// Power meters may take longer to advertise due to sleep mode. When
+/// a saved power meter is expected but not found, discovery can extend
+/// up to `power_meter_max_secs` (default: 45 seconds).
+#[derive(Debug, Clone)]
+pub struct ProgressiveTimeoutConfig {
+    /// Initial aggressive scan period in seconds (default: 10s)
+    pub initial_scan_secs: u64,
+    /// Extension period when sensors are still being found (default: 5s)
+    pub extension_period_secs: u64,
+    /// Maximum total discovery time in seconds (default: 30s)
+    pub max_total_secs: u64,
+    /// Maximum discovery time when waiting for power meters (default: 45s)
+    /// Power meters may take longer to advertise due to sleep mode.
+    pub power_meter_max_secs: u64,
+    /// Time window for detecting sensor activity (default: 3s)
+    /// If a sensor is discovered within this window before timeout,
+    /// the scan is extended.
+    pub activity_window_secs: u64,
+    /// Minimum time since last discovery before stopping early (default: 5s)
+    /// If no sensors are found for this duration, scan may stop early.
+    pub idle_threshold_secs: u64,
+    /// Whether progressive timeout is enabled (default: true)
+    pub enabled: bool,
+}
+
+impl Default for ProgressiveTimeoutConfig {
+    fn default() -> Self {
+        Self {
+            initial_scan_secs: 10,
+            extension_period_secs: 5,
+            max_total_secs: 30,
+            power_meter_max_secs: 45,
+            activity_window_secs: 3,
+            idle_threshold_secs: 5,
+            enabled: true,
+        }
+    }
+}
+
+impl ProgressiveTimeoutConfig {
+    /// Create a fast scan configuration for quick discovery.
+    pub fn fast() -> Self {
+        Self {
+            initial_scan_secs: 5,
+            extension_period_secs: 3,
+            max_total_secs: 15,
+            power_meter_max_secs: 30, // Shorter extension for fast mode
+            activity_window_secs: 2,
+            idle_threshold_secs: 3,
+            enabled: true,
+        }
+    }
+
+    /// Create a thorough scan configuration for finding all sensors.
+    pub fn thorough() -> Self {
+        Self {
+            initial_scan_secs: 15,
+            extension_period_secs: 10,
+            max_total_secs: 45,
+            power_meter_max_secs: 60, // Longer extension for thorough mode
+            activity_window_secs: 5,
+            idle_threshold_secs: 8,
+            enabled: true,
+        }
+    }
+
+    /// Create a disabled configuration (uses fixed timeout).
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ..Self::default()
+        }
+    }
+}
+
+/// State tracking for progressive discovery timeout.
+///
+/// This struct tracks the discovery progress and determines when to
+/// extend or stop scanning based on sensor activity.
+#[derive(Debug, Clone)]
+pub struct ProgressiveTimeoutState {
+    /// When discovery started
+    pub started_at: std::time::Instant,
+    /// When the current timeout phase started
+    pub phase_started_at: std::time::Instant,
+    /// When a sensor was last discovered
+    pub last_discovery_at: Option<std::time::Instant>,
+    /// Number of sensors discovered so far
+    pub sensors_discovered: usize,
+    /// Current scan phase
+    pub phase: DiscoveryPhase,
+    /// Number of extensions applied
+    pub extensions_count: u32,
+}
+
+impl ProgressiveTimeoutState {
+    /// Create a new timeout state starting now.
+    pub fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            started_at: now,
+            phase_started_at: now,
+            last_discovery_at: None,
+            sensors_discovered: 0,
+            phase: DiscoveryPhase::Initial,
+            extensions_count: 0,
+        }
+    }
+
+    /// Record that a sensor was discovered.
+    pub fn record_discovery(&mut self) {
+        self.last_discovery_at = Some(std::time::Instant::now());
+        self.sensors_discovered += 1;
+    }
+
+    /// Get time elapsed since discovery started.
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.started_at.elapsed()
+    }
+
+    /// Get time since last sensor discovery.
+    pub fn time_since_last_discovery(&self) -> Option<std::time::Duration> {
+        self.last_discovery_at.map(|t| t.elapsed())
+    }
+
+    /// Check if a sensor was recently discovered.
+    pub fn has_recent_activity(&self, window_secs: u64) -> bool {
+        self.last_discovery_at.map_or(false, |t| {
+            t.elapsed() < std::time::Duration::from_secs(window_secs)
+        })
+    }
+
+    /// Check if discovery has been idle (no recent discoveries).
+    pub fn is_idle(&self, threshold_secs: u64) -> bool {
+        // If we've never discovered anything, check time since start
+        match self.last_discovery_at {
+            Some(t) => t.elapsed() >= std::time::Duration::from_secs(threshold_secs),
+            None => self.started_at.elapsed() >= std::time::Duration::from_secs(threshold_secs),
+        }
+    }
+
+    /// Calculate the decision for the current state.
+    pub fn calculate_decision(&self, config: &ProgressiveTimeoutConfig) -> TimeoutDecision {
+        if !config.enabled {
+            // Progressive timeout disabled, use fixed timeout
+            if self.elapsed() >= std::time::Duration::from_secs(config.max_total_secs) {
+                return TimeoutDecision::Stop {
+                    reason: StopReason::MaxTimeReached,
+                };
+            }
+            return TimeoutDecision::Continue;
+        }
+
+        let elapsed = self.elapsed();
+        let max_duration = std::time::Duration::from_secs(config.max_total_secs);
+
+        // Always stop if we've reached max time
+        if elapsed >= max_duration {
+            return TimeoutDecision::Stop {
+                reason: StopReason::MaxTimeReached,
+            };
+        }
+
+        match self.phase {
+            DiscoveryPhase::Initial => {
+                let initial_duration = std::time::Duration::from_secs(config.initial_scan_secs);
+
+                if elapsed >= initial_duration {
+                    // Initial phase complete, decide whether to extend
+                    if self.has_recent_activity(config.activity_window_secs) {
+                        // Recent activity - extend the scan
+                        TimeoutDecision::Extend
+                    } else if self.sensors_discovered > 0 && self.is_idle(config.idle_threshold_secs) {
+                        // Found some sensors but been idle - stop early
+                        TimeoutDecision::Stop {
+                            reason: StopReason::IdleTimeout,
+                        }
+                    } else if self.sensors_discovered == 0 {
+                        // No sensors found yet - extend to look for more
+                        TimeoutDecision::Extend
+                    } else {
+                        // Continue in initial phase
+                        TimeoutDecision::Continue
+                    }
+                } else {
+                    TimeoutDecision::Continue
+                }
+            }
+            DiscoveryPhase::Extended => {
+                let extension_duration = std::time::Duration::from_secs(config.extension_period_secs);
+                let phase_elapsed = self.phase_started_at.elapsed();
+
+                if phase_elapsed >= extension_duration {
+                    // Extension period complete
+                    if self.has_recent_activity(config.activity_window_secs) {
+                        // Still finding sensors - extend again if not at max
+                        if elapsed + extension_duration <= max_duration {
+                            TimeoutDecision::Extend
+                        } else {
+                            TimeoutDecision::Stop {
+                                reason: StopReason::MaxTimeReached,
+                            }
+                        }
+                    } else {
+                        // No recent activity - stop
+                        TimeoutDecision::Stop {
+                            reason: StopReason::IdleTimeout,
+                        }
+                    }
+                } else {
+                    TimeoutDecision::Continue
+                }
+            }
+            DiscoveryPhase::Completed => {
+                TimeoutDecision::Stop {
+                    reason: StopReason::Completed,
+                }
+            }
+        }
+    }
+
+    /// Apply an extension to the timeout.
+    pub fn apply_extension(&mut self) {
+        self.phase = DiscoveryPhase::Extended;
+        self.phase_started_at = std::time::Instant::now();
+        self.extensions_count += 1;
+    }
+
+    /// Mark discovery as completed.
+    pub fn mark_completed(&mut self) {
+        self.phase = DiscoveryPhase::Completed;
+    }
+}
+
+impl Default for ProgressiveTimeoutState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Discovery phase for progressive timeout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryPhase {
+    /// Initial aggressive scan period
+    Initial,
+    /// Extended scan period (after initial)
+    Extended,
+    /// Discovery completed
+    Completed,
+}
+
+impl std::fmt::Display for DiscoveryPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DiscoveryPhase::Initial => write!(f, "Initial Scan"),
+            DiscoveryPhase::Extended => write!(f, "Extended Scan"),
+            DiscoveryPhase::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+/// Decision from progressive timeout calculation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimeoutDecision {
+    /// Continue scanning in current phase
+    Continue,
+    /// Extend scanning with a new phase
+    Extend,
+    /// Stop scanning
+    Stop { reason: StopReason },
+}
+
+/// Reason for stopping discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// Maximum time reached
+    MaxTimeReached,
+    /// Idle timeout (no recent discoveries)
+    IdleTimeout,
+    /// Discovery completed normally
+    Completed,
+    /// User requested stop
+    UserRequested,
+}
+
+/// Summary of discovery progress for UI display.
+#[derive(Debug, Clone)]
+pub struct DiscoveryProgress {
+    /// Current discovery phase
+    pub phase: DiscoveryPhase,
+    /// Time elapsed since discovery started
+    pub elapsed: std::time::Duration,
+    /// Number of sensors discovered so far
+    pub sensors_discovered: usize,
+    /// Number of extensions applied
+    pub extensions_count: u32,
+    /// Whether discovery is still active
+    pub is_active: bool,
+}
+
+impl DiscoveryProgress {
+    /// Get a human-readable status string.
+    pub fn status_text(&self) -> String {
+        if !self.is_active {
+            return format!(
+                "Completed: {} sensor{}",
+                self.sensors_discovered,
+                if self.sensors_discovered == 1 { "" } else { "s" }
+            );
+        }
+
+        let elapsed_secs = self.elapsed.as_secs();
+        let phase_text = match self.phase {
+            DiscoveryPhase::Initial => "Scanning",
+            DiscoveryPhase::Extended => "Extended scan",
+            DiscoveryPhase::Completed => "Complete",
+        };
+
+        format!(
+            "{} ({:.0}s): {} sensor{}",
+            phase_text,
+            elapsed_secs,
+            self.sensors_discovered,
+            if self.sensors_discovered == 1 { "" } else { "s" }
+        )
+    }
+
+    /// Get progress as a percentage (approximate based on typical timing).
+    pub fn progress_percent(&self, config: &ProgressiveTimeoutConfig) -> f32 {
+        if !self.is_active {
+            return 100.0;
+        }
+
+        let elapsed_secs = self.elapsed.as_secs_f32();
+        let max_secs = config.max_total_secs as f32;
+
+        (elapsed_secs / max_secs * 100.0).min(99.0)
+    }
+}
+
+/// Result of parallel BLE/ANT+ discovery.
+///
+/// Indicates which protocols were successfully started and any errors.
+#[derive(Debug, Clone, Default)]
+pub struct ParallelDiscoveryResult {
+    /// Whether BLE discovery was successfully started
+    pub ble_started: bool,
+    /// Whether ANT+ discovery was successfully started
+    pub ant_started: bool,
+    /// Error message if BLE failed to start
+    pub ble_error: Option<String>,
+    /// Error message if ANT+ failed to start
+    pub ant_error: Option<String>,
+}
+
+impl ParallelDiscoveryResult {
+    /// Check if at least one protocol started successfully.
+    pub fn any_started(&self) -> bool {
+        self.ble_started || self.ant_started
+    }
+
+    /// Check if both protocols started successfully.
+    pub fn all_started(&self) -> bool {
+        self.ble_started && self.ant_started
+    }
+
+    /// Check if there were any errors.
+    pub fn has_errors(&self) -> bool {
+        self.ble_error.is_some() || self.ant_error.is_some()
     }
 }
 

@@ -2,16 +2,32 @@
 //!
 //! T045: Implement sensor discovery list widget
 //! T046: Implement sensor pairing confirmation dialog
+//! T009-3.4: Add connection quality indicators to sensor setup screen
+//! T009-4.4: Add sensor conflict resolution dialog
+//! T009-6.4: Add in-app troubleshooting tips
+
+use std::collections::HashMap;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::sensors::ant::dongle::{AntDongle, DongleStatus};
+use crate::sensors::conflict::{DataType, SensorConflict};
+use crate::sensors::health::HealthStatus;
+use crate::sensors::quality::{QualityLevel, QualityStats};
+use crate::sensors::troubleshooting::{
+    get_no_sensors_tips, get_poor_signal_tips, get_power_meter_tips,
+    get_ant_plus_tips, IssueDetector, TroubleshootingTip, TipPriority,
+};
 use crate::sensors::types::{ConnectionState, DiscoveredSensor, Protocol, SensorState, SensorType};
+use crate::ui::dialogs::sensor_conflict::{
+    ConflictNotificationBanner, ConflictResolutionAction, SensorConflictDialog,
+    SensorConflictDialogState,
+};
+use crate::ui::widgets::connection_quality::ConnectionQualityIndicator;
 
 use super::Screen;
 
 /// Sensor setup screen state.
-#[derive(Default)]
 pub struct SensorSetupScreen {
     /// Whether discovery is active
     pub is_scanning: bool,
@@ -32,6 +48,43 @@ pub struct SensorSetupScreen {
     /// Sensor for protocol choice (device_id, ble_sensor, ant_sensor)
     pub protocol_choice_sensor:
         Option<(String, Option<DiscoveredSensor>, Option<DiscoveredSensor>)>,
+    /// Connection quality stats per device (device_id -> QualityStats)
+    pub quality_stats: HashMap<String, QualityStats>,
+    /// State for the sensor conflict resolution dialog
+    pub conflict_dialog_state: SensorConflictDialogState,
+    /// Active sensor conflicts (data_type -> conflict)
+    pub active_conflicts: Vec<SensorConflict>,
+    /// Last conflict resolution action (for external handling)
+    pub last_conflict_action: Option<ConflictResolutionAction>,
+    /// Issue detector for contextual troubleshooting tips
+    pub issue_detector: IssueDetector,
+    /// Whether to show expanded troubleshooting panel
+    pub show_troubleshooting_panel: bool,
+    /// Dismissed tip titles (to avoid showing same tip repeatedly)
+    dismissed_tips: std::collections::HashSet<String>,
+}
+
+impl Default for SensorSetupScreen {
+    fn default() -> Self {
+        Self {
+            is_scanning: false,
+            discovered_sensors: Vec::new(),
+            connected_sensors: Vec::new(),
+            selected_sensor: None,
+            show_pairing_dialog: false,
+            ant_enabled: false,
+            ant_dongles: Vec::new(),
+            show_protocol_dialog: false,
+            protocol_choice_sensor: None,
+            quality_stats: HashMap::new(),
+            conflict_dialog_state: SensorConflictDialogState::new(),
+            active_conflicts: Vec::new(),
+            last_conflict_action: None,
+            issue_detector: IssueDetector::new(),
+            show_troubleshooting_panel: false,
+            dismissed_tips: std::collections::HashSet::new(),
+        }
+    }
 }
 
 impl SensorSetupScreen {
@@ -104,6 +157,171 @@ impl SensorSetupScreen {
     /// Set ANT+ enabled state.
     pub fn set_ant_enabled(&mut self, enabled: bool) {
         self.ant_enabled = enabled;
+    }
+
+    /// Update connection quality stats for a sensor.
+    pub fn update_quality_stats(&mut self, device_id: &str, stats: QualityStats) {
+        self.quality_stats.insert(device_id.to_string(), stats);
+    }
+
+    /// Update quality stats for multiple sensors.
+    pub fn update_all_quality_stats(&mut self, stats: Vec<QualityStats>) {
+        for stat in stats {
+            self.quality_stats.insert(stat.device_id.clone(), stat);
+        }
+    }
+
+    /// Clear quality stats for a sensor.
+    pub fn clear_quality_stats(&mut self, device_id: &str) {
+        self.quality_stats.remove(device_id);
+    }
+
+    /// Get quality stats for a sensor.
+    pub fn get_quality_stats(&self, device_id: &str) -> Option<&QualityStats> {
+        self.quality_stats.get(device_id)
+    }
+
+    /// Get sensors with poor quality connections.
+    pub fn get_poor_quality_sensors(&self) -> Vec<&SensorState> {
+        self.connected_sensors
+            .iter()
+            .filter(|s| {
+                self.quality_stats
+                    .get(&s.device_id)
+                    .map(|q| q.level == QualityLevel::Poor)
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// Check if any sensor has poor connection quality.
+    pub fn has_poor_quality_sensors(&self) -> bool {
+        self.quality_stats.values().any(|q| q.level == QualityLevel::Poor)
+    }
+
+    // =========================================================================
+    // Conflict Management
+    // =========================================================================
+
+    /// Update active conflicts from the conflict detector.
+    pub fn update_conflicts(&mut self, conflicts: Vec<SensorConflict>) {
+        self.active_conflicts = conflicts;
+    }
+
+    /// Add a new conflict or update an existing one.
+    pub fn add_conflict(&mut self, conflict: SensorConflict) {
+        // Replace if same data type exists
+        if let Some(existing) = self.active_conflicts
+            .iter_mut()
+            .find(|c| c.data_type == conflict.data_type)
+        {
+            *existing = conflict;
+        } else {
+            self.active_conflicts.push(conflict);
+        }
+    }
+
+    /// Remove a conflict by data type.
+    pub fn remove_conflict(&mut self, data_type: DataType) {
+        self.active_conflicts.retain(|c| c.data_type != data_type);
+    }
+
+    /// Get unresolved conflicts.
+    pub fn unresolved_conflicts(&self) -> Vec<&SensorConflict> {
+        self.active_conflicts
+            .iter()
+            .filter(|c| !c.is_resolved && c.is_active())
+            .collect()
+    }
+
+    /// Check if there are any unresolved conflicts.
+    pub fn has_unresolved_conflicts(&self) -> bool {
+        self.active_conflicts
+            .iter()
+            .any(|c| !c.is_resolved && c.is_active())
+    }
+
+    /// Get the number of unresolved conflicts.
+    pub fn unresolved_conflict_count(&self) -> usize {
+        self.active_conflicts
+            .iter()
+            .filter(|c| !c.is_resolved && c.is_active())
+            .count()
+    }
+
+    /// Open the conflict resolution dialog for a specific data type.
+    pub fn open_conflict_dialog(&mut self, data_type: DataType) {
+        if let Some(conflict) = self.active_conflicts
+            .iter()
+            .find(|c| c.data_type == data_type)
+            .cloned()
+        {
+            self.conflict_dialog_state.open(conflict);
+        }
+    }
+
+    /// Open the conflict resolution dialog for a specific conflict.
+    pub fn open_conflict_dialog_for(&mut self, conflict: SensorConflict) {
+        self.conflict_dialog_state.open(conflict);
+    }
+
+    /// Take the last conflict action (consumes it).
+    pub fn take_conflict_action(&mut self) -> Option<ConflictResolutionAction> {
+        self.last_conflict_action.take()
+    }
+
+    // =========================================================================
+    // Troubleshooting Management
+    // =========================================================================
+
+    /// Record a signal quality issue for a sensor.
+    pub fn record_quality_issue(&mut self, device_id: &str, sensor_name: &str, quality: QualityLevel, rssi: Option<i16>) {
+        self.issue_detector.record_quality_issue(device_id, sensor_name, quality, rssi);
+    }
+
+    /// Record a connection health issue for a sensor.
+    pub fn record_health_issue(&mut self, device_id: &str, sensor_name: &str, status: HealthStatus) {
+        self.issue_detector.record_health_issue(device_id, sensor_name, status);
+    }
+
+    /// Record a discovery issue for a missing sensor.
+    pub fn record_discovery_issue(&mut self, sensor_name: &str, sensor_type: SensorType) {
+        self.issue_detector.record_discovery_issue(sensor_name, sensor_type);
+    }
+
+    /// Record a battery issue for a sensor.
+    pub fn record_battery_issue(&mut self, device_id: &str, sensor_name: &str, level: u8) {
+        self.issue_detector.record_battery_issue(device_id, sensor_name, level);
+    }
+
+    /// Record that no ANT+ dongle is available.
+    pub fn record_ant_dongle_missing(&mut self) {
+        self.issue_detector.record_ant_dongle_missing();
+    }
+
+    /// Clear all detected issues.
+    pub fn clear_issues(&mut self) {
+        self.issue_detector.clear();
+    }
+
+    /// Check if there are any detected issues.
+    pub fn has_issues(&self) -> bool {
+        self.issue_detector.has_issues()
+    }
+
+    /// Dismiss a troubleshooting tip by title.
+    pub fn dismiss_tip(&mut self, title: &str) {
+        self.dismissed_tips.insert(title.to_string());
+    }
+
+    /// Check if a tip has been dismissed.
+    pub fn is_tip_dismissed(&self, title: &str) -> bool {
+        self.dismissed_tips.contains(title)
+    }
+
+    /// Toggle the troubleshooting panel visibility.
+    pub fn toggle_troubleshooting_panel(&mut self) {
+        self.show_troubleshooting_panel = !self.show_troubleshooting_panel;
     }
 
     /// Check if a sensor with the same name exists with a different protocol.
@@ -246,18 +464,9 @@ impl SensorSetupScreen {
                             );
                         }
 
-                        // T154: Troubleshooting tips
+                        // T009-6.4: Troubleshooting tips
                         ui.add_space(16.0);
-                        ui.group(|ui| {
-                            ui.label(RichText::new("Troubleshooting Tips").size(14.0).strong());
-                            ui.add_space(4.0);
-                            ui.label("• Make sure Bluetooth is enabled on your device");
-                            ui.label("• Ensure your trainer/sensors are powered on");
-                            ui.label("• Keep sensors within 10 meters of your computer");
-                            ui.label("• Wake up your sensors by moving/pedaling");
-                            ui.label("• Check that no other app is connected to the sensor");
-                            ui.label("• Try restarting the sensor if it won't appear");
-                        });
+                        self.render_troubleshooting_tips_panel(ui, TroubleshootingContext::NoSensors);
                     } else {
                         // Clone sensors to avoid borrow conflict with mutable self
                         let sensors: Vec<_> = self.discovered_sensors.clone();
@@ -275,6 +484,29 @@ impl SensorSetupScreen {
                     if self.connected_sensors.is_empty() {
                         ui.label(RichText::new("No sensors connected").weak());
                     } else {
+                        // Show conflict notification banner if there are unresolved conflicts
+                        let unresolved: Vec<_> = self.active_conflicts
+                            .iter()
+                            .filter(|c| !c.is_resolved && c.is_active())
+                            .cloned()
+                            .collect();
+
+                        if !unresolved.is_empty() {
+                            if let Some(data_type) = ConflictNotificationBanner::new(&unresolved).show(ui) {
+                                // User clicked on a conflict to resolve
+                                if let Some(conflict) = unresolved.into_iter().find(|c| c.data_type == data_type) {
+                                    self.conflict_dialog_state.open(conflict);
+                                }
+                            }
+                            ui.add_space(8.0);
+                        }
+
+                        // Show warning banner if any sensor has poor connection quality
+                        if self.has_poor_quality_sensors() {
+                            self.render_poor_quality_warning(ui);
+                            ui.add_space(8.0);
+                        }
+
                         for sensor in &self.connected_sensors {
                             self.render_connected_sensor(ui, sensor);
                         }
@@ -298,6 +530,27 @@ impl SensorSetupScreen {
         if self.show_protocol_dialog {
             if let Some((name, ble, ant)) = &self.protocol_choice_sensor.clone() {
                 self.render_protocol_choice_dialog(ui, name, ble.as_ref(), ant.as_ref());
+            }
+        }
+
+        // Sensor conflict resolution dialog
+        if self.conflict_dialog_state.visible {
+            let response = SensorConflictDialog::new(&mut self.conflict_dialog_state).show(ui);
+            match response.action {
+                ConflictResolutionAction::SelectPrimary { data_type, device_id, remember } => {
+                    // Store the action for external handling
+                    self.last_conflict_action = Some(ConflictResolutionAction::SelectPrimary {
+                        data_type,
+                        device_id,
+                        remember,
+                    });
+                }
+                ConflictResolutionAction::Cancel => {
+                    // Dialog was cancelled, no action needed
+                }
+                ConflictResolutionAction::None => {
+                    // Dialog still open
+                }
             }
         }
 
@@ -347,8 +600,20 @@ impl SensorSetupScreen {
 
     /// Render a connected sensor item.
     fn render_connected_sensor(&self, ui: &mut Ui, sensor: &SensorState) {
+        let quality_stats = self.quality_stats.get(&sensor.device_id);
+        let is_poor_quality = quality_stats
+            .map(|q| q.level == QualityLevel::Poor)
+            .unwrap_or(false);
+
+        // Use different background color for poor quality connections
+        let bg_color = if is_poor_quality {
+            Color32::from_rgba_unmultiplied(234, 67, 53, 25) // Red tint for poor connections
+        } else {
+            ui.visuals().faint_bg_color
+        };
+
         let frame = egui::Frame::new()
-            .fill(ui.visuals().faint_bg_color)
+            .fill(bg_color)
             .inner_margin(12.0)
             .corner_radius(4.0);
 
@@ -377,6 +642,42 @@ impl SensorSetupScreen {
                             ui.label(battery_indicator(battery));
                         }
                     });
+
+                    // Show quality indicator for connected sensors
+                    if sensor.connection_state == ConnectionState::Connected {
+                        ui.horizontal(|ui| {
+                            if let Some(stats) = quality_stats {
+                                ConnectionQualityIndicator::new()
+                                    .with_stats(stats.clone())
+                                    .compact()
+                                    .show(ui);
+
+                                ui.add_space(4.0);
+
+                                // Show quality level text
+                                let quality_color = match stats.level {
+                                    QualityLevel::Excellent => Color32::from_rgb(52, 168, 83),
+                                    QualityLevel::Good => Color32::from_rgb(102, 187, 106),
+                                    QualityLevel::Fair => Color32::from_rgb(251, 188, 4),
+                                    QualityLevel::Poor => Color32::from_rgb(234, 67, 53),
+                                };
+                                ui.label(
+                                    RichText::new(format!("{}", stats.level))
+                                        .small()
+                                        .color(quality_color),
+                                );
+
+                                // Show warning icon for poor connections
+                                if stats.level == QualityLevel::Poor {
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new("⚠").color(Color32::from_rgb(234, 67, 53)));
+                                }
+                            } else if let Some(rssi) = sensor.signal_strength {
+                                // Fallback to RSSI-based signal indicator if no quality stats available
+                                ui.label(signal_indicator(rssi));
+                            }
+                        });
+                    }
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -386,6 +687,194 @@ impl SensorSetupScreen {
                 });
             });
         });
+
+        ui.add_space(4.0);
+    }
+
+    /// Render a warning banner for poor quality connections.
+    fn render_poor_quality_warning(&self, ui: &mut Ui) {
+        let poor_sensors = self.get_poor_quality_sensors();
+        if poor_sensors.is_empty() {
+            return;
+        }
+
+        let warning_bg = Color32::from_rgba_unmultiplied(234, 67, 53, 30);
+        let warning_border = Color32::from_rgb(234, 67, 53);
+
+        egui::Frame::new()
+            .fill(warning_bg)
+            .stroke(egui::Stroke::new(1.0, warning_border))
+            .inner_margin(10.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("⚠").size(18.0).color(warning_border));
+                    ui.add_space(8.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("Poor Connection Quality Detected")
+                                .strong()
+                                .color(warning_border),
+                        );
+                        let sensor_names: Vec<_> = poor_sensors.iter().map(|s| s.name.as_str()).collect();
+                        let names_text = if sensor_names.len() == 1 {
+                            format!("{} has a weak signal", sensor_names[0])
+                        } else {
+                            format!("{} have weak signals", sensor_names.join(", "))
+                        };
+                        ui.label(RichText::new(names_text).weak());
+
+                        // Show quick troubleshooting tips
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("Quick fixes:").small().strong());
+                        for tip in get_poor_signal_tips().iter().take(3) {
+                            ui.label(RichText::new(format!("• {}", tip)).small().weak());
+                        }
+                    });
+                });
+            });
+    }
+
+    /// Render the troubleshooting tips panel based on context.
+    fn render_troubleshooting_tips_panel(&mut self, ui: &mut Ui, context: TroubleshootingContext) {
+        let tips = match context {
+            TroubleshootingContext::NoSensors => get_no_sensors_tips(),
+            TroubleshootingContext::PoorSignal => get_poor_signal_tips(),
+            TroubleshootingContext::PowerMeterMissing => get_power_meter_tips(),
+            TroubleshootingContext::AntPlus => get_ant_plus_tips(),
+        };
+
+        let (title, icon) = match context {
+            TroubleshootingContext::NoSensors => ("Troubleshooting Tips", "💡"),
+            TroubleshootingContext::PoorSignal => ("Signal Troubleshooting", "📶"),
+            TroubleshootingContext::PowerMeterMissing => ("Power Meter Tips", "⚡"),
+            TroubleshootingContext::AntPlus => ("ANT+ Troubleshooting", "📡"),
+        };
+
+        let bg_color = Color32::from_rgba_unmultiplied(66, 133, 244, 20);
+        let border_color = Color32::from_rgb(66, 133, 244);
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .inner_margin(12.0)
+            .corner_radius(6.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(icon).size(18.0));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(title).size(14.0).strong().color(border_color));
+                });
+                ui.add_space(6.0);
+
+                for tip in tips {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("•").color(Color32::GRAY));
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(tip).small());
+                    });
+                }
+            });
+    }
+
+    /// Render contextual troubleshooting based on detected issues.
+    fn render_contextual_troubleshooting(&mut self, ui: &mut Ui) {
+        let contextual_tips = self.issue_detector.generate_contextual_tips();
+        if contextual_tips.is_empty() {
+            return;
+        }
+
+        // Filter out dismissed tips
+        let active_tips: Vec<_> = contextual_tips
+            .into_iter()
+            .filter(|t| !self.dismissed_tips.contains(&t.tip.title))
+            .collect();
+
+        if active_tips.is_empty() {
+            return;
+        }
+
+        ui.add_space(8.0);
+
+        // Show the top tip prominently
+        if let Some(top_tip) = active_tips.first() {
+            self.render_tip_card(ui, &top_tip.tip, &top_tip.context);
+        }
+
+        // Show toggle for more tips if there are multiple
+        if active_tips.len() > 1 {
+            ui.add_space(4.0);
+            let toggle_text = if self.show_troubleshooting_panel {
+                format!("▼ Hide {} more tips", active_tips.len() - 1)
+            } else {
+                format!("▶ Show {} more tips", active_tips.len() - 1)
+            };
+
+            if ui.small_button(&toggle_text).clicked() {
+                self.show_troubleshooting_panel = !self.show_troubleshooting_panel;
+            }
+
+            if self.show_troubleshooting_panel {
+                for tip in active_tips.iter().skip(1) {
+                    self.render_tip_card(ui, &tip.tip, &tip.context);
+                }
+            }
+        }
+    }
+
+    /// Render a single tip card.
+    fn render_tip_card(&mut self, ui: &mut Ui, tip: &TroubleshootingTip, context: &str) {
+        let (bg_color, border_color) = match tip.priority {
+            TipPriority::Critical => (
+                Color32::from_rgba_unmultiplied(234, 67, 53, 25),
+                Color32::from_rgb(234, 67, 53),
+            ),
+            TipPriority::High => (
+                Color32::from_rgba_unmultiplied(251, 188, 4, 25),
+                Color32::from_rgb(251, 188, 4),
+            ),
+            TipPriority::Medium => (
+                Color32::from_rgba_unmultiplied(66, 133, 244, 20),
+                Color32::from_rgb(66, 133, 244),
+            ),
+            TipPriority::Low => (
+                Color32::from_rgba_unmultiplied(160, 160, 170, 20),
+                Color32::from_rgb(160, 160, 170),
+            ),
+        };
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .inner_margin(10.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tip.icon).size(16.0));
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&tip.title).strong().color(border_color));
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if ui.small_button("✕").on_hover_text("Dismiss").clicked() {
+                                    self.dismissed_tips.insert(tip.title.clone());
+                                }
+                            });
+                        });
+
+                        ui.label(RichText::new(context).small().weak());
+                        ui.add_space(4.0);
+
+                        // Show first resolution step
+                        if let Some(first_step) = tip.resolution.first() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("→").color(border_color));
+                                ui.label(RichText::new(first_step).small());
+                            });
+                        }
+                    });
+                });
+            });
 
         ui.add_space(4.0);
     }
@@ -528,6 +1017,19 @@ impl SensorSetupScreen {
                 });
             });
     }
+}
+
+/// Context for which troubleshooting tips to show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TroubleshootingContext {
+    /// No sensors found during discovery.
+    NoSensors,
+    /// Poor signal quality detected.
+    PoorSignal,
+    /// Power meter expected but not found.
+    PowerMeterMissing,
+    /// ANT+ specific issues.
+    AntPlus,
 }
 
 /// Get an icon for a sensor type.

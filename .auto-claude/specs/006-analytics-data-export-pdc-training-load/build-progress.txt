@@ -1,0 +1,61 @@
+# Build Progress: Analytics Data Export (PDC/Training Load)
+
+## Status: In Progress (14/17 subtasks complete)
+
+## Implementation Plan Created: 2026-01-02
+
+### Summary
+Created detailed implementation plan with 4 phases and 17 subtasks to implement analytics data export functionality following the existing leaderboard export pattern.
+
+### Phases Overview:
+1. **P1: Export Data Structures** (5 subtasks)
+   - Create serializable export structures for PDC, training load, CP model, fitness profile
+
+2. **P2: AnalyticsExporter Implementation** (6 subtasks)
+   - Implement AnalyticsExporter with JSON and CSV export methods
+   - Add export options for filtering
+
+3. **P3: Unit Tests** (5 subtasks)
+   - Comprehensive tests for serialization, CSV format, error handling
+
+4. **P4: Module Integration** (2 subtasks)
+   - Wire up to analytics module
+   - Add integration test
+
+### Key Discoveries:
+- LeaderboardExporter in `src/leaderboards/export.rs` provides the pattern to follow
+- AnalyticsStore in `src/storage/analytics_store.rs` provides all needed data access methods
+- All analytics data structures already have Serialize/Deserialize derives
+
+### Next Steps:
+- P1.2: Create PdcExport structure for Power Duration Curve data
+- P1.3: Create TrainingLoadExport structure for daily ATL/CTL/TSB/TSS
+- P1.4: Create CpModelExport structure for CP/W' data
+- P1.5: Create FitnessProfileExport structure
+
+---
+## Progress Log
+
+[2026-01-03] **P3.4 COMPLETED**: Test export error handling
+  - Added 15 comprehensive unit tests for ExportError enum
+  - Tests cover: UserNotFound, InsufficientData, SerializationFailed, DatabaseError variants
+  - Verified error messages are informative and include relevant context
+  - Tested std::error::Error trait implementation
+  - Tested edge cases: empty messages, long messages, special characters
+  - All acceptance criteria met
+  - Commit: 863fade
+
+[2026-01-03] **P3.2 COMPLETED**: Test PDC CSV export format
+  - Verified 8 existing unit tests for PDC CSV export
+  - Tests cover: empty export, single point, multiple points, timestamps, header format, sorting, RFC 3339 format
+  - PDC data uses integers and RFC 3339 timestamps (no CSV escaping needed)
+  - All acceptance criteria met
+
+[2026-01-03] **P1.1 COMPLETED**: Created AnalyticsExport root structure
+  - Created `src/metrics/analytics/export.rs` with AnalyticsExport struct
+  - Added metadata fields: exported_at, export_version, user_id
+  - Follows LeaderboardExport pattern from leaderboards/export.rs
+  - Includes unit tests for serialization/deserialization
+  - Commit: 329bdaf
+
+[2026-01-02] Implementation plan created with 17 subtasks across 4 phases

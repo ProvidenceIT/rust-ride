@@ -1,0 +1,165 @@
+{
+  "project_name": "RustRide",
+  "project_type": "desktop-app",
+  "tech_stack": {
+    "primary_language": "Rust",
+    "frameworks": ["egui", "eframe", "wgpu", "tokio"],
+    "key_dependencies": [
+      "btleplug (Bluetooth LE)",
+      "rusqlite (SQLite database)",
+      "quick-xml (workout file parsing)",
+      "egui_plot (metric visualization)",
+      "tts (text-to-speech)",
+      "rumqttc (MQTT for smart fan)",
+      "oauth2 (Strava/TrainingPeaks sync)",
+      "glam (3D math)",
+      "fluent (i18n)",
+      "hidapi (USB HID devices)"
+    ]
+  },
+  "target_audience": {
+    "primary_persona": "Serious indoor cyclists who want structured training with their smart trainer without monthly subscription fees",
+    "secondary_personas": [
+      "Privacy-conscious cyclists who prefer self-hosted solutions over cloud-based platforms",
+      "Budget-conscious cyclists avoiding Zwift's EUR17.99/month subscription",
+      "Tech-savvy developers who appreciate open-source fitness software",
+      "Linux/cross-platform users who need native non-Windows cycling software"
+    ],
+    "pain_points": [
+      "Zwift and TrainerRoad require ongoing monthly subscriptions",
+      "Cloud-based platforms require internet connection and account creation",
+      "Existing platforms are resource-heavy and require gaming GPUs",
+      "Many features in subscription apps are unnecessary for focused training",
+      "Privacy concerns with data stored on third-party servers",
+      "Limited cross-platform support (especially Linux)"
+    ],
+    "goals": [
+      "Execute structured workouts with ERG mode on smart trainers",
+      "Track training progress with power zones and TSS metrics",
+      "Export rides to Strava/TrainingPeaks/Garmin Connect",
+      "Train effectively without recurring costs",
+      "Use a lightweight application that works on modest hardware",
+      "Maintain complete ownership of training data"
+    ],
+    "usage_context": "Home indoor training setup with smart trainer, typically 3-5 sessions per week, sessions lasting 30-90 minutes. Used on dedicated training computer (often older hardware or Raspberry Pi). Paired with Bluetooth power meters, heart rate monitors, and FTMS-compatible smart trainers."
+  },
+  "product_vision": {
+    "one_liner": "Open-source, self-hosted indoor cycling training application - a lightweight Zwift alternative without the subscription",
+    "problem_statement": "Current indoor cycling platforms like Zwift require ongoing subscriptions (EUR17.99/month), are resource-heavy, and include many features unnecessary for focused training. Cyclists who want a straightforward, cost-effective training tool lack good self-hosted alternatives.",
+    "value_proposition": "RustRide provides all essential indoor training features - sensor connectivity, structured workouts, ERG mode, ride recording, and analytics - without monthly fees, internet requirements, or heavy hardware demands. It's free, open-source, and you own all your data.",
+    "success_metrics": [
+      "Connect to BLE trainer in under 30 seconds",
+      "Start workout from launch in 3 or fewer clicks",
+      "Ride data loss on crash limited to 30 seconds maximum",
+      "Memory usage under 200MB during active ride",
+      "CPU usage under 10% during ride",
+      "Compatible with Wahoo, Tacx, Elite (FTMS) trainers",
+      "Export compatibility with Strava and Garmin Connect",
+      "Active GitHub community with regular releases"
+    ]
+  },
+  "current_state": {
+    "maturity": "mvp",
+    "existing_features": [
+      "Bluetooth LE sensor discovery and connection (FTMS trainers, power meters, HR monitors)",
+      "ANT+ protocol support via USB dongle",
+      "Real-time metrics display (power, cadence, HR, speed, distance)",
+      "Power and heart rate zone calculations with visual indicators",
+      "Structured workout parsing (ZWO, MRC/ERG formats)",
+      "Workout execution with ERG mode control",
+      "Ride recording with pause detection and lap markers",
+      "Export to TCX and CSV formats",
+      "Ride history with filtering, sorting, and analytics",
+      "SQLite database for offline-first storage",
+      "3D world rendering with multiple environments (coastal, countryside, mountains)",
+      "Dynamic weather and time-of-day effects",
+      "NPC cyclists for ambient group ride feel",
+      "Segment leaderboards and timing",
+      "GPX/FIT/TCX route import with elevation data",
+      "LAN-based group rides via mDNS",
+      "Training challenges and clubs system",
+      "Achievement and badge system",
+      "Power Duration Curve and analytics dashboard",
+      "FTP auto-detection algorithm",
+      "Training load tracking (TSS, ATL, CTL, ACWR)",
+      "ML-based workout recommendations and fatigue detection",
+      "Smart fan control via MQTT",
+      "External display streaming via WebSocket",
+      "Stream Deck / USB HID button support",
+      "Text-to-speech audio cues",
+      "Internationalization (i18n) support",
+      "High contrast and colorblind accessibility modes",
+      "Headless/CLI mode for Linux daemon operation",
+      "Onboarding tutorial wizard"
+    ],
+    "known_gaps": [
+      "Cloud ML API backend not implemented (local inference only)",
+      "TTS engine not fully integrated",
+      "Strava OAuth sync incomplete",
+      "Weather API integration placeholder only",
+      "HID device enumeration not fully implemented",
+      "No FIT file export (only TCX/CSV)",
+      "No real-world route video playback",
+      "No mobile companion app",
+      "No Apple TV / Smart TV app",
+      "No voice control implementation",
+      "No plugin/extension architecture"
+    ],
+    "technical_debt": [
+      "Multiple TODO comments for cloud API integration",
+      "TTS module has placeholder implementations",
+      "OAuth token refresh not fully implemented",
+      "HID device opening/closing has stub code",
+      "Weather provider HTTP requests are placeholders"
+    ]
+  },
+  "competitive_context": {
+    "alternatives": [
+      "Zwift - Market leader with 3D worlds, multiplayer, EUR17.99/month subscription",
+      "TrainerRoad - AI-driven training plans, no virtual world, EUR12.99/month",
+      "Wahoo SYSTM - 4D power profiling, mental training videos, EUR14.99/month",
+      "Rouvy - Real-world route videos with AR overlays, EUR12.99/month",
+      "Fulgaz - High-quality route videos, gradient simulation, EUR11.99/month"
+    ],
+    "differentiators": [
+      "Completely free and open-source (no subscription required)",
+      "Self-hosted with full data ownership and privacy",
+      "Offline-first architecture (no internet/account required)",
+      "Lightweight resource usage (works on modest hardware)",
+      "Cross-platform including Linux native support",
+      "Extensible open-source codebase"
+    ],
+    "market_position": "RustRide positions itself as the open-source, self-hosted alternative to commercial indoor cycling platforms. It targets users who prioritize cost-effectiveness, data privacy, and cross-platform support over social features and polished 3D graphics. The focus is on essential training functionality rather than gamification.",
+    "competitor_pain_points": [
+      "Monthly subscription costs add up over time",
+      "Internet dependency means no training during outages",
+      "Data locked in proprietary platforms",
+      "Heavy resource requirements need dedicated gaming hardware",
+      "Limited Linux support from commercial platforms"
+    ],
+    "competitor_analysis_available": false
+  },
+  "constraints": {
+    "technical": [
+      "Bluetooth LE hardware required for sensor connectivity",
+      "wgpu/GPU support needed for 3D world rendering",
+      "Linux requires X11/Wayland and BlueZ 5.x",
+      "ANT+ requires compatible USB dongle",
+      "Voice control requires external Vosk model download",
+      "Video sync feature depends on optional FFmpeg"
+    ],
+    "resources": [
+      "Developed by Providence IT (appears to be small team or solo developer based on git history)",
+      "Open-source project relying on community contributions",
+      "No dedicated cloud infrastructure budget"
+    ],
+    "dependencies": [
+      "btleplug crate for cross-platform Bluetooth LE",
+      "External Strava/TrainingPeaks APIs for fitness platform sync",
+      "OpenWeatherMap API for weather integration",
+      "Optional: MQTT broker for smart fan control",
+      "Optional: Vosk speech recognition model for voice control"
+    ]
+  },
+  "created_at": "2026-01-02T12:00:00Z"
+}

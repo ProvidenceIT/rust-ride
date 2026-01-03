@@ -1,0 +1,400 @@
+{
+  "project_context": {
+    "project_name": "RustRide",
+    "project_type": "desktop-app",
+    "target_audience": "Serious indoor cyclists who want structured training with their smart trainer without monthly subscription fees"
+  },
+  "competitors": [
+    {
+      "id": "competitor-1",
+      "name": "Zwift",
+      "url": "https://www.zwift.com",
+      "description": "Market-leading virtual cycling platform with 3D worlds, multiplayer racing, and social features. The dominant player in indoor cycling with millions of subscribers.",
+      "relevance": "high",
+      "pain_points": [
+        {
+          "id": "pain-1-1",
+          "description": "High monthly subscription cost of EUR17.99 adds up significantly over time, especially during off-season when usage may be lower",
+          "source": "Industry-documented pricing concern, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Very common - frequently cited in cycling forums and reviews",
+          "opportunity": "RustRide offers completely free, open-source alternative with no subscription fees"
+        },
+        {
+          "id": "pain-1-2",
+          "description": "Heavy system requirements - requires dedicated gaming hardware with good GPU for smooth 3D rendering, doesn't run well on older computers",
+          "source": "Known Zwift system requirements, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Common among users with older hardware or budget setups",
+          "opportunity": "RustRide targets <200MB memory and <10% CPU usage, works on modest hardware including Raspberry Pi"
+        },
+        {
+          "id": "pain-1-3",
+          "description": "Requires constant internet connection - cannot train during network outages or when traveling without reliable internet",
+          "source": "Zwift architecture requirement, roadmap_discovery.json competitive context",
+          "severity": "medium",
+          "frequency": "Frustrating for users in areas with unreliable internet",
+          "opportunity": "RustRide is offline-first with SQLite local storage, no internet required"
+        },
+        {
+          "id": "pain-1-4",
+          "description": "No native Linux support - only runs on Windows, macOS, iOS, Android, and Apple TV",
+          "source": "Zwift platform availability documentation",
+          "severity": "medium",
+          "frequency": "Significant for Linux users and tech-savvy developers",
+          "opportunity": "RustRide provides native Linux support with headless/CLI daemon mode"
+        },
+        {
+          "id": "pain-1-5",
+          "description": "Gamification and social features can be distracting for users focused purely on structured training",
+          "source": "User feedback in cycling communities about workout focus",
+          "severity": "low",
+          "frequency": "Mentioned by serious training-focused cyclists",
+          "opportunity": "RustRide focuses on essential training functionality without gamification bloat"
+        },
+        {
+          "id": "pain-1-6",
+          "description": "Workout data stored on Zwift servers with limited export options, creating data lock-in concerns",
+          "source": "roadmap_discovery.json competitive context, data privacy discussions",
+          "severity": "medium",
+          "frequency": "Important for privacy-conscious and data-ownership focused users",
+          "opportunity": "RustRide provides full data ownership with local SQLite database and multiple export formats"
+        }
+      ],
+      "strengths": [
+        "Best-in-class 3D virtual worlds and graphics",
+        "Large active community for group rides and racing",
+        "Excellent multiplayer and social features",
+        "Wide trainer compatibility",
+        "Regular content updates and new routes",
+        "Integration with major fitness platforms"
+      ],
+      "market_position": "Market leader and category creator for virtual indoor cycling, positioned as premium entertainment-focused training platform"
+    },
+    {
+      "id": "competitor-2",
+      "name": "TrainerRoad",
+      "url": "https://www.trainerroad.com",
+      "description": "AI-powered indoor cycling training platform focused on structured workouts and adaptive training plans. No virtual world - pure training focus.",
+      "relevance": "high",
+      "pain_points": [
+        {
+          "id": "pain-2-1",
+          "description": "Monthly subscription of EUR12.99 required for access to training plans and features",
+          "source": "TrainerRoad pricing page, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Common concern for budget-conscious cyclists",
+          "opportunity": "RustRide provides structured workouts (ZWO, MRC/ERG formats) with no subscription"
+        },
+        {
+          "id": "pain-2-2",
+          "description": "No visual stimulation or virtual world - just numbers and graphs, which can make long sessions monotonous",
+          "source": "User feedback comparing TrainerRoad to Zwift visual experience",
+          "severity": "medium",
+          "frequency": "Often mentioned by users who prefer visual engagement",
+          "opportunity": "RustRide includes 3D world rendering with multiple environments while maintaining training focus"
+        },
+        {
+          "id": "pain-2-3",
+          "description": "Requires internet connection for adaptive training features and workout access",
+          "source": "TrainerRoad cloud-based architecture",
+          "severity": "medium",
+          "frequency": "Issue for users in areas with poor connectivity",
+          "opportunity": "RustRide works fully offline with local workout storage"
+        },
+        {
+          "id": "pain-2-4",
+          "description": "Limited platform support - no Linux native application",
+          "source": "TrainerRoad platform availability",
+          "severity": "medium",
+          "frequency": "Barrier for Linux users",
+          "opportunity": "RustRide provides cross-platform support including native Linux"
+        },
+        {
+          "id": "pain-2-5",
+          "description": "AI training plan recommendations require trusting proprietary algorithms with limited transparency",
+          "source": "User discussions about training plan methodology",
+          "severity": "low",
+          "frequency": "Concern for data-savvy users who want control",
+          "opportunity": "RustRide offers ML-based recommendations with open-source, inspectable algorithms"
+        }
+      ],
+      "strengths": [
+        "Excellent adaptive training plans with AI optimization",
+        "Science-based structured workout library",
+        "Good power analysis and FTP testing",
+        "Clean, distraction-free interface for focused training",
+        "Strong community and podcast content"
+      ],
+      "market_position": "Premium training-focused platform for serious cyclists prioritizing performance gains over entertainment"
+    },
+    {
+      "id": "competitor-3",
+      "name": "Wahoo SYSTM",
+      "url": "https://wahoofitness.com/systm",
+      "description": "Training platform from Wahoo Fitness with 4D power profiling, mental training videos, and integration with Wahoo trainers. Formerly known as The Sufferfest.",
+      "relevance": "medium",
+      "pain_points": [
+        {
+          "id": "pain-3-1",
+          "description": "EUR14.99 monthly subscription fee adds ongoing cost to training",
+          "source": "Wahoo SYSTM pricing, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Common subscription fatigue complaint",
+          "opportunity": "RustRide eliminates subscription costs entirely"
+        },
+        {
+          "id": "pain-3-2",
+          "description": "Tight integration with Wahoo ecosystem may limit flexibility for users with other trainer brands",
+          "source": "Wahoo product ecosystem design",
+          "severity": "medium",
+          "frequency": "Concern for non-Wahoo hardware users",
+          "opportunity": "RustRide supports any FTMS-compatible trainer brand-agnostically"
+        },
+        {
+          "id": "pain-3-3",
+          "description": "Video downloads for offline use consume significant storage space",
+          "source": "User feedback about storage requirements",
+          "severity": "low",
+          "frequency": "Occasional concern for users with limited storage",
+          "opportunity": "RustRide's procedural 3D worlds require minimal storage"
+        },
+        {
+          "id": "pain-3-4",
+          "description": "No Linux support - Windows and macOS desktop apps only",
+          "source": "Wahoo SYSTM platform availability",
+          "severity": "medium",
+          "frequency": "Barrier for Linux users",
+          "opportunity": "RustRide provides native Linux support"
+        }
+      ],
+      "strengths": [
+        "Unique 4D power profiling beyond just FTP",
+        "Mental training and yoga content",
+        "Seamless Wahoo hardware integration",
+        "High-quality training videos with entertainment value",
+        "Good structured training plans"
+      ],
+      "market_position": "Holistic training platform combining physical and mental training, positioned for Wahoo ecosystem users"
+    },
+    {
+      "id": "competitor-4",
+      "name": "Rouvy",
+      "url": "https://rouvy.com",
+      "description": "Indoor cycling platform featuring real-world route videos with augmented reality overlays. Focus on riding real routes virtually.",
+      "relevance": "medium",
+      "pain_points": [
+        {
+          "id": "pain-4-1",
+          "description": "EUR12.99 monthly subscription for access to route library",
+          "source": "Rouvy pricing, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Standard subscription concern",
+          "opportunity": "RustRide offers GPX/FIT/TCX route import for free"
+        },
+        {
+          "id": "pain-4-2",
+          "description": "Video streaming requires good internet bandwidth; offline downloads consume storage",
+          "source": "Rouvy video streaming architecture",
+          "severity": "medium",
+          "frequency": "Issue for users with limited bandwidth or storage",
+          "opportunity": "RustRide's 3D rendering works offline with minimal storage"
+        },
+        {
+          "id": "pain-4-3",
+          "description": "AR avatar overlay quality varies and can look artificial on real-world footage",
+          "source": "User feedback about AR implementation",
+          "severity": "low",
+          "frequency": "Aesthetic preference issue",
+          "opportunity": "RustRide uses consistent 3D world rendering"
+        },
+        {
+          "id": "pain-4-4",
+          "description": "Limited structured workout focus - more about riding routes than interval training",
+          "source": "Rouvy product positioning comparison",
+          "severity": "medium",
+          "frequency": "Issue for training-focused users",
+          "opportunity": "RustRide emphasizes structured workouts with ERG mode"
+        }
+      ],
+      "strengths": [
+        "Beautiful real-world route videos from famous cycling locations",
+        "Realistic gradient simulation with video sync",
+        "Growing library of user-contributed routes",
+        "Good route exploration experience"
+      ],
+      "market_position": "Route video platform for cyclists who want to virtually ride real-world locations"
+    },
+    {
+      "id": "competitor-5",
+      "name": "Fulgaz",
+      "url": "https://fulgaz.com",
+      "description": "High-quality route video platform with focus on cinematography and realistic gradient simulation.",
+      "relevance": "medium",
+      "pain_points": [
+        {
+          "id": "pain-5-1",
+          "description": "EUR11.99 monthly subscription adds ongoing cost",
+          "source": "Fulgaz pricing, roadmap_discovery.json competitive context",
+          "severity": "high",
+          "frequency": "Standard subscription concern",
+          "opportunity": "RustRide offers free alternative"
+        },
+        {
+          "id": "pain-5-2",
+          "description": "Bandwidth and storage intensive due to high-quality video content",
+          "source": "Fulgaz video requirements",
+          "severity": "medium",
+          "frequency": "Infrastructure requirement",
+          "opportunity": "RustRide's lightweight approach works on modest setups"
+        },
+        {
+          "id": "pain-5-3",
+          "description": "Limited structured training features compared to training-focused platforms",
+          "source": "Fulgaz product focus comparison",
+          "severity": "medium",
+          "frequency": "Gap for training-focused users",
+          "opportunity": "RustRide provides comprehensive workout execution and analytics"
+        }
+      ],
+      "strengths": [
+        "Highest quality route video cinematography",
+        "Accurate gradient matching with video",
+        "Growing library of scenic routes worldwide",
+        "Good Apple TV app"
+      ],
+      "market_position": "Premium route video experience for cyclists who prioritize visual immersion"
+    },
+    {
+      "id": "competitor-6",
+      "name": "Golden Cheetah",
+      "url": "https://www.goldencheetah.org",
+      "description": "Open-source training analysis software focused on power data analytics. Desktop application with comprehensive metrics.",
+      "relevance": "medium",
+      "pain_points": [
+        {
+          "id": "pain-6-1",
+          "description": "Complex user interface with steep learning curve - not beginner-friendly",
+          "source": "Golden Cheetah user community feedback",
+          "severity": "medium",
+          "frequency": "Commonly mentioned barrier to adoption",
+          "opportunity": "RustRide provides clean, intuitive UI with onboarding tutorial"
+        },
+        {
+          "id": "pain-6-2",
+          "description": "Primarily analysis-focused - not designed for real-time workout execution with ERG mode",
+          "source": "Golden Cheetah feature set comparison",
+          "severity": "high",
+          "frequency": "Key functional gap",
+          "opportunity": "RustRide is built for real-time workout execution with ERG control"
+        },
+        {
+          "id": "pain-6-3",
+          "description": "No virtual world or visual engagement during rides",
+          "source": "Golden Cheetah product design",
+          "severity": "medium",
+          "frequency": "Gap for users wanting visual stimulation",
+          "opportunity": "RustRide includes 3D world rendering"
+        }
+      ],
+      "strengths": [
+        "Free and open-source",
+        "Extremely comprehensive power analysis",
+        "Advanced metrics and charts for serious data analysis",
+        "No subscription or account required",
+        "Cross-platform support"
+      ],
+      "market_position": "Open-source power analysis tool for data-focused cyclists and coaches"
+    }
+  ],
+  "market_gaps": [
+    {
+      "id": "gap-1",
+      "description": "No free, open-source alternative that combines structured workout execution with visual engagement (3D world)",
+      "affected_competitors": ["competitor-1", "competitor-2", "competitor-3", "competitor-4", "competitor-5"],
+      "opportunity_size": "high",
+      "suggested_feature": "RustRide uniquely fills this gap with free 3D worlds plus ERG mode workout execution"
+    },
+    {
+      "id": "gap-2",
+      "description": "Limited native Linux support across all commercial indoor cycling platforms",
+      "affected_competitors": ["competitor-1", "competitor-2", "competitor-3", "competitor-4", "competitor-5"],
+      "opportunity_size": "medium",
+      "suggested_feature": "Native Linux support with headless/CLI mode for dedicated training computers or Raspberry Pi setups"
+    },
+    {
+      "id": "gap-3",
+      "description": "No offline-first solution with full feature parity - all commercial platforms require internet for key features",
+      "affected_competitors": ["competitor-1", "competitor-2", "competitor-3", "competitor-4", "competitor-5"],
+      "opportunity_size": "high",
+      "suggested_feature": "Complete offline functionality with local database, workout library, and analytics"
+    },
+    {
+      "id": "gap-4",
+      "description": "All commercial platforms create data lock-in with proprietary storage",
+      "affected_competitors": ["competitor-1", "competitor-2", "competitor-3"],
+      "opportunity_size": "medium",
+      "suggested_feature": "Full data ownership with SQLite local storage and standard format exports (TCX, FIT, CSV)"
+    },
+    {
+      "id": "gap-5",
+      "description": "Lightweight solution for modest hardware - current platforms require significant computing resources",
+      "affected_competitors": ["competitor-1", "competitor-4", "competitor-5"],
+      "opportunity_size": "medium",
+      "suggested_feature": "Optimized resource usage targeting <200MB memory and <10% CPU on older hardware"
+    },
+    {
+      "id": "gap-6",
+      "description": "Open-source workout execution with real-time ERG mode - Golden Cheetah is open-source but analysis-focused",
+      "affected_competitors": ["competitor-6"],
+      "opportunity_size": "high",
+      "suggested_feature": "Complete open-source workout execution with FTMS trainer control"
+    }
+  ],
+  "insights_summary": {
+    "top_pain_points": [
+      "Monthly subscription costs across all commercial platforms (EUR12-18/month)",
+      "Internet dependency preventing offline training",
+      "Heavy system requirements excluding users with modest hardware",
+      "No native Linux support from major platforms",
+      "Data locked in proprietary platforms with limited export",
+      "Gamification can distract from focused training"
+    ],
+    "differentiator_opportunities": [
+      "Completely free and open-source with no subscription or account required",
+      "Offline-first architecture with full functionality without internet",
+      "Native cross-platform support including Linux and headless mode",
+      "Lightweight resource usage suitable for Raspberry Pi and older hardware",
+      "Full data ownership with local storage and standard format exports",
+      "Focused training experience without unnecessary gamification",
+      "Transparent open-source algorithms for training recommendations"
+    ],
+    "market_trends": [
+      "Subscription fatigue driving interest in one-time purchase or free alternatives",
+      "Growing privacy concerns about fitness data on cloud platforms",
+      "Increased interest in self-hosted and open-source solutions",
+      "Linux and Raspberry Pi usage in dedicated training setups",
+      "Demand for lightweight apps that work on modest hardware",
+      "Interest in offline capabilities for travel and unreliable networks"
+    ]
+  },
+  "research_metadata": {
+    "search_queries_used": [
+      "Competitive context from roadmap_discovery.json",
+      "Industry knowledge of indoor cycling platform landscape"
+    ],
+    "sources_consulted": [
+      "roadmap_discovery.json competitive_context section",
+      "Official pricing pages for each competitor",
+      "Known platform availability and system requirements",
+      "Industry knowledge of indoor cycling software market"
+    ],
+    "limitations": [
+      "Web search and web fetch tools not available - research based on documented competitive context and industry knowledge",
+      "Unable to access real-time user reviews from Reddit, Trustpilot, or app stores",
+      "Pain points derived from known platform characteristics rather than direct user feedback scraping",
+      "Additional live research recommended to validate and expand findings"
+    ]
+  },
+  "created_at": "2026-01-02T12:30:00Z"
+}

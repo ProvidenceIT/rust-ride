@@ -323,6 +323,17 @@ pub enum WorkoutEvent {
         /// Whether this is a recovery interval
         is_recovery: bool,
     },
+    /// Current interval was restarted
+    IntervalRestarted {
+        /// Name of the interval being restarted
+        interval_name: String,
+        /// Target power for the interval
+        target_power: Option<u16>,
+        /// Duration of the interval in seconds
+        duration_secs: u32,
+        /// Whether this is a recovery interval
+        is_recovery: bool,
+    },
     /// Countdown before interval change
     IntervalCountdown { seconds_remaining: u32 },
     /// Workout has been paused
@@ -359,7 +370,7 @@ pub enum WorkoutParseError {
 
     /// Unsupported workout format
     #[error("Unsupported format: {0}")]
-    UnsupportedFormat(String),
+UnsupportedFormat(String),
 
     /// Empty workout (no segments)
     #[error("Workout has no segments")]
@@ -368,4 +379,24 @@ pub enum WorkoutParseError {
     /// IO error reading file
     #[error("IO error: {0}")]
     IoError(String),
+}
+
+/// Errors during workout file export.
+#[derive(Debug, Error)]
+pub enum WorkoutExportError {
+    /// IO error writing file
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// Invalid workout structure
+    #[error("Invalid workout: {0}")]
+    InvalidWorkout(String),
+
+    /// Empty workout (no segments to export)
+    #[error("Workout has no segments to export")]
+    EmptyWorkout,
+
+    /// Formatting error during export
+    #[error("Formatting error: {0}")]
+    FormattingError(String),
 }

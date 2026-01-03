@@ -1,0 +1,4 @@
+{
+  "task_description": "# Complete Audio Engine\n\nFinish the audio engine implementation using rodio for sound effects, audio cues, and background audio during rides. Includes countdown sounds, achievement chimes, and optional workout music playback.\n\n## Rationale\nAudio feedback enhances the training experience and provides important cues during intense efforts. A polished audio experience differentiates RustRide as a complete training solution.\n\n## User Stories\n- As a cyclist, I want audio countdown before intervals so that I can prepare for effort changes\n- As a user, I want sound effects for achievements so that my accomplishments feel rewarding\n\n## Acceptance Criteria\n- [ ] Countdown sounds play before interval changes\n- [ ] Achievement and milestone chimes work\n- [ ] Audio volume controls function correctly\n- [ ] Audio engine initializes reliably on all platforms\n- [ ] No audio lag or synchronization issues\n",
+  "workflow_type": "feature"
+}

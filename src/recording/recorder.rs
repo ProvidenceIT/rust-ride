@@ -5,7 +5,10 @@
 //! T031-T038: Autosave and crash recovery
 //! T140: Integrate motion data recording
 //! T115: Integrate SmO2 data recording
+//! T104: Integrate auto-sync on ride completion
 
+use crate::integrations::sync::{PlatformConfig, SyncPlatform, SyncServiceHandle};
+use crate::recording::exporter_fit::export_fit;
 use crate::recording::types::{
     LiveRideSummary, RecorderConfig, RecorderError, RecordingStatus, Ride, RideSample,
 };
@@ -45,6 +48,21 @@ pub struct RecoverableRide {
     pub samples: Vec<RideSample>,
 }
 
+/// A lap marker during a ride.
+#[derive(Debug, Clone)]
+pub struct LapMarker {
+    /// Lap number (1-indexed)
+    pub lap_number: u32,
+    /// Elapsed seconds when lap was marked
+    pub elapsed_seconds: u32,
+    /// Distance at lap marker in meters
+    pub distance_meters: f64,
+    /// Average power for this lap (if available)
+    pub avg_power: Option<u16>,
+    /// Average heart rate for this lap (if available)
+    pub avg_hr: Option<u8>,
+}
+
 /// Records ride data from sensors.
 pub struct RideRecorder {
     /// Configuration
@@ -59,6 +77,8 @@ pub struct RideRecorder {
     motion_samples: Vec<MotionSample>,
     /// T115: Recorded SmO2 samples (muscle oxygen data)
     smo2_samples: Vec<SmO2Sample>,
+    /// Lap markers during the ride
+    lap_markers: Vec<LapMarker>,
     /// Live summary statistics
     live_summary: LiveRideSummary,
     /// Database for persistence (optional)
@@ -67,6 +87,10 @@ pub struct RideRecorder {
     autosave_handle: Option<Arc<TokioMutex<Option<tokio::task::JoinHandle<()>>>>>,
     /// Flag to indicate if autosave is running
     autosave_running: Arc<TokioMutex<bool>>,
+    /// T104: Sync service handle for auto-upload
+    sync_service: Option<SyncServiceHandle>,
+    /// T104: Platform configurations for auto-sync
+    platform_configs: std::collections::HashMap<SyncPlatform, PlatformConfig>,
 }
 
 /// T115: SmO2 sample for recording.
@@ -98,10 +122,13 @@ impl RideRecorder {
             samples: Vec::new(),
             motion_samples: Vec::new(),
             smo2_samples: Vec::new(),
+            lap_markers: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: None,
             autosave_handle: None,
             autosave_running: Arc::new(TokioMutex::new(false)),
+            sync_service: None,
+            platform_configs: std::collections::HashMap::new(),
         }
     }
 
@@ -119,16 +146,42 @@ impl RideRecorder {
             samples: Vec::new(),
             motion_samples: Vec::new(),
             smo2_samples: Vec::new(),
+            lap_markers: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: Some(database),
             autosave_handle: None,
             autosave_running: Arc::new(TokioMutex::new(false)),
+            sync_service: None,
+            platform_configs: std::collections::HashMap::new(),
         }
     }
 
     /// Set the database for autosave functionality.
     pub fn set_database(&mut self, database: Arc<Mutex<Database>>) {
         self.database = Some(database);
+    }
+
+    /// T104: Set the sync service handle for auto-upload functionality.
+    ///
+    /// When a sync service is configured, completed rides will be automatically
+    /// exported to FIT format and queued for upload to platforms with auto_sync enabled.
+    pub fn set_sync_service(&mut self, sync_service: SyncServiceHandle) {
+        self.sync_service = Some(sync_service);
+    }
+
+    /// T104: Update platform configuration for auto-sync.
+    ///
+    /// This determines which platforms will receive automatic uploads when rides complete.
+    pub fn set_platform_config(&mut self, platform: SyncPlatform, config: PlatformConfig) {
+        self.platform_configs.insert(platform, config);
+    }
+
+    /// T104: Get the current auto-sync status for a platform.
+    pub fn is_auto_sync_enabled(&self, platform: SyncPlatform) -> bool {
+        self.platform_configs
+            .get(&platform)
+            .map(|c| c.enabled && c.auto_sync)
+            .unwrap_or(false)
     }
 
     /// Start recording a new ride.
@@ -141,6 +194,7 @@ impl RideRecorder {
         self.samples.clear();
         self.motion_samples.clear();
         self.smo2_samples.clear();
+        self.lap_markers.clear();
         self.live_summary = LiveRideSummary::default();
         self.status = RecordingStatus::Recording;
 
@@ -249,6 +303,102 @@ impl RideRecorder {
             .collect()
     }
 
+    /// Add a lap marker at the current position in the ride.
+    ///
+    /// This creates a lap marker that captures the current elapsed time
+    /// and distance. Lap data is useful for FIT file export and analysis.
+    pub fn add_lap(&mut self) -> Result<LapMarker, RecorderError> {
+        if self.status != RecordingStatus::Recording && self.status != RecordingStatus::Paused {
+            return Err(RecorderError::NotRecording);
+        }
+
+        let lap_number = self.lap_markers.len() as u32 + 1;
+        let elapsed_seconds = self.live_summary.elapsed_seconds;
+        let distance_meters = self.live_summary.distance_meters;
+
+        // Calculate average power and HR since last lap marker
+        let last_lap_time = self
+            .lap_markers
+            .last()
+            .map(|lm| lm.elapsed_seconds)
+            .unwrap_or(0);
+
+        let lap_samples: Vec<&RideSample> = self
+            .samples
+            .iter()
+            .filter(|s| s.elapsed_seconds > last_lap_time)
+            .collect();
+
+        let avg_power = if !lap_samples.is_empty() {
+            let power_sum: u32 = lap_samples
+                .iter()
+                .filter_map(|s| s.power_watts.map(|p| p as u32))
+                .sum();
+            let power_count = lap_samples
+                .iter()
+                .filter(|s| s.power_watts.is_some())
+                .count();
+            if power_count > 0 {
+                Some((power_sum / power_count as u32) as u16)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let avg_hr = if !lap_samples.is_empty() {
+            let hr_sum: u32 = lap_samples
+                .iter()
+                .filter_map(|s| s.heart_rate_bpm.map(|h| h as u32))
+                .sum();
+            let hr_count = lap_samples
+                .iter()
+                .filter(|s| s.heart_rate_bpm.is_some())
+                .count();
+            if hr_count > 0 {
+                Some((hr_sum / hr_count as u32) as u8)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let marker = LapMarker {
+            lap_number,
+            elapsed_seconds,
+            distance_meters,
+            avg_power,
+            avg_hr,
+        };
+
+        self.lap_markers.push(marker.clone());
+        tracing::info!(
+            "Lap {} marked at {}s, {}m",
+            lap_number,
+            elapsed_seconds,
+            distance_meters
+        );
+
+        Ok(marker)
+    }
+
+    /// Get all lap markers for the current ride.
+    pub fn get_laps(&self) -> &[LapMarker] {
+        &self.lap_markers
+    }
+
+    /// Check if there are any lap markers.
+    pub fn has_laps(&self) -> bool {
+        !self.lap_markers.is_empty()
+    }
+
+    /// Get the number of laps marked.
+    pub fn lap_count(&self) -> usize {
+        self.lap_markers.len()
+    }
+
     /// Pause recording.
     pub fn pause(&mut self) -> Result<(), RecorderError> {
         if self.status != RecordingStatus::Recording {
@@ -319,6 +469,9 @@ impl RideRecorder {
     pub fn discard(&mut self) {
         self.current_ride = None;
         self.samples.clear();
+        self.motion_samples.clear();
+        self.smo2_samples.clear();
+        self.lap_markers.clear();
         self.live_summary = LiveRideSummary::default();
         self.status = RecordingStatus::Idle;
         tracing::info!("Discarded recording");
@@ -388,6 +541,9 @@ impl RideRecorder {
     }
 
     /// Save the current ride to the database (T031).
+    ///
+    /// After saving, this will automatically queue uploads to any platforms
+    /// with auto_sync enabled.
     pub fn save_ride(&mut self) -> Result<Ride, RecorderError> {
         let (ride, samples) = self.finish()?;
 
@@ -414,7 +570,88 @@ impl RideRecorder {
             tracing::warn!("No database configured, ride not persisted");
         }
 
+        // T104: Trigger auto-sync for platforms with auto_sync enabled
+        self.trigger_auto_sync(&ride, &samples);
+
         Ok(ride)
+    }
+
+    /// T104: Trigger automatic sync to platforms with auto_sync enabled.
+    ///
+    /// This exports the ride to FIT format and queues uploads for each platform
+    /// that has auto_sync enabled. The upload runs in the background so it doesn't
+    /// block ride saving.
+    fn trigger_auto_sync(&self, ride: &Ride, samples: &[RideSample]) {
+        // Check if sync service is configured
+        let sync_service = match &self.sync_service {
+            Some(s) => s.clone(),
+            None => {
+                tracing::debug!("No sync service configured, skipping auto-sync");
+                return;
+            }
+        };
+
+        // Find platforms with auto_sync enabled
+        let auto_sync_platforms: Vec<SyncPlatform> = self
+            .platform_configs
+            .iter()
+            .filter(|(_, config)| config.enabled && config.auto_sync)
+            .map(|(platform, _)| *platform)
+            .collect();
+
+        if auto_sync_platforms.is_empty() {
+            tracing::debug!("No platforms have auto_sync enabled, skipping");
+            return;
+        }
+
+        // Export ride to FIT format
+        let fit_data = match export_fit(ride, samples) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to export ride to FIT format for auto-sync: {}", e);
+                return;
+            }
+        };
+
+        let ride_id = ride.id;
+        let activity_name = ride.notes.clone();
+
+        tracing::info!(
+            "Auto-syncing ride {} to {} platform(s)",
+            ride_id,
+            auto_sync_platforms.len()
+        );
+
+        // Queue uploads for each platform (spawn async task)
+        for platform in auto_sync_platforms {
+            let sync_handle = sync_service.clone();
+            let fit_data_clone = fit_data.clone();
+            let activity_name_clone = activity_name.clone();
+
+            tokio::spawn(async move {
+                match sync_handle
+                    .queue_upload(ride_id, platform, fit_data_clone, activity_name_clone)
+                    .await
+                {
+                    Ok(record) => {
+                        tracing::info!(
+                            "Queued auto-sync upload for ride {} to {:?} (record: {})",
+                            ride_id,
+                            platform,
+                            record.id
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to queue auto-sync upload for ride {} to {:?}: {}",
+                            ride_id,
+                            platform,
+                            e
+                        );
+                    }
+                }
+            });
+        }
     }
 
     /// Enable autosave with periodic saves (T032).

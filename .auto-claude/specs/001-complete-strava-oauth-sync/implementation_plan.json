@@ -1,0 +1,460 @@
+{
+  "feature": "Complete Strava OAuth Sync",
+  "description": "Finish the Strava OAuth integration to automatically upload completed rides to Strava with token refresh, background sync, and upload status feedback.",
+  "created_at": "2026-01-02T19:51:31.248Z",
+  "updated_at": "2026-01-03T05:12:41.117Z",
+  "status": "done",
+  "planStatus": "completed",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Core OAuth & API Implementation",
+      "description": "Implement real OAuth token exchange and Strava API HTTP calls",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Implement Strava OAuth token exchange",
+          "description": "Replace mock token exchange in DefaultOAuthHandler.handle_callback() with real HTTP POST to https://www.strava.com/oauth/token using oauth2 crate. Exchange authorization code for access_token, refresh_token, and expires_at.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "acceptance_criteria": [
+            "OAuth token exchange makes real HTTP request to Strava",
+            "Returns proper TokenResponse with access/refresh tokens",
+            "Handles error responses from Strava API"
+          ],
+          "notes": "Implemented real OAuth token exchange with Strava. Added StravaTokenResponse and StravaErrorResponse structs for API response parsing. Replaced mock tokens with actual HTTP POST to https://www.strava.com/oauth/token using reqwest. Handles network errors, API errors, and token parsing properly. Committed as 7b33bd1.",
+          "updated_at": "2026-01-02T21:03:46.618156+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Implement token refresh functionality",
+          "description": "Implement DefaultOAuthHandler.refresh_token() to POST to Strava's token endpoint with refresh_token. Handle expired refresh tokens by requiring re-authorization.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "acceptance_criteria": [
+            "Refresh token makes real HTTP request",
+            "Updates stored tokens with new values",
+            "Returns error if refresh token is invalid/expired"
+          ],
+          "notes": "Implemented real Strava token refresh in DefaultOAuthHandler.refresh_token(). Added refresh_strava_token() helper method that POSTs to https://www.strava.com/oauth/token with grant_type=refresh_token. Handles expired/invalid refresh tokens by detecting error codes (invalid, expired, revoked) on refresh_token field and returns AuthorizationRequired for re-authorization. Added 3 unit tests for error cases. Committed as 2846efe.",
+          "updated_at": "2026-01-02T21:07:21.828807+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Implement secure credential storage with keyring",
+          "description": "Complete KeyringCredentialStore implementation using keyring crate. Store encrypted tokens in OS credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service).",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "acceptance_criteria": [
+            "Tokens stored securely in OS keyring",
+            "Can retrieve stored tokens after app restart",
+            "Can delete tokens when user disconnects"
+          ],
+          "notes": "Implemented complete KeyringCredentialStore using keyring crate 2.0. Features: 1) store_tokens() serializes TokenResponse to JSON and stores in OS keyring, 2) get_tokens() retrieves and parses stored JSON back to TokenResponse, 3) delete_tokens() removes credentials from keyring (handles NoEntry gracefully), 4) has_credentials() checks keyring with cache for fast synchronous lookups. Added StoredTokenResponse struct for JSON deserialization with RFC3339 date parsing. Added Mutex-protected credentials cache for performance. Includes 8 unit tests for serialization/deserialization and platform key generation. Committed as dc8cd9e.",
+          "updated_at": "2026-01-02T21:11:23.428925+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Implement Strava activity upload API",
+          "description": "Complete StravaClient.upload_activity() with real HTTP multipart form upload to POST /uploads endpoint. Handle async upload processing with upload_id.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "FIT file uploaded via multipart form POST",
+            "Returns upload_id for status checking",
+            "Handles API rate limits gracefully"
+          ],
+          "notes": "Implemented real Strava activity upload via POST /uploads endpoint. Added reqwest multipart feature for form file uploads. Created StravaUploadResponse/StravaApiError structs for API responses. Upload creates multipart form with FIT file, data_type, external_id, optional name and description. Handles 401 Unauthorized (TokenExpired), 429 rate limiting, and other API errors gracefully. Returns SyncRecord with upload_id in external_id field for async status polling. Added 3 unit tests for error handling and response deserialization. Committed as 157c77f.",
+          "updated_at": "2026-01-02T21:16:07.816576+00:00"
+        },
+        {
+          "id": "1.5",
+          "title": "Implement upload status polling",
+          "description": "Complete StravaClient.check_upload_status() to GET /uploads/{id} and parse processing status. Handle Ready (success with activity_id), Error (with message), and Processing states.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Polls Strava upload status endpoint",
+            "Returns UploadStatus::Ready with activity_id on success",
+            "Returns UploadStatus::Error with message on failure"
+          ],
+          "notes": "Implemented real Strava upload status polling via GET /uploads/{upload_id} endpoint. Returns UploadStatus::Ready { activity_id } when processing completes, UploadStatus::Error { error } when processing fails (e.g., duplicate activity), or UploadStatus::Processing when still pending. Handles 401 (TokenExpired), 429 (rate limit), 404 (not found), and other API errors gracefully. Added 4 unit tests for response deserialization and error handling. Committed as 020e5a8.",
+          "updated_at": "2026-01-02T21:18:58.375375+00:00"
+        },
+        {
+          "id": "1.6",
+          "title": "Implement athlete profile fetch",
+          "description": "Complete StravaClient.get_athlete() to GET /athlete endpoint and parse response into AthleteProfile struct.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Fetches real athlete profile from Strava",
+            "Parses id, username, firstname, lastname, profile image",
+            "Handles 401 unauthorized gracefully"
+          ],
+          "notes": "Implemented real Strava athlete profile fetch via GET /athlete endpoint. Added StravaAthleteResponse struct for API response deserialization. Parses response into AthleteProfile with id, username, firstname, lastname, profile_medium. Handles 401 Unauthorized (TokenExpired), 429 rate limiting, and other API errors gracefully. Added 4 unit tests for response deserialization including full response, minimal response with null fields, and extra field handling. Committed as 25ca8a2.",
+          "updated_at": "2026-01-02T21:22:16.159733+00:00"
+        },
+        {
+          "id": "1.7",
+          "title": "Implement Strava deauthorization",
+          "description": "Complete StravaClient.deauthorize() to POST to /oauth/deauthorize endpoint and clear local credentials.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Calls Strava deauthorize endpoint",
+            "Clears local tokens from keyring",
+            "Handles already-deauthorized case"
+          ],
+          "notes": "Implemented real Strava deauthorization via POST /oauth/deauthorize endpoint. POSTs with bearer token auth, always clears local token regardless of API response (ensures user can disconnect even with network issues). Handles 401 Unauthorized (token already invalid/revoked) and 429 rate limiting gracefully. Added 2 unit tests for error handling and token clearing behavior. Committed as 0b53879.",
+          "updated_at": "2026-01-02T21:25:13.794546+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Sync Service & Auto-Upload",
+      "description": "Create background sync service for automatic ride uploads and retry handling",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Create SyncService struct with platform manager",
+          "description": "Create a new SyncService that manages platform connections, token refresh scheduling, and upload queue. Implement as async actor with message passing.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/service.rs",
+            "src/integrations/sync/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "SyncService created with async task lifecycle",
+            "Manages multiple platform clients (Strava first)",
+            "Exposes public API for connecting/disconnecting platforms"
+          ],
+          "notes": "Created SyncService with async actor pattern using tokio mpsc channels. Implemented SyncServiceHandle for public API with methods for connect, disconnect, queue_upload, retry_upload, cancel_upload, get_sync_records, and update_config. Service manages platform connections (Strava first), loads stored credentials on startup, and provides upload queue infrastructure. Added comprehensive unit tests. Committed as f91d2e5.",
+          "updated_at": "2026-01-02T21:31:15.793336+00:00"
+        },
+        {
+          "id": "2.2",
+          "title": "Implement automatic token refresh scheduler",
+          "description": "Add background task that checks token expiry and proactively refreshes tokens before they expire (e.g., 5 minutes before expiry).",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/service.rs"
+          ],
+          "acceptance_criteria": [
+            "Tokens refreshed automatically before expiry",
+            "Refresh failures logged and retried",
+            "User notified if re-authorization needed"
+          ],
+          "notes": "Implemented automatic token refresh scheduler with background task that checks every 60 seconds. Features: 1) Proactively refreshes tokens 5 minutes before expiry (TOKEN_REFRESH_BUFFER_MINUTES), 2) Retry logic with 30 second delay between attempts (REFRESH_RETRY_DELAY_SECS), 3) Maximum 3 consecutive failures before requiring re-authorization (MAX_REFRESH_FAILURES), 4) SyncEvent enum for UI notifications (TokenRefreshed, TokenRefreshFailed, ReauthorizationRequired, PlatformConnected, PlatformDisconnected), 5) TokenRefreshState tracking per platform for failure count and last attempt time, 6) Event subscription via SyncServiceHandle.subscribe_events(). Added 5 unit tests for constants, state tracking, and event handling. Committed as b71e113.",
+          "updated_at": "2026-01-02T21:38:01.907100+00:00"
+        },
+        {
+          "id": "2.3",
+          "title": "Implement ride completion hook for auto-upload",
+          "description": "Add hook in ride recorder that triggers sync after ride completion when auto_sync is enabled. Export to FIT format and queue for upload.",
+          "status": "completed",
+          "files": [
+            "src/recording/recorder.rs",
+            "src/integrations/sync/service.rs"
+          ],
+          "acceptance_criteria": [
+            "Ride completion triggers upload if auto_sync enabled",
+            "FIT file generated for upload",
+            "Upload queued even if network unavailable"
+          ],
+          "notes": "Implemented ride completion hook for auto-sync. Added: sync service handle to RideRecorder, platform config storage, set_sync_service() and set_platform_config() methods, is_auto_sync_enabled() helper, trigger_auto_sync() method that exports to FIT and queues uploads in background. Modified save_ride() to call trigger_auto_sync(). Committed as a56c66d.",
+          "updated_at": "2026-01-02T21:42:11.481461+00:00"
+        },
+        {
+          "id": "2.4",
+          "title": "Implement upload queue with persistence",
+          "description": "Create upload queue that persists to database. Handle offline scenarios by queuing uploads and retrying when online.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/service.rs",
+            "src/storage/sync_store.rs"
+          ],
+          "acceptance_criteria": [
+            "Pending uploads survive app restart",
+            "Queue processed in order",
+            "Offline detection and retry on reconnect"
+          ],
+          "notes": "Implemented persistent upload queue with offline scenario handling. Created sync_store.rs with StoredUploadQueueEntry struct, CRUD operations, retry tracking, and FIT file storage helpers. Integrated SyncStore with SyncService including spawn_with_db(), load_pending_uploads_from_db() on startup, and automatic persistence. Added connectivity detection with periodic checks and automatic queue processing on reconnect. Implemented exponential backoff retry mechanism with MAX_UPLOAD_RETRIES=5. Added new SyncEvent variants for upload lifecycle and connectivity changes. Committed as 6909ccd.",
+          "updated_at": "2026-01-02T21:52:48.879847+00:00"
+        },
+        {
+          "id": "2.5",
+          "title": "Implement upload status tracking in database",
+          "description": "Create sync_store.rs to manage sync_records table operations. Track upload status (Pending, Uploading, Completed, Failed), external_id, and error messages.",
+          "status": "completed",
+          "files": [
+            "src/storage/sync_store.rs",
+            "src/storage/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "SyncRecord CRUD operations implemented",
+            "Get sync history by ride_id",
+            "Update status with external activity URL"
+          ],
+          "notes": "Implemented comprehensive sync_records table operations in sync_store.rs. Added SyncRecordStatus enum (Pending, Uploading, Completed, Failed) with string serialization. Added StoredSyncRecord struct with status, external_activity_id, external_activity_url, error_message, retry_count, uploaded_at, and created_at fields. Implemented CRUD operations: create_sync_record, get_sync_record, delete_sync_record. Added query methods: get_sync_records_by_ride (for sync history per ride), get_sync_records_by_platform, get_sync_records_by_status, get_pending_sync_records, get_failed_sync_records. Added status update helpers: mark_sync_uploading, mark_sync_completed (with external activity ID), mark_sync_failed (with error message). Added utility methods: is_ride_synced, get_latest_sync_record, get_sync_record_count_by_status. Added 12 comprehensive unit tests covering all operations. Updated mod.rs exports with SyncRecordStatus and StoredSyncRecord (renamed hardware_store's version to HwStoredSyncRecord to avoid conflict). Committed as 6629395.",
+          "updated_at": "2026-01-02T21:59:14.845535+00:00"
+        },
+        {
+          "id": "2.6",
+          "title": "Implement failed upload retry mechanism",
+          "description": "Add retry logic for failed uploads with exponential backoff. Track retry_count and cap at maximum retries. Allow manual retry trigger.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/service.rs"
+          ],
+          "acceptance_criteria": [
+            "Failed uploads retried with backoff",
+            "Max retry limit enforced",
+            "Manual retry API available"
+          ],
+          "notes": "Implemented comprehensive retry logic for failed uploads with exponential backoff. Added: 1) UploadRetryQueued event for manual retry notifications, 2) Enhanced handle_retry_upload() with max retry check (2x automatic limit), database persistence, load from DB fallback, and immediate queue processing trigger, 3) SyncStore methods (reset_for_retry, get_failed_entries, get_retry_count, increment_retry_count), 4) Unit tests for retry functionality. Committed as abf4144.",
+          "updated_at": "2026-01-02T22:04:23.395892+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "UI Integration & Status Display",
+      "description": "Add UI screens for Strava connection and upload status feedback",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Create Strava connection settings screen",
+          "description": "Add settings screen for Strava connection with connect/disconnect buttons, connection status, and athlete profile display when connected.",
+          "status": "completed",
+          "files": [
+            "src/ui/screens/settings_strava.rs",
+            "src/ui/screens/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "Connect button launches OAuth flow",
+            "Shows connected athlete name and profile",
+            "Disconnect button revokes and clears tokens"
+          ],
+          "notes": "Created dedicated Strava settings screen (settings_strava.rs) with full UI implementation. Features: 1) StravaConnectionState enum for tracking connection lifecycle (Disconnected, Connecting, Connected, Disconnecting, Error), 2) StravaSettingsAction enum for UI events (Connect, Disconnect, ToggleAutoSync, Back), 3) StravaSettingsScreen struct with athlete profile display, 4) Render methods for each connection state with appropriate UI elements, 5) Connect button with Strava branding (orange color), 6) Disconnect button when connected, 7) Athlete profile display with initials avatar, name, and username, 8) Auto-sync toggle, 9) Pending uploads count and last sync display, 10) Error state with retry button, 11) Link to Strava profile. Added Screen::StravaSettings variant and exports in mod.rs. Committed as 6fc3c8f.",
+          "updated_at": "2026-01-02T22:09:53.083841+00:00"
+        },
+        {
+          "id": "3.2",
+          "title": "Add auto-sync toggle to settings",
+          "description": "Add toggle in Strava settings for enabling/disabling automatic upload after ride completion.",
+          "status": "completed",
+          "files": [
+            "src/ui/screens/settings_strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Auto-sync toggle visible when connected",
+            "Setting persisted to database",
+            "Clear indication of current setting"
+          ],
+          "notes": "Implemented auto-sync toggle persistence for Strava settings. Added StoredPlatformSync struct and comprehensive CRUD operations in sync_store.rs for the platform_syncs table. Updated SyncService to persist config changes to database when user_id is provided. Added load_platform_config method to retrieve config from database. Includes 14 unit tests covering all platform sync operations including upsert, update, delete, and conflict handling.",
+          "updated_at": "2026-01-02T22:18:03.264387+00:00"
+        },
+        {
+          "id": "3.3",
+          "title": "Show upload status in ride history",
+          "description": "Display Strava sync status icon/badge on each ride in history. Show pending, synced, or failed states with external link when synced.",
+          "status": "completed",
+          "files": [
+            "src/ui/screens/ride_history.rs"
+          ],
+          "acceptance_criteria": [
+            "Sync status visible for each ride",
+            "Click synced badge opens Strava activity",
+            "Failed badge shows error tooltip"
+          ],
+          "notes": "Implemented Strava sync status badge on ride history cards. Added: 1) RideSyncStatus enum with NotSynced, Pending, Synced, and Failed variants, 2) Helper methods for label(), color(), and activity_url() (generates Strava activity URLs), 3) sync_status HashMap in RideHistoryScreen keyed by ride ID, 4) set_sync_status(), set_sync_statuses(), get_sync_status(), clear_sync_status() methods, 5) render_sync_badge() method showing pending (yellow with spinner icon), synced (green with Strava \"S\" icon, clickable to open activity), or failed (red with error tooltip showing retry count), 6) Export RideSyncStatus from screens mod.rs, 7) 7 unit tests for sync status functionality. Committed as 09395a3.",
+          "updated_at": "2026-01-02T22:23:11.635560+00:00"
+        },
+        {
+          "id": "3.4",
+          "title": "Add manual retry button for failed uploads",
+          "description": "Add retry button on ride detail or history for failed syncs. Show retry count and last error message.",
+          "status": "completed",
+          "files": [
+            "src/ui/screens/ride_detail.rs",
+            "src/ui/screens/ride_history.rs"
+          ],
+          "acceptance_criteria": [
+            "Retry button visible for failed syncs",
+            "Shows loading state during retry",
+            "Updates status on success/failure"
+          ],
+          "notes": "Implemented manual retry button for failed syncs on both ride history and ride detail screens. Added:\n\nride_history.rs:\n- RideHistoryAction enum with Navigate and RetrySync variants\n- Extended RideSyncStatus enum with platform field in Pending/Failed variants\n- Added Retrying variant for tracking retry-in-progress state  \n- Retry button in render_sync_badge for failed syncs with tooltip showing error and retry count\n- RideCardResult and SyncBadgeResult internal enums for handling UI interactions\n- Updated all 12+ unit tests for new enum structure\n\nride_detail.rs:\n- sync_status field on RideDetailScreen with set_sync_status()/get_sync_status() methods\n- render_sync_section() showing full sync status with:\n  - Pending: spinner with \"Uploading to {platform}...\"\n  - Synced: \"View on Strava\" button that opens activity URL\n  - Failed: error message, retry count, and \"Retry Upload\" button\n  - Retrying: spinner with \"Retrying upload to {platform}...\"\n- RetrySync variant added to RideDetailAction\n\nmod.rs:\n- Exported RideHistoryAction from screens module\n\nCommitted as b4a80cc.",
+          "updated_at": "2026-01-02T22:34:59.924935+00:00"
+        },
+        {
+          "id": "3.5",
+          "title": "Show sync notification on ride completion",
+          "description": "Display toast/notification when ride sync starts and completes. Show error notification if sync fails.",
+          "status": "completed",
+          "files": [
+            "src/ui/notifications.rs",
+            "src/ui/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "Uploading notification shown",
+            "Success notification with link to activity",
+            "Error notification with retry option"
+          ],
+          "notes": "Implemented SyncNotificationWidget for displaying sync status notifications to users. Created src/ui/widgets/sync_notification.rs with:\n\n1. SyncNotificationWidget: Slide-in notification from bottom-right corner with easing animation\n2. SyncNotificationQueue: Queue for managing pending notifications with auto-dismiss after 5 seconds\n3. SyncNotificationType enum with variants:\n   - Started: Shows upload in progress\n   - Completed: Shows success with optional \"View on Strava\" link\n   - Failed: Shows error with retry button (if not auto-retrying)\n   - ReauthRequired: Prompts user to reconnect account\n   - ConnectivityChanged: Shows online/offline status\n4. handle_event() method to convert SyncEvent to notifications\n5. Platform-specific colors (Strava orange, Garmin blue, TrainingPeaks teal, Intervals.icu violet)\n6. Progress bar showing time remaining before auto-dismiss\n7. Queue deduplication for Started events\n8. 14 comprehensive unit tests\n\nModified src/ui/widgets/mod.rs to export the new module.\n\nCommitted as 6c3b917.",
+          "updated_at": "2026-01-02T22:41:30.214656+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Testing & Polish",
+      "description": "Add tests, handle edge cases, and polish the integration",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Add unit tests for OAuth flow",
+          "description": "Add unit tests for token exchange, refresh, and credential storage. Mock HTTP responses for Strava API.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "acceptance_criteria": [
+            "Token exchange test with mocked HTTP",
+            "Token refresh test with expiry scenarios",
+            "Credential store test with keyring mock"
+          ],
+          "notes": "Added comprehensive unit tests for OAuth token exchange, refresh, and credential storage with mocked HTTP responses using wiremock.\n\nChanges made:\n1. Added wiremock 0.6 to dev-dependencies in Cargo.toml\n2. Made DefaultOAuthHandler.strava_token_url configurable for testing\n3. Added with_strava_token_url() test constructor\n\nNew test modules in oauth.rs:\n- http_mocked_tests (16 tests): Token exchange success/errors, token refresh success/errors, refresh token expiry/invalid/revoked detection, token status checks, authorization URL building\n- credential_store_tests (8 tests): MockCredentialStore implementation, keyring cache behavior, multi-platform handling\n- response_parsing_tests (4 tests): Strava response deserialization\n\nTotal: 28 new tests covering all OAuth flow scenarios.\n\nCommitted as c433191.",
+          "updated_at": "2026-01-02T22:47:08.340352+00:00"
+        },
+        {
+          "id": "4.2",
+          "title": "Add unit tests for Strava client",
+          "description": "Add unit tests for upload, status check, and deauthorize operations. Mock HTTP responses.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Upload test with multipart form verification",
+            "Status polling test with all states",
+            "Rate limit handling test"
+          ],
+          "notes": "Added comprehensive HTTP mocked tests using wiremock for StravaClient operations.\n\nTest coverage (26 new tests in http_mocked_tests module):\n\nUpload Activity Tests (6 tests):\n- test_upload_activity_success - verifies multipart form upload returns correct SyncRecord\n- test_upload_activity_rate_limit - verifies 429 returns ApiError\n- test_upload_activity_unauthorized - verifies 401 returns TokenExpired\n- test_upload_activity_api_error - verifies structured error response parsing\n- test_upload_activity_generic_error - verifies 500 error handling\n- test_upload_activity_without_optional_fields - verifies upload works without name/description\n\nCheck Upload Status Tests (8 tests):\n- test_check_upload_status_processing - verifies Processing state detection\n- test_check_upload_status_ready - verifies Ready state with activity_id\n- test_check_upload_status_error - verifies Error state (duplicate detection)\n- test_check_upload_status_rate_limit - verifies 429 handling\n- test_check_upload_status_unauthorized - verifies 401 returns TokenExpired\n- test_check_upload_status_not_found - verifies 404 handling\n- test_check_upload_status_api_error - verifies structured error parsing\n- test_check_upload_status_empty_error_treated_as_processing - edge case handling\n\nGet Athlete Tests (5 tests):\n- test_get_athlete_success - verifies full profile parsing\n- test_get_athlete_minimal_response - verifies null field handling\n- test_get_athlete_rate_limit - verifies 429 handling\n- test_get_athlete_unauthorized - verifies 401 returns TokenExpired\n- test_get_athlete_api_error - verifies error parsing\n\nDeauthorize Tests (5 tests):\n- test_deauthorize_success - verifies token clearing on success\n- test_deauthorize_rate_limit_still_succeeds - local token cleared\n- test_deauthorize_unauthorized_still_succeeds - already revoked case\n- test_deauthorize_server_error_still_succeeds - network issues handled\n- test_deauthorize_api_error_with_body_still_succeeds - error body parsed\n\nToken State Tests (2 tests):\n- test_clear_token - token clearing\n- test_is_configured_with_token - state tracking\n\nInfrastructure: Made base_url and oauth_base_url configurable with with_base_url() test constructor.\n\nCommitted as 9db12f0.",
+          "updated_at": "2026-01-02T22:53:30.167815+00:00"
+        },
+        {
+          "id": "4.3",
+          "title": "Add integration tests for sync service",
+          "description": "Add integration tests for the full sync flow from ride completion to successful upload.",
+          "status": "completed",
+          "files": [
+            "tests/sync_integration.rs"
+          ],
+          "acceptance_criteria": [
+            "End-to-end sync test with mock Strava",
+            "Retry mechanism test",
+            "Offline queue test"
+          ],
+          "notes": "Added comprehensive integration tests for the sync service in tests/integration/sync_integration_test.rs. Created MockOAuthHandler and MockCredentialStore for testing. Tests cover: service lifecycle, platform connection/configuration, event subscription, upload queue operations, retry mechanism, SyncEvent and SyncRecordStatus types, error handling. Also fixed bug in service.rs where upload_activity was missing ride_id parameter. Committed as 40c758b.",
+          "updated_at": "2026-01-02T23:01:55.137503+00:00"
+        },
+        {
+          "id": "4.4",
+          "title": "Handle edge cases and error scenarios",
+          "description": "Handle edge cases: duplicate uploads, network timeout, Strava API errors, invalid FIT files, revoked tokens during upload.",
+          "status": "completed",
+          "files": [
+            "src/integrations/sync/service.rs",
+            "src/integrations/sync/strava.rs"
+          ],
+          "acceptance_criteria": [
+            "Duplicate detection prevents re-upload",
+            "Timeout handled gracefully",
+            "Clear error messages for users"
+          ],
+          "notes": "Implemented comprehensive edge case handling for Strava sync:\n\n1. New error variants in SyncError:\n   - DuplicateActivity: When activity already exists on platform\n   - InvalidFitFile: When FIT file is malformed or corrupted\n   - Timeout: When request times out with duration\n   - RateLimited: When API rate limit is exceeded\n\n2. FIT file validation (strava.rs):\n   - validate_fit_file() checks header size, signature, and minimum size\n   - Validation runs before upload to fail fast with clear errors\n   - Supports both 12-byte and 14-byte FIT header formats\n\n3. HTTP timeout configuration:\n   - DEFAULT_TIMEOUT_SECS (60s) for regular API calls\n   - UPLOAD_TIMEOUT_SECS (120s) for file uploads\n   - Connect timeout of 30 seconds\n\n4. Duplicate activity detection:\n   - is_duplicate_error() helper detects duplicate messages\n   - DuplicateActivity error returned during upload\n   - UploadStatus::Duplicate variant for status polling\n   - Duplicates treated as success (activity exists)\n\n5. Token expiry handling during upload:\n   - TokenExpired triggers ReauthorizationRequired event\n   - User-friendly message guides user to reconnect\n   - Upload marked as failed (non-retryable)\n\n6. User-friendly error messages via get_user_friendly_error_message()\n\n7. Improved is_retryable_error() categorization\n\n8. Comprehensive unit tests for all edge cases\n\nCommitted as 1e79af1.",
+          "updated_at": "2026-01-02T23:15:20.228166+00:00"
+        },
+        {
+          "id": "4.5",
+          "title": "Add Strava configuration documentation",
+          "description": "Document how users obtain Strava API client_id and client_secret, and configure the app. Add to README or user guide.",
+          "status": "completed",
+          "files": [
+            "docs/strava-setup.md"
+          ],
+          "acceptance_criteria": [
+            "Step-by-step Strava API setup guide",
+            "Configuration file format documented",
+            "Troubleshooting section"
+          ],
+          "notes": "Added comprehensive Strava API documentation to README.md including: step-by-step instructions for creating a Strava API application, obtaining client_id and client_secret, configuring environment variables for Windows/macOS/Linux, connecting Strava account via Settings, and troubleshooting common issues. Also updated Features section to highlight Strava sync capability.",
+          "updated_at": "2026-01-02T23:19:27.576613+00:00"
+        }
+      ]
+    }
+  ],
+  "existing_infrastructure": {
+    "strava_client": "src/integrations/sync/strava.rs - partial implementation with TODOs",
+    "oauth_handler": "src/integrations/sync/oauth.rs - OAuthHandler trait and DefaultOAuthHandler stub",
+    "credential_store": "src/integrations/sync/oauth.rs - KeyringCredentialStore stub",
+    "callback_server": "src/integrations/sync/oauth.rs - OAuthCallbackServer working implementation",
+    "database_tables": "platform_syncs and sync_records tables already exist in schema v6+",
+    "fit_export": "src/recording/types.rs - ExportFormat::Fit already defined"
+  },
+  "dependencies": {
+    "oauth2": "4.4 (already in Cargo.toml)",
+    "keyring": "2.0 (already in Cargo.toml)",
+    "reqwest": "0.11 with json, rustls-tls (already in Cargo.toml)"
+  },
+  "qa_signoff": {
+    "status": "approved",
+    "qa_session": 0,
+    "issues_found": [
+      {
+        "description": "None - all acceptance criteria verified"
+      }
+    ],
+    "tests_passed": {},
+    "timestamp": "2026-01-02T23:26:03.144134+00:00",
+    "ready_for_qa_revalidation": false
+  },
+  "last_updated": "2026-01-02T23:26:03.144134+00:00",
+  "qa_iteration_history": [
+    {
+      "iteration": 1,
+      "status": "approved",
+      "timestamp": "2026-01-02T23:26:15.768122+00:00",
+      "issues": [],
+      "duration_seconds": 382.95
+    }
+  ],
+  "qa_stats": {
+    "total_iterations": 1,
+    "last_iteration": 1,
+    "last_status": "approved",
+    "issues_by_type": {}
+  },
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T05:11:42.515Z"
+}

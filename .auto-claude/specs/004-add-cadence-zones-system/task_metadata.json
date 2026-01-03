@@ -1,0 +1,14 @@
+{
+  "sourceType": "ideation",
+  "ideationType": "code_improvements",
+  "ideaId": "ci-001",
+  "rationale": "The zones.rs module already has well-established patterns for PowerZones (7-zone Coggan) and HRZones (5-zone Karvonen) with color coding, zone lookup, and zone change events via ZoneTracker. The MetricsCalculator already processes cadence data but doesn't have zone classification. Extending this pattern to cadence would complete the metrics trifecta.",
+  "category": "feature",
+  "estimatedEffort": "small",
+  "complexity": "small",
+  "affectedFiles": [
+    "src/metrics/zones.rs",
+    "src/metrics/calculator.rs",
+    "src/ui/widgets/zone_indicator.rs"
+  ]
+}
