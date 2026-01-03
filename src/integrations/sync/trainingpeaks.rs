@@ -1286,7 +1286,12 @@ impl TPWorkout {
         })
     }
 
-    /// Extract power target from a TrainingPeaks step
+    /// Extract power target from a TrainingPeaks step (T013 enhanced)
+    ///
+    /// Handles:
+    /// - Power targets with absolute watts or percentage of FTP
+    /// - Power zone targets (Zone 1-7) mapped to FTP percentages
+    /// - Range power targets for warmup/cooldown/ramp segments
     fn extract_power_target(
         &self,
         step: &TPWorkoutStep,
@@ -1297,61 +1302,154 @@ impl TPWorkout {
             Some(t) if !t.is_empty() => t,
             _ => {
                 // No explicit target, use defaults based on segment type
-                return Ok(match segment_type {
-                    SegmentType::Warmup => PowerTarget::PercentFtp { percent: 50 },
-                    SegmentType::Cooldown => PowerTarget::PercentFtp { percent: 45 },
-                    SegmentType::FreeRide => PowerTarget::PercentFtp { percent: 0 },
-                    _ => PowerTarget::PercentFtp { percent: 75 },
-                });
+                // For warmup/cooldown, provide Range targets for gradual power change
+                return Ok(self.default_power_for_segment(segment_type));
             }
         };
 
-        // Find power target (first Power type target)
+        // First check for PowerZone target (T013: power zone handling)
+        if let Some(zone_target) = targets.iter().find(|t| t.target_type == "PowerZone") {
+            return self.extract_power_zone_target(zone_target, segment_type);
+        }
+
+        // Find power target
         let power_target = targets.iter().find(|t| t.target_type == "Power");
 
         match power_target {
             Some(target) => {
-                let min_value = target.min_value.unwrap_or(0.0);
-                let max_value = target.max_value.unwrap_or(min_value);
-
-                // Determine if values are percentages or absolute watts
-                // TrainingPeaks typically uses "PercentOfFtp" unit for percentages
-                let is_percent = target
-                    .unit
-                    .as_ref()
-                    .map(|u| u.to_lowercase().contains("percent"))
-                    .unwrap_or(false);
-
-                if is_percent {
-                    // Average the min/max for a single percent target
-                    let avg_percent = ((min_value + max_value) / 2.0) as u8;
-                    Ok(PowerTarget::PercentFtp {
-                        percent: avg_percent,
-                    })
-                } else {
-                    // Absolute watts - use midpoint of range
-                    let avg_watts = ((min_value + max_value) / 2.0) as u16;
-
-                    // If we have FTP, convert to percentage for flexibility
-                    if let Some(ftp_value) = ftp {
-                        if ftp_value > 0 {
-                            let percent = ((avg_watts as f32 / ftp_value as f32) * 100.0) as u8;
-                            return Ok(PowerTarget::PercentFtp { percent });
-                        }
-                    }
-
-                    Ok(PowerTarget::Absolute { watts: avg_watts })
-                }
+                self.extract_power_value_target(target, ftp, segment_type)
             }
             None => {
                 // No power target found, use defaults
-                Ok(match segment_type {
-                    SegmentType::Warmup => PowerTarget::PercentFtp { percent: 50 },
-                    SegmentType::Cooldown => PowerTarget::PercentFtp { percent: 45 },
-                    SegmentType::FreeRide => PowerTarget::PercentFtp { percent: 0 },
-                    _ => PowerTarget::PercentFtp { percent: 75 },
+                Ok(self.default_power_for_segment(segment_type))
+            }
+        }
+    }
+
+    /// Get default power target for a segment type (T013)
+    fn default_power_for_segment(&self, segment_type: SegmentType) -> PowerTarget {
+        match segment_type {
+            SegmentType::Warmup => {
+                // Warmup: gradual increase from 40% to 75% FTP
+                PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(75),
+                )
+            }
+            SegmentType::Cooldown => {
+                // Cooldown: gradual decrease from 65% to 40% FTP
+                PowerTarget::range(
+                    PowerTarget::percent_ftp(65),
+                    PowerTarget::percent_ftp(40),
+                )
+            }
+            SegmentType::Ramp => {
+                // Ramp: default gradual increase
+                PowerTarget::range(
+                    PowerTarget::percent_ftp(50),
+                    PowerTarget::percent_ftp(100),
+                )
+            }
+            SegmentType::FreeRide => PowerTarget::PercentFtp { percent: 0 },
+            _ => PowerTarget::PercentFtp { percent: 75 },
+        }
+    }
+
+    /// Extract power target from a PowerZone target type (T013)
+    fn extract_power_zone_target(
+        &self,
+        target: &TPWorkoutTarget,
+        segment_type: SegmentType,
+    ) -> Result<PowerTarget, WorkoutConversionError> {
+        // Try to parse zone from min_value (zone number)
+        let zone = if let Some(zone_num) = target.min_value {
+            zone_num as u8
+        } else if let Some(ref unit) = target.unit {
+            // Try to parse zone from unit string like "Zone 3"
+            parse_power_zone(unit).unwrap_or(3)
+        } else {
+            3 // Default to Zone 3 (Tempo)
+        };
+
+        let (min_pct, max_pct) = power_zone_to_percent_range(zone);
+
+        // For ramp segments, use the full zone range; otherwise use midpoint
+        if segment_type_uses_range_power(segment_type) {
+            Ok(PowerTarget::range(
+                PowerTarget::percent_ftp(min_pct),
+                PowerTarget::percent_ftp(max_pct),
+            ))
+        } else {
+            // Use midpoint of zone range
+            let avg_pct = (min_pct + max_pct) / 2;
+            Ok(PowerTarget::PercentFtp { percent: avg_pct })
+        }
+    }
+
+    /// Extract power target from a Power value target (T013 enhanced)
+    fn extract_power_value_target(
+        &self,
+        target: &TPWorkoutTarget,
+        ftp: Option<u16>,
+        segment_type: SegmentType,
+    ) -> Result<PowerTarget, WorkoutConversionError> {
+        let min_value = target.min_value.unwrap_or(0.0);
+        let max_value = target.max_value.unwrap_or(min_value);
+
+        // Determine if values are percentages or absolute watts
+        // TrainingPeaks typically uses "PercentOfFtp" unit for percentages
+        let is_percent = target
+            .unit
+            .as_ref()
+            .map(|u| u.to_lowercase().contains("percent"))
+            .unwrap_or(false);
+
+        // Check if this is a ramp/warmup/cooldown segment with a range
+        let has_range = (max_value - min_value).abs() > 1.0;
+        let use_range = has_range && segment_type_uses_range_power(segment_type);
+
+        if is_percent {
+            if use_range {
+                // Use Range power target for warmup/cooldown/ramp with min→max
+                let start_pct = min_value as u8;
+                let end_pct = max_value as u8;
+                Ok(PowerTarget::range(
+                    PowerTarget::percent_ftp(start_pct),
+                    PowerTarget::percent_ftp(end_pct),
+                ))
+            } else {
+                // Average the min/max for a single percent target
+                let avg_percent = ((min_value + max_value) / 2.0) as u8;
+                Ok(PowerTarget::PercentFtp {
+                    percent: avg_percent,
                 })
             }
+        } else {
+            // Absolute watts
+            if use_range && ftp.is_some() {
+                let ftp_value = ftp.unwrap();
+                if ftp_value > 0 {
+                    let start_pct = ((min_value / ftp_value as f64) * 100.0) as u8;
+                    let end_pct = ((max_value / ftp_value as f64) * 100.0) as u8;
+                    return Ok(PowerTarget::range(
+                        PowerTarget::percent_ftp(start_pct),
+                        PowerTarget::percent_ftp(end_pct),
+                    ));
+                }
+            }
+
+            // Use midpoint of range
+            let avg_watts = ((min_value + max_value) / 2.0) as u16;
+
+            // If we have FTP, convert to percentage for flexibility
+            if let Some(ftp_value) = ftp {
+                if ftp_value > 0 {
+                    let percent = ((avg_watts as f32 / ftp_value as f32) * 100.0) as u8;
+                    return Ok(PowerTarget::PercentFtp { percent });
+                }
+            }
+
+            Ok(PowerTarget::Absolute { watts: avg_watts })
         }
     }
 
@@ -1381,6 +1479,65 @@ fn map_step_type_to_segment_type(step_type: &str) -> SegmentType {
         "repeat" | "repetition" => SegmentType::Intervals,
         _ => SegmentType::SteadyState, // Default to steady state
     }
+}
+
+// ============================================================================
+// Power Zone Handling (T013)
+// ============================================================================
+
+/// Standard power zones with FTP percentage ranges (based on Coggan zones)
+/// Returns (min_percent, max_percent) for the zone
+fn power_zone_to_percent_range(zone: u8) -> (u8, u8) {
+    match zone {
+        1 => (0, 55),     // Active Recovery: <55%
+        2 => (55, 75),    // Endurance: 55-75%
+        3 => (75, 90),    // Tempo: 75-90%
+        4 => (90, 105),   // Threshold: 90-105%
+        5 => (105, 120),  // VO2max: 105-120%
+        6 => (120, 150),  // Anaerobic: 120-150%
+        7 => (150, 200),  // Neuromuscular: >150%
+        _ => (75, 90),    // Default to Tempo (Zone 3)
+    }
+}
+
+/// Parse a power zone from a string like "Zone 3", "Z3", "3", etc.
+fn parse_power_zone(s: &str) -> Option<u8> {
+    let s = s.trim().to_lowercase();
+
+    // Try "zone N" or "zone N" patterns
+    if let Some(rest) = s.strip_prefix("zone") {
+        if let Ok(zone) = rest.trim().parse::<u8>() {
+            if (1..=7).contains(&zone) {
+                return Some(zone);
+            }
+        }
+    }
+
+    // Try "zN" pattern
+    if let Some(rest) = s.strip_prefix('z') {
+        if let Ok(zone) = rest.trim().parse::<u8>() {
+            if (1..=7).contains(&zone) {
+                return Some(zone);
+            }
+        }
+    }
+
+    // Try just a number
+    if let Ok(zone) = s.parse::<u8>() {
+        if (1..=7).contains(&zone) {
+            return Some(zone);
+        }
+    }
+
+    None
+}
+
+/// Check if a segment type should use Range power targets for gradual power changes
+fn segment_type_uses_range_power(segment_type: SegmentType) -> bool {
+    matches!(
+        segment_type,
+        SegmentType::Warmup | SegmentType::Cooldown | SegmentType::Ramp
+    )
 }
 
 /// Convert a list of TrainingPeaks workouts to internal format
@@ -2346,6 +2503,358 @@ mod tests {
                 assert_eq!(*percent, 91); // (88 + 94) / 2 = 91
             }
             _ => panic!("Expected PercentFtp target"),
+        }
+    }
+
+    // ========================================================================
+    // Power Zone Handling Tests (T013)
+    // ========================================================================
+
+    #[test]
+    fn test_power_zone_to_percent_range() {
+        // Zone 1: Active Recovery
+        assert_eq!(power_zone_to_percent_range(1), (0, 55));
+        // Zone 2: Endurance
+        assert_eq!(power_zone_to_percent_range(2), (55, 75));
+        // Zone 3: Tempo
+        assert_eq!(power_zone_to_percent_range(3), (75, 90));
+        // Zone 4: Threshold
+        assert_eq!(power_zone_to_percent_range(4), (90, 105));
+        // Zone 5: VO2max
+        assert_eq!(power_zone_to_percent_range(5), (105, 120));
+        // Zone 6: Anaerobic
+        assert_eq!(power_zone_to_percent_range(6), (120, 150));
+        // Zone 7: Neuromuscular
+        assert_eq!(power_zone_to_percent_range(7), (150, 200));
+        // Invalid zone defaults to Zone 3
+        assert_eq!(power_zone_to_percent_range(0), (75, 90));
+        assert_eq!(power_zone_to_percent_range(8), (75, 90));
+    }
+
+    #[test]
+    fn test_parse_power_zone() {
+        // "Zone N" format
+        assert_eq!(parse_power_zone("Zone 3"), Some(3));
+        assert_eq!(parse_power_zone("zone 4"), Some(4));
+        assert_eq!(parse_power_zone("Zone1"), Some(1));
+        assert_eq!(parse_power_zone(" zone 5 "), Some(5));
+
+        // "ZN" format
+        assert_eq!(parse_power_zone("Z3"), Some(3));
+        assert_eq!(parse_power_zone("z2"), Some(2));
+
+        // Just number format
+        assert_eq!(parse_power_zone("3"), Some(3));
+        assert_eq!(parse_power_zone("7"), Some(7));
+
+        // Invalid formats
+        assert_eq!(parse_power_zone("Zone 8"), None);
+        assert_eq!(parse_power_zone("Zone 0"), None);
+        assert_eq!(parse_power_zone("invalid"), None);
+        assert_eq!(parse_power_zone(""), None);
+    }
+
+    #[test]
+    fn test_segment_type_uses_range_power() {
+        assert!(segment_type_uses_range_power(SegmentType::Warmup));
+        assert!(segment_type_uses_range_power(SegmentType::Cooldown));
+        assert!(segment_type_uses_range_power(SegmentType::Ramp));
+        assert!(!segment_type_uses_range_power(SegmentType::SteadyState));
+        assert!(!segment_type_uses_range_power(SegmentType::Intervals));
+        assert!(!segment_type_uses_range_power(SegmentType::FreeRide));
+    }
+
+    #[test]
+    fn test_warmup_uses_range_power_target() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Warmup Test".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Warmup".to_string(),
+                    name: Some("Easy warmup".to_string()),
+                    length: Some(600.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: None, // No explicit target, should use default Range
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        assert_eq!(workout.segments.len(), 1);
+        let segment = &workout.segments[0];
+
+        // Should be a Range target for warmup (40% → 75%)
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: s },
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: e },
+                    ) => {
+                        assert_eq!(*s, 40);
+                        assert_eq!(*e, 75);
+                    }
+                    _ => panic!("Expected PercentFtp in Range"),
+                }
+            }
+            _ => panic!("Expected Range target for warmup"),
+        }
+    }
+
+    #[test]
+    fn test_cooldown_uses_range_power_target() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Cooldown Test".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Cooldown".to_string(),
+                    name: Some("Easy spin down".to_string()),
+                    length: Some(300.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: None,
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        let segment = &workout.segments[0];
+
+        // Should be a Range target for cooldown (65% → 40%)
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: s },
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: e },
+                    ) => {
+                        assert_eq!(*s, 65);
+                        assert_eq!(*e, 40);
+                    }
+                    _ => panic!("Expected PercentFtp in Range"),
+                }
+            }
+            _ => panic!("Expected Range target for cooldown"),
+        }
+    }
+
+    #[test]
+    fn test_warmup_with_explicit_range_targets() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Warmup Ramp".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Warmup".to_string(),
+                    name: Some("Progressive warmup".to_string()),
+                    length: Some(600.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "Power".to_string(),
+                        min_value: Some(50.0),
+                        max_value: Some(80.0),
+                        unit: Some("PercentOfFtp".to_string()),
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        let segment = &workout.segments[0];
+
+        // Should use explicit range 50% → 80%
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: s },
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: e },
+                    ) => {
+                        assert_eq!(*s, 50);
+                        assert_eq!(*e, 80);
+                    }
+                    _ => panic!("Expected PercentFtp in Range"),
+                }
+            }
+            _ => panic!("Expected Range target for warmup with explicit range"),
+        }
+    }
+
+    #[test]
+    fn test_power_zone_target_conversion() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Zone 4 Effort".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Interval".to_string(),
+                    name: Some("Threshold work".to_string()),
+                    length: Some(1200.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "PowerZone".to_string(),
+                        min_value: Some(4.0), // Zone 4
+                        max_value: Some(4.0),
+                        unit: None,
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        let segment = &workout.segments[0];
+
+        // Zone 4 should be average of 90-105% = 97%
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                assert_eq!(*percent, 97); // (90 + 105) / 2 = 97
+            }
+            _ => panic!("Expected PercentFtp target for zone-based interval"),
+        }
+    }
+
+    #[test]
+    fn test_power_zone_for_ramp_uses_range() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Zone Ramp".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Ramp".to_string(),
+                    name: Some("Zone 3 ramp".to_string()),
+                    length: Some(300.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "PowerZone".to_string(),
+                        min_value: Some(3.0), // Zone 3: 75-90%
+                        max_value: Some(3.0),
+                        unit: None,
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        let segment = &workout.segments[0];
+
+        // Ramp with zone should use full zone range
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: s },
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: e },
+                    ) => {
+                        assert_eq!(*s, 75); // Zone 3 min
+                        assert_eq!(*e, 90); // Zone 3 max
+                    }
+                    _ => panic!("Expected PercentFtp in Range"),
+                }
+            }
+            _ => panic!("Expected Range target for ramp with zone"),
+        }
+    }
+
+    #[test]
+    fn test_warmup_with_watts_range() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Warmup Watts".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Warmup".to_string(),
+                    name: Some("Progressive warmup".to_string()),
+                    length: Some(600.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "Power".to_string(),
+                        min_value: Some(100.0), // 100W start
+                        max_value: Some(200.0), // 200W end
+                        unit: Some("Watts".to_string()),
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        // With FTP of 250, should convert 100W→40%, 200W→80%
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+        let segment = &workout.segments[0];
+
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: s },
+                        crate::workouts::types::PowerTarget::PercentFtp { percent: e },
+                    ) => {
+                        assert_eq!(*s, 40); // 100/250 = 40%
+                        assert_eq!(*e, 80); // 200/250 = 80%
+                    }
+                    _ => panic!("Expected PercentFtp in Range"),
+                }
+            }
+            _ => panic!("Expected Range target for warmup with watts range"),
         }
     }
 
