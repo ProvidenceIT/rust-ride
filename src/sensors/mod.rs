@@ -53,7 +53,8 @@ pub use reconnection::{
 };
 pub use dual_protocol::{
     DetectionResult, DualProtocolBinding, DualProtocolDetector, MatchConfidence,
-    SensorIdentifier, SensorManufacturer,
+    PreferenceError, ProtocolPreference, ProtocolPreferenceData, ProtocolPreferenceManager,
+    SensorIdentifier, SensorManufacturer, get_preference_path,
 };
 pub use manager::SensorManager;
 pub use smo2::{

@@ -3,10 +3,19 @@
 //! Detects when a sensor is available on both BLE and ANT+ by matching
 //! device names and serial numbers. Creates bindings between dual-protocol
 //! instances to enable protocol preference selection and failover.
+//!
+//! Also provides protocol preference storage to remember user's preferred
+//! protocol (BLE vs ANT+) for each dual-protocol sensor, with persistence
+//! for automatic use on reconnection.
 
 use crate::sensors::types::{DiscoveredSensor, Protocol, SensorProtocol, SensorType};
+use crate::storage::config::get_data_dir;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Instant;
+use thiserror::Error;
 
 /// Identifier extracted from a sensor for matching purposes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -156,6 +165,8 @@ pub struct DualProtocolBinding {
     pub updated_at: Instant,
     /// Confidence level of the match.
     pub confidence: MatchConfidence,
+    /// User's preferred protocol for this sensor (if set).
+    pub preferred_protocol: Option<SensorProtocol>,
 }
 
 impl DualProtocolBinding {
@@ -189,6 +200,53 @@ impl DualProtocolBinding {
             created_at: now,
             updated_at: now,
             confidence,
+            preferred_protocol: None,
+        }
+    }
+
+    /// Set the preferred protocol for this binding.
+    pub fn set_preferred_protocol(&mut self, protocol: SensorProtocol) {
+        self.preferred_protocol = Some(protocol);
+        self.updated_at = Instant::now();
+    }
+
+    /// Clear the preferred protocol.
+    pub fn clear_preferred_protocol(&mut self) {
+        self.preferred_protocol = None;
+        self.updated_at = Instant::now();
+    }
+
+    /// Get the device ID for the preferred protocol, falling back to any available.
+    ///
+    /// Returns the device ID for the preferred protocol if set and available,
+    /// otherwise returns the first available device ID.
+    pub fn get_preferred_device_id(&self) -> Option<&str> {
+        if let Some(preferred) = self.preferred_protocol {
+            // Try to get preferred protocol first
+            if let Some(device_id) = self.device_id_for_protocol(preferred) {
+                return Some(device_id);
+            }
+        }
+
+        // Fall back to any available protocol (prefer BLE by default)
+        self.ble_device_id
+            .as_deref()
+            .or(self.ant_device_id.as_deref())
+    }
+
+    /// Get the preferred protocol, or a default if not set.
+    ///
+    /// If no preference is set, returns BLE as the default.
+    pub fn get_effective_preferred_protocol(&self) -> SensorProtocol {
+        self.preferred_protocol.unwrap_or(SensorProtocol::Ble)
+    }
+
+    /// Check if the preferred protocol is available.
+    pub fn is_preferred_protocol_available(&self) -> bool {
+        match self.preferred_protocol {
+            Some(SensorProtocol::Ble) => self.ble_device_id.is_some(),
+            Some(SensorProtocol::AntPlus) => self.ant_device_id.is_some(),
+            None => true, // No preference means any is acceptable
         }
     }
 
@@ -577,6 +635,98 @@ impl DualProtocolDetector {
         self.bindings.clear();
         self.device_to_binding.clear();
     }
+
+    // =========================================================================
+    // Protocol Preference Methods
+    // =========================================================================
+
+    /// Set the preferred protocol for a device.
+    ///
+    /// The preference is applied to the binding that contains this device.
+    pub fn set_preferred_protocol(&mut self, device_id: &str, protocol: SensorProtocol) -> bool {
+        if let Some(binding_id) = self.device_to_binding.get(device_id).cloned() {
+            if let Some(binding) = self.bindings.get_mut(&binding_id) {
+                binding.set_preferred_protocol(protocol);
+                tracing::info!(
+                    "Set preferred protocol {} for {} (binding {})",
+                    protocol,
+                    binding.display_name(),
+                    binding_id
+                );
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Set the preferred protocol for a binding by ID.
+    pub fn set_binding_preferred_protocol(&mut self, binding_id: &str, protocol: SensorProtocol) -> bool {
+        if let Some(binding) = self.bindings.get_mut(binding_id) {
+            binding.set_preferred_protocol(protocol);
+            tracing::info!(
+                "Set preferred protocol {} for binding {}",
+                protocol,
+                binding_id
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Clear the preferred protocol for a device.
+    pub fn clear_preferred_protocol(&mut self, device_id: &str) -> bool {
+        if let Some(binding_id) = self.device_to_binding.get(device_id).cloned() {
+            if let Some(binding) = self.bindings.get_mut(&binding_id) {
+                binding.clear_preferred_protocol();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get the preferred protocol for a device.
+    pub fn get_preferred_protocol(&self, device_id: &str) -> Option<SensorProtocol> {
+        self.get_binding_for_device(device_id)
+            .and_then(|b| b.preferred_protocol)
+    }
+
+    /// Get the preferred device ID for a binding.
+    ///
+    /// Returns the device ID for the preferred protocol if set and available,
+    /// otherwise returns the first available device ID.
+    pub fn get_preferred_device_id(&self, binding_id: &str) -> Option<&str> {
+        self.bindings.get(binding_id).and_then(|b| b.get_preferred_device_id())
+    }
+
+    /// Get the preferred device ID for a device (via its binding).
+    ///
+    /// Useful when you have one device ID and want to know which device ID
+    /// to use based on the user's preference.
+    pub fn get_preferred_device_id_for_device(&self, device_id: &str) -> Option<&str> {
+        self.get_binding_for_device(device_id)
+            .and_then(|b| b.get_preferred_device_id())
+    }
+
+    /// Get all bindings that have a preferred protocol set.
+    pub fn bindings_with_preference(&self) -> Vec<&DualProtocolBinding> {
+        self.bindings
+            .values()
+            .filter(|b| b.preferred_protocol.is_some())
+            .collect()
+    }
+
+    /// Get reconnection targets for all complete bindings.
+    ///
+    /// Returns device IDs for the preferred protocol (or first available)
+    /// for each complete dual-protocol binding.
+    pub fn get_reconnection_targets(&self) -> Vec<String> {
+        self.bindings
+            .values()
+            .filter(|b| b.is_complete())
+            .filter_map(|b| b.get_preferred_device_id().map(|s| s.to_string()))
+            .collect()
+    }
 }
 
 /// Normalize a sensor name for matching.
@@ -683,6 +833,400 @@ fn generate_binding_id(identifier: &SensorIdentifier) -> String {
     } else {
         format!("binding:{}", identifier.normalized_name.replace(' ', "_"))
     }
+}
+
+// =============================================================================
+// Protocol Preference Persistence
+// =============================================================================
+
+/// Default preference file name.
+const PREFERENCE_FILE_NAME: &str = "protocol_preferences.json";
+
+/// A stored protocol preference for a sensor.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProtocolPreference {
+    /// The binding ID this preference applies to.
+    pub binding_id: String,
+    /// The sensor's display name (for user reference).
+    pub sensor_name: String,
+    /// The sensor type.
+    pub sensor_type: SensorType,
+    /// The preferred protocol.
+    pub preferred_protocol: SensorProtocol,
+    /// When this preference was last updated.
+    pub updated_at: DateTime<Utc>,
+    /// How many times this preference has been used for reconnection.
+    pub usage_count: u32,
+    /// Whether the preference was explicitly set by user vs auto-detected.
+    pub user_set: bool,
+}
+
+impl ProtocolPreference {
+    /// Create a new protocol preference.
+    pub fn new(
+        binding_id: String,
+        sensor_name: String,
+        sensor_type: SensorType,
+        preferred_protocol: SensorProtocol,
+        user_set: bool,
+    ) -> Self {
+        Self {
+            binding_id,
+            sensor_name,
+            sensor_type,
+            preferred_protocol,
+            updated_at: Utc::now(),
+            usage_count: 0,
+            user_set,
+        }
+    }
+
+    /// Record that this preference was used for a reconnection.
+    pub fn record_usage(&mut self) {
+        self.usage_count += 1;
+        self.updated_at = Utc::now();
+    }
+
+    /// Update the preferred protocol.
+    pub fn update_protocol(&mut self, protocol: SensorProtocol, user_set: bool) {
+        self.preferred_protocol = protocol;
+        self.user_set = user_set;
+        self.updated_at = Utc::now();
+    }
+}
+
+/// Persisted preferences data structure.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProtocolPreferenceData {
+    /// Version of the preference file format.
+    pub version: u32,
+    /// When the preferences were last saved.
+    pub last_saved_at: Option<DateTime<Utc>>,
+    /// Map of binding ID to preference.
+    #[serde(default)]
+    pub preferences: HashMap<String, ProtocolPreference>,
+}
+
+impl ProtocolPreferenceData {
+    /// Create empty preferences data.
+    pub fn new() -> Self {
+        Self {
+            version: 1,
+            last_saved_at: None,
+            preferences: HashMap::new(),
+        }
+    }
+}
+
+/// Manager for protocol preference persistence.
+///
+/// Handles loading, saving, and managing protocol preferences for
+/// dual-protocol sensors.
+#[derive(Debug)]
+pub struct ProtocolPreferenceManager {
+    /// Path to the preferences file.
+    file_path: PathBuf,
+    /// Current preferences data.
+    data: ProtocolPreferenceData,
+    /// Whether there are unsaved changes.
+    dirty: bool,
+    /// Whether to auto-save on changes.
+    auto_save: bool,
+}
+
+impl Default for ProtocolPreferenceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProtocolPreferenceManager {
+    /// Create a new preference manager with default path.
+    pub fn new() -> Self {
+        Self::with_path(get_preference_path())
+    }
+
+    /// Create a preference manager with a custom path.
+    pub fn with_path(path: PathBuf) -> Self {
+        Self {
+            file_path: path,
+            data: ProtocolPreferenceData::new(),
+            dirty: false,
+            auto_save: true,
+        }
+    }
+
+    /// Load preferences from disk.
+    pub fn load() -> Self {
+        Self::load_from_path(get_preference_path())
+    }
+
+    /// Load preferences from a specific path.
+    pub fn load_from_path(path: PathBuf) -> Self {
+        if !path.exists() {
+            tracing::debug!("No preference file found at {:?}, starting fresh", path);
+            return Self::with_path(path);
+        }
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => match serde_json::from_str::<ProtocolPreferenceData>(&content) {
+                Ok(data) => {
+                    tracing::info!(
+                        "Loaded {} protocol preferences from {:?}",
+                        data.preferences.len(),
+                        path
+                    );
+                    Self {
+                        file_path: path,
+                        data,
+                        dirty: false,
+                        auto_save: true,
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse preference file: {}", e);
+                    Self::with_path(path)
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to read preference file: {}", e);
+                Self::with_path(path)
+            }
+        }
+    }
+
+    /// Save preferences to disk.
+    pub fn save(&mut self) -> Result<(), PreferenceError> {
+        if !self.dirty {
+            return Ok(());
+        }
+
+        // Ensure parent directory exists
+        if let Some(parent) = self.file_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| PreferenceError::IoError(e.to_string()))?;
+        }
+
+        self.data.last_saved_at = Some(Utc::now());
+
+        let content = serde_json::to_string_pretty(&self.data)
+            .map_err(|e| PreferenceError::SerializeError(e.to_string()))?;
+
+        std::fs::write(&self.file_path, content)
+            .map_err(|e| PreferenceError::IoError(e.to_string()))?;
+
+        self.dirty = false;
+        tracing::debug!("Saved {} protocol preferences", self.data.preferences.len());
+
+        Ok(())
+    }
+
+    /// Enable or disable auto-save.
+    pub fn set_auto_save(&mut self, enabled: bool) {
+        self.auto_save = enabled;
+    }
+
+    /// Check if auto-save is enabled.
+    pub fn is_auto_save_enabled(&self) -> bool {
+        self.auto_save
+    }
+
+    /// Set the preferred protocol for a binding.
+    ///
+    /// If `user_set` is true, this was explicitly set by the user.
+    /// If false, it was auto-detected (e.g., from successful connection).
+    pub fn set_preference(
+        &mut self,
+        binding_id: &str,
+        sensor_name: &str,
+        sensor_type: SensorType,
+        protocol: SensorProtocol,
+        user_set: bool,
+    ) {
+        if let Some(existing) = self.data.preferences.get_mut(binding_id) {
+            existing.update_protocol(protocol, user_set);
+        } else {
+            let pref = ProtocolPreference::new(
+                binding_id.to_string(),
+                sensor_name.to_string(),
+                sensor_type,
+                protocol,
+                user_set,
+            );
+            self.data.preferences.insert(binding_id.to_string(), pref);
+        }
+
+        self.dirty = true;
+
+        if self.auto_save {
+            if let Err(e) = self.save() {
+                tracing::warn!("Failed to auto-save preferences: {}", e);
+            }
+        }
+    }
+
+    /// Set preference from a DualProtocolBinding.
+    pub fn set_preference_from_binding(
+        &mut self,
+        binding: &DualProtocolBinding,
+        protocol: SensorProtocol,
+        user_set: bool,
+    ) {
+        self.set_preference(
+            &binding.binding_id,
+            binding.display_name(),
+            binding.sensor_type,
+            protocol,
+            user_set,
+        );
+    }
+
+    /// Get the preferred protocol for a binding.
+    pub fn get_preference(&self, binding_id: &str) -> Option<&ProtocolPreference> {
+        self.data.preferences.get(binding_id)
+    }
+
+    /// Get the preferred protocol only (without full preference data).
+    pub fn get_preferred_protocol(&self, binding_id: &str) -> Option<SensorProtocol> {
+        self.data.preferences.get(binding_id).map(|p| p.preferred_protocol)
+    }
+
+    /// Record that a preference was used for reconnection.
+    pub fn record_usage(&mut self, binding_id: &str) {
+        if let Some(pref) = self.data.preferences.get_mut(binding_id) {
+            pref.record_usage();
+            self.dirty = true;
+            // Don't auto-save on usage to avoid excessive I/O
+        }
+    }
+
+    /// Remove a preference.
+    pub fn remove_preference(&mut self, binding_id: &str) -> Option<ProtocolPreference> {
+        let removed = self.data.preferences.remove(binding_id);
+        if removed.is_some() {
+            self.dirty = true;
+            if self.auto_save {
+                if let Err(e) = self.save() {
+                    tracing::warn!("Failed to auto-save preferences: {}", e);
+                }
+            }
+        }
+        removed
+    }
+
+    /// Clear all preferences.
+    pub fn clear(&mut self) {
+        self.data.preferences.clear();
+        self.dirty = true;
+        if self.auto_save {
+            if let Err(e) = self.save() {
+                tracing::warn!("Failed to auto-save preferences: {}", e);
+            }
+        }
+    }
+
+    /// Get all preferences.
+    pub fn all_preferences(&self) -> impl Iterator<Item = &ProtocolPreference> {
+        self.data.preferences.values()
+    }
+
+    /// Get preferences for a specific sensor type.
+    pub fn preferences_for_type(&self, sensor_type: SensorType) -> Vec<&ProtocolPreference> {
+        self.data
+            .preferences
+            .values()
+            .filter(|p| p.sensor_type == sensor_type)
+            .collect()
+    }
+
+    /// Get preferences that were explicitly set by the user.
+    pub fn user_set_preferences(&self) -> Vec<&ProtocolPreference> {
+        self.data
+            .preferences
+            .values()
+            .filter(|p| p.user_set)
+            .collect()
+    }
+
+    /// Get the number of stored preferences.
+    pub fn len(&self) -> usize {
+        self.data.preferences.len()
+    }
+
+    /// Check if there are no stored preferences.
+    pub fn is_empty(&self) -> bool {
+        self.data.preferences.is_empty()
+    }
+
+    /// Check if there are unsaved changes.
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.dirty
+    }
+
+    /// Delete the preference file.
+    pub fn delete_file(&self) -> Result<(), PreferenceError> {
+        if self.file_path.exists() {
+            std::fs::remove_file(&self.file_path)
+                .map_err(|e| PreferenceError::IoError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Apply stored preferences to a DualProtocolDetector.
+    ///
+    /// This loads saved preferences into the detector's bindings.
+    pub fn apply_to_detector(&self, detector: &mut DualProtocolDetector) {
+        for (binding_id, pref) in &self.data.preferences {
+            if let Some(binding) = detector.bindings.get_mut(binding_id) {
+                binding.preferred_protocol = Some(pref.preferred_protocol);
+                tracing::debug!(
+                    "Applied saved preference {} for binding {}",
+                    pref.preferred_protocol,
+                    binding_id
+                );
+            }
+        }
+    }
+
+    /// Sync preferences from a DualProtocolDetector.
+    ///
+    /// This saves any preferences set on bindings to the manager.
+    pub fn sync_from_detector(&mut self, detector: &DualProtocolDetector) {
+        for binding in detector.bindings.values() {
+            if let Some(protocol) = binding.preferred_protocol {
+                // Only save if not already stored or if different
+                let should_update = match self.data.preferences.get(&binding.binding_id) {
+                    Some(existing) => existing.preferred_protocol != protocol,
+                    None => true,
+                };
+
+                if should_update {
+                    self.set_preference_from_binding(binding, protocol, false);
+                }
+            }
+        }
+    }
+}
+
+/// Get the default preference file path.
+pub fn get_preference_path() -> PathBuf {
+    get_data_dir().join(PREFERENCE_FILE_NAME)
+}
+
+/// Errors that can occur with preference persistence.
+#[derive(Debug, Error)]
+pub enum PreferenceError {
+    #[error("IO error: {0}")]
+    IoError(String),
+
+    #[error("Serialize error: {0}")]
+    SerializeError(String),
+
+    #[error("Deserialize error: {0}")]
+    DeserializeError(String),
+
+    #[error("Preference not found: {0}")]
+    NotFound(String),
 }
 
 #[cfg(test)]
