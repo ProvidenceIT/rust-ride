@@ -1,0 +1,56 @@
+# Build Progress - Mobile Companion App
+
+## T051 - Unit tests for message parsing, authentication, and handler logic
+
+### Completed: 2026-01-03
+
+**Summary:**
+Added comprehensive unit tests covering message parsing, authentication, and handler logic for both the Rust backend and React Native mobile app.
+
+**Changes Made:**
+
+### Rust Backend Tests (src/companion/)
+
+1. **types.rs** - Added 50+ new tests:
+   - Config serialization/deserialization roundtrip
+   - CompanionRequest parsing for all message types (auth, get_session_status, subscribe/unsubscribe_metrics, workout controls, ride history)
+   - Invalid request handling (unknown type, missing type, malformed JSON)
+   - CompanionResponse serialization (auth_ok/failed, session_status, command_ok/failed, ride_history, error)
+   - CompanionEvent serialization (metrics with null values, session_state_changed, interval_changed, disconnecting)
+   - SessionState and CompanionErrorCode serialization
+   - RideSummary and RideDetailInfo serialization (with and without nulls)
+   - CompanionError display trait tests
+
+2. **handlers.rs** - Added 30+ new tests:
+   - Authentication edge cases (short/long/non-numeric/empty/all-zeros PIN)
+   - Auth required checks for all protected endpoints
+   - Workout control commands on free rides (pause/skip/resume/stop)
+   - Session status queries (no daemon state, free ride mode)
+   - Event helper function tests (create_metrics_event, create_session_state_event, create_interval_changed_event)
+   - Ride history edge cases (limit clamping, high offset, ride with/without workout)
+
+### React Native Tests (companion-app/__tests__/)
+
+3. **ConnectionService.test.ts** - Added 40+ new tests:
+   - Workout control commands (pause/resume/skip/stop with success and failure handling)
+   - Resistance adjustment (positive and negative delta)
+   - Ride history fetching (default and custom parameters)
+   - Message parsing edge cases (invalid JSON, null metrics values)
+   - Session state transitions (active -> paused -> completed)
+   - Error response handling (AUTH_REQUIRED, NO_SESSION, etc.)
+   - Metrics subscription/unsubscription
+   - Session status handling (active and inactive)
+   - Connection callbacks (onError, onDisconnected, onAuthRequired)
+   - Backoff configuration
+   - Connection state management
+
+**Test Coverage:**
+- All message types are now tested for serialization/deserialization
+- Authentication flow has edge case coverage for invalid inputs
+- Handler logic has tests for both success and failure paths
+- WebSocket connections are fully mocked with comprehensive event simulation
+
+**Files Modified:**
+- src/companion/types.rs
+- src/companion/handlers.rs
+- companion-app/__tests__/services/ConnectionService.test.ts

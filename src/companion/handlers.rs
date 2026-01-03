@@ -1387,4 +1387,638 @@ mod tests {
         assert_eq!(detail.intensity_factor, Some(1.05));
         assert!(!detail.is_workout);
     }
+
+    // ========== Additional Authentication Tests ==========
+
+    #[tokio::test]
+    async fn test_auth_short_pin() {
+        let response = handle_request(
+            CompanionRequest::Auth {
+                pin: "123".to_string(), // Too short
+            },
+            Uuid::new_v4(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::AuthFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_auth_long_pin() {
+        let response = handle_request(
+            CompanionRequest::Auth {
+                pin: "12345678".to_string(), // Too long
+            },
+            Uuid::new_v4(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::AuthFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_auth_non_numeric_pin() {
+        let response = handle_request(
+            CompanionRequest::Auth {
+                pin: "abc123".to_string(),
+            },
+            Uuid::new_v4(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::AuthFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_auth_empty_pin() {
+        let response = handle_request(
+            CompanionRequest::Auth {
+                pin: "".to_string(),
+            },
+            Uuid::new_v4(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::AuthFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_auth_all_zeros_valid() {
+        let response = handle_request(
+            CompanionRequest::Auth {
+                pin: "000000".to_string(),
+            },
+            Uuid::new_v4(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        // All zeros is a valid 6-digit PIN format
+        assert!(matches!(response, CompanionResponse::AuthOk { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_auth_required_for_get_ride_history() {
+        let response = handle_request(
+            CompanionRequest::GetRideHistory { limit: 10, offset: 0 },
+            Uuid::new_v4(),
+            false, // Not authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        match response {
+            CompanionResponse::Error { code, .. } => {
+                assert_eq!(code, CompanionErrorCode::AuthRequired);
+            }
+            _ => panic!("Expected auth required error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auth_required_for_get_ride_details() {
+        let response = handle_request(
+            CompanionRequest::GetRideDetails { ride_id: "abc".to_string() },
+            Uuid::new_v4(),
+            false, // Not authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        match response {
+            CompanionResponse::Error { code, .. } => {
+                assert_eq!(code, CompanionErrorCode::AuthRequired);
+            }
+            _ => panic!("Expected auth required error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auth_required_for_workout_commands() {
+        // Test all workout control commands require auth
+        let commands = vec![
+            CompanionRequest::WorkoutPause,
+            CompanionRequest::WorkoutResume,
+            CompanionRequest::WorkoutSkip,
+            CompanionRequest::WorkoutStop,
+            CompanionRequest::AdjustResistance { delta: 5 },
+        ];
+
+        for cmd in commands {
+            let response = handle_request(
+                cmd,
+                Uuid::new_v4(),
+                false, // Not authenticated
+                None,
+                None,
+                None,
+            )
+            .await;
+
+            match response {
+                CompanionResponse::Error { code, .. } => {
+                    assert_eq!(code, CompanionErrorCode::AuthRequired);
+                }
+                _ => panic!("Expected auth required error for workout command"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auth_required_for_subscribe_metrics() {
+        let response = handle_request(
+            CompanionRequest::SubscribeMetrics,
+            Uuid::new_v4(),
+            false, // Not authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        match response {
+            CompanionResponse::Error { code, .. } => {
+                assert_eq!(code, CompanionErrorCode::AuthRequired);
+            }
+            _ => panic!("Expected auth required error"),
+        }
+    }
+
+    // ========== Additional Handler Tests ==========
+
+    #[tokio::test]
+    async fn test_subscribe_metrics_authenticated() {
+        let response = handle_request(
+            CompanionRequest::SubscribeMetrics,
+            Uuid::new_v4(),
+            true, // Authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::SubscribedMetrics));
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_metrics_authenticated() {
+        let response = handle_request(
+            CompanionRequest::UnsubscribeMetrics,
+            Uuid::new_v4(),
+            true, // Authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(response, CompanionResponse::UnsubscribedMetrics));
+    }
+
+    #[tokio::test]
+    async fn test_adjust_resistance_authenticated() {
+        let response = handle_request(
+            CompanionRequest::AdjustResistance { delta: 10 },
+            Uuid::new_v4(),
+            true, // Authenticated
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandOk { command } if command == "adjust_resistance"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_adjust_resistance_negative_delta() {
+        let response = handle_request(
+            CompanionRequest::AdjustResistance { delta: -15 },
+            Uuid::new_v4(),
+            true,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandOk { command } if command == "adjust_resistance"
+        ));
+    }
+
+    /// Helper to create a test daemon state with a free ride session
+    fn create_test_daemon_state_with_free_ride() -> Arc<RwLock<DaemonState>> {
+        let mut state = DaemonState::default();
+        state.active_session = Some(SessionInfo {
+            session_id: Uuid::new_v4(),
+            session_type: SessionType::FreeRide,
+            started_at: Utc::now(),
+            workout_info: None, // No workout info for free ride
+            current_metrics: LiveMetrics::default(),
+            is_paused: false,
+        });
+        Arc::new(RwLock::new(state))
+    }
+
+    #[tokio::test]
+    async fn test_workout_pause_on_free_ride() {
+        let daemon_state = create_test_daemon_state_with_free_ride();
+
+        let response = handle_request(
+            CompanionRequest::WorkoutPause,
+            Uuid::new_v4(),
+            true,
+            Some(daemon_state),
+            None,
+            None,
+        )
+        .await;
+
+        // Should fail because free rides don't have workout info
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandFailed { command, error }
+            if command == "workout_pause" && error.contains("not a workout")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_workout_resume_not_paused() {
+        let daemon_state = create_test_daemon_state_with_workout();
+
+        let response = handle_request(
+            CompanionRequest::WorkoutResume,
+            Uuid::new_v4(),
+            true,
+            Some(daemon_state),
+            None,
+            None,
+        )
+        .await;
+
+        // Should fail because workout is not paused
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandFailed { command, error }
+            if command == "workout_resume" && error.contains("not paused")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_workout_skip_on_free_ride() {
+        let daemon_state = create_test_daemon_state_with_free_ride();
+
+        let response = handle_request(
+            CompanionRequest::WorkoutSkip,
+            Uuid::new_v4(),
+            true,
+            Some(daemon_state),
+            None,
+            None,
+        )
+        .await;
+
+        // Should fail because free rides don't have intervals
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandFailed { command, error }
+            if command == "workout_skip" && error.contains("not a workout")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_workout_stop_free_ride() {
+        let daemon_state = create_test_daemon_state_with_free_ride();
+
+        let response = handle_request(
+            CompanionRequest::WorkoutStop,
+            Uuid::new_v4(),
+            true,
+            Some(daemon_state.clone()),
+            None,
+            None,
+        )
+        .await;
+
+        // Should succeed - stop works for both workouts and free rides
+        assert!(matches!(
+            response,
+            CompanionResponse::CommandOk { command } if command == "workout_stop"
+        ));
+
+        // Verify session is cleared
+        let state = daemon_state.read().await;
+        assert!(state.active_session.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_session_status_no_daemon_state() {
+        let response = handle_request(
+            CompanionRequest::GetSessionStatus,
+            Uuid::new_v4(),
+            true,
+            None, // No daemon state
+            None,
+            None,
+        )
+        .await;
+
+        match response {
+            CompanionResponse::SessionStatus { active, session } => {
+                assert!(!active);
+                assert!(session.is_none());
+            }
+            _ => panic!("Expected SessionStatus response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_session_status_free_ride() {
+        let daemon_state = create_test_daemon_state_with_free_ride();
+
+        let response = handle_request(
+            CompanionRequest::GetSessionStatus,
+            Uuid::new_v4(),
+            true,
+            Some(daemon_state),
+            None,
+            None,
+        )
+        .await;
+
+        match response {
+            CompanionResponse::SessionStatus { active, session } => {
+                assert!(active);
+                let session = session.unwrap();
+                assert_eq!(session.session_type, "free_ride");
+                assert!(session.workout_name.is_none());
+                assert!(session.total_intervals.is_none());
+            }
+            _ => panic!("Expected SessionStatus response"),
+        }
+    }
+
+    // ========== Event Helper Tests ==========
+
+    #[test]
+    fn test_create_session_state_event() {
+        let event = create_session_state_event(SessionState::Paused, None);
+
+        match event {
+            CompanionEvent::SessionStateChanged { state, session } => {
+                assert_eq!(state, SessionState::Paused);
+                assert!(session.is_none());
+            }
+            _ => panic!("Expected SessionStateChanged event"),
+        }
+    }
+
+    #[test]
+    fn test_create_session_state_event_with_session() {
+        let session_info = SessionStatusInfo {
+            session_id: Uuid::nil(),
+            session_type: "workout".to_string(),
+            workout_name: Some("Test".to_string()),
+            workout_path: None,
+            is_paused: false,
+            elapsed_secs: 100,
+            current_interval_index: Some(0),
+            total_intervals: Some(5),
+            current_interval_name: Some("Warmup".to_string()),
+            target_power_watts: Some(150),
+            interval_remaining_secs: Some(300),
+        };
+
+        let event = create_session_state_event(SessionState::Active, Some(session_info));
+
+        match event {
+            CompanionEvent::SessionStateChanged { state, session } => {
+                assert_eq!(state, SessionState::Active);
+                assert!(session.is_some());
+            }
+            _ => panic!("Expected SessionStateChanged event"),
+        }
+    }
+
+    #[test]
+    fn test_create_interval_changed_event() {
+        let event = create_interval_changed_event(
+            3,
+            10,
+            "Threshold".to_string(),
+            280,
+            300,
+        );
+
+        match event {
+            CompanionEvent::IntervalChanged {
+                interval_index,
+                total_intervals,
+                interval_name,
+                target_power_watts,
+                duration_secs,
+            } => {
+                assert_eq!(interval_index, 3);
+                assert_eq!(total_intervals, 10);
+                assert_eq!(interval_name, "Threshold");
+                assert_eq!(target_power_watts, 280);
+                assert_eq!(duration_secs, 300);
+            }
+            _ => panic!("Expected IntervalChanged event"),
+        }
+    }
+
+    #[test]
+    fn test_create_metrics_event_all_values() {
+        let event = create_metrics_event(
+            Some(250),
+            Some(150),
+            Some(95),
+            Some(35.5),
+            42.5,
+            5400,
+            750,
+        );
+
+        match event {
+            CompanionEvent::Metrics {
+                power_watts,
+                heart_rate_bpm,
+                cadence_rpm,
+                speed_kmh,
+                distance_km,
+                elapsed_secs,
+                calories,
+            } => {
+                assert_eq!(power_watts, Some(250));
+                assert_eq!(heart_rate_bpm, Some(150));
+                assert_eq!(cadence_rpm, Some(95));
+                assert_eq!(speed_kmh, Some(35.5));
+                assert!((distance_km - 42.5).abs() < 0.001);
+                assert_eq!(elapsed_secs, 5400);
+                assert_eq!(calories, 750);
+            }
+            _ => panic!("Expected Metrics event"),
+        }
+    }
+
+    #[test]
+    fn test_create_metrics_event_partial_values() {
+        let event = create_metrics_event(
+            Some(200),
+            None, // No HR sensor
+            None, // No cadence sensor
+            Some(30.0),
+            10.0,
+            1800,
+            250,
+        );
+
+        match event {
+            CompanionEvent::Metrics {
+                power_watts,
+                heart_rate_bpm,
+                cadence_rpm,
+                ..
+            } => {
+                assert_eq!(power_watts, Some(200));
+                assert_eq!(heart_rate_bpm, None);
+                assert_eq!(cadence_rpm, None);
+            }
+            _ => panic!("Expected Metrics event"),
+        }
+    }
+
+    // ========== Ride History Edge Cases ==========
+
+    #[tokio::test]
+    async fn test_get_ride_history_limit_clamping_high() {
+        let user_id = Uuid::new_v4();
+        let database = create_test_database_with_rides(user_id);
+
+        let response = handle_request(
+            CompanionRequest::GetRideHistory {
+                limit: 1000, // Should be clamped to 100
+                offset: 0,
+            },
+            Uuid::new_v4(),
+            true,
+            None,
+            Some(database),
+            Some(user_id),
+        )
+        .await;
+
+        // Should still work (clamped limit)
+        assert!(matches!(response, CompanionResponse::RideHistory { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_get_ride_history_limit_clamping_zero() {
+        let user_id = Uuid::new_v4();
+        let database = create_test_database_with_rides(user_id);
+
+        let response = handle_request(
+            CompanionRequest::GetRideHistory {
+                limit: 0, // Should be clamped to 1
+                offset: 0,
+            },
+            Uuid::new_v4(),
+            true,
+            None,
+            Some(database),
+            Some(user_id),
+        )
+        .await;
+
+        match response {
+            CompanionResponse::RideHistory { rides, .. } => {
+                // Clamped to at least 1
+                assert!(rides.len() <= 1);
+            }
+            _ => panic!("Expected RideHistory response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_ride_history_high_offset() {
+        let user_id = Uuid::new_v4();
+        let database = create_test_database_with_rides(user_id);
+
+        let response = handle_request(
+            CompanionRequest::GetRideHistory {
+                limit: 10,
+                offset: 1000, // Beyond all rides
+            },
+            Uuid::new_v4(),
+            true,
+            None,
+            Some(database),
+            Some(user_id),
+        )
+        .await;
+
+        match response {
+            CompanionResponse::RideHistory { rides, total } => {
+                assert_eq!(total, 5); // Total is still 5
+                assert!(rides.is_empty()); // But no rides returned at this offset
+            }
+            _ => panic!("Expected RideHistory response"),
+        }
+    }
+
+    #[test]
+    fn test_ride_to_detail_with_workout() {
+        let user_id = Uuid::new_v4();
+        let mut ride = Ride::new(user_id, 200);
+        ride.workout_id = Some(Uuid::new_v4());
+        ride.duration_seconds = 3600;
+        ride.distance_meters = 30000.0;
+        ride.ended_at = Some(ride.started_at + chrono::Duration::seconds(3600));
+
+        let detail = ride_to_detail(&ride, Some("VO2max Intervals".to_string()));
+        assert!(detail.is_workout);
+        assert_eq!(detail.workout_name, Some("VO2max Intervals".to_string()));
+    }
+
+    #[test]
+    fn test_ride_to_summary_without_power() {
+        let user_id = Uuid::new_v4();
+        let mut ride = Ride::new(user_id, 200);
+        ride.duration_seconds = 1800;
+        ride.distance_meters = 15000.0;
+        ride.avg_power = None; // No power data
+
+        let summary = ride_to_summary(&ride, None);
+        assert!(summary.avg_power_watts.is_none());
+    }
 }
