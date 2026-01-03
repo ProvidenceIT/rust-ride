@@ -1,7 +1,203 @@
-//! Rider profile export and import.
+//! Rider profile export and import functionality.
 //!
-//! Provides JSON export for rider profiles including settings, FTP history,
-//! and avatar configuration. Enables profile backup and transfer between installations.
+//! This module provides comprehensive JSON export/import capabilities for rider profiles,
+//! enabling profile backup, transfer between installations, and data portability.
+//!
+//! # Overview
+//!
+//! The profile export system allows riders to:
+//! - **Export** their complete profile including settings, FTP history, and avatar
+//! - **Import** profiles from JSON files with conflict detection and resolution
+//! - **Transfer** profiles between different RustRide installations
+//! - **Backup** profile data for safekeeping
+//!
+//! # Export Format
+//!
+//! Profiles are exported as versioned JSON files with the following structure:
+//!
+//! ```json
+//! {
+//!   "export_version": "1.0",
+//!   "exported_at": "2026-01-03T12:00:00Z",
+//!   "rider_id": "550e8400-e29b-41d4-a716-446655440000",
+//!   "profile": {
+//!     "display_name": "Rider Name",
+//!     "bio": "Optional bio text",
+//!     "ftp": 250,
+//!     "total_distance_km": 1500.5,
+//!     "total_time_hours": 75.25,
+//!     "sharing_enabled": true
+//!   },
+//!   "ftp_history": [
+//!     {
+//!       "ftp_watts": 250,
+//!       "method": "ramp_test",
+//!       "confidence": "high",
+//!       "detected_at": "2026-01-02T10:30:00Z",
+//!       "accepted": true
+//!     }
+//!   ],
+//!   "avatar": {
+//!     "jersey_color": "#FF5733",
+//!     "bike_style": "road_bike",
+//!     "jersey_secondary": "#FFFFFF",
+//!     "helmet_color": "#000000"
+//!   }
+//! }
+//! ```
+//!
+//! ## Version Compatibility
+//!
+//! The `export_version` field ensures forward compatibility:
+//! - Current version: `1.0`
+//! - Only exact version matches are accepted for import
+//! - Future versions may implement migration logic for older formats
+//!
+//! # Usage Examples
+//!
+//! ## Exporting a Profile
+//!
+//! ```rust,ignore
+//! use std::sync::Arc;
+//! use uuid::Uuid;
+//! use rust_ride::social::export::{ProfileExporter, ProfileExportError};
+//! use rust_ride::storage::Database;
+//!
+//! // Create the exporter with a database connection
+//! let db = Arc::new(Database::open("profile.db")?);
+//! let exporter = ProfileExporter::new(db);
+//!
+//! // Export to JSON string
+//! let rider_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
+//! let json = exporter.export_json(rider_id)?;
+//!
+//! // Or export directly to a file
+//! let path = exporter.export_to_file(rider_id, "backup/my_profile.json")?;
+//! println!("Profile exported to: {}", path.display());
+//! ```
+//!
+//! ## Importing a Profile
+//!
+//! ```rust,ignore
+//! use rust_ride::social::export::{ProfileExporter, ConflictResolution};
+//!
+//! let exporter = ProfileExporter::new(db);
+//!
+//! // Import with merge strategy (combines FTP history)
+//! let result = exporter.import_from_file(
+//!     "backup/my_profile.json",
+//!     ConflictResolution::Merge
+//! )?;
+//!
+//! if result.success {
+//!     println!(
+//!         "Imported {} FTP entries ({} skipped as duplicates)",
+//!         result.ftp_entries_imported,
+//!         result.ftp_entries_skipped
+//!     );
+//! }
+//! ```
+//!
+//! ## Handling Conflicts
+//!
+//! When importing to a database with existing data, conflicts may occur:
+//!
+//! ```rust,ignore
+//! use rust_ride::social::export::{ProfileExporter, ProfileConflict, ConflictResolution};
+//!
+//! let exporter = ProfileExporter::new(db);
+//!
+//! // Parse the import file first
+//! let json = std::fs::read_to_string("import.json")?;
+//! let export = exporter.parse_import(&json)?;
+//!
+//! // Check for conflicts before importing
+//! let conflicts = exporter.detect_conflicts(&export)?;
+//!
+//! if conflicts.is_empty() {
+//!     // No conflicts - safe to import directly
+//!     let result = exporter.import_profile(&export, ConflictResolution::Merge)?;
+//! } else {
+//!     // Handle conflicts - show user options
+//!     for conflict in &conflicts {
+//!         match conflict {
+//!             ProfileConflict::ExistingProfile { rider_id, existing_name } => {
+//!                 println!("Profile already exists: {} ({})", existing_name, rider_id);
+//!             }
+//!             ProfileConflict::DisplayNameMismatch { imported_name, existing_name } => {
+//!                 println!("Name differs: imported '{}', existing '{}'", imported_name, existing_name);
+//!             }
+//!             ProfileConflict::FtpMismatch { imported_ftp, existing_ftp } => {
+//!                 println!("FTP differs: imported {:?}, existing {:?}", imported_ftp, existing_ftp);
+//!             }
+//!             ProfileConflict::AvatarMismatch { .. } => {
+//!                 println!("Avatar configuration differs");
+//!             }
+//!         }
+//!     }
+//!
+//!     // User chooses resolution strategy
+//!     let result = exporter.import_profile(&export, ConflictResolution::Replace)?;
+//! }
+//! ```
+//!
+//! # Conflict Resolution Strategies
+//!
+//! Three strategies are available for handling import conflicts:
+//!
+//! | Strategy | Profile Data | FTP History | Avatar |
+//! |----------|--------------|-------------|--------|
+//! | `Replace` | Overwrites existing | Deletes all, imports fresh | Overwrites existing |
+//! | `Merge` | Updates existing | Combines, skips duplicates | Updates if different |
+//! | `Skip` | No changes | No changes | No changes |
+//!
+//! ## When to Use Each Strategy
+//!
+//! - **Replace**: Use when restoring from backup to a fresh installation,
+//!   or when you want the imported data to completely replace existing data.
+//!
+//! - **Merge**: Use when combining data from multiple sources, or when
+//!   importing to a profile that has accumulated new FTP tests since export.
+//!
+//! - **Skip**: Use when you want to abort the import without making changes.
+//!
+//! # Error Handling
+//!
+//! The module uses [`ProfileExportError`] for all error conditions:
+//!
+//! ```rust,ignore
+//! use rust_ride::social::export::{ProfileExporter, ProfileExportError};
+//!
+//! let result = exporter.export_json(rider_id);
+//!
+//! match result {
+//!     Ok(json) => println!("Export successful"),
+//!     Err(ProfileExportError::ProfileNotFound(id)) => {
+//!         println!("No profile found for rider: {}", id);
+//!     }
+//!     Err(ProfileExportError::DatabaseError(msg)) => {
+//!         eprintln!("Database error: {}", msg);
+//!     }
+//!     Err(ProfileExportError::InvalidVersion { expected, found }) => {
+//!         eprintln!("Version mismatch: expected {}, found {}", expected, found);
+//!     }
+//!     Err(e) => eprintln!("Export failed: {}", e),
+//! }
+//! ```
+//!
+//! # Database Tables
+//!
+//! The exporter reads from and writes to the following tables:
+//!
+//! - `riders`: Core profile data (display_name, bio, ftp, stats)
+//! - `ftp_estimates`: FTP history records with detection method and confidence
+//! - `avatars`: Avatar customization (jersey colors, bike style, helmet)
+//!
+//! # Thread Safety
+//!
+//! [`ProfileExporter`] uses `Arc<Database>` for the database connection,
+//! making it safe to share across threads. Each operation acquires a
+//! connection from the pool as needed.
 
 use chrono::{DateTime, Utc};
 use rusqlite;
