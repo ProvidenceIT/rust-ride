@@ -508,7 +508,7 @@ pub enum ZoneEvent {
     },
 }
 
-/// Tracks power and HR zones and detects zone changes.
+/// Tracks power, HR, and cadence zones and detects zone changes.
 ///
 /// T063: Zone change detection for audio alerts.
 pub struct ZoneTracker {
@@ -516,10 +516,14 @@ pub struct ZoneTracker {
     current_power_zone: u8,
     /// Current HR zone (1-5, or 0 if not yet set)
     current_hr_zone: u8,
+    /// Current cadence zone (1-5, or 0 if not yet set)
+    current_cadence_zone: u8,
     /// Power zones configuration
     power_zones: PowerZones,
     /// HR zones configuration
     hr_zones: Option<HRZones>,
+    /// Cadence zones configuration
+    cadence_zones: Option<CadenceZones>,
     /// Pending events to be consumed
     pending_events: Vec<ZoneEvent>,
     /// Minimum time between zone change alerts (debounce)
@@ -528,6 +532,8 @@ pub struct ZoneTracker {
     last_power_zone_change: Option<std::time::Instant>,
     /// Last HR zone change time
     last_hr_zone_change: Option<std::time::Instant>,
+    /// Last cadence zone change time
+    last_cadence_zone_change: Option<std::time::Instant>,
 }
 
 impl ZoneTracker {
@@ -536,12 +542,15 @@ impl ZoneTracker {
         Self {
             current_power_zone: 0,
             current_hr_zone: 0,
+            current_cadence_zone: 0,
             power_zones,
             hr_zones: None,
+            cadence_zones: None,
             pending_events: Vec::new(),
             zone_change_debounce_secs: 5,
             last_power_zone_change: None,
             last_hr_zone_change: None,
+            last_cadence_zone_change: None,
         }
     }
 
