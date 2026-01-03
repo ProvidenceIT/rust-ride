@@ -11,6 +11,8 @@ module.exports = {
     '^@navigation/(.*)$': '<rootDir>/src/navigation/$1',
     '^@services/(.*)$': '<rootDir>/src/services/$1',
     '^@stores/(.*)$': '<rootDir>/src/stores/$1',
+    '^@theme$': '<rootDir>/src/theme/index',
+    '^@theme/(.*)$': '<rootDir>/src/theme/$1',
     '^@utils/(.*)$': '<rootDir>/src/utils/$1',
     '^@types/(.*)$': '<rootDir>/src/types/$1',
     // Mock for react-native-zeroconf (not installed, using manual mock)

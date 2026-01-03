@@ -19,6 +19,8 @@
       "@navigation/*": ["src/navigation/*"],
       "@services/*": ["src/services/*"],
       "@stores/*": ["src/stores/*"],
+      "@theme": ["src/theme/index"],
+      "@theme/*": ["src/theme/*"],
       "@utils/*": ["src/utils/*"],
       "@types/*": ["src/types/*"]
     }
