@@ -4,7 +4,9 @@
 
 use super::{find_known_device, HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
 use hidapi::HidApi;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::ffi::CString;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
@@ -21,6 +23,8 @@ pub struct HidDevice {
     pub name: String,
     /// Serial number if available
     pub serial_number: Option<String>,
+    /// Device path for opening (platform-specific)
+    pub device_path: Option<String>,
     /// Number of buttons (if known)
     pub button_count: Option<u8>,
     /// Current status
@@ -57,6 +61,7 @@ impl HidDevice {
             product_id,
             name,
             serial_number: None,
+            device_path: None,
             button_count: known.map(|d| d.button_count),
             status: HidDeviceStatus::Detected,
             is_known: known.is_some(),
@@ -113,6 +118,8 @@ pub trait HidDeviceManager: Send + Sync {
 /// Default HID device manager implementation
 pub struct DefaultHidDeviceManager {
     devices: Arc<RwLock<Vec<HidDevice>>>,
+    /// Open device handles keyed by device UUID
+    device_handles: Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>>,
     event_tx: broadcast::Sender<HidDeviceEvent>,
     is_monitoring: Arc<RwLock<bool>>,
     _config: HidConfig,
@@ -125,10 +132,16 @@ impl DefaultHidDeviceManager {
 
         Self {
             devices: Arc::new(RwLock::new(Vec::new())),
+            device_handles: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
             is_monitoring: Arc::new(RwLock::new(false)),
             _config: config,
         }
+    }
+
+    /// Get a reference to the device handles for input reading
+    pub fn device_handles(&self) -> Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>> {
+        Arc::clone(&self.device_handles)
     }
 }
 
@@ -159,6 +172,9 @@ impl HidDeviceManager for DefaultHidDeviceManager {
                     .serial_number()
                     .map(|s| s.to_string());
 
+                // Get the device path for later opening
+                let device_path = device_info.path().to_string_lossy().to_string();
+
                 // Create the HID device struct
                 let mut device = HidDevice::new(
                     vendor_id,
@@ -166,6 +182,7 @@ impl HidDeviceManager for DefaultHidDeviceManager {
                     known.name.to_string(),
                 );
                 device.serial_number = serial_number;
+                device.device_path = Some(device_path);
 
                 tracing::debug!(
                     "Found known HID device: {} (VID:{:04X} PID:{:04X}{})",
@@ -230,48 +247,152 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     }
 
     async fn open_device(&self, device_id: &Uuid) -> Result<(), HidError> {
-        let mut devices = self.devices.write().await;
+        // Check if device is already open
+        {
+            let handles = self.device_handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            if handles.contains_key(device_id) {
+                return Err(HidError::DeviceInUse);
+            }
+        }
 
-        let device = devices
-            .iter_mut()
-            .find(|d| &d.id == device_id)
-            .ok_or(HidError::DeviceNotFound(*device_id))?;
+        // Get device info for opening
+        let (vendor_id, product_id, device_path, device_name) = {
+            let mut devices = self.devices.write().await;
+            let device = devices
+                .iter_mut()
+                .find(|d| &d.id == device_id)
+                .ok_or(HidError::DeviceNotFound(*device_id))?;
 
-        device.status = HidDeviceStatus::Opening;
+            device.status = HidDeviceStatus::Opening;
 
-        tracing::info!("Opening HID device: {}", device.name);
+            (
+                device.vendor_id,
+                device.product_id,
+                device.device_path.clone(),
+                device.name.clone(),
+            )
+        };
 
-        // TODO: Actually open the device using hidapi
-        // let api = HidApi::new()?;
-        // let handle = api.open(device.vendor_id, device.product_id)?;
+        tracing::info!("Opening HID device: {} (VID:{:04X} PID:{:04X})",
+            device_name, vendor_id, product_id);
 
-        device.status = HidDeviceStatus::Open;
+        // Open the device using hidapi
+        let device_id_copy = *device_id;
+        let handles = Arc::clone(&self.device_handles);
 
-        let _ = self.event_tx.send(HidDeviceEvent::DeviceOpened(*device_id));
+        let open_result = tokio::task::spawn_blocking(move || {
+            // Initialize the HID API
+            let api = HidApi::new().map_err(|e| {
+                HidError::HidApiError(format!("Failed to initialize HID API: {}", e))
+            })?;
 
-        Ok(())
+            // Try to open by path first (more specific), fall back to VID/PID
+            let handle = if let Some(path) = device_path {
+                let c_path = CString::new(path.clone()).map_err(|e| {
+                    HidError::OpenFailed(format!("Invalid device path: {}", e))
+                })?;
+                api.open_path(&c_path).map_err(|e| {
+                    HidError::OpenFailed(format!(
+                        "Failed to open device by path '{}': {}. \
+                         This may be a permissions issue. On Linux, you may need udev rules. \
+                         On Windows, the device may be in use by another application.",
+                        path, e
+                    ))
+                })?
+            } else {
+                // Fall back to opening by VID/PID (may open any matching device)
+                api.open(vendor_id, product_id).map_err(|e| {
+                    HidError::OpenFailed(format!(
+                        "Failed to open device {:04X}:{:04X}: {}. \
+                         This may be a permissions issue or the device may be disconnected.",
+                        vendor_id, product_id, e
+                    ))
+                })?
+            };
+
+            // Store the handle
+            let mut handles_guard = handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            handles_guard.insert(device_id_copy, handle);
+
+            Ok::<(), HidError>(())
+        })
+        .await
+        .map_err(|e| HidError::OpenFailed(format!("Task join error: {}", e)))?;
+
+        // Update device status based on result
+        {
+            let mut devices = self.devices.write().await;
+            if let Some(device) = devices.iter_mut().find(|d| &d.id == device_id) {
+                match &open_result {
+                    Ok(()) => {
+                        device.status = HidDeviceStatus::Open;
+                        tracing::info!("Successfully opened HID device: {}", device.name);
+                    }
+                    Err(e) => {
+                        device.status = HidDeviceStatus::Error(e.to_string());
+                        tracing::error!("Failed to open HID device {}: {}", device.name, e);
+                    }
+                }
+            }
+        }
+
+        if open_result.is_ok() {
+            let _ = self.event_tx.send(HidDeviceEvent::DeviceOpened(*device_id));
+        }
+
+        open_result
     }
 
     async fn close_device(&self, device_id: &Uuid) -> Result<(), HidError> {
-        let mut devices = self.devices.write().await;
+        // Get device name for logging
+        let device_name = {
+            let devices = self.devices.read().await;
+            devices
+                .iter()
+                .find(|d| &d.id == device_id)
+                .map(|d| d.name.clone())
+                .ok_or(HidError::DeviceNotFound(*device_id))?
+        };
 
-        let device = devices
-            .iter_mut()
-            .find(|d| &d.id == device_id)
-            .ok_or(HidError::DeviceNotFound(*device_id))?;
+        tracing::info!("Closing HID device: {}", device_name);
 
-        tracing::info!("Closing HID device: {}", device.name);
+        // Remove the handle from storage (dropping it closes the device)
+        let was_open = {
+            let mut handles = self.device_handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            handles.remove(device_id).is_some()
+        };
 
-        // TODO: Close the device handle
+        if !was_open {
+            tracing::warn!("Device {} was not open", device_name);
+            return Err(HidError::DeviceNotOpen);
+        }
 
-        device.status = HidDeviceStatus::Detected;
+        // Update device status
+        {
+            let mut devices = self.devices.write().await;
+            if let Some(device) = devices.iter_mut().find(|d| &d.id == device_id) {
+                device.status = HidDeviceStatus::Detected;
+            }
+        }
 
+        tracing::info!("Successfully closed HID device: {}", device_name);
         let _ = self.event_tx.send(HidDeviceEvent::DeviceClosed(*device_id));
 
         Ok(())
     }
 
     fn is_open(&self, device_id: &Uuid) -> bool {
+        // Check actual device handles for authoritative answer
+        if let Ok(handles) = self.device_handles.lock() {
+            return handles.contains_key(device_id);
+        }
+        // Fall back to status check if lock fails
         self.devices
             .try_read()
             .ok()
