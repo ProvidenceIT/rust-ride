@@ -1,0 +1,120 @@
+# Mobile Companion App - Build Progress
+
+## Feature Overview
+Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.
+
+## Implementation Plan Created
+Date: 2026-01-03
+
+### Summary
+- **Total Phases**: 9
+- **Total Subtasks**: 55
+- **Estimated Total Hours**: ~110 hours
+
+### Phase Breakdown
+
+#### Phase 1: Backend - Companion Server API (10 subtasks)
+- Create companion module structure
+- Define API types and messages
+- Implement WebSocket server with PIN authentication
+- mDNS service advertisement for auto-discovery
+- Real-time metrics streaming at 1Hz
+- Workout control handlers (pause, resume, skip, stop)
+- Ride history API handlers
+- Configuration management
+- QR code generation for pairing
+- Session status endpoint
+
+#### Phase 2: Mobile App - Core Framework (7 subtasks)
+- React Native project initialization with TypeScript
+- Navigation structure (React Navigation)
+- State management with Zustand
+- WebSocket connection service with reconnection
+- mDNS discovery service
+- Design system and theming
+- Reusable UI components
+
+#### Phase 3: Mobile App - Connection & Authentication (5 subtasks)
+- Connection screen with server discovery
+- QR code scanner for quick pairing
+- PIN entry dialog
+- Authentication flow
+- Connection persistence
+
+#### Phase 4: Mobile App - Real-time Dashboard (7 subtasks)
+- Dashboard layout (portrait/landscape)
+- Power metric display with zones
+- Heart rate display with zones
+- Cadence display
+- Secondary metrics (speed, distance, time, calories)
+- Workout interval display
+- No-session state handling
+
+#### Phase 5: Mobile App - Workout Controls (5 subtasks)
+- Control button bar with haptic feedback
+- Pause/resume action
+- Skip interval action
+- Stop session action
+- Resistance/grade adjustment (free rides)
+
+#### Phase 6: Mobile App - Ride History (5 subtasks)
+- History list screen with pagination
+- Ride detail screen
+- Statistics summary (TSS, IF, zones)
+- History filtering
+- Offline ride cache
+
+#### Phase 7: Mobile App - Settings & Polish (7 subtasks)
+- Settings screen
+- Unit preference setting
+- Keep screen awake setting
+- Haptic feedback settings
+- Error handling and toasts
+- Loading and empty states
+- Dark mode support
+
+#### Phase 8: Desktop Integration (4 subtasks)
+- Companion panel in desktop settings
+- QR code display
+- Connected companions indicator
+- Auto-start server on launch
+
+#### Phase 9: Testing & Documentation (5 subtasks)
+- Rust unit tests for server
+- React Native component tests
+- Integration tests
+- User documentation
+- API reference documentation
+
+## Architecture Decisions
+
+### Backend (Rust)
+- Reuse existing tokio-tungstenite WebSocket infrastructure
+- Extend existing mDNS discovery (mdns-sd crate)
+- Leverage existing IPC handler patterns from daemon module
+- Use existing LiveMetrics and SessionInfo types
+
+### Mobile App
+- **Framework**: React Native (cross-platform iOS/Android)
+- **Language**: TypeScript
+- **State Management**: Zustand (lightweight, TypeScript-friendly)
+- **Navigation**: React Navigation v6
+- **Service Discovery**: react-native-zeroconf
+
+### Communication Protocol
+- WebSocket for bidirectional real-time communication
+- JSON message format (matches existing IPC patterns)
+- PIN-based authentication
+- 1Hz metrics streaming rate
+
+## Current Status
+- [x] Spec read and analyzed
+- [x] Existing codebase explored
+- [x] Implementation plan created
+- [ ] Phase 1 not started
+- [ ] Phase 2 not started
+
+## Next Steps
+1. Begin Phase 1: Create companion module structure (T001)
+2. Define companion API types (T002)
+3. Implement WebSocket server (T003)

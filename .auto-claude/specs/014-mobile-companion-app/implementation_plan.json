@@ -1,0 +1,1027 @@
+{
+  "feature": "Mobile Companion App",
+  "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+  "created_at": "2026-01-03T05:14:33.316Z",
+  "updated_at": "2026-01-03T06:30:00.000Z",
+  "status": "in_progress",
+  "planStatus": "planned",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Backend: Companion Server API",
+      "description": "Create a REST/WebSocket server in the Rust desktop app that the mobile companion can connect to over LAN",
+      "order": 1,
+      "subtasks": [
+        {
+          "id": "T001",
+          "title": "Create companion module structure",
+          "description": "Set up src/companion/ module with mod.rs, server.rs, types.rs, and handlers.rs files. Add module to lib.rs exports.",
+          "status": "completed",
+          "priority": "high",
+          "estimated_hours": 1,
+          "dependencies": [],
+          "acceptance_criteria": [
+            "src/companion/mod.rs exists with submodule declarations",
+            "Module is exported from lib.rs",
+            "Basic types for companion API defined"
+          ],
+          "notes": "Created companion module structure with mod.rs, types.rs, server.rs, and handlers.rs. Added module export to lib.rs. Commit fd8ff10.",
+          "updated_at": "2026-01-03T05:24:27.162151+00:00"
+        },
+        {
+          "id": "T002",
+          "title": "Define companion API types and messages",
+          "description": "Define CompanionRequest, CompanionResponse, and CompanionEvent types for WebSocket communication. Include authentication, metrics streaming, and control message types.",
+          "status": "completed",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T001"
+          ],
+          "acceptance_criteria": [
+            "CompanionRequest enum with all command variants",
+            "CompanionResponse type for API responses",
+            "CompanionEvent for real-time push events",
+            "Serde serialization for all types"
+          ],
+          "notes": "Types already implemented in T001. Verified: CompanionRequest with 12 command variants (Auth, GetSessionStatus, SubscribeMetrics, UnsubscribeMetrics, WorkoutPause, WorkoutResume, WorkoutSkip, WorkoutStop, AdjustResistance, GetRideHistory, GetRideDetails, Ping), CompanionResponse with 11 variants, CompanionEvent with 4 event types. All types have Serde serialization with #[serde(tag = \"type\", rename_all = \"snake_case\")]. Supporting types include CompanionErrorCode, SessionState, SessionStatusInfo, RideSummary, RideDetailInfo, CompanionClient. Unit tests for serialization pass.",
+          "updated_at": "2026-01-03T05:26:41.003394+00:00"
+        },
+        {
+          "id": "T003",
+          "title": "Implement companion WebSocket server",
+          "description": "Create CompanionServer struct using tokio-tungstenite. Handle client connections, PIN authentication, and message routing. Bind to configurable port with LAN accessibility.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 4,
+          "dependencies": [
+            "T002"
+          ],
+          "acceptance_criteria": [
+            "Server binds to 0.0.0.0:port for LAN access",
+            "Accepts WebSocket connections",
+            "Handles multiple concurrent clients",
+            "PIN authentication before allowing commands"
+          ]
+        },
+        {
+          "id": "T004",
+          "title": "Implement mDNS service advertisement",
+          "description": "Use mdns-sd crate to advertise the companion server on LAN as '_rustride._tcp.local'. Include port and protocol version in TXT records for auto-discovery by mobile apps.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Service advertised as _rustride._tcp.local",
+            "TXT records include port and version",
+            "Service can be discovered from mobile device on same LAN"
+          ]
+        },
+        {
+          "id": "T005",
+          "title": "Implement metrics streaming handler",
+          "description": "Create handler that pushes real-time metrics (power, HR, cadence, speed) to connected mobile clients. Subscribe to sensor events and broadcast at 1Hz to authenticated clients.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Metrics pushed to clients at 1Hz",
+            "Includes power, HR, cadence, speed, distance",
+            "Only authenticated clients receive metrics",
+            "Efficient broadcast to multiple clients"
+          ]
+        },
+        {
+          "id": "T006",
+          "title": "Implement workout control handlers",
+          "description": "Create handlers for workout.pause, workout.resume, workout.skip, workout.stop commands from mobile clients. Integrate with existing daemon handler logic.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Pause command pauses active workout",
+            "Resume command resumes paused workout",
+            "Skip command advances to next interval",
+            "Stop command ends the session",
+            "Proper error responses for invalid states"
+          ]
+        },
+        {
+          "id": "T007",
+          "title": "Implement ride history API handlers",
+          "description": "Create handlers to list rides, get ride details, and get ride statistics. Query from SQLite database and return paginated results.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "List rides with pagination",
+            "Get single ride with full details",
+            "Include summary stats (avg power, duration, distance)",
+            "Filter rides by date range"
+          ]
+        },
+        {
+          "id": "T008",
+          "title": "Add companion server configuration",
+          "description": "Add CompanionConfig to storage/config.rs with enabled flag, port number, require_pin flag, and session timeout. Integrate with app settings UI.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Config struct with all companion settings",
+            "Persisted to user config file",
+            "Default port 9876",
+            "PIN requirement configurable"
+          ]
+        },
+        {
+          "id": "T009",
+          "title": "Add connection QR code generation",
+          "description": "Generate QR code containing connection URL (ws://ip:port) and optional PIN for easy mobile app pairing. Use existing qrcode crate.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003",
+            "T004"
+          ],
+          "acceptance_criteria": [
+            "QR code generated with connection URL",
+            "PIN included if authentication required",
+            "QR displayable in desktop app UI",
+            "ASCII and SVG formats available"
+          ]
+        },
+        {
+          "id": "T010",
+          "title": "Add session status endpoint",
+          "description": "Create handler returning current session state: active workout info, elapsed time, current interval, target power. Used by mobile app to sync UI state.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Returns null if no active session",
+            "Includes workout name and file for workouts",
+            "Includes current interval details",
+            "Includes elapsed and remaining time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Mobile App: Core Framework",
+      "description": "Set up React Native mobile app with navigation, state management, and core UI components",
+      "order": 2,
+      "subtasks": [
+        {
+          "id": "T011",
+          "title": "Initialize React Native project",
+          "description": "Create React Native project in companion-app/ directory using react-native-cli. Configure TypeScript, ESLint, and Prettier. Set up Android and iOS build configurations.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [],
+          "acceptance_criteria": [
+            "React Native project initialized",
+            "TypeScript configured",
+            "Builds for iOS simulator",
+            "Builds for Android emulator"
+          ]
+        },
+        {
+          "id": "T012",
+          "title": "Set up navigation structure",
+          "description": "Install React Navigation and configure bottom tab navigator with screens: Dashboard, Workout, History, Settings. Add stack navigators for detail screens.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T011"
+          ],
+          "acceptance_criteria": [
+            "Bottom tabs for main screens",
+            "Stack navigation for details",
+            "Deep linking configured",
+            "Smooth transitions"
+          ]
+        },
+        {
+          "id": "T013",
+          "title": "Implement state management with Zustand",
+          "description": "Set up Zustand stores for connection state, metrics state, session state, and ride history. Define typed actions and selectors.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T011"
+          ],
+          "acceptance_criteria": [
+            "Connection store with status, serverUrl, isAuthenticated",
+            "Metrics store with live data",
+            "Session store with workout state",
+            "History store with ride list and cache"
+          ]
+        },
+        {
+          "id": "T014",
+          "title": "Create WebSocket connection service",
+          "description": "Implement ConnectionService class that handles WebSocket connection, reconnection with exponential backoff, and message parsing. Integrate with Zustand stores.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T013"
+          ],
+          "acceptance_criteria": [
+            "Connects to ws://host:port",
+            "Automatic reconnection on disconnect",
+            "Exponential backoff (1s, 2s, 4s, max 30s)",
+            "Message parsing and store updates"
+          ]
+        },
+        {
+          "id": "T015",
+          "title": "Implement mDNS discovery service",
+          "description": "Use react-native-zeroconf to discover RustRide servers on LAN. Parse TXT records for port and version. Provide list of available servers to connection UI.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T011"
+          ],
+          "acceptance_criteria": [
+            "Discovers _rustride._tcp services",
+            "Extracts host and port",
+            "Updates available servers list",
+            "Handles service removal"
+          ]
+        },
+        {
+          "id": "T016",
+          "title": "Create design system and theme",
+          "description": "Define color palette, typography, spacing, and component styles matching desktop app. Create ThemeProvider with dark/light mode support.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T011"
+          ],
+          "acceptance_criteria": [
+            "Color palette defined",
+            "Typography scale defined",
+            "Dark and light themes",
+            "Consistent with desktop app style"
+          ]
+        },
+        {
+          "id": "T017",
+          "title": "Build reusable UI components",
+          "description": "Create MetricCard, Button, IconButton, ConnectionStatus, and LoadingSpinner components. Use React Native StyleSheet for styling.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T016"
+          ],
+          "acceptance_criteria": [
+            "MetricCard displays value, unit, label",
+            "Button with variants (primary, secondary)",
+            "ConnectionStatus indicator",
+            "Components are accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Mobile App: Connection & Authentication",
+      "description": "Implement server discovery, connection flow, and PIN authentication",
+      "order": 3,
+      "subtasks": [
+        {
+          "id": "T018",
+          "title": "Create connection screen UI",
+          "description": "Build screen showing discovered servers, manual entry option, and connection status. Display server name, IP, and port in list.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T015",
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "Shows list of discovered servers",
+            "Manual IP:port entry option",
+            "Connection status indicator",
+            "Pull to refresh discovery"
+          ]
+        },
+        {
+          "id": "T019",
+          "title": "Implement QR code scanner",
+          "description": "Add QR code scanning using react-native-camera or vision-camera. Parse connection URL and PIN from QR data. Auto-connect after successful scan.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T018"
+          ],
+          "acceptance_criteria": [
+            "Camera permission request",
+            "QR code detection and parsing",
+            "Extracts URL and PIN",
+            "Initiates connection automatically"
+          ]
+        },
+        {
+          "id": "T020",
+          "title": "Build PIN entry dialog",
+          "description": "Create modal dialog for PIN entry when server requires authentication. 6-digit numeric input with keypad. Visual feedback on entry.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "6-digit PIN input",
+            "Numeric keypad",
+            "Shake animation on wrong PIN",
+            "Auto-submit on 6 digits"
+          ]
+        },
+        {
+          "id": "T021",
+          "title": "Implement authentication flow",
+          "description": "Send auth message with PIN over WebSocket. Handle auth_ok and auth_failed responses. Store authenticated state in Zustand.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T014",
+            "T020"
+          ],
+          "acceptance_criteria": [
+            "Sends auth message on connect",
+            "Handles success and failure",
+            "Updates connection store",
+            "Shows appropriate UI feedback"
+          ]
+        },
+        {
+          "id": "T022",
+          "title": "Add connection persistence",
+          "description": "Store last connected server in AsyncStorage. Auto-reconnect on app launch if server is available. Remember PIN if user opts in.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T021"
+          ],
+          "acceptance_criteria": [
+            "Saves last server to AsyncStorage",
+            "Auto-connect on app start",
+            "Optional PIN storage (secure)",
+            "Skip connection screen if auto-connected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Mobile App: Real-time Dashboard",
+      "description": "Build the main dashboard showing live workout metrics",
+      "order": 4,
+      "subtasks": [
+        {
+          "id": "T023",
+          "title": "Create dashboard screen layout",
+          "description": "Build main dashboard with grid of metric cards. Responsive layout for portrait and landscape orientations. Status bar with connection indicator.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "Grid layout for metrics",
+            "Adapts to portrait/landscape",
+            "Connection status visible",
+            "Clean, readable design"
+          ]
+        },
+        {
+          "id": "T024",
+          "title": "Implement power metric display",
+          "description": "Create large power display with current watts, 3s average, and zone indicator. Color-code by power zone. Show target power during workouts.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Current power in large font",
+            "3-second average shown",
+            "Power zone color coding",
+            "Target power overlay for ERG"
+          ]
+        },
+        {
+          "id": "T025",
+          "title": "Implement heart rate display",
+          "description": "Show current HR with BPM, zone indicator, and optional pulse animation. Color-code by HR zone. Show max HR for session.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Current HR in BPM",
+            "HR zone indicator",
+            "Zone-based color",
+            "Session max HR"
+          ]
+        },
+        {
+          "id": "T026",
+          "title": "Implement cadence display",
+          "description": "Show current cadence in RPM with target cadence during workouts. Visual indicator when outside target range.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Current cadence RPM",
+            "Target cadence if applicable",
+            "Warning when out of range"
+          ]
+        },
+        {
+          "id": "T027",
+          "title": "Implement secondary metrics",
+          "description": "Add smaller cards for speed (km/h or mph), distance, elapsed time, and calories. Unit preference from settings.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Speed with unit preference",
+            "Distance with unit preference",
+            "Elapsed time (HH:MM:SS)",
+            "Calorie count"
+          ]
+        },
+        {
+          "id": "T028",
+          "title": "Add workout interval display",
+          "description": "When workout is active, show current interval name, time remaining, and progress bar. Next interval preview.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Current interval name",
+            "Time remaining in interval",
+            "Progress bar",
+            "Next interval preview"
+          ]
+        },
+        {
+          "id": "T029",
+          "title": "Implement no-session state",
+          "description": "Show appropriate UI when no workout/ride is active. Display connection status and hint to start session on desktop.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T023"
+          ],
+          "acceptance_criteria": [
+            "Clear 'no session' indicator",
+            "Connection status shown",
+            "Helpful text for user"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Mobile App: Workout Controls",
+      "description": "Implement workout control buttons and actions",
+      "order": 5,
+      "subtasks": [
+        {
+          "id": "T030",
+          "title": "Create control button bar",
+          "description": "Fixed bottom bar with play/pause, skip interval, and stop buttons. Disabled state when no session. Haptic feedback on press.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "Play/Pause toggle button",
+            "Skip forward button",
+            "Stop button with confirmation",
+            "Haptic feedback"
+          ]
+        },
+        {
+          "id": "T031",
+          "title": "Implement pause/resume action",
+          "description": "Send workout.pause or workout.resume command via WebSocket. Update local state optimistically. Handle error responses.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T030",
+            "T006"
+          ],
+          "acceptance_criteria": [
+            "Pause sends correct command",
+            "Resume sends correct command",
+            "Optimistic UI update",
+            "Error handling with retry"
+          ]
+        },
+        {
+          "id": "T032",
+          "title": "Implement skip interval action",
+          "description": "Send workout.skip command to advance to next interval. Show toast confirmation. Disable when on last interval.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T030",
+            "T006"
+          ],
+          "acceptance_criteria": [
+            "Skip sends command",
+            "Toast shows new interval",
+            "Disabled at last interval",
+            "UI updates immediately"
+          ]
+        },
+        {
+          "id": "T033",
+          "title": "Implement stop session action",
+          "description": "Show confirmation dialog before stopping. Send workout.stop or ride.stop command. Navigate to summary or dashboard after stop.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T030",
+            "T006"
+          ],
+          "acceptance_criteria": [
+            "Confirmation dialog shown",
+            "Stop command sent",
+            "Session state cleared",
+            "Navigate appropriately"
+          ]
+        },
+        {
+          "id": "T034",
+          "title": "Add resistance/grade adjustment",
+          "description": "For free rides, add +/- buttons to adjust trainer resistance or simulated grade. Show current level.",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T030"
+          ],
+          "acceptance_criteria": [
+            "Increase/decrease buttons",
+            "Current level display",
+            "Step size configurable",
+            "Only shown for free rides"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Mobile App: Ride History",
+      "description": "Implement ride history browsing and statistics viewing",
+      "order": 6,
+      "subtasks": [
+        {
+          "id": "T035",
+          "title": "Create history list screen",
+          "description": "Show paginated list of past rides with date, duration, distance, and avg power. Pull to refresh. Infinite scroll pagination.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T007",
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "List of rides with summary",
+            "Pagination (20 per page)",
+            "Pull to refresh",
+            "Sorted by date descending"
+          ]
+        },
+        {
+          "id": "T036",
+          "title": "Create ride detail screen",
+          "description": "Show full ride details: all metrics, duration, distance, power stats (avg, max, NP), HR stats, cadence. Date and time.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T035"
+          ],
+          "acceptance_criteria": [
+            "All ride statistics shown",
+            "Formatted date/time",
+            "Unit preference respected",
+            "Clean layout"
+          ]
+        },
+        {
+          "id": "T037",
+          "title": "Add ride statistics summary",
+          "description": "Show statistics cards: TSS, IF, calories, time in zones. Display power and HR zone distribution.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T036"
+          ],
+          "acceptance_criteria": [
+            "TSS and IF displayed",
+            "Calorie total",
+            "Time in each power zone",
+            "HR zone distribution"
+          ]
+        },
+        {
+          "id": "T038",
+          "title": "Add history filtering",
+          "description": "Filter rides by date range (week, month, year, custom). Filter by workout type (free ride vs structured).",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T035"
+          ],
+          "acceptance_criteria": [
+            "Date range filter",
+            "Type filter",
+            "Filters persist in session",
+            "Clear filters button"
+          ]
+        },
+        {
+          "id": "T039",
+          "title": "Implement offline ride cache",
+          "description": "Cache recently viewed rides in AsyncStorage. Show cached data when offline. Sync on reconnection.",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T035"
+          ],
+          "acceptance_criteria": [
+            "Recent rides cached locally",
+            "Works offline",
+            "Cache limit (50 rides)",
+            "Sync on reconnect"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Mobile App: Settings & Polish",
+      "description": "Add settings screen and polish the user experience",
+      "order": 7,
+      "subtasks": [
+        {
+          "id": "T040",
+          "title": "Create settings screen",
+          "description": "Settings screen with sections: Connection, Display, Notifications. Toggle switches and value pickers.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T012"
+          ],
+          "acceptance_criteria": [
+            "Organized sections",
+            "Persist to AsyncStorage",
+            "Toggle and picker controls",
+            "Settings take effect immediately"
+          ]
+        },
+        {
+          "id": "T041",
+          "title": "Add unit preference setting",
+          "description": "Setting to choose metric (km, kg) or imperial (mi, lb) units. Apply to all metric displays.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T040"
+          ],
+          "acceptance_criteria": [
+            "Metric/Imperial toggle",
+            "Affects speed display",
+            "Affects distance display",
+            "Persisted preference"
+          ]
+        },
+        {
+          "id": "T042",
+          "title": "Add keep screen awake setting",
+          "description": "Option to prevent screen from sleeping during active session. Use react-native-keep-awake.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T040"
+          ],
+          "acceptance_criteria": [
+            "Toggle in settings",
+            "Screen stays on during ride",
+            "Normal behavior when disabled"
+          ]
+        },
+        {
+          "id": "T043",
+          "title": "Add haptic feedback settings",
+          "description": "Settings for haptic feedback intensity (off, light, medium, strong). Feedback on button presses and interval changes.",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T040"
+          ],
+          "acceptance_criteria": [
+            "Intensity options",
+            "Can disable completely",
+            "Works on iOS and Android"
+          ]
+        },
+        {
+          "id": "T044",
+          "title": "Implement error handling and toasts",
+          "description": "Global error handler with user-friendly toast messages. Toast for connection lost, command failed, etc.",
+          "status": "pending",
+          "priority": "high",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T011"
+          ],
+          "acceptance_criteria": [
+            "Toast component styled",
+            "Auto-dismiss with duration",
+            "Error, warning, info variants",
+            "Accessible"
+          ]
+        },
+        {
+          "id": "T045",
+          "title": "Add loading and empty states",
+          "description": "Loading spinners for async operations. Empty states with helpful messages for no rides, no connection, etc.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T017"
+          ],
+          "acceptance_criteria": [
+            "Loading spinner component",
+            "Empty state illustrations",
+            "Helpful empty state text",
+            "Consistent across screens"
+          ]
+        },
+        {
+          "id": "T046",
+          "title": "Implement dark mode",
+          "description": "Dark mode theme following system preference or manual toggle. All screens support both themes.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T016"
+          ],
+          "acceptance_criteria": [
+            "Dark theme defined",
+            "System preference detection",
+            "Manual toggle in settings",
+            "All screens work in both modes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "name": "Desktop Integration",
+      "description": "Integrate companion server with desktop app UI",
+      "order": 8,
+      "subtasks": [
+        {
+          "id": "T047",
+          "title": "Add companion panel to desktop UI",
+          "description": "Add settings panel in desktop app for companion server configuration. Enable/disable toggle, port setting, PIN display.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T008"
+          ],
+          "acceptance_criteria": [
+            "Panel in settings screen",
+            "Enable/disable toggle",
+            "Port configuration",
+            "Current PIN display"
+          ]
+        },
+        {
+          "id": "T048",
+          "title": "Add QR code display to desktop",
+          "description": "Show QR code in companion panel for easy mobile pairing. Include regenerate PIN button.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T009",
+            "T047"
+          ],
+          "acceptance_criteria": [
+            "QR code rendered in UI",
+            "Contains connection URL and PIN",
+            "Regenerate PIN button",
+            "Copy URL button"
+          ]
+        },
+        {
+          "id": "T049",
+          "title": "Show connected companions indicator",
+          "description": "Display number of connected companion apps in desktop status bar. List connected devices with disconnect option.",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T003"
+          ],
+          "acceptance_criteria": [
+            "Connection count in status bar",
+            "List of connected devices",
+            "Individual disconnect buttons",
+            "Updates in real-time"
+          ]
+        },
+        {
+          "id": "T050",
+          "title": "Start companion server automatically",
+          "description": "Start companion server on desktop app launch if enabled in config. Stop on app exit.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 1,
+          "dependencies": [
+            "T003",
+            "T008"
+          ],
+          "acceptance_criteria": [
+            "Auto-start if enabled",
+            "Graceful shutdown on exit",
+            "Error handling if port in use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-9",
+      "name": "Testing & Documentation",
+      "description": "Write tests and documentation for the companion feature",
+      "order": 9,
+      "subtasks": [
+        {
+          "id": "T051",
+          "title": "Write Rust unit tests for companion server",
+          "description": "Unit tests for message parsing, authentication, and handler logic. Mock WebSocket connections.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T010"
+          ],
+          "acceptance_criteria": [
+            "Message parsing tests",
+            "Auth flow tests",
+            "Handler logic tests",
+            "80%+ code coverage"
+          ]
+        },
+        {
+          "id": "T052",
+          "title": "Write React Native component tests",
+          "description": "Unit tests for UI components using React Native Testing Library. Test metric displays, buttons, navigation.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T046"
+          ],
+          "acceptance_criteria": [
+            "Component render tests",
+            "Interaction tests",
+            "Store integration tests",
+            "Snapshot tests"
+          ]
+        },
+        {
+          "id": "T053",
+          "title": "Write integration tests",
+          "description": "Integration tests for full connection flow: discovery, connect, authenticate, receive metrics, send commands.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 3,
+          "dependencies": [
+            "T051",
+            "T052"
+          ],
+          "acceptance_criteria": [
+            "Full connection flow tested",
+            "Metrics streaming tested",
+            "Command handling tested",
+            "Error scenarios covered"
+          ]
+        },
+        {
+          "id": "T054",
+          "title": "Write user documentation",
+          "description": "Add companion app section to docs/. Include setup guide, connection troubleshooting, feature overview.",
+          "status": "pending",
+          "priority": "medium",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T050"
+          ],
+          "acceptance_criteria": [
+            "Setup guide written",
+            "Connection troubleshooting",
+            "Feature documentation",
+            "Screenshots included"
+          ]
+        },
+        {
+          "id": "T055",
+          "title": "Create companion API reference",
+          "description": "Document WebSocket API: message types, authentication flow, command format, event types.",
+          "status": "pending",
+          "priority": "low",
+          "estimated_hours": 2,
+          "dependencies": [
+            "T010"
+          ],
+          "acceptance_criteria": [
+            "All message types documented",
+            "Request/response examples",
+            "Error codes listed",
+            "JSON schemas provided"
+          ]
+        }
+      ]
+    }
+  ],
+  "qa_status": {
+    "sign_off": "pending",
+    "issues": "",
+    "tests_passed": ""
+  },
+  "last_updated": "2026-01-03T05:26:41.003394+00:00"
+}

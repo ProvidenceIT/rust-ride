@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "007-rider-profile-export-import",
+  "spec": "014-mobile-companion-app",
   "state": "building",
   "subtasks": {
-    "completed": 18,
-    "total": 27,
+    "completed": 1,
+    "total": 55,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "UI Integration",
+    "current": "Backend: Companion Server API",
     "id": null,
-    "total": 4
+    "total": 10
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 20,
-    "started_at": "2026-01-02T23:53:06.451074"
+    "number": 3,
+    "started_at": "2026-01-03T06:14:48.355595"
   },
-  "last_update": "2026-01-03T00:49:31.140640"
+  "last_update": "2026-01-03T06:25:05.008705"
 }
