@@ -15,7 +15,8 @@
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use std::collections::HashMap;
 
-use crate::audio::{AlertCategory, AlertType, VoiceInfo};
+use crate::audio::{AlertCategory, AlertType, AudioConfig, VoiceInfo};
+use crate::ui::settings::{AudioSettingsAction, AudioSettingsPanel, AudioSettingsPanelConfig, AudioTestType};
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
@@ -95,6 +96,10 @@ pub struct SettingsScreen {
     show_sync: bool,
     /// T109: Connected platform states (for display)
     pub platform_states: Vec<(SyncPlatform, bool)>,
+    /// Audio engine configuration (volume levels, mute states)
+    pub audio_config: AudioConfig,
+    /// Show/hide audio settings section
+    show_audio_settings: bool,
     /// T092: HID device settings
     pub hid_settings: HidSettings,
     /// T092: Show/hide HID section
@@ -403,6 +408,10 @@ pub enum SettingsAction {
     Cancel,
     /// Test/preview the current voice settings
     TestVoice(TestVoiceSettings),
+    /// Test/preview an audio sound (countdown, achievement, milestone, etc.)
+    TestAudio(AudioTestType),
+    /// Audio configuration changed (auto-save)
+    AudioConfigChanged(AudioConfig),
 }
 
 impl SettingsScreen {
@@ -461,6 +470,8 @@ impl SettingsScreen {
                 (SyncPlatform::TrainingPeaks, false),
                 (SyncPlatform::IntervalsIcu, false),
             ],
+            audio_config: AudioConfig::default(),
+            show_audio_settings: false,
             hid_settings: HidSettings::default(),
             show_hid: false,
             accessibility_settings: AccessibilitySettings::default(),
@@ -496,6 +507,16 @@ impl SettingsScreen {
     /// Get current incline configuration.
     pub fn get_incline_config(&self) -> &InclineConfig {
         &self.incline_config
+    }
+
+    /// Set audio engine configuration.
+    pub fn set_audio_config(&mut self, config: AudioConfig) {
+        self.audio_config = config;
+    }
+
+    /// Get current audio engine configuration.
+    pub fn get_audio_config(&self) -> &AudioConfig {
+        &self.audio_config
     }
 
     /// Set FTP confidence from auto-detection.
@@ -625,6 +646,13 @@ impl SettingsScreen {
 
             // T146: Immersion effects section
             self.render_immersion_section(ui);
+
+            ui.add_space(16.0);
+
+            // Audio settings section (volume controls, mute states, test sounds)
+            if let Some(audio_action) = self.render_audio_settings_section(ui) {
+                action = audio_action;
+            }
 
             ui.add_space(16.0);
 
@@ -1339,6 +1367,69 @@ impl SettingsScreen {
                 });
             });
         });
+    }
+
+    /// Render the audio settings section with volume controls and test sounds.
+    /// Uses the AudioSettingsPanel widget from ui::settings::audio_settings.
+    fn render_audio_settings_section(&mut self, ui: &mut Ui) -> Option<SettingsAction> {
+        let mut result_action: Option<SettingsAction> = None;
+
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Audio Settings").size(18.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .button(if self.show_audio_settings { "Hide" } else { "Show" })
+                        .clicked()
+                    {
+                        self.show_audio_settings = !self.show_audio_settings;
+                    }
+                });
+            });
+
+            if self.show_audio_settings {
+                ui.add_space(8.0);
+
+                // Create panel config with available voices
+                let panel_config = AudioSettingsPanelConfig {
+                    show_advanced: true,
+                    available_voices: self.available_voices.clone(),
+                    show_header: false, // We're providing our own header
+                    expanded: true,
+                };
+
+                // Render the audio settings panel
+                let response = AudioSettingsPanel::show(ui, &mut self.audio_config, &panel_config);
+
+                // Handle actions from the panel
+                if let Some(action) = response.action {
+                    match action {
+                        AudioSettingsAction::SettingsChanged(config) => {
+                            self.has_changes = true;
+                            result_action = Some(SettingsAction::AudioConfigChanged(config));
+                        }
+                        AudioSettingsAction::TestSound(test_type) => {
+                            result_action = Some(SettingsAction::TestAudio(test_type));
+                        }
+                        AudioSettingsAction::ToggleMute => {
+                            self.has_changes = true;
+                            result_action = Some(SettingsAction::AudioConfigChanged(self.audio_config.clone()));
+                        }
+                        AudioSettingsAction::ToggleCategoryMute(_) => {
+                            self.has_changes = true;
+                            result_action = Some(SettingsAction::AudioConfigChanged(self.audio_config.clone()));
+                        }
+                    }
+                } else if response.settings_changed {
+                    self.has_changes = true;
+                }
+            }
+        });
+
+        result_action
     }
 
     /// Render the audio alerts settings section.
