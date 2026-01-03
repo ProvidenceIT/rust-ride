@@ -84,6 +84,23 @@ pub enum SyncNotificationType {
     ConnectivityChanged {
         is_online: bool,
     },
+    /// Workout sync started (for TrainingPeaks workout plan sync)
+    WorkoutSyncStarted {
+        platform: SyncPlatform,
+    },
+    /// Workout sync completed successfully
+    WorkoutSyncCompleted {
+        platform: SyncPlatform,
+        /// Number of new workouts synced
+        new_workouts: usize,
+        /// Number of updated workouts
+        updated_workouts: usize,
+    },
+    /// Workout sync failed
+    WorkoutSyncFailed {
+        platform: SyncPlatform,
+        error: String,
+    },
 }
 
 impl SyncNotificationType {
@@ -108,6 +125,15 @@ impl SyncNotificationType {
                 } else {
                     "Offline".to_string()
                 }
+            }
+            SyncNotificationType::WorkoutSyncStarted { platform } => {
+                format!("Syncing {} workouts", platform.display_name())
+            }
+            SyncNotificationType::WorkoutSyncCompleted { platform, .. } => {
+                format!("{} workouts synced", platform.display_name())
+            }
+            SyncNotificationType::WorkoutSyncFailed { platform, .. } => {
+                format!("{} workout sync failed", platform.display_name())
             }
         }
     }
@@ -140,6 +166,27 @@ impl SyncNotificationType {
                     "Pending uploads will sync when connection is restored.".to_string()
                 }
             }
+            SyncNotificationType::WorkoutSyncStarted { .. } => {
+                "Downloading workout plans...".to_string()
+            }
+            SyncNotificationType::WorkoutSyncCompleted {
+                new_workouts,
+                updated_workouts,
+                ..
+            } => {
+                match (*new_workouts, *updated_workouts) {
+                    (0, 0) => "Workouts are up to date.".to_string(),
+                    (n, 0) => format!("{} new workout{} added.", n, if n == 1 { "" } else { "s" }),
+                    (0, u) => format!("{} workout{} updated.", u, if u == 1 { "" } else { "s" }),
+                    (n, u) => format!(
+                        "{} new, {} updated workout{}.",
+                        n,
+                        u,
+                        if n + u == 1 { "" } else { "s" }
+                    ),
+                }
+            }
+            SyncNotificationType::WorkoutSyncFailed { error, .. } => error.clone(),
         }
     }
 
@@ -157,6 +204,9 @@ impl SyncNotificationType {
                     WARNING_AMBER
                 }
             }
+            SyncNotificationType::WorkoutSyncStarted { platform } => platform_color(*platform),
+            SyncNotificationType::WorkoutSyncCompleted { platform, .. } => platform_color(*platform),
+            SyncNotificationType::WorkoutSyncFailed { .. } => ERROR_RED,
         }
     }
 
@@ -178,6 +228,15 @@ impl SyncNotificationType {
                     Color32::from_rgba_unmultiplied(60, 50, 20, 240)
                 }
             }
+            SyncNotificationType::WorkoutSyncStarted { .. } => {
+                Color32::from_rgba_unmultiplied(40, 40, 50, 240)
+            }
+            SyncNotificationType::WorkoutSyncCompleted { .. } => {
+                Color32::from_rgba_unmultiplied(30, 60, 40, 240)
+            }
+            SyncNotificationType::WorkoutSyncFailed { .. } => {
+                Color32::from_rgba_unmultiplied(60, 30, 30, 240)
+            }
         }
     }
 
@@ -195,6 +254,9 @@ impl SyncNotificationType {
                     "\u{2022}" // Bullet point
                 }
             }
+            SyncNotificationType::WorkoutSyncStarted { .. } => "\u{2193}", // Down arrow (downloading)
+            SyncNotificationType::WorkoutSyncCompleted { .. } => "\u{2713}", // Checkmark
+            SyncNotificationType::WorkoutSyncFailed { .. } => "\u{2717}", // X mark
         }
     }
 
@@ -595,8 +657,13 @@ impl SyncNotificationWidget {
             ui.horizontal(|ui| {
                 // Show action buttons based on notification type
                 match notification_type {
-                    SyncNotificationType::Completed { external_url: Some(url), .. } => {
-                        if ui.small_button("View on Strava").clicked() {
+                    SyncNotificationType::Completed {
+                        platform,
+                        external_url: Some(url),
+                        ..
+                    } => {
+                        let button_text = format!("View on {}", platform.display_name());
+                        if ui.small_button(button_text).clicked() {
                             action = SyncNotificationAction::ViewActivity { url: url.clone() };
                         }
                     }
@@ -863,5 +930,219 @@ mod tests {
         // Just verify they can be created and compared
         assert_ne!(none, dismissed);
         assert_ne!(view, retry);
+    }
+
+    // TrainingPeaks-specific tests
+
+    #[test]
+    fn test_trainingpeaks_platform_color() {
+        let tp_color = platform_color(SyncPlatform::TrainingPeaks);
+        // TrainingPeaks teal color
+        assert_eq!(tp_color, Color32::from_rgb(0, 128, 128));
+    }
+
+    #[test]
+    fn test_trainingpeaks_notification_titles() {
+        let started = SyncNotificationType::Started {
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::TrainingPeaks,
+        };
+        assert!(started.title().contains("TrainingPeaks"));
+
+        let completed = SyncNotificationType::Completed {
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::TrainingPeaks,
+            external_url: Some("https://trainingpeaks.com/activity/123".to_string()),
+        };
+        assert!(completed.title().contains("TrainingPeaks"));
+
+        let failed = SyncNotificationType::Failed {
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::TrainingPeaks,
+            error: "API error".to_string(),
+            will_retry: true,
+        };
+        assert!(failed.title().contains("TrainingPeaks"));
+    }
+
+    #[test]
+    fn test_trainingpeaks_upload_notifications() {
+        let mut queue = SyncNotificationQueue::new();
+        let ride_id = Uuid::new_v4();
+
+        // TrainingPeaks upload started
+        queue.push(SyncNotificationType::Started {
+            ride_id,
+            platform: SyncPlatform::TrainingPeaks,
+        });
+        assert_eq!(queue.pending_count(), 1);
+
+        let current = queue.current().unwrap();
+        assert!(current.notification_type.title().contains("TrainingPeaks"));
+        assert_eq!(
+            current.notification_type.color(),
+            platform_color(SyncPlatform::TrainingPeaks)
+        );
+    }
+
+    // Workout sync notification tests
+
+    #[test]
+    fn test_workout_sync_started_notification() {
+        let notification = SyncNotificationType::WorkoutSyncStarted {
+            platform: SyncPlatform::TrainingPeaks,
+        };
+
+        assert!(notification.title().contains("TrainingPeaks"));
+        assert!(notification.title().contains("workouts"));
+        assert!(notification.description().contains("Downloading"));
+        assert_eq!(notification.icon(), "\u{2193}"); // Down arrow
+        assert_eq!(
+            notification.color(),
+            platform_color(SyncPlatform::TrainingPeaks)
+        );
+    }
+
+    #[test]
+    fn test_workout_sync_completed_notification() {
+        // Test with new workouts only
+        let notification = SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 3,
+            updated_workouts: 0,
+        };
+        assert!(notification.title().contains("TrainingPeaks"));
+        assert!(notification.description().contains("3 new"));
+        assert_eq!(notification.icon(), "\u{2713}"); // Checkmark
+
+        // Test with updates only
+        let notification_updates = SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 0,
+            updated_workouts: 2,
+        };
+        assert!(notification_updates.description().contains("2 workout"));
+        assert!(notification_updates.description().contains("updated"));
+
+        // Test with both new and updated
+        let notification_both = SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 5,
+            updated_workouts: 3,
+        };
+        assert!(notification_both.description().contains("5 new"));
+        assert!(notification_both.description().contains("3 updated"));
+
+        // Test with no changes
+        let notification_none = SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 0,
+            updated_workouts: 0,
+        };
+        assert!(notification_none.description().contains("up to date"));
+    }
+
+    #[test]
+    fn test_workout_sync_failed_notification() {
+        let notification = SyncNotificationType::WorkoutSyncFailed {
+            platform: SyncPlatform::TrainingPeaks,
+            error: "Network timeout".to_string(),
+        };
+
+        assert!(notification.title().contains("TrainingPeaks"));
+        assert!(notification.title().contains("failed"));
+        assert!(notification.description().contains("Network timeout"));
+        assert_eq!(notification.icon(), "\u{2717}"); // X mark
+        assert_eq!(notification.color(), ERROR_RED);
+    }
+
+    #[test]
+    fn test_workout_sync_notification_queue() {
+        let mut queue = SyncNotificationQueue::new();
+
+        // Push workout sync started
+        queue.push(SyncNotificationType::WorkoutSyncStarted {
+            platform: SyncPlatform::TrainingPeaks,
+        });
+        assert_eq!(queue.pending_count(), 1);
+
+        // Push workout sync completed
+        queue.push(SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 5,
+            updated_workouts: 2,
+        });
+        assert_eq!(queue.pending_count(), 2);
+
+        // Verify first notification is started
+        let current = queue.current().unwrap();
+        assert!(matches!(
+            current.notification_type,
+            SyncNotificationType::WorkoutSyncStarted { .. }
+        ));
+
+        // Dismiss and verify completed is next
+        queue.dismiss_current();
+        let current = queue.current().unwrap();
+        assert!(matches!(
+            current.notification_type,
+            SyncNotificationType::WorkoutSyncCompleted { .. }
+        ));
+    }
+
+    #[test]
+    fn test_workout_sync_background_colors() {
+        let started = SyncNotificationType::WorkoutSyncStarted {
+            platform: SyncPlatform::TrainingPeaks,
+        };
+        let completed = SyncNotificationType::WorkoutSyncCompleted {
+            platform: SyncPlatform::TrainingPeaks,
+            new_workouts: 1,
+            updated_workouts: 0,
+        };
+        let failed = SyncNotificationType::WorkoutSyncFailed {
+            platform: SyncPlatform::TrainingPeaks,
+            error: "Error".to_string(),
+        };
+
+        // Started should have neutral background
+        assert_eq!(
+            started.background_color(),
+            Color32::from_rgba_unmultiplied(40, 40, 50, 240)
+        );
+        // Completed should have green-ish background
+        assert_eq!(
+            completed.background_color(),
+            Color32::from_rgba_unmultiplied(30, 60, 40, 240)
+        );
+        // Failed should have red-ish background
+        assert_eq!(
+            failed.background_color(),
+            Color32::from_rgba_unmultiplied(60, 30, 30, 240)
+        );
+    }
+
+    #[test]
+    fn test_multiple_platforms_in_queue() {
+        let mut queue = SyncNotificationQueue::new();
+
+        // Push Strava upload
+        queue.push(SyncNotificationType::Started {
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::Strava,
+        });
+
+        // Push TrainingPeaks upload (different ride can have same ride_id for different platforms)
+        queue.push(SyncNotificationType::Started {
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::TrainingPeaks,
+        });
+
+        // Push TrainingPeaks workout sync
+        queue.push(SyncNotificationType::WorkoutSyncStarted {
+            platform: SyncPlatform::TrainingPeaks,
+        });
+
+        assert_eq!(queue.pending_count(), 3);
     }
 }
