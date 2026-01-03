@@ -13,6 +13,8 @@ pub use library::{
     BuiltInWorkout, DifficultyTier, EnergySystem, LibraryError, SearchCriteria, WorkoutCategory,
     WorkoutLibrary,
 };
+pub use exporter_mrc::{export_mrc, export_mrc_to_file, generate_mrc_filename};
+pub use exporter_zwo::{export_zwo, export_zwo_to_file, generate_zwo_filename};
 pub use parser_mrc::{parse_mrc, parse_mrc_file};
 pub use parser_zwo::{parse_zwo, parse_zwo_file};
 pub use types::{

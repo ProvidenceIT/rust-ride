@@ -1,0 +1,293 @@
+{
+  "feature": "Workout Export to ZWO/MRC Format",
+  "description": "Add workout export functionality to complement existing ZWO and MRC parsers. Allow users to export built-in or custom workouts to Zwift (.zwo) or TrainerRoad (.mrc) formats for use in other applications.",
+  "created_at": "2026-01-02T22:52:57.567Z",
+  "updated_at": "2026-01-03T05:13:47.662Z",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "workflow_type": "development",
+  "services_involved": [
+    "workouts"
+  ],
+  "spec_file": "spec.md",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Core Export Infrastructure",
+      "description": "Create error types and core module structure for workout export",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Add WorkoutExportError type to types.rs",
+          "description": "Define the WorkoutExportError enum with variants for IO errors, invalid workout structure, and formatting errors. This mirrors the WorkoutParseError pattern.",
+          "status": "completed",
+          "files": [
+            "src/workouts/types.rs"
+          ],
+          "acceptance_criteria": [
+            "WorkoutExportError enum with IoError, InvalidWorkout, EmptyWorkout variants",
+            "Error implements thiserror::Error trait",
+            "Error is exported from mod.rs"
+          ],
+          "notes": "Added WorkoutExportError enum to src/workouts/types.rs with IoError, InvalidWorkout, EmptyWorkout, and FormattingError variants. Exported from mod.rs. Follows existing thiserror patterns from WorkoutParseError and ExportError.",
+          "updated_at": "2026-01-03T05:19:39.672124+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Create exporter_zwo.rs module stub",
+          "description": "Create the ZWO export module with function signatures following the exporter pattern from recording module.",
+          "status": "completed",
+          "files": [
+            "src/workouts/exporter_zwo.rs"
+          ],
+          "acceptance_criteria": [
+            "Module file created with export_zwo, export_zwo_to_file, generate_zwo_filename function signatures",
+            "Imports from types.rs for Workout and WorkoutExportError",
+            "Empty test module scaffolded"
+          ],
+          "notes": "Created src/workouts/exporter_zwo.rs with export_zwo, export_zwo_to_file, and generate_zwo_filename function signatures. Module follows the recording exporter pattern. Includes sanitize_filename helper for filesystem compatibility. Added module declaration to mod.rs. Test module scaffolded with tests for filename generation and empty workout error.",
+          "updated_at": "2026-01-03T05:22:02.592999+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Create exporter_mrc.rs module stub",
+          "description": "Create the MRC export module with function signatures following the exporter pattern from recording module.",
+          "status": "completed",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "Module file created with export_mrc, export_mrc_to_file, generate_mrc_filename function signatures",
+            "Imports from types.rs for Workout and WorkoutExportError",
+            "Empty test module scaffolded"
+          ],
+          "notes": "Created src/workouts/exporter_mrc.rs with export_mrc, export_mrc_to_file, and generate_mrc_filename function signatures. Module follows the recording exporter pattern and mirrors exporter_zwo.rs structure. Includes sanitize_filename helper for filesystem compatibility. Added module declaration to mod.rs. Test module scaffolded with tests for filename generation and empty workout error.",
+          "updated_at": "2026-01-03T05:24:06.185882+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Update mod.rs to export new modules",
+          "description": "Add the exporter modules to workouts/mod.rs and export the public functions.",
+          "status": "pending",
+          "files": [
+            "src/workouts/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "exporter_zwo and exporter_mrc modules declared",
+            "Export functions and types re-exported with pub use",
+            "WorkoutExportError exported from types"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "ZWO Export Implementation",
+      "description": "Implement the ZWO (Zwift workout) XML export functionality",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Implement segment-to-XML conversion helper",
+          "description": "Create helper function to convert WorkoutSegment to ZWO XML element string. Handle all segment types: Warmup, Cooldown, SteadyState, Intervals, FreeRide, Ramp.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_zwo.rs"
+          ],
+          "acceptance_criteria": [
+            "segment_to_xml helper function implemented",
+            "Warmup segments exported with PowerLow/PowerHigh attributes for ranges, or Power for constant",
+            "Cooldown segments exported with PowerLow/PowerHigh attributes for ranges",
+            "SteadyState segments exported with Power attribute",
+            "Intervals segments exported as SteadyState elements",
+            "FreeRide segments exported as FreeRide element",
+            "Ramp segments exported as Ramp element with range",
+            "Duration always included in seconds",
+            "Cadence attributes included when cadence_target present"
+          ]
+        },
+        {
+          "id": "2.2",
+          "title": "Implement export_zwo function",
+          "description": "Implement the main export_zwo function that converts a Workout to ZWO XML string. Follow the ZWO format with workout_file root, metadata elements (name, author, description), and workout element containing segments.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_zwo.rs"
+          ],
+          "acceptance_criteria": [
+            "Generates valid XML with <?xml version=\"1.0\"?> declaration",
+            "Root element is <workout_file>",
+            "Name, author, description elements included when present",
+            "Tags exported as <tag name=\"...\"/> elements",
+            "All segments converted within <workout> element",
+            "Returns Result<String, WorkoutExportError>"
+          ]
+        },
+        {
+          "id": "2.3",
+          "title": "Implement export_zwo_to_file and generate_zwo_filename",
+          "description": "Add file writing function and filename generator for ZWO exports.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_zwo.rs"
+          ],
+          "acceptance_criteria": [
+            "export_zwo_to_file writes XML content to specified path",
+            "generate_zwo_filename creates filename from workout name with .zwo extension",
+            "Filename sanitized to remove invalid filesystem characters"
+          ]
+        },
+        {
+          "id": "2.4",
+          "title": "Add unit tests for ZWO export",
+          "description": "Comprehensive unit tests for ZWO export covering all segment types and edge cases.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_zwo.rs"
+          ],
+          "acceptance_criteria": [
+            "Test exporting simple steady state workout",
+            "Test exporting warmup/cooldown with power ranges",
+            "Test exporting intervals",
+            "Test exporting workout with all metadata (name, author, description, tags)",
+            "Test exporting workout with cadence targets",
+            "Test empty workout returns error",
+            "Test round-trip: parse_zwo(export_zwo(workout)) produces equivalent workout"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "MRC Export Implementation",
+      "description": "Implement the MRC (TrainerRoad) text format export functionality",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Implement segments-to-course-data conversion",
+          "description": "Create helper function to convert WorkoutSegment list to MRC COURSE DATA points. Handle power targets and ramps by creating appropriate time/power pairs.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "Converts segments to (time_minutes, power_percent) tuples",
+            "SteadyState creates two points at same power",
+            "Ramp/Warmup/Cooldown with Range creates points at start and end power",
+            "Time accumulates correctly across segments",
+            "Handles PercentFtp power targets directly",
+            "Handles Absolute power targets by converting to percentage (using optional FTP parameter or 100%)"
+          ]
+        },
+        {
+          "id": "3.2",
+          "title": "Implement text events extraction",
+          "description": "Create helper to extract text events from segments for COURSE TEXT section.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "Extracts text_event from segments with their start times",
+            "Formats as MRC COURSE TEXT entries",
+            "Handles segments without text events gracefully"
+          ]
+        },
+        {
+          "id": "3.3",
+          "title": "Implement export_mrc function",
+          "description": "Implement the main export_mrc function that converts a Workout to MRC format string.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "Generates valid MRC file structure",
+            "Includes [COURSE HEADER] with FILE NAME, DESCRIPTION",
+            "Includes [COURSE DATA] with time/power pairs",
+            "Includes [COURSE TEXT] when text events present",
+            "Proper section markers ([END COURSE HEADER], etc.)",
+            "Returns Result<String, WorkoutExportError>"
+          ]
+        },
+        {
+          "id": "3.4",
+          "title": "Implement export_mrc_to_file and generate_mrc_filename",
+          "description": "Add file writing function and filename generator for MRC exports.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "export_mrc_to_file writes content to specified path",
+            "generate_mrc_filename creates filename from workout name with .mrc extension",
+            "Filename sanitized to remove invalid filesystem characters"
+          ]
+        },
+        {
+          "id": "3.5",
+          "title": "Add unit tests for MRC export",
+          "description": "Comprehensive unit tests for MRC export covering all segment types and edge cases.",
+          "status": "pending",
+          "files": [
+            "src/workouts/exporter_mrc.rs"
+          ],
+          "acceptance_criteria": [
+            "Test exporting simple steady state workout",
+            "Test exporting ramp/warmup segments",
+            "Test exporting workout with text events",
+            "Test exporting workout with description",
+            "Test empty workout returns error",
+            "Test round-trip: parse_mrc(export_mrc(workout)) produces equivalent workout"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Integration and Validation",
+      "description": "Integration tests and final validation",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Add integration test for workout export round-trips",
+          "description": "Create integration tests that verify exported files can be parsed back and produce equivalent workouts.",
+          "status": "pending",
+          "files": [
+            "tests/unit/workout_export_test.rs"
+          ],
+          "acceptance_criteria": [
+            "ZWO export/import round-trip test",
+            "MRC export/import round-trip test",
+            "Test with complex multi-segment workouts",
+            "Test preserves workout name, segments, and durations"
+          ]
+        },
+        {
+          "id": "4.2",
+          "title": "Verify compilation and run all tests",
+          "description": "Ensure the codebase compiles without errors and all tests pass.",
+          "status": "pending",
+          "files": [],
+          "acceptance_criteria": [
+            "cargo build succeeds with no errors",
+            "cargo test succeeds with no failures",
+            "cargo clippy shows no warnings in new code"
+          ]
+        }
+      ]
+    }
+  ],
+  "qa_sign_off": {
+    "status": "pending",
+    "tests_passed": null,
+    "issues": null
+  },
+  "final_acceptance": [
+    "All unit tests pass",
+    "Integration round-trip tests pass",
+    "No clippy warnings",
+    "Exported ZWO files are valid XML and parseable by parse_zwo",
+    "Exported MRC files follow MRC format and parseable by parse_mrc"
+  ],
+  "last_updated": "2026-01-03T05:24:06.185882+00:00"
+}

@@ -1,0 +1,32 @@
+# Build Progress - Workout Export to ZWO/MRC Format
+
+## Planning Complete - 2026-01-03
+
+### Codebase Analysis Summary
+- Reviewed existing parsers: parser_zwo.rs, parser_mrc.rs
+- Reviewed export pattern from recording module: exporter_csv.rs
+- Analyzed Workout and WorkoutSegment types in types.rs
+
+### Key Patterns Identified
+1. Parser pattern: parse_zwo(content) -> Result<Workout, WorkoutParseError>
+2. Exporter pattern: export_csv(data) -> Result<String, ExportError>
+3. File helpers: export_X_to_file(), generate_X_filename()
+
+### Implementation Plan Created
+- 4 phases with 13 subtasks total
+- Phase 1: Core Export Infrastructure (4 subtasks)
+- Phase 2: ZWO Export Implementation (4 subtasks)
+- Phase 3: MRC Export Implementation (5 subtasks)
+- Phase 4: Integration and Validation (2 subtasks)
+
+### Files to Create
+- src/workouts/exporter_zwo.rs
+- src/workouts/exporter_mrc.rs
+- tests/unit/workout_export_test.rs
+
+### Files to Modify
+- src/workouts/types.rs (add WorkoutExportError)
+- src/workouts/mod.rs (add module exports)
+
+---
+

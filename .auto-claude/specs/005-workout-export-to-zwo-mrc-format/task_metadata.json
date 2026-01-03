@@ -1,0 +1,14 @@
+{
+  "sourceType": "ideation",
+  "ideationType": "code_improvements",
+  "ideaId": "ci-002",
+  "rationale": "The workouts module has well-established parsers (parse_zwo, parse_mrc) that convert file content to Workout structs. The recording module shows a clear export pattern with export_csv, export_tcx, export_fit functions. Combining these patterns enables reverse conversion - Workout struct to file content.",
+  "category": "feature",
+  "estimatedEffort": "small",
+  "complexity": "small",
+  "affectedFiles": [
+    "src/workouts/exporter_zwo.rs",
+    "src/workouts/exporter_mrc.rs",
+    "src/workouts/mod.rs"
+  ]
+}

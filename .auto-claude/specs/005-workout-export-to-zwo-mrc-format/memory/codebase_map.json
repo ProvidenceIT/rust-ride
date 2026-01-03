@@ -1,0 +1,35 @@
+{
+  "discovered_files": {
+    "src/workouts/parser_zwo.rs": {
+      "description": "ZWO parser converts XML to Workout struct. Uses quick_xml. Segment types: Warmup, Cooldown, SteadyState, FreeRide, Ramp, IntervalsT. Power as decimal (0.75 = 75% FTP).",
+      "category": "parsing",
+      "discovered_at": "2026-01-03T05:17:20.833893+00:00"
+    },
+    "src/workouts/parser_mrc.rs": {
+      "description": "MRC parser converts text format to Workout struct. Sections: [COURSE HEADER], [COURSE DATA], [COURSE TEXT]. Course data is time (minutes) + power (percent FTP).",
+      "category": "parsing",
+      "discovered_at": "2026-01-03T05:17:20.896459+00:00"
+    },
+    "src/recording/exporter_csv.rs": {
+      "description": "Export pattern: export_X() returns String content, export_X_to_file() writes to path, generate_X_filename() creates default filename. Error type is ExportError.",
+      "category": "patterns",
+      "discovered_at": "2026-01-03T05:17:20.945971+00:00"
+    },
+    "src/workouts/types.rs": {
+      "description": "WorkoutExportError enum added with variants: IoError (with #[from] std::io::Error), InvalidWorkout(String), EmptyWorkout, FormattingError(String). Mirrors WorkoutParseError pattern. Exported from mod.rs.",
+      "category": "error_types",
+      "discovered_at": "2026-01-03T05:19:45.224791+00:00"
+    },
+    "src/workouts/exporter_zwo.rs": {
+      "description": "ZWO exporter module with export_zwo(), export_zwo_to_file(), generate_zwo_filename() signatures. Uses sanitize_filename helper to remove invalid filesystem chars (/ \\ : * ? \" < > |). Follows recording module exporter pattern.",
+      "category": "exporter",
+      "discovered_at": "2026-01-03T05:22:02.656536+00:00"
+    },
+    "src/workouts/exporter_mrc.rs": {
+      "description": "MRC exporter module with export_mrc(), export_mrc_to_file(), generate_mrc_filename() signatures. Uses sanitize_filename helper to remove invalid filesystem chars (/ \\ : * ? \" &lt; &gt; |). Follows same pattern as exporter_zwo.rs and recording module exporter pattern.",
+      "category": "pattern",
+      "discovered_at": "2026-01-03T05:23:47.666333+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T05:23:47.666333+00:00"
+}
