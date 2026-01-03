@@ -3,7 +3,7 @@
 ## Overview
 Finish the TTS module implementation to provide voice announcements during workouts.
 
-## Current Status: In Progress (16/17 subtasks complete - 94%)
+## Current Status: COMPLETE (17/17 subtasks complete - 100%)
 
 ### Phase 1: Core TTS Implementation (4/4 subtasks) ✅ COMPLETE
 - [x] 1.1 Implement TTS crate integration
@@ -27,10 +27,10 @@ Finish the TTS module implementation to provide voice announcements during worko
 - [x] 4.2 Add voice preview button
 - [x] 4.3 Add per-alert-type voice configuration
 
-### Phase 5: Testing and Platform Verification (2/3 subtasks) 🔄 IN PROGRESS
+### Phase 5: Testing and Platform Verification (3/3 subtasks) ✅ COMPLETE
 - [x] 5.1 Add TTS integration tests
 - [x] 5.2 Add workout audio integration tests
-- [ ] 5.3 Document platform-specific TTS notes
+- [x] 5.3 Document platform-specific TTS notes
 
 ## Key Findings
 
@@ -327,6 +327,39 @@ Added comprehensive workout audio integration tests in `tests/integration/workou
 9. **Edge Cases**:
    - Empty interval names, zero duration, very high power
    - Concurrent events processing
+
+## Subtask 5.3 Implementation Details
+
+Updated README.md with comprehensive platform-specific TTS documentation:
+
+1. **Voice Alerts Section** (line 67-127):
+   - Overview of what voice alerts announce
+   - Voice Alert Settings configuration options
+   - Platform-Specific Requirements subsection
+
+2. **Windows SAPI Documentation**:
+   - Notes that Windows 10+ has built-in support
+   - Troubleshooting for missing voices
+   - PowerShell command for installing voice capabilities
+
+3. **macOS AVSpeechSynthesizer Documentation**:
+   - Notes that macOS 11+ has built-in support
+   - Instructions for managing voices via System Preferences
+
+4. **Linux speech-dispatcher Documentation**:
+   - Installation commands for Ubuntu/Debian, Fedora, and Arch Linux
+   - Troubleshooting tips (verify running, test from CLI, audio group membership)
+   - Notes about pulseaudio/pipewire requirements
+
+5. **Known Limitations Section**:
+   - Thread safety note (dedicated worker thread)
+   - Voice availability depends on system language packs
+   - Virtual environment/container limitations
+   - Simultaneous speech limitation (one at a time, priority-based)
+
+6. **Architecture Section**:
+   - Added audio module to architecture diagram
+   - Documents tts.rs, engine.rs, cues.rs, workout_bridge.rs
 
 ---
 Last Updated: 2026-01-03
