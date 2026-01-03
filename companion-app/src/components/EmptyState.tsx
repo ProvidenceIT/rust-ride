@@ -229,6 +229,7 @@ export function EmptyState({
       animation.start();
       return () => animation.stop();
     }
+    return undefined;
   }, [animateIcon, animatedValue]);
 
   const translateY = animatedValue.interpolate({

@@ -600,7 +600,7 @@ describe('ConnectionService', () => {
 
       const metrics = useMetricsStore.getState().metrics;
       expect(metrics.power_watts).toBe(0);
-      expect(metrics.heart_rate_bpm).toBeUndefined();
+      expect(metrics.heart_rate_bpm).toBeNull();
     });
 
     it('should handle session_state_changed to paused', () => {
@@ -710,7 +710,7 @@ describe('ConnectionService', () => {
       );
 
       const state = useConnectionStore.getState();
-      expect(state.error).toBe('No active session');
+      expect(state.error?.message).toBe('No active session');
     });
   });
 

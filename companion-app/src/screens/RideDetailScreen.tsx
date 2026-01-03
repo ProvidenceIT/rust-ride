@@ -211,6 +211,11 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
     await connectionService.fetchRideDetails(rideId);
   }, [rideId, isConnected]);
 
+  // Handle connect button press - must be before early returns
+  const handleConnectPress = useCallback(() => {
+    navigation.navigate('Connection');
+  }, [navigation]);
+
   // Render loading state
   if (isLoadingDetail && !rideDetail) {
     return (
@@ -224,11 +229,6 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
       </SafeAreaView>
     );
   }
-
-  // Handle connect button press
-  const handleConnectPress = useCallback(() => {
-    navigation.navigate('Connection');
-  }, [navigation]);
 
   // Render error state
   if (error && !rideDetail) {
