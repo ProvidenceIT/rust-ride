@@ -323,6 +323,17 @@ pub enum WorkoutEvent {
         /// Whether this is a recovery interval
         is_recovery: bool,
     },
+    /// Current interval was restarted
+    IntervalRestarted {
+        /// Name of the interval being restarted
+        interval_name: String,
+        /// Target power for the interval
+        target_power: Option<u16>,
+        /// Duration of the interval in seconds
+        duration_secs: u32,
+        /// Whether this is a recovery interval
+        is_recovery: bool,
+    },
     /// Countdown before interval change
     IntervalCountdown { seconds_remaining: u32 },
     /// Workout has been paused

@@ -233,9 +233,18 @@ impl<A: AudioEngine, F: FanController> DefaultActionExecutor<A, F> {
         if !context.ride_active {
             return Err(ActionError::NoActiveRide);
         }
+        drop(context);
 
         let elapsed = if let Some(recorder) = &self.ride_recorder {
-            recorder.read().unwrap().get_live_summary().elapsed_seconds
+            let mut rec = recorder.write().unwrap();
+            // Call the recorder's add_lap method to properly track laps
+            match rec.add_lap() {
+                Ok(recorder_lap) => recorder_lap.elapsed_seconds,
+                Err(e) => {
+                    tracing::warn!("Failed to add lap to recorder: {}", e);
+                    rec.get_live_summary().elapsed_seconds
+                }
+            }
         } else {
             0
         };
@@ -352,14 +361,10 @@ impl<A: AudioEngine, F: FanController> DefaultActionExecutor<A, F> {
                 Ok(())
             }
             ButtonAction::RestartInterval => {
-                // Restart current interval by resetting segment progress
-                // The engine doesn't have a direct restart, so we need to handle this
-                // by tracking the current segment start time and resetting to it
-                // For now, we emit a warning that this isn't fully implemented
-                tracing::warn!("RestartInterval not fully implemented yet");
-                Err(ActionError::NotAvailable(
-                    "Restart interval not yet implemented".to_string(),
-                ))
+                eng.restart_segment()
+                    .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                tracing::info!("Restarted current interval");
+                Ok(())
             }
             _ => Err(ActionError::NotAvailable("Not a workout action".to_string())),
         }
