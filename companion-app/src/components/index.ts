@@ -98,3 +98,18 @@ export type { StopConfirmationModalProps } from './StopConfirmationModal';
 // ResistanceControl - +/- buttons for adjusting trainer resistance during free rides
 export { ResistanceControl } from './ResistanceControl';
 export type { ResistanceControlProps } from './ResistanceControl';
+
+// ZoneDistributionBar - displays time in zones as a stacked horizontal bar
+export {
+  ZoneDistributionBar,
+  getPowerZoneData,
+  getHrZoneData,
+} from './ZoneDistributionBar';
+export type {
+  ZoneDistributionBarProps,
+  ZoneData,
+} from './ZoneDistributionBar';
+
+// RideStatisticsSummary - displays key training stats (TSS, IF, calories) in cards
+export { RideStatisticsSummary } from './RideStatisticsSummary';
+export type { RideStatisticsSummaryProps } from './RideStatisticsSummary';

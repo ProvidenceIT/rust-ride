@@ -47,6 +47,30 @@ export interface RideSummary {
   is_workout?: boolean;
 }
 
+/**
+ * Power zone time distribution (seconds spent in each zone)
+ */
+export interface PowerZoneDistribution {
+  z1_recovery: number;
+  z2_endurance: number;
+  z3_tempo: number;
+  z4_threshold: number;
+  z5_vo2max: number;
+  z6_anaerobic: number;
+  z7_neuromuscular: number;
+}
+
+/**
+ * Heart rate zone time distribution (seconds spent in each zone)
+ */
+export interface HrZoneDistribution {
+  z1: number;
+  z2: number;
+  z3: number;
+  z4: number;
+  z5: number;
+}
+
 // Detailed ride information
 export interface RideDetailInfo {
   ride_id: string;
@@ -65,6 +89,9 @@ export interface RideDetailInfo {
   intensity_factor: number | null;
   is_workout: boolean;
   workout_name: string | null;
+  // Zone distributions (optional - may not be available for all rides)
+  power_zone_distribution?: PowerZoneDistribution | null;
+  hr_zone_distribution?: HrZoneDistribution | null;
 }
 
 // Server discovery result

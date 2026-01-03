@@ -255,9 +255,14 @@ describe('RideDetailScreen', () => {
       useHistoryStore.getState().setCurrentRideDetail(mockRideDetail);
     });
 
-    it('shows Summary section header', () => {
+    it('shows Training Summary section header', () => {
       const { getByText } = renderWithProviders();
-      expect(getByText('Summary')).toBeTruthy();
+      expect(getByText('Training Summary')).toBeTruthy();
+    });
+
+    it('shows Ride Overview section header', () => {
+      const { getByText } = renderWithProviders();
+      expect(getByText('Ride Overview')).toBeTruthy();
     });
 
     it('shows duration formatted correctly', () => {
@@ -315,10 +320,31 @@ describe('RideDetailScreen', () => {
       expect(getByText('215')).toBeTruthy();
     });
 
-    it('shows intensity factor', () => {
+  });
+
+  describe('Training Stats Section', () => {
+    beforeEach(() => {
+      useConnectionStore.getState().connect('ws://192.168.1.100:9876');
+      useConnectionStore.getState().setAuthenticated();
+      useHistoryStore.getState().setCurrentRideDetail(mockRideDetail);
+    });
+
+    it('shows TSS with intensity level', () => {
+      const { getByText, getAllByText } = renderWithProviders();
+      // TSS label appears in RideStatisticsSummary
+      const tssLabels = getAllByText('TSS');
+      expect(tssLabels.length).toBeGreaterThan(0);
+      // Value 75 appears
+      expect(getByText('75')).toBeTruthy();
+      // Moderate intensity level
+      expect(getByText('Moderate')).toBeTruthy();
+    });
+
+    it('shows intensity factor with description', () => {
       const { getByText } = renderWithProviders();
       expect(getByText('Intensity Factor')).toBeTruthy();
       expect(getByText('0.85')).toBeTruthy();
+      expect(getByText('Tempo')).toBeTruthy();
     });
   });
 
@@ -471,7 +497,7 @@ describe('RideDetailScreen', () => {
     it('renders with refresh control when ride data exists', () => {
       const { getByText } = renderWithProviders();
       // If the screen renders with ride data, refresh is available
-      expect(getByText('Summary')).toBeTruthy();
+      expect(getByText('Training Summary')).toBeTruthy();
     });
   });
 
@@ -576,7 +602,7 @@ describe('RideDetailScreen', () => {
         </ThemeProvider>
       );
 
-      expect(getByText('Summary')).toBeTruthy();
+      expect(getByText('Training Summary')).toBeTruthy();
       expect(getByText('Sweet Spot')).toBeTruthy();
     });
   });

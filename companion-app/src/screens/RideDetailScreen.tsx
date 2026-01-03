@@ -20,7 +20,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { RootStackScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { LoadingSpinner } from '@/components';
+import {
+  LoadingSpinner,
+  RideStatisticsSummary,
+  ZoneDistributionBar,
+  getPowerZoneData,
+  getHrZoneData,
+} from '@/components';
 import {
   useHistoryStore,
   selectCurrentRideDetail,
@@ -332,8 +338,18 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
           )}
         </View>
 
+        {/* Training Summary Section - Key Stats */}
+        <SectionHeader title="Training Summary" icon="stats-chart-outline" />
+        <View style={{ paddingHorizontal: spacing.md, marginBottom: spacing.md }}>
+          <RideStatisticsSummary
+            tss={rideDetail.tss}
+            intensityFactor={rideDetail.intensity_factor}
+            calories={rideDetail.calories}
+          />
+        </View>
+
         {/* Summary Section */}
-        <SectionHeader title="Summary" icon="stats-chart-outline" />
+        <SectionHeader title="Ride Overview" icon="bicycle-outline" />
         <View style={[styles.statsGrid, { paddingHorizontal: spacing.md }]}>
           <StatCard
             label="Duration"
@@ -346,17 +362,6 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
             value={distanceValue}
             unit={distanceUnit}
             icon="navigate-outline"
-          />
-          <StatCard
-            label="Calories"
-            value={Math.round(rideDetail.calories)}
-            unit="kcal"
-            icon="flame-outline"
-          />
-          <StatCard
-            label="TSS"
-            value={formatNullableNumber(rideDetail.tss)}
-            icon="fitness-outline"
           />
         </View>
 
@@ -377,10 +382,6 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
             label="Normalized (NP)"
             value={formatNullableNumber(rideDetail.normalized_power_watts)}
             unit="W"
-          />
-          <StatCard
-            label="Intensity Factor"
-            value={formatNullableNumber(rideDetail.intensity_factor, 2)}
           />
         </View>
 
@@ -406,6 +407,26 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
             label="Average"
             value={formatNullableNumber(rideDetail.avg_cadence_rpm)}
             unit="rpm"
+          />
+        </View>
+
+        {/* Power Zone Distribution */}
+        <SectionHeader title="Time in Power Zones" icon="flash-outline" />
+        <View style={{ paddingHorizontal: spacing.md, marginBottom: spacing.md }}>
+          <ZoneDistributionBar
+            title="Power Zone Distribution"
+            zones={getPowerZoneData(rideDetail.power_zone_distribution)}
+            showLegend
+          />
+        </View>
+
+        {/* HR Zone Distribution */}
+        <SectionHeader title="Time in HR Zones" icon="heart-outline" />
+        <View style={{ paddingHorizontal: spacing.md, marginBottom: spacing.md }}>
+          <ZoneDistributionBar
+            title="Heart Rate Zone Distribution"
+            zones={getHrZoneData(rideDetail.hr_zone_distribution)}
+            showLegend
           />
         </View>
 
