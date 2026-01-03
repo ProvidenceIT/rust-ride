@@ -37,6 +37,8 @@ pub struct AggregatedMetrics {
     pub power_zone: Option<u8>,
     /// Current HR zone (1-5)
     pub hr_zone: Option<u8>,
+    /// Current cadence zone (1-5)
+    pub cadence_zone: Option<u8>,
     /// Running Normalized Power
     pub normalized_power: Option<u16>,
     /// Running TSS

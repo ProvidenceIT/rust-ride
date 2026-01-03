@@ -1,10 +1,10 @@
 {
   "discovered_files": {
     "src/metrics/zones.rs": {
-      "description": "CadenceZones has get_zone(rpm: u8) -> u8, get_zone_range(zone: u8) -> Option<&CadenceZoneRange>, and all_zones() -> Vec<&CadenceZoneRange> methods following PowerZones/HRZones patterns. Zone lookup uses max_rpm boundaries: Z1 (0-75), Z2 (76-85), Z3 (86-95), Z4 (96-105), Z5 (106+).",
+      "description": "ZoneTracker has cadence zone tracking with set_cadence_zones(), update_cadence() (with debounce and CadenceZoneChange events), current_cadence_zone(), and current_cadence_zone_name() methods following the same pattern as HR zone tracking.",
       "category": "implementation",
-      "discovered_at": "2026-01-03T05:26:44.032414+00:00"
+      "discovered_at": "2026-01-03T05:32:27.510170+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:26:44.032414+00:00"
+  "last_updated": "2026-01-03T05:32:27.510170+00:00"
 }

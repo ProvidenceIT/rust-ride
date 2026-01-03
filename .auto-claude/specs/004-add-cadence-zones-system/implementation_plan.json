@@ -134,7 +134,7 @@
           "id": "2.3",
           "title": "Implement ZoneTracker cadence methods",
           "description": "Add set_cadence_zones(), update_cadence(), current_cadence_zone(), and current_cadence_zone_name() methods.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/zones.rs"
           ],
@@ -143,20 +143,24 @@
             "update_cadence(&mut self, cadence: u8) with debounce and event emission",
             "current_cadence_zone(&self) -> u8",
             "current_cadence_zone_name(&self) -> Option<String>"
-          ]
+          ],
+          "notes": "Implemented set_cadence_zones(), update_cadence(), current_cadence_zone(), and current_cadence_zone_name() methods for ZoneTracker following existing HR zone tracking patterns. update_cadence() includes debounce logic and CadenceZoneChange event emission. Committed as a4d9174.",
+          "updated_at": "2026-01-03T05:32:22.289099+00:00"
         },
         {
           "id": "2.4",
           "title": "Update ZoneTracker::reset()",
           "description": "Update reset() method to also reset cadence zone tracking state.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/zones.rs"
           ],
           "acceptance_criteria": [
             "reset() clears current_cadence_zone to 0",
             "reset() clears last_cadence_zone_change to None"
-          ]
+          ],
+          "notes": "Updated ZoneTracker::reset() method to reset cadence zone tracking state. Added current_cadence_zone = 0 and last_cadence_zone_change = None. Committed as a29155d.",
+          "updated_at": "2026-01-03T05:34:09.576889+00:00"
         }
       ]
     },
@@ -410,5 +414,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T05:30:09.337655+00:00"
+  "last_updated": "2026-01-03T05:34:09.576889+00:00"
 }
