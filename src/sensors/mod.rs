@@ -14,6 +14,7 @@ pub mod imu;
 pub mod incline;
 pub mod manager;
 pub mod persistence;
+pub mod power_meter;
 pub mod quality;
 pub mod reconnection;
 pub mod smo2;
@@ -63,6 +64,10 @@ pub use dual_protocol::{
     SensorIdentifier, SensorManufacturer, get_preference_path,
 };
 pub use manager::SensorManager;
+pub use power_meter::{
+    ExpectedPowerMeter, PowerMeterWakeUpConfig, PowerMeterWakeUpDetector, WakeUpDetectionResult,
+    WakeUpHint, WakeUpHintType, is_power_protocol, provides_power_data,
+};
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,
     SmO2Status,

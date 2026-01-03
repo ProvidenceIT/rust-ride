@@ -14,6 +14,7 @@ use crate::sensors::conflict::{ConflictDetector, ConflictDetectorConfig, DataTyp
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
 use crate::sensors::persistence::{ConnectionSessionManager, SessionSensor};
+use crate::sensors::power_meter::{PowerMeterWakeUpConfig, PowerMeterWakeUpDetector, WakeUpHint};
 use crate::sensors::quality::{ConnectionQualityConfig, ConnectionQualityMonitor, QualityLevel, QualityStats};
 use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
@@ -96,6 +97,8 @@ pub struct SensorManager {
     rssi_polling_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Conflict detector for managing sensor conflicts and failover
     conflict_detector: Arc<Mutex<ConflictDetector>>,
+    /// Power meter wake-up detector for prompting users to pedal
+    power_meter_detector: Arc<Mutex<PowerMeterWakeUpDetector>>,
 }
 
 impl SensorManager {
@@ -149,6 +152,7 @@ impl SensorManager {
             quality_monitor: Arc::new(Mutex::new(ConnectionQualityMonitor::new())),
             rssi_polling_handle: Arc::new(Mutex::new(None)),
             conflict_detector: Arc::new(Mutex::new(ConflictDetector::new())),
+            power_meter_detector: Arc::new(Mutex::new(PowerMeterWakeUpDetector::new())),
         }
     }
 
@@ -275,6 +279,14 @@ impl SensorManager {
         // Clear previous discoveries
         self.discovered.lock().await.clear();
 
+        // Initialize power meter wake-up detection from cache
+        {
+            let cache = self.sensor_cache.lock().await;
+            let mut detector = self.power_meter_detector.lock().await;
+            detector.load_from_cache(&cache);
+            detector.start_discovery();
+        }
+
         // Check if ANT+ should be enabled for concurrent scanning
         let ant_enabled = *self.ant_enabled.lock().await;
 
@@ -391,6 +403,14 @@ impl SensorManager {
 
         // Clear previous discoveries
         self.discovered.lock().await.clear();
+
+        // Initialize power meter wake-up detection from cache
+        {
+            let cache = self.sensor_cache.lock().await;
+            let mut detector = self.power_meter_detector.lock().await;
+            detector.load_from_cache(&cache);
+            detector.start_discovery();
+        }
 
         let ant_enabled = *self.ant_enabled.lock().await;
 
@@ -966,6 +986,9 @@ impl SensorManager {
         }
 
         tracing::info!("Stopping sensor discovery");
+
+        // Stop power meter wake-up detection
+        self.power_meter_detector.lock().await.stop_discovery();
 
         adapter
             .stop_scan()
@@ -2570,5 +2593,132 @@ impl SensorManager {
     /// Clear the primary selection for a data type.
     pub async fn clear_primary_sensor(&self, data_type: DataType) {
         self.conflict_detector.lock().await.clear_primary(data_type);
+    }
+
+    // ========================================================================
+    // Power Meter Wake-Up Detection Methods
+    // ========================================================================
+
+    /// Register a discovered sensor with the power meter wake-up detector.
+    ///
+    /// This should be called when a sensor is discovered to update the
+    /// wake-up detection state. If the sensor is a power meter that was
+    /// expected, it will be marked as found.
+    pub async fn record_power_meter_discovered(&self, sensor: &DiscoveredSensor) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .record_discovered(sensor);
+    }
+
+    /// Check for power meter wake-up hints.
+    ///
+    /// Returns hints for expected power meters that haven't been found yet.
+    /// This should be called periodically during discovery (e.g., every 2-5 seconds)
+    /// to check if any hints should be shown to the user.
+    pub async fn check_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector.lock().await.check_for_hints()
+    }
+
+    /// Get all current power meter wake-up hints.
+    pub async fn get_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_hints()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Get unshown power meter wake-up hints.
+    pub async fn get_unshown_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_unshown_hints()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Mark a power meter wake-up hint as shown.
+    pub async fn mark_power_meter_hint_shown(&self, device_id: &str) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .mark_hint_shown(device_id);
+    }
+
+    /// Mark all power meter wake-up hints as shown.
+    pub async fn mark_all_power_meter_hints_shown(&self) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .mark_all_hints_shown();
+    }
+
+    /// Check if any expected power meters are missing.
+    pub async fn has_missing_power_meters(&self) -> bool {
+        self.power_meter_detector.lock().await.missing_count() > 0
+    }
+
+    /// Get the number of expected power meters.
+    pub async fn expected_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.expected_count()
+    }
+
+    /// Get the number of found power meters.
+    pub async fn found_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.found_count()
+    }
+
+    /// Get the number of missing power meters.
+    pub async fn missing_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.missing_count()
+    }
+
+    /// Check if all expected power meters have been found.
+    pub async fn all_power_meters_found(&self) -> bool {
+        self.power_meter_detector.lock().await.all_found()
+    }
+
+    /// Check if there are any expected power meters.
+    pub async fn has_expected_power_meters(&self) -> bool {
+        self.power_meter_detector.lock().await.has_expected()
+    }
+
+    /// Register an expected power meter manually.
+    ///
+    /// This is useful when you want to expect a power meter that isn't
+    /// in the cache (e.g., from user preferences or previous sessions).
+    pub async fn expect_power_meter(
+        &self,
+        device_id: String,
+        name: String,
+        protocol: Protocol,
+    ) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .register_expected(device_id, name, protocol);
+    }
+
+    /// Get the power meter wake-up configuration.
+    pub async fn power_meter_wake_up_config(&self) -> PowerMeterWakeUpConfig {
+        self.power_meter_detector.lock().await.config().clone()
+    }
+
+    /// Set the power meter wake-up configuration.
+    pub async fn set_power_meter_wake_up_config(&self, config: PowerMeterWakeUpConfig) {
+        self.power_meter_detector.lock().await.set_config(config);
+    }
+
+    /// Clear all power meter wake-up state.
+    ///
+    /// This resets the detector to its initial state, clearing all
+    /// expectations, found sensors, and hints.
+    pub async fn clear_power_meter_detection(&self) {
+        self.power_meter_detector.lock().await.clear();
     }
 }
