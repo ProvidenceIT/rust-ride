@@ -13,7 +13,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppNavigator, linking } from '@/navigation';
-import { AutoReconnectProvider } from '@/providers';
+import { AutoReconnectProvider, GlobalErrorHandlerProvider } from '@/providers';
 import { ToastProvider, useKeepAwake } from '@/hooks';
 import { ToastContainer } from '@/components';
 
@@ -50,9 +50,10 @@ function App(): React.JSX.Element {
           backgroundColor={colors.background}
         />
         <ToastProvider>
-          <AutoReconnectProvider>
-            <KeepAwakeManager />
-            <NavigationContainer
+          <GlobalErrorHandlerProvider>
+            <AutoReconnectProvider>
+              <KeepAwakeManager />
+              <NavigationContainer
               linking={linking}
               theme={{
                 dark: isDarkMode,
@@ -84,8 +85,9 @@ function App(): React.JSX.Element {
                 },
               }}>
               <AppNavigator />
-            </NavigationContainer>
-          </AutoReconnectProvider>
+              </NavigationContainer>
+            </AutoReconnectProvider>
+          </GlobalErrorHandlerProvider>
           <ToastContainer testID="toast-container" />
         </ToastProvider>
       </SafeAreaProvider>
