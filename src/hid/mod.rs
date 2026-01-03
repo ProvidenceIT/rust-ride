@@ -4,6 +4,7 @@
 
 pub mod actions;
 pub mod device;
+pub mod executor;
 pub mod generic;
 pub mod input;
 pub mod mapping;
@@ -14,8 +15,11 @@ use thiserror::Error;
 use uuid::Uuid;
 
 // Re-export main types
-pub use actions::{ActionExecutor, ButtonAction};
+pub use actions::{ActionContext, ActionError, ActionExecutor, ActionInfo, ActionResult, ButtonAction};
 pub use device::{DefaultHidDeviceManager, HidDevice, HidDeviceManager, HidDeviceStatus};
+pub use executor::{
+    AppContext, DefaultActionExecutor, ExecutorEvent, LapMarker, NavigationTarget,
+};
 pub use generic::{
     detect_report_format, find_generic_device_profile, GenericDeviceConfig, GenericDeviceProfile,
     GenericHidParser, GenericReportFormat, KNOWN_GENERIC_DEVICES,
