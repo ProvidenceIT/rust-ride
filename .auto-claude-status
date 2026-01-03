@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "010-complete-hid-device-support",
+  "spec": "008-rolling-cadence-average-display",
   "state": "building",
   "subtasks": {
-    "completed": 10,
-    "total": 20,
+    "completed": 12,
+    "total": 13,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Action Execution & Integration",
+    "current": "Integration verification",
     "id": null,
-    "total": 4
+    "total": 2
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 12,
-    "started_at": "2026-01-03T06:28:10.211790"
+    "number": 1,
+    "started_at": "2026-01-03T11:43:41.443390"
   },
-  "last_update": "2026-01-03T07:36:43.442081"
+  "last_update": "2026-01-03T11:43:41.454668"
 }
