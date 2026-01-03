@@ -3,7 +3,7 @@
 ## Overview
 Finish the TTS module implementation to provide voice announcements during workouts.
 
-## Current Status: In Progress
+## Current Status: COMPLETE (17/17 subtasks complete - 100%)
 
 ### Phase 1: Core TTS Implementation (4/4 subtasks) ✅ COMPLETE
 - [x] 1.1 Implement TTS crate integration
@@ -16,21 +16,21 @@ Finish the TTS module implementation to provide voice announcements during worko
 - [x] 2.2 Implement speech queuing with priority
 - [x] 2.3 Add TTS configuration persistence
 
-### Phase 3: Workout Event Integration (2/4 subtasks)
+### Phase 3: Workout Event Integration (4/4 subtasks) ✅ COMPLETE
 - [x] 3.1 Create workout audio bridge
 - [x] 3.2 Implement interval change announcements
-- [ ] 3.3 Implement countdown announcements
-- [ ] 3.4 Add motivational cues
+- [x] 3.3 Implement countdown announcements
+- [x] 3.4 Add motivational cues
 
-### Phase 4: Voice Settings UI (0/3 subtasks)
-- [ ] 4.1 Add voice selection dropdown to settings
-- [ ] 4.2 Add voice preview button
-- [ ] 4.3 Add per-alert-type voice configuration
+### Phase 4: Voice Settings UI (3/3 subtasks) ✅ COMPLETE
+- [x] 4.1 Add voice selection dropdown to settings
+- [x] 4.2 Add voice preview button
+- [x] 4.3 Add per-alert-type voice configuration
 
-### Phase 5: Testing and Platform Verification (0/3 subtasks)
-- [ ] 5.1 Add TTS integration tests
-- [ ] 5.2 Add workout audio integration tests
-- [ ] 5.3 Document platform-specific TTS notes
+### Phase 5: Testing and Platform Verification (3/3 subtasks) ✅ COMPLETE
+- [x] 5.1 Add TTS integration tests
+- [x] 5.2 Add workout audio integration tests
+- [x] 5.3 Document platform-specific TTS notes
 
 ## Key Findings
 
@@ -242,5 +242,124 @@ Added per-alert-type voice/sound configuration to the settings UI:
    - User prefers sound effects for sensor alerts but voice for workouts
    - User wants voice-only announcements (no sound effects)
 
+## Subtask 5.1 Implementation Details
+
+Added comprehensive TTS integration tests in `tests/integration/tts_test.rs`:
+
+1. **Helper Functions**:
+   - `is_tts_available()` - Checks if TTS can be initialized
+   - `skip_if_tts_unavailable!` macro - Gracefully skips tests in CI environments
+
+2. **DefaultTtsProvider Tests**:
+   - `test_tts_initialization_graceful` - Handles unavailable TTS systems
+   - `test_voice_enumeration` - Validates voice properties
+   - `test_voice_selection` - Tests valid/invalid voice IDs
+   - `test_rate_control` / `test_volume_control` - Boundary value testing
+   - `test_speak_empty_text` - Empty text returns Ok without initialization
+   - `test_stop_when_not_speaking` - Safe stop operations
+   - `test_is_speaking_default_state` - Initial state verification
+
+3. **ThreadSafeTtsProvider Tests**:
+   - Mirrors DefaultTtsProvider tests for thread-safe variant
+   - `test_thread_safe_multi_thread_access` - Concurrent access from multiple threads
+   - `test_thread_safe_provider_is_send_sync` - Compile-time trait verification
+   - `test_thread_safe_provider_drop` - Clean shutdown without hanging
+
+4. **Platform-Specific Tests**:
+   - `test_platform_backend` - Detects Windows SAPI, macOS speech, Linux speech-dispatcher
+   - `test_voice_language_codes` - Validates language code format
+
+5. **Error Handling Tests**:
+   - `test_set_voice_uninitialized` - Graceful failure for uninitialized provider
+   - `test_speak_without_tts` - Handles unavailable TTS
+   - `test_multiple_initialization` - Idempotent initialization
+
+6. **Audio Engine Integration Tests**:
+   - `test_audio_engine_tts_integration` - Verifies TTS provider access
+   - `test_audio_engine_tts_configuration` - Validates config application
+
+7. **Stress Tests**:
+   - `test_rapid_settings_changes` - 100 rate/volume changes
+   - `test_rapid_provider_lifecycle` - Create/destroy cycles
+   - `test_concurrent_voice_enumeration` - Concurrent access validation
+
+## Subtask 5.2 Implementation Details
+
+Added comprehensive workout audio integration tests in `tests/integration/workout_audio_test.rs`:
+
+1. **MockAlertManager**:
+   - Captures triggered alerts with type, context, and generated message
+   - Supports configuration per alert type
+   - Uses CueBuilder to generate messages (matching real behavior)
+
+2. **Workout Lifecycle Tests**:
+   - `test_workout_start_triggers_announcement`
+   - `test_workout_pause_resume`
+   - `test_workout_completed`
+   - `test_workout_stopped`
+
+3. **Interval Change Tests**:
+   - `test_interval_change_with_power_and_duration` - Full message format
+   - `test_interval_change_without_power` - Graceful power omission
+   - `test_interval_change_various_durations` - Short/long duration formatting
+   - `test_recovery_interval_triggers_recovery_start`
+
+4. **Countdown Tests**:
+   - `test_countdown_announcements` - All thresholds (10, 5, 3, 2, 1)
+   - Short form (1, 2, 3) vs full form (5+)
+
+5. **Trainer Status Tests**:
+   - `test_trainer_disconnect_reconnect`
+   - Verifies sensor context data
+
+6. **Motivational Messages**:
+   - `test_motivational_messages_high_intensity`
+   - `test_motivational_messages_recovery`
+   - `test_motivational_messages_disabled_by_default`
+
+7. **Configuration Tests**:
+   - `test_all_announcements_disabled`
+   - `test_config_update` - Dynamic config changes
+
+8. **Full Workflow Tests**:
+   - `test_complete_workout_sequence` - Full mini-workout simulation
+
+9. **Edge Cases**:
+   - Empty interval names, zero duration, very high power
+   - Concurrent events processing
+
+## Subtask 5.3 Implementation Details
+
+Updated README.md with comprehensive platform-specific TTS documentation:
+
+1. **Voice Alerts Section** (line 67-127):
+   - Overview of what voice alerts announce
+   - Voice Alert Settings configuration options
+   - Platform-Specific Requirements subsection
+
+2. **Windows SAPI Documentation**:
+   - Notes that Windows 10+ has built-in support
+   - Troubleshooting for missing voices
+   - PowerShell command for installing voice capabilities
+
+3. **macOS AVSpeechSynthesizer Documentation**:
+   - Notes that macOS 11+ has built-in support
+   - Instructions for managing voices via System Preferences
+
+4. **Linux speech-dispatcher Documentation**:
+   - Installation commands for Ubuntu/Debian, Fedora, and Arch Linux
+   - Troubleshooting tips (verify running, test from CLI, audio group membership)
+   - Notes about pulseaudio/pipewire requirements
+
+5. **Known Limitations Section**:
+   - Thread safety note (dedicated worker thread)
+   - Voice availability depends on system language packs
+   - Virtual environment/container limitations
+   - Simultaneous speech limitation (one at a time, priority-based)
+
+6. **Architecture Section**:
+   - Added audio module to architecture diagram
+   - Documents tts.rs, engine.rs, cues.rs, workout_bridge.rs
+
 ---
-Last Updated: 2026-01-02
+Last Updated: 2026-01-03
