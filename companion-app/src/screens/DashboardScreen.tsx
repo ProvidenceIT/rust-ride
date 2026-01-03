@@ -23,7 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { MetricCard, ConnectionStatus, PowerDisplay } from '@/components';
+import { MetricCard, ConnectionStatus, PowerDisplay, HeartRateDisplay } from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
   useMetricsStore,
@@ -39,7 +39,6 @@ import {
   selectTargetCadence,
   getPowerZone,
   getHeartRateZone,
-  getHeartRateZoneColor,
 } from '@/stores/metricsStore';
 import { useSessionStore, selectIsSessionActive } from '@/stores/sessionStore';
 
@@ -149,14 +148,10 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
   // Calculate power zone
   const powerZone = useMemo(() => getPowerZone(power, DEFAULT_FTP), [power]);
 
-  // Calculate HR zone and color
+  // Calculate HR zone
   const hrZone = useMemo(
     () => (heartRate ? getHeartRateZone(heartRate, DEFAULT_MAX_HR) : null),
     [heartRate]
-  );
-  const hrColor = useMemo(
-    () => (hrZone ? getHeartRateZoneColor(hrZone) : undefined),
-    [hrZone]
   );
 
   // Determine if we're connected and can show metrics
@@ -231,17 +226,14 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
             style={{ width: powerCardWidth }}
           />
 
-          {/* Heart Rate */}
-          <MetricCard
-            value={showMetrics && heartRate ? heartRate : '--'}
-            unit="bpm"
-            label="Heart Rate"
-            size="medium"
-            accentColor={showMetrics && heartRate ? hrColor : undefined}
-            secondaryValue={showMetrics && heartRateMax > 0 ? heartRateMax : undefined}
-            secondaryLabel="max"
+          {/* Heart Rate Display - with zone indicator and pulse animation */}
+          <HeartRateDisplay
+            heartRate={heartRate}
+            hrZone={hrZone}
+            maxHeartRate={heartRateMax}
+            showMetrics={showMetrics}
+            showPulseAnimation={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Heart rate: ${showMetrics && heartRate ? heartRate : 'no data'} beats per minute`}
           />
 
           {/* Cadence */}

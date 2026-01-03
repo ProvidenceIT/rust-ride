@@ -20,6 +20,7 @@ import {
   QRScannerModal,
   PinEntryModal,
   PowerDisplay,
+  HeartRateDisplay,
 } from '../../src/components';
 import {
   parseQrConnectionData,
@@ -1229,5 +1230,231 @@ describe('PowerDisplay', () => {
     expect(
       getByLabelText(/Power: no data/),
     ).toBeTruthy();
+  });
+});
+
+describe('HeartRateDisplay', () => {
+  it('renders current heart rate value', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={145}
+        hrZone="zone4"
+        maxHeartRate={165}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('145')).toBeTruthy();
+    expect(getByText('bpm')).toBeTruthy();
+    expect(getByText('HEART RATE')).toBeTruthy();
+  });
+
+  it('renders max heart rate', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={145}
+        hrZone="zone4"
+        maxHeartRate={170}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('170')).toBeTruthy();
+    expect(getByText(/max/)).toBeTruthy();
+  });
+
+  it('renders HR zone badge', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={160}
+        hrZone="zone5"
+        maxHeartRate={165}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText(/Z5 Max/)).toBeTruthy();
+  });
+
+  it('renders different zone badges correctly', () => {
+    const zones = [
+      { zone: 'zone1', label: 'Z1 Recovery' },
+      { zone: 'zone2', label: 'Z2 Easy' },
+      { zone: 'zone3', label: 'Z3 Aerobic' },
+      { zone: 'zone4', label: 'Z4 Threshold' },
+      { zone: 'zone5', label: 'Z5 Max' },
+    ] as const;
+
+    zones.forEach(({ zone, label }) => {
+      const { getByText } = renderWithTheme(
+        <HeartRateDisplay
+          heartRate={120}
+          hrZone={zone}
+          maxHeartRate={180}
+          showMetrics={true}
+        />,
+      );
+
+      expect(getByText(label)).toBeTruthy();
+    });
+  });
+
+  it('renders placeholder when showMetrics is false', () => {
+    const { getAllByText, queryByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={145}
+        hrZone="zone4"
+        maxHeartRate={165}
+        showMetrics={false}
+      />,
+    );
+
+    // Both HR and max show "--" when no metrics
+    const placeholders = getAllByText('--');
+    expect(placeholders.length).toBeGreaterThanOrEqual(1);
+    expect(queryByText('145')).toBeNull();
+    expect(queryByText(/Z4 Threshold/)).toBeNull();
+  });
+
+  it('renders placeholder when heart rate is null', () => {
+    const { getAllByText, queryByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={null}
+        hrZone={null}
+        maxHeartRate={0}
+        showMetrics={true}
+      />,
+    );
+
+    const placeholders = getAllByText('--');
+    expect(placeholders.length).toBeGreaterThanOrEqual(1);
+    expect(queryByText(/Z\d/)).toBeNull();
+  });
+
+  it('does not show zone badge when heart rate is 0', () => {
+    const { queryByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={0}
+        hrZone="zone1"
+        maxHeartRate={0}
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText(/Z1 Recovery/)).toBeNull();
+  });
+
+  it('does not show zone badge when heart rate is null', () => {
+    const { queryByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={null}
+        hrZone={null}
+        maxHeartRate={0}
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText(/Z\d/)).toBeNull();
+  });
+
+  it('shows heart icon when heart rate is visible', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={140}
+        hrZone="zone3"
+        maxHeartRate={165}
+        showMetrics={true}
+      />,
+    );
+
+    // Heart icon is rendered as Unicode character
+    expect(getByText('\u2665')).toBeTruthy();
+  });
+
+  it('does not show heart icon when showMetrics is false', () => {
+    const { queryByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={140}
+        hrZone="zone3"
+        maxHeartRate={165}
+        showMetrics={false}
+      />,
+    );
+
+    expect(queryByText('\u2665')).toBeNull();
+  });
+
+  it('has correct accessibility label with all data', () => {
+    const { getByLabelText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={155}
+        hrZone="zone4"
+        maxHeartRate={170}
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Heart rate: 155 beats per minute.*Zone: Threshold.*Maximum: 170/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label without zone', () => {
+    const { getByLabelText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={120}
+        hrZone={null}
+        maxHeartRate={165}
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Heart rate: 120 beats per minute/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label when no metrics', () => {
+    const { getByLabelText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={null}
+        hrZone={null}
+        maxHeartRate={0}
+        showMetrics={false}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Heart rate: no data/),
+    ).toBeTruthy();
+  });
+
+  it('renders with pulse animation disabled', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={145}
+        hrZone="zone4"
+        maxHeartRate={165}
+        showMetrics={true}
+        showPulseAnimation={false}
+      />,
+    );
+
+    // Should still render the heart rate
+    expect(getByText('145')).toBeTruthy();
+  });
+
+  it('renders with custom style', () => {
+    const { getByText } = renderWithTheme(
+      <HeartRateDisplay
+        heartRate={130}
+        hrZone="zone3"
+        maxHeartRate={160}
+        showMetrics={true}
+        style={{ width: 200 }}
+      />,
+    );
+
+    expect(getByText('130')).toBeTruthy();
   });
 });

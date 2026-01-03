@@ -483,7 +483,7 @@ describe('DashboardScreen', () => {
       const powerValues = getAllByText('250');
       expect(powerValues.length).toBeGreaterThan(0);
       // Should show 3s avg label
-      expect(getByText('3s avg')).toBeTruthy();
+      expect(getByText(/3s avg/)).toBeTruthy();
     });
   });
 
@@ -531,7 +531,7 @@ describe('DashboardScreen', () => {
       // Current HR is 155, max should be 165
       expect(getByText('155')).toBeTruthy();
       expect(getByText('165')).toBeTruthy();
-      expect(getByText('max')).toBeTruthy();
+      expect(getByText(/max/)).toBeTruthy();
     });
   });
 

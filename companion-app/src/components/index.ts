@@ -44,3 +44,7 @@ export type { PinEntryModalProps } from './PinEntryModal';
 // PowerDisplay - large power display with zone indicator for dashboard
 export { PowerDisplay } from './PowerDisplay';
 export type { PowerDisplayProps } from './PowerDisplay';
+
+// HeartRateDisplay - large heart rate display with zone indicator and pulse animation for dashboard
+export { HeartRateDisplay } from './HeartRateDisplay';
+export type { HeartRateDisplayProps } from './HeartRateDisplay';
