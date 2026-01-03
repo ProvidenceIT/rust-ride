@@ -3,10 +3,12 @@
  *
  * Manages WebSocket connection state to the RustRide desktop app.
  * Handles connection status, server URL, authentication, and discovered servers.
+ * Integrates with StorageService for persistent storage of connection preferences.
  */
 
 import { create } from 'zustand';
 import type { ConnectionStatus, DiscoveredServer } from '@/types';
+import { getStorageService } from '@/services/StorageService';
 
 /**
  * Connection error information
@@ -25,6 +27,9 @@ interface ConnectionState {
   status: ConnectionStatus;
   serverUrl: string | null;
   isAuthenticated: boolean;
+
+  // Current server info (for persistence)
+  currentServer: DiscoveredServer | null;
 
   // Server discovery
   discoveredServers: DiscoveredServer[];
@@ -55,6 +60,9 @@ interface ConnectionActions {
   setError: (code: string, message: string) => void;
   clearError: () => void;
 
+  // Current server management
+  setCurrentServer: (server: DiscoveredServer | null) => void;
+
   // Reconnection handling
   incrementReconnectAttempts: () => void;
   resetReconnectAttempts: () => void;
@@ -80,6 +88,7 @@ const initialState: ConnectionState = {
   status: 'disconnected',
   serverUrl: null,
   isAuthenticated: false,
+  currentServer: null,
   discoveredServers: [],
   isScanning: false,
   lastConnectedAt: null,
@@ -129,6 +138,14 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       isAuthenticated: true,
       reconnectAttempts: 0,
     });
+
+    // Persist current server to storage after successful authentication
+    const currentServer = get().currentServer;
+    if (currentServer) {
+      getStorageService().saveLastServer(currentServer).catch(() => {
+        // Ignore storage errors
+      });
+    }
   },
 
   // Connection state updates
@@ -149,6 +166,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
   clearError: () => {
     set({ error: null });
+  },
+
+  // Current server management
+  setCurrentServer: (server: DiscoveredServer | null) => {
+    set({ currentServer: server });
   },
 
   // Reconnection handling
@@ -187,10 +209,20 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   // PIN management
   savePin: (pin: string) => {
     set({ savedPin: pin });
+
+    // Persist PIN to storage (only if rememberPin is enabled)
+    getStorageService().savePin(pin).catch(() => {
+      // Ignore storage errors
+    });
   },
 
   clearSavedPin: () => {
     set({ savedPin: null });
+
+    // Clear PIN from storage
+    getStorageService().clearSavedPin().catch(() => {
+      // Ignore storage errors
+    });
   },
 
   // Reset store
@@ -222,3 +254,8 @@ export const selectIsConnecting = (state: ConnectionState & ConnectionActions) =
 
 export const selectIsConnected = (state: ConnectionState & ConnectionActions) =>
   state.status === 'connected' || state.status === 'authenticated';
+
+export const selectCurrentServer = (state: ConnectionState & ConnectionActions) =>
+  state.currentServer;
+
+export const selectSavedPin = (state: ConnectionState & ConnectionActions) => state.savedPin;

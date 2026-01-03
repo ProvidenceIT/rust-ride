@@ -23,7 +23,9 @@
       "@theme": ["src/theme/index"],
       "@theme/*": ["src/theme/*"],
       "@utils/*": ["src/utils/*"],
-      "@types/*": ["src/types/*"]
+      "@types/*": ["src/types/*"],
+      "@providers": ["src/providers/index"],
+      "@providers/*": ["src/providers/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

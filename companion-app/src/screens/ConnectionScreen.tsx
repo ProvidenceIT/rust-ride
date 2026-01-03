@@ -115,6 +115,9 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
     async (server: DiscoveredServer) => {
       setConnectingServer(server);
 
+      // Set the current server in the store for persistence
+      useConnectionStore.getState().setCurrentServer(server);
+
       const serverUrl = discoveryService.buildServerUrl(server);
 
       try {
@@ -123,6 +126,7 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         // Navigation happens in the useEffect when status changes
       } catch {
         setConnectingServer(null);
+        useConnectionStore.getState().setCurrentServer(null);
         Alert.alert(
           'Connection Failed',
           `Could not connect to ${server.name}. Please check the server is running and try again.`,
@@ -172,6 +176,9 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
       setConnectingServer(server);
       setIsQRScannerVisible(false);
 
+      // Set the current server in the store for persistence
+      useConnectionStore.getState().setCurrentServer(server);
+
       try {
         // Connect using the URL from QR code
         await connectionService.connect(qrData.url);
@@ -186,6 +193,7 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         // If no PIN provided, wait for server to request auth (handled by useAuthentication hook)
       } catch {
         setConnectingServer(null);
+        useConnectionStore.getState().setCurrentServer(null);
         Alert.alert(
           'Connection Failed',
           `Could not connect to ${server.name}. Please check the server is running and try again.`,
