@@ -4,9 +4,10 @@
 
 use super::{find_known_device, HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
 use hidapi::HidApi;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
@@ -76,6 +77,18 @@ impl HidDevice {
     /// Get device path for display
     pub fn display_path(&self) -> String {
         format!("{:04X}:{:04X}", self.vendor_id, self.product_id)
+    }
+
+    /// Get a unique identity key for tracking devices across scans
+    /// Uses VID:PID:Serial (or VID:PID:Path if no serial)
+    fn identity_key(&self) -> String {
+        if let Some(ref serial) = self.serial_number {
+            format!("{:04X}:{:04X}:{}", self.vendor_id, self.product_id, serial)
+        } else if let Some(ref path) = self.device_path {
+            format!("{:04X}:{:04X}:{}", self.vendor_id, self.product_id, path)
+        } else {
+            format!("{:04X}:{:04X}", self.vendor_id, self.product_id)
+        }
     }
 }
 
@@ -219,22 +232,178 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     }
 
     async fn start_monitoring(&self) -> Result<(), HidError> {
+        // Check if already monitoring
+        {
+            let is_monitoring = self.is_monitoring.read().await;
+            if *is_monitoring {
+                tracing::warn!("HID device monitoring already active");
+                return Ok(());
+            }
+        }
+
         *self.is_monitoring.write().await = true;
 
-        tracing::info!("Started HID device monitoring");
+        tracing::info!("Starting HID device monitoring (polling every 2 seconds)");
 
-        // TODO: Start background task to monitor for device changes
-        // This would use platform-specific APIs or polling
+        // Clone references for the background task
+        let is_monitoring = Arc::clone(&self.is_monitoring);
+        let devices = Arc::clone(&self.devices);
+        let device_handles = Arc::clone(&self.device_handles);
+        let event_tx = self.event_tx.clone();
+
+        // Spawn the monitoring background task
+        tokio::spawn(async move {
+            let poll_interval = Duration::from_secs(2);
+            let mut interval = tokio::time::interval(poll_interval);
+
+            // Track known devices by their identity key to detect connect/disconnect
+            let mut known_device_keys: HashMap<String, Uuid> = HashMap::new();
+
+            // Initialize with current devices
+            {
+                if let Ok(current_devices) = devices.try_read() {
+                    for device in current_devices.iter() {
+                        known_device_keys.insert(device.identity_key(), device.id);
+                    }
+                }
+            }
+
+            loop {
+                interval.tick().await;
+
+                // Check if we should stop monitoring
+                {
+                    if let Ok(monitoring) = is_monitoring.try_read() {
+                        if !*monitoring {
+                            tracing::info!("HID device monitoring stopped");
+                            break;
+                        }
+                    }
+                }
+
+                // Scan for devices in a blocking task (hidapi is not async)
+                let scan_result = tokio::task::spawn_blocking(|| {
+                    let api = match HidApi::new() {
+                        Ok(api) => api,
+                        Err(e) => {
+                            tracing::error!("Failed to initialize HID API for scan: {}", e);
+                            return Vec::new();
+                        }
+                    };
+
+                    let mut found = Vec::new();
+                    for device_info in api.device_list() {
+                        let vendor_id = device_info.vendor_id();
+                        let product_id = device_info.product_id();
+
+                        if let Some(known) = find_known_device(vendor_id, product_id) {
+                            let serial_number = device_info
+                                .serial_number()
+                                .map(|s| s.to_string());
+                            let device_path = device_info.path().to_string_lossy().to_string();
+
+                            let mut device = HidDevice::new(
+                                vendor_id,
+                                product_id,
+                                known.name.to_string(),
+                            );
+                            device.serial_number = serial_number;
+                            device.device_path = Some(device_path);
+
+                            // Check for duplicates within this scan
+                            let is_duplicate = found.iter().any(|d: &HidDevice| {
+                                d.identity_key() == device.identity_key()
+                            });
+
+                            if !is_duplicate {
+                                found.push(device);
+                            }
+                        }
+                    }
+                    found
+                })
+                .await;
+
+                let scanned_devices = match scan_result {
+                    Ok(devices) => devices,
+                    Err(e) => {
+                        tracing::error!("Device scan task failed: {}", e);
+                        continue;
+                    }
+                };
+
+                // Build a set of current identity keys
+                let current_keys: HashSet<String> = scanned_devices
+                    .iter()
+                    .map(|d| d.identity_key())
+                    .collect();
+
+                // Detect disconnected devices (in known_device_keys but not in current scan)
+                let disconnected: Vec<(String, Uuid)> = known_device_keys
+                    .iter()
+                    .filter(|(key, _)| !current_keys.contains(*key))
+                    .map(|(k, v)| (k.clone(), *v))
+                    .collect();
+
+                for (key, device_id) in disconnected {
+                    tracing::info!("HID device disconnected: {}", key);
+
+                    // Close the device handle if it was open
+                    if let Ok(mut handles) = device_handles.lock() {
+                        if handles.remove(&device_id).is_some() {
+                            tracing::debug!("Closed handle for disconnected device");
+                        }
+                    }
+
+                    // Update device status in our list
+                    if let Ok(mut device_list) = devices.try_write() {
+                        if let Some(device) = device_list.iter_mut().find(|d| d.id == device_id) {
+                            device.status = HidDeviceStatus::Disconnected;
+                        }
+                    }
+
+                    // Remove from known devices and emit event
+                    known_device_keys.remove(&key);
+                    let _ = event_tx.send(HidDeviceEvent::DeviceDisconnected(device_id));
+                }
+
+                // Detect newly connected devices (in current scan but not in known_device_keys)
+                for device in scanned_devices {
+                    let key = device.identity_key();
+                    if !known_device_keys.contains_key(&key) {
+                        tracing::info!(
+                            "HID device connected: {} ({})",
+                            device.name,
+                            device.display_path()
+                        );
+
+                        // Track this device
+                        known_device_keys.insert(key, device.id);
+
+                        // Add to our device list
+                        if let Ok(mut device_list) = devices.try_write() {
+                            device_list.push(device.clone());
+                        }
+
+                        // Emit connected event
+                        let _ = event_tx.send(HidDeviceEvent::DeviceConnected(device));
+                    }
+                }
+            }
+        });
 
         Ok(())
     }
 
     fn stop_monitoring(&self) {
+        // Signal the background task to stop by setting the flag
+        // The background task checks this flag on each iteration
         if let Ok(mut monitoring) = self.is_monitoring.try_write() {
             *monitoring = false;
+            tracing::info!("Signaled HID device monitoring to stop");
+        } else {
+            tracing::warn!("Could not acquire write lock to stop monitoring");
         }
-
-        tracing::info!("Stopped HID device monitoring");
     }
 
     fn get_device(&self, device_id: &Uuid) -> Option<HidDevice> {
@@ -438,5 +607,32 @@ mod tests {
     fn test_display_path() {
         let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
         assert_eq!(device.display_path(), "0FD9:0060");
+    }
+
+    #[test]
+    fn test_identity_key_with_serial() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("ABC123".to_string());
+        device.device_path = Some("/dev/hidraw0".to_string());
+
+        // Serial number takes precedence over path
+        assert_eq!(device.identity_key(), "0FD9:0060:ABC123");
+    }
+
+    #[test]
+    fn test_identity_key_with_path() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.device_path = Some("/dev/hidraw0".to_string());
+
+        // Falls back to path when no serial
+        assert_eq!(device.identity_key(), "0FD9:0060:/dev/hidraw0");
+    }
+
+    #[test]
+    fn test_identity_key_minimal() {
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Falls back to VID:PID only
+        assert_eq!(device.identity_key(), "0FD9:0060");
     }
 }
