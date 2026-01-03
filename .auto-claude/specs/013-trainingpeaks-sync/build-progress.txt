@@ -1,0 +1,106 @@
+# TrainingPeaks Sync - Build Progress
+
+## Overview
+Add TrainingPeaks OAuth integration for uploading completed rides and downloading structured workout plans.
+
+## Estimated Total: 51.5 hours
+
+---
+
+## Phase 1: TrainingPeaks OAuth Integration (8 hours)
+- [x] T001: Create TrainingPeaks API client module (2h) ✅
+- [x] T002: Implement TrainingPeaks OAuth token exchange (3h) ✅
+- [ ] T003: Implement athlete profile fetch (1.5h)
+- [ ] T004: Implement deauthorize functionality (1h)
+- [ ] T005: Add TrainingPeaks OAuth scopes (0.5h)
+
+## Phase 2: Activity Upload Implementation (7.5 hours)
+- [ ] T006: Implement FIT file upload to TrainingPeaks (3h)
+- [ ] T007: Add upload status checking (1.5h)
+- [ ] T008: Integrate TrainingPeaks with SyncService (2h)
+- [ ] T009: Add duplicate activity detection (1h)
+
+## Phase 3: Workout Plan Download (12 hours)
+- [ ] T010: Define TrainingPeaks workout API types (2h)
+- [ ] T011: Implement scheduled workouts fetch (2.5h)
+- [ ] T012: Implement workout detail fetch (2h)
+- [ ] T013: Create TrainingPeaks to internal workout converter (3h)
+- [ ] T014: Add workout plan sync manager (2.5h)
+
+## Phase 4: Workout Library Integration (5 hours)
+- [ ] T015: Add TrainingPeaks source to WorkoutFormat (0.5h)
+- [ ] T016: Store TrainingPeaks workouts in database (2h)
+- [ ] T017: Add workout sync status tracking (1.5h)
+- [ ] T018: Display TrainingPeaks badge in workout library (1h)
+
+## Phase 5: Settings UI Integration (7.5 hours)
+- [ ] T019: Create TrainingPeaks settings screen (3h)
+- [ ] T020: Add TrainingPeaks sync settings (1.5h)
+- [ ] T021: Add workout sync controls to settings (2h)
+- [ ] T022: Integrate TrainingPeaks into main settings screen (1h)
+
+## Phase 6: Sync Status UI (5 hours)
+- [ ] T023: Add TrainingPeaks to sync notification widget (1.5h)
+- [ ] T024: Show upload status on ride summary (1.5h)
+- [ ] T025: Add sync history view (2h)
+
+## Phase 7: Testing (7.5 hours)
+- [ ] T026: Add unit tests for TrainingPeaksClient (4h)
+- [ ] T027: Add integration tests for workout conversion (2h)
+- [ ] T028: Add UI component tests (1.5h)
+
+---
+
+## Acceptance Criteria Mapping
+- AC1 (OAuth): T001, T002, T003, T004, T005, T019
+- AC2 (Upload rides): T006, T007, T008, T009
+- AC3 (Download workouts): T010, T011, T012, T013, T014
+- AC4 (Workout library): T015, T016, T017, T018
+- AC5 (Sync status UI): T023, T024, T025
+
+---
+
+## Session Log
+
+### 2026-01-03 - Initial Planning
+- Created implementation_plan.json with 7 phases, 28 subtasks
+- Analyzed existing codebase patterns:
+  - Strava OAuth implementation in src/integrations/sync/strava.rs
+  - OAuth handler in src/integrations/sync/oauth.rs
+  - Training plans module structure
+  - Workout types in src/workouts/types.rs
+  - UI patterns in settings_strava.rs
+- TrainingPeaks already listed in SyncPlatform enum
+- Ready to begin Phase 1 implementation
+
+### 2026-01-03 - T002: TrainingPeaks OAuth Token Exchange
+- Added TrainingPeaksTokenResponse struct for parsing OAuth token responses
+  - Uses standard OAuth2 snake_case format with expires_in (seconds)
+- Added TrainingPeaksOAuthErrorResponse struct with Display impl
+  - Handles error/error_description OAuth2 error format
+- Added trainingpeaks_token_url field to DefaultOAuthHandler
+- Implemented exchange_trainingpeaks_token() method:
+  - Sends POST to oauth.trainingpeaks.com/oauth/token
+  - Includes redirect_uri in token request (required by TrainingPeaks)
+  - Parses expires_in as Duration rather than expires_at timestamp
+  - Proper error handling with TrainingPeaks-specific error parsing
+- Implemented refresh_trainingpeaks_token() method:
+  - Handles token refresh with standard OAuth2 grant_type=refresh_token
+  - Detects invalid_grant/invalid_token errors requiring re-auth
+  - Returns AuthorizationRequired for expired refresh tokens
+- Added TrainingPeaks to handle_callback and refresh_token match arms
+- Added with_token_urls() test helper for mocking both platforms
+- Added comprehensive wiremock tests:
+  - test_trainingpeaks_token_exchange_success
+  - test_trainingpeaks_token_exchange_invalid_code_error
+  - test_trainingpeaks_token_exchange_server_error
+  - test_trainingpeaks_token_refresh_success
+  - test_trainingpeaks_token_refresh_invalid_grant_requires_reauth
+  - test_trainingpeaks_token_refresh_generic_error
+  - test_trainingpeaks_start_authorization_builds_correct_url
+- Added response parsing tests for TrainingPeaks types:
+  - test_trainingpeaks_token_response_deserialization
+  - test_trainingpeaks_error_response_with_description
+  - test_trainingpeaks_error_response_without_description
+  - test_trainingpeaks_error_response_invalid_client
+- Manual verification required (cargo test not available in this environment)

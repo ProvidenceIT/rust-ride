@@ -1,8 +1,491 @@
 {
   "feature": "TrainingPeaks Sync",
-  "description": "# TrainingPeaks Sync\n\nAdd TrainingPeaks OAuth integration for uploading completed rides and downloading structured workout plans. Support both manual and automatic sync options.\n\n## Rationale\nTrainingPeaks is widely used by coached athletes and provides advanced training analytics. Supporting TrainingPeaks sync makes RustRide viable for serious athletes working with coaches, competing directly with TrainerRoad's value proposition.\n\n## User Stories\n- As a coached athlete, I want my rides to sync to TrainingPeaks so that my coach can see my training\n- As a TrainingPeaks user, I want to download my workout plans so that I can execute them in RustRide\n\n## Acceptance Criteria\n- [ ] User can connect TrainingPeaks account via OAuth\n- [ ] Completed rides upload to TrainingPeaks\n- [ ] Workout plans can be downloaded from TrainingPeaks\n- [ ] Downloaded workouts appear in workout library\n- [ ] Sync status shown in UI\n",
+  "description": "Add TrainingPeaks OAuth integration for uploading completed rides and downloading structured workout plans. Support both manual and automatic sync options.",
   "created_at": "2026-01-03T05:14:27.960Z",
-  "updated_at": "2026-01-03T05:14:27.960Z",
-  "status": "pending",
-  "phases": []
+  "updated_at": "2026-01-03T14:33:00.000Z",
+  "status": "in_progress",
+  "planStatus": "ready",
+  "total_estimated_hours": 51.5,
+  "phases": [
+    {
+      "id": "phase-1",
+      "title": "TrainingPeaks OAuth Integration",
+      "description": "Implement OAuth2 authentication flow for TrainingPeaks, following the established Strava OAuth patterns.",
+      "subtasks": [
+        {
+          "id": "T001",
+          "title": "Create TrainingPeaks API client module",
+          "description": "Create src/integrations/sync/trainingpeaks.rs with TrainingPeaksClient struct, API base URL constants, and error handling types similar to strava.rs. Include request/response types for TrainingPeaks API.",
+          "status": "completed",
+          "dependencies": [],
+          "estimated_hours": 2,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs",
+            "src/integrations/sync/mod.rs"
+          ],
+          "notes": "Created src/integrations/sync/trainingpeaks.rs with TrainingPeaksClient struct, API base URL constants, error handling types, request/response types for uploads and athlete profile, OAuth scopes, and comprehensive unit tests with wiremock HTTP mocking.",
+          "updated_at": "2026-01-03T13:42:34.196418+00:00"
+        },
+        {
+          "id": "T002",
+          "title": "Implement TrainingPeaks OAuth token exchange",
+          "description": "Add TrainingPeaks-specific OAuth token exchange and refresh logic in the DefaultOAuthHandler. TrainingPeaks uses standard OAuth2 flow at oauth.trainingpeaks.com. Handle TrainingPeaks-specific error responses.",
+          "status": "completed",
+          "dependencies": [
+            "T001"
+          ],
+          "estimated_hours": 3,
+          "files": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "notes": "Added TrainingPeaks OAuth token exchange and refresh logic in DefaultOAuthHandler. Includes TrainingPeaksTokenResponse and TrainingPeaksOAuthErrorResponse types, exchange_trainingpeaks_token and refresh_trainingpeaks_token methods, comprehensive wiremock tests for token exchange success/error cases and token refresh flows. TrainingPeaks uses standard OAuth2 with expires_in (seconds) rather than expires_at timestamp.",
+          "updated_at": "2026-01-03T13:50:18.077884+00:00"
+        },
+        {
+          "id": "T003",
+          "title": "Implement athlete profile fetch",
+          "description": "Add get_athlete() method to TrainingPeaksClient to fetch authenticated user profile. Store athlete ID and display name for UI.",
+          "status": "pending",
+          "dependencies": [
+            "T002"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T004",
+          "title": "Implement deauthorize functionality",
+          "description": "Add deauthorize() method to revoke TrainingPeaks access tokens, clearing local credentials regardless of API response status.",
+          "status": "pending",
+          "dependencies": [
+            "T002"
+          ],
+          "estimated_hours": 1,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T005",
+          "title": "Add TrainingPeaks OAuth scopes",
+          "description": "Define required OAuth scopes for TrainingPeaks API access (workouts:read, file:write, athlete:profile). Create scopes module similar to Strava implementation.",
+          "status": "pending",
+          "dependencies": [
+            "T001"
+          ],
+          "estimated_hours": 0.5,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "title": "Activity Upload Implementation",
+      "description": "Implement uploading completed rides to TrainingPeaks as FIT files.",
+      "subtasks": [
+        {
+          "id": "T006",
+          "title": "Implement FIT file upload to TrainingPeaks",
+          "description": "Add upload_activity() method to TrainingPeaksClient for uploading FIT files via multipart form POST to /v1/file. Handle upload response including activity ID assignment.",
+          "status": "pending",
+          "dependencies": [
+            "T003"
+          ],
+          "estimated_hours": 3,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T007",
+          "title": "Add upload status checking",
+          "description": "Implement check_upload_status() to poll TrainingPeaks for upload processing status. TrainingPeaks may process files asynchronously.",
+          "status": "pending",
+          "dependencies": [
+            "T006"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T008",
+          "title": "Integrate TrainingPeaks with SyncService",
+          "description": "Update SyncService to support TrainingPeaks uploads alongside Strava. Add TrainingPeaks to the platform upload queue handling.",
+          "status": "pending",
+          "dependencies": [
+            "T007"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/integrations/sync/service.rs"
+          ]
+        },
+        {
+          "id": "T009",
+          "title": "Add duplicate activity detection",
+          "description": "Implement detection and handling of duplicate activity uploads, returning appropriate DuplicateActivity error.",
+          "status": "pending",
+          "dependencies": [
+            "T006"
+          ],
+          "estimated_hours": 1,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "title": "Workout Plan Download",
+      "description": "Implement downloading structured workout plans from TrainingPeaks.",
+      "subtasks": [
+        {
+          "id": "T010",
+          "title": "Define TrainingPeaks workout API types",
+          "description": "Create types for TrainingPeaks workout API responses: TPWorkout, TPWorkoutStep, TPWorkoutTarget. Map to internal Workout/WorkoutSegment types.",
+          "status": "pending",
+          "dependencies": [
+            "T003"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T011",
+          "title": "Implement scheduled workouts fetch",
+          "description": "Add get_scheduled_workouts() method to fetch workouts scheduled for a date range. TrainingPeaks API: GET /v1/workouts?startDate=&endDate=",
+          "status": "pending",
+          "dependencies": [
+            "T010"
+          ],
+          "estimated_hours": 2.5,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T012",
+          "title": "Implement workout detail fetch",
+          "description": "Add get_workout_details() to fetch full workout structure with steps/intervals from TrainingPeaks API.",
+          "status": "pending",
+          "dependencies": [
+            "T010"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T013",
+          "title": "Create TrainingPeaks to internal workout converter",
+          "description": "Implement conversion from TrainingPeaks workout format to internal Workout struct with WorkoutSegments. Handle power zones, duration, intervals.",
+          "status": "pending",
+          "dependencies": [
+            "T012"
+          ],
+          "estimated_hours": 3,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T014",
+          "title": "Add workout plan sync manager",
+          "description": "Create TrainingPeaksSyncManager to handle periodic syncing of workout plans, storing imported workouts in the workout library with TrainingPeaks source marking.",
+          "status": "pending",
+          "dependencies": [
+            "T013"
+          ],
+          "estimated_hours": 2.5,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "title": "Workout Library Integration",
+      "description": "Integrate downloaded TrainingPeaks workouts into the existing workout library system.",
+      "subtasks": [
+        {
+          "id": "T015",
+          "title": "Add TrainingPeaks source to WorkoutFormat",
+          "description": "Add TrainingPeaks variant to WorkoutFormat enum in src/workouts/types.rs to identify imported TrainingPeaks workouts.",
+          "status": "pending",
+          "dependencies": [],
+          "estimated_hours": 0.5,
+          "files": [
+            "src/workouts/types.rs"
+          ]
+        },
+        {
+          "id": "T016",
+          "title": "Store TrainingPeaks workouts in database",
+          "description": "Extend workout storage to save TrainingPeaks-sourced workouts with external ID reference for sync tracking.",
+          "status": "pending",
+          "dependencies": [
+            "T014",
+            "T015"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/storage/schema.rs",
+            "src/workouts/library.rs"
+          ]
+        },
+        {
+          "id": "T017",
+          "title": "Add workout sync status tracking",
+          "description": "Track which workouts have been synced from TrainingPeaks, including last sync time and external workout ID mapping.",
+          "status": "pending",
+          "dependencies": [
+            "T016"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/storage/sync_store.rs"
+          ]
+        },
+        {
+          "id": "T018",
+          "title": "Display TrainingPeaks badge in workout library",
+          "description": "Show TrainingPeaks source indicator in workout library UI for imported workouts.",
+          "status": "pending",
+          "dependencies": [
+            "T016"
+          ],
+          "estimated_hours": 1,
+          "files": [
+            "src/ui/screens/workout_library.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "title": "Settings UI Integration",
+      "description": "Create TrainingPeaks settings screen and integrate into app settings.",
+      "subtasks": [
+        {
+          "id": "T019",
+          "title": "Create TrainingPeaks settings screen",
+          "description": "Create src/ui/screens/settings_trainingpeaks.rs following settings_strava.rs pattern. Include connection states, athlete profile display, connect/disconnect buttons.",
+          "status": "pending",
+          "dependencies": [
+            "T003"
+          ],
+          "estimated_hours": 3,
+          "files": [
+            "src/ui/screens/settings_trainingpeaks.rs",
+            "src/ui/screens/mod.rs"
+          ]
+        },
+        {
+          "id": "T020",
+          "title": "Add TrainingPeaks sync settings",
+          "description": "Add configuration options: auto-sync rides, sync workout plans, sync frequency. Store in platform config.",
+          "status": "pending",
+          "dependencies": [
+            "T019"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/ui/screens/settings_trainingpeaks.rs",
+            "src/integrations/sync/mod.rs"
+          ]
+        },
+        {
+          "id": "T021",
+          "title": "Add workout sync controls to settings",
+          "description": "Add UI controls for manual workout plan sync, sync status display, and date range selection for workout import.",
+          "status": "pending",
+          "dependencies": [
+            "T014",
+            "T019"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/ui/screens/settings_trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T022",
+          "title": "Integrate TrainingPeaks into main settings screen",
+          "description": "Add TrainingPeaks entry to main settings screen with connection status indicator and navigation to TrainingPeaks settings.",
+          "status": "pending",
+          "dependencies": [
+            "T019"
+          ],
+          "estimated_hours": 1,
+          "files": [
+            "src/ui/screens/settings.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "title": "Sync Status UI",
+      "description": "Implement sync status notifications and indicators throughout the UI.",
+      "subtasks": [
+        {
+          "id": "T023",
+          "title": "Add TrainingPeaks to sync notification widget",
+          "description": "Extend sync_notification.rs widget to show TrainingPeaks sync status alongside other platforms.",
+          "status": "pending",
+          "dependencies": [
+            "T008"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/ui/widgets/sync_notification.rs"
+          ]
+        },
+        {
+          "id": "T024",
+          "title": "Show upload status on ride summary",
+          "description": "Display TrainingPeaks upload status on ride summary screen after completing a ride.",
+          "status": "pending",
+          "dependencies": [
+            "T008"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/ui/screens/ride_summary.rs"
+          ]
+        },
+        {
+          "id": "T025",
+          "title": "Add sync history view",
+          "description": "Show sync history for TrainingPeaks in settings, including recent uploads and any failed syncs with retry option.",
+          "status": "pending",
+          "dependencies": [
+            "T019",
+            "T017"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "src/ui/screens/settings_trainingpeaks.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "title": "Testing & Documentation",
+      "description": "Add comprehensive tests and documentation for TrainingPeaks integration.",
+      "subtasks": [
+        {
+          "id": "T026",
+          "title": "Add unit tests for TrainingPeaksClient",
+          "description": "Write unit tests for all TrainingPeaksClient methods including OAuth, upload, and workout fetch. Use wiremock for HTTP mocking.",
+          "status": "pending",
+          "dependencies": [
+            "T014"
+          ],
+          "estimated_hours": 4,
+          "files": [
+            "src/integrations/sync/trainingpeaks.rs"
+          ]
+        },
+        {
+          "id": "T027",
+          "title": "Add integration tests for workout conversion",
+          "description": "Test TrainingPeaks workout format conversion with real-world workout examples covering various interval types.",
+          "status": "pending",
+          "dependencies": [
+            "T013"
+          ],
+          "estimated_hours": 2,
+          "files": [
+            "tests/integration/trainingpeaks_sync.rs"
+          ]
+        },
+        {
+          "id": "T028",
+          "title": "Add UI component tests",
+          "description": "Test TrainingPeaks settings screen state transitions and action handling.",
+          "status": "pending",
+          "dependencies": [
+            "T021"
+          ],
+          "estimated_hours": 1.5,
+          "files": [
+            "src/ui/screens/settings_trainingpeaks.rs"
+          ]
+        }
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "description": "User can connect TrainingPeaks account via OAuth",
+      "subtasks": [
+        "T001",
+        "T002",
+        "T003",
+        "T004",
+        "T005",
+        "T019"
+      ]
+    },
+    {
+      "id": "AC2",
+      "description": "Completed rides upload to TrainingPeaks",
+      "subtasks": [
+        "T006",
+        "T007",
+        "T008",
+        "T009"
+      ]
+    },
+    {
+      "id": "AC3",
+      "description": "Workout plans can be downloaded from TrainingPeaks",
+      "subtasks": [
+        "T010",
+        "T011",
+        "T012",
+        "T013",
+        "T014"
+      ]
+    },
+    {
+      "id": "AC4",
+      "description": "Downloaded workouts appear in workout library",
+      "subtasks": [
+        "T015",
+        "T016",
+        "T017",
+        "T018"
+      ]
+    },
+    {
+      "id": "AC5",
+      "description": "Sync status shown in UI",
+      "subtasks": [
+        "T023",
+        "T024",
+        "T025"
+      ]
+    }
+  ],
+  "qa_signoff": {
+    "status": "pending",
+    "tests_passed": "",
+    "issues": ""
+  },
+  "last_updated": "2026-01-03T13:50:18.077884+00:00"
 }
