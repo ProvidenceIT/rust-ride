@@ -4,7 +4,7 @@
 //! T016: Define UserProfile struct with FTP, zones, preferences
 
 use crate::audio::AudioConfig;
-use crate::metrics::zones::{HRZones, PowerZones};
+use crate::metrics::zones::{CadenceZones, HRZones, PowerZones};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -514,6 +514,9 @@ pub struct UserProfile {
     /// Heart rate training zones
     #[serde(skip)]
     pub hr_zones: Option<HRZones>,
+    /// Cadence training zones
+    #[serde(skip)]
+    pub cadence_zones: Option<CadenceZones>,
     /// Unit preference
     pub units: Units,
     /// Theme preference
@@ -539,6 +542,7 @@ impl Default for UserProfile {
             height_cm: None,
             power_zones: PowerZones::from_ftp(ftp),
             hr_zones: None,
+            cadence_zones: Some(CadenceZones::default()),
             units: Units::Metric,
             theme: Theme::Dark,
             created_at: now,
