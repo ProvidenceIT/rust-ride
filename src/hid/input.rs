@@ -4,6 +4,7 @@
 //! and translating them to button events.
 
 use super::mapping::RawButtonEvent;
+use super::streamdeck::{StreamDeckModel, StreamDeckParser};
 use super::{find_known_device, HidDeviceEvent, HidError};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,16 +61,25 @@ pub struct OpenDeviceInfo {
     pub device_type: HidDeviceType,
     /// Number of buttons
     pub button_count: u8,
-    /// Previous button states for press/release detection
+    /// Previous button states for press/release detection (for generic devices)
     pub previous_states: Vec<bool>,
+    /// Stream Deck model (if this is a Stream Deck device)
+    pub stream_deck_model: Option<StreamDeckModel>,
 }
 
 impl OpenDeviceInfo {
     /// Create new device info
     pub fn new(id: Uuid, vendor_id: u16, product_id: u16) -> Self {
         let device_type = HidDeviceType::from_ids(vendor_id, product_id);
-        let button_count = find_known_device(vendor_id, product_id)
-            .map(|d| d.button_count)
+
+        // Try to detect Stream Deck model
+        let stream_deck_model = StreamDeckModel::from_product_id(product_id)
+            .filter(|_| vendor_id == super::streamdeck::ELGATO_VENDOR_ID);
+
+        // Get button count from Stream Deck model or known devices
+        let button_count = stream_deck_model
+            .map(|m| m.button_count())
+            .or_else(|| find_known_device(vendor_id, product_id).map(|d| d.button_count))
             .unwrap_or(32); // Default to 32 buttons for unknown devices
 
         Self {
@@ -79,6 +89,7 @@ impl OpenDeviceInfo {
             device_type,
             button_count,
             previous_states: vec![false; button_count as usize],
+            stream_deck_model,
         }
     }
 }
@@ -327,6 +338,10 @@ fn parse_hid_report(
 ///
 /// Stream Deck reports button states as a byte array where each byte
 /// represents a button (1 = pressed, 0 = not pressed).
+///
+/// Report format varies by model:
+/// - Original/Mini: [report_id, button0, button1, ..., buttonN]
+/// - MK.2/XL: [report_id, extra1, extra2, extra3, button0, button1, ...]
 fn parse_streamdeck_report(
     device_id: &Uuid,
     report: &[u8],
@@ -335,8 +350,29 @@ fn parse_streamdeck_report(
 ) -> Vec<RawButtonEvent> {
     let mut events = Vec::new();
 
-    // Skip report ID byte
-    let button_data = &report[1..];
+    // Verify minimum report size
+    if report.is_empty() {
+        return events;
+    }
+
+    // Determine button data offset based on model
+    let button_data_offset = match device_info.stream_deck_model {
+        Some(StreamDeckModel::Mk2) | Some(StreamDeckModel::Xl) => {
+            // New format: [report_id, 0x00, extra, extra, button_states...]
+            4
+        }
+        _ => {
+            // Standard format: [report_id, button_states...]
+            1
+        }
+    };
+
+    // Ensure report has enough data
+    if report.len() <= button_data_offset {
+        return events;
+    }
+
+    let button_data = &report[button_data_offset..];
 
     for (index, &button_byte) in button_data.iter().enumerate() {
         if index >= device_info.button_count as usize {
@@ -359,8 +395,14 @@ fn parse_streamdeck_report(
                 timestamp,
             });
 
+            let model_name = device_info
+                .stream_deck_model
+                .map(|m| m.name())
+                .unwrap_or("Stream Deck");
+
             tracing::debug!(
-                "Stream Deck button {} {}",
+                "{} button {} {}",
+                model_name,
                 index,
                 if is_pressed { "pressed" } else { "released" }
             );
@@ -537,6 +579,7 @@ mod tests {
         assert_eq!(info.button_count, 15);
         assert_eq!(info.previous_states.len(), 15);
         assert!(info.previous_states.iter().all(|&s| !s));
+        assert_eq!(info.stream_deck_model, Some(StreamDeckModel::Original));
     }
 
     #[test]
@@ -547,6 +590,7 @@ mod tests {
         assert_eq!(info.device_type, HidDeviceType::StreamDeckPedal);
         assert_eq!(info.button_count, 3);
         assert_eq!(info.previous_states.len(), 3);
+        assert_eq!(info.stream_deck_model, Some(StreamDeckModel::Pedal));
     }
 
     #[test]
@@ -557,6 +601,25 @@ mod tests {
         assert_eq!(info.device_type, HidDeviceType::Generic);
         assert_eq!(info.button_count, 32); // Default for unknown
         assert_eq!(info.previous_states.len(), 32);
+        assert_eq!(info.stream_deck_model, None);
+    }
+
+    #[test]
+    fn test_stream_deck_model_detection() {
+        // Stream Deck Mini
+        let info = OpenDeviceInfo::new(Uuid::new_v4(), 0x0FD9, 0x006C);
+        assert_eq!(info.stream_deck_model, Some(StreamDeckModel::Mini));
+        assert_eq!(info.button_count, 6);
+
+        // Stream Deck XL
+        let info = OpenDeviceInfo::new(Uuid::new_v4(), 0x0FD9, 0x006D);
+        assert_eq!(info.stream_deck_model, Some(StreamDeckModel::Xl));
+        assert_eq!(info.button_count, 32);
+
+        // Stream Deck MK.2
+        let info = OpenDeviceInfo::new(Uuid::new_v4(), 0x0FD9, 0x0080);
+        assert_eq!(info.stream_deck_model, Some(StreamDeckModel::Mk2));
+        assert_eq!(info.button_count, 15);
     }
 
     #[tokio::test]
@@ -686,6 +749,65 @@ mod tests {
 
         // Same state again - should produce no events
         let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_mk2_format_parsing() {
+        let device_id = Uuid::new_v4();
+        // Create MK.2 device info (uses 4-byte header)
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0080);
+        let timestamp = Instant::now();
+
+        assert_eq!(device_info.stream_deck_model, Some(StreamDeckModel::Mk2));
+
+        // MK.2 format: [report_id, 0x00, extra, extra, button_states...]
+        // Button 0 pressed
+        let report = [0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
+        let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 0);
+        assert!(events[0].pressed);
+    }
+
+    #[test]
+    fn test_xl_format_parsing() {
+        let device_id = Uuid::new_v4();
+        // Create XL device info (uses 4-byte header, 32 buttons)
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x006D);
+        let timestamp = Instant::now();
+
+        assert_eq!(device_info.stream_deck_model, Some(StreamDeckModel::Xl));
+        assert_eq!(device_info.button_count, 32);
+
+        // XL format with buttons 0 and 31 pressed
+        let mut report = vec![0x01, 0x00, 0x00, 0x00]; // Header
+        report.resize(4 + 32, 0x00); // Add 32 button bytes
+        report[4] = 0x01; // Button 0
+        report[35] = 0x01; // Button 31
+
+        let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 2);
+        let codes: Vec<u8> = events.iter().map(|e| e.button_code).collect();
+        assert!(codes.contains(&0));
+        assert!(codes.contains(&31));
+    }
+
+    #[test]
+    fn test_empty_report_handling() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0060);
+        let timestamp = Instant::now();
+
+        // Empty report should return no events
+        let events = parse_streamdeck_report(&device_id, &[], &mut device_info, timestamp);
+        assert!(events.is_empty());
+
+        // Report too short for button data
+        let short_report = [0x01]; // Only report ID
+        let events = parse_streamdeck_report(&device_id, &short_report, &mut device_info, timestamp);
         assert!(events.is_empty());
     }
 }

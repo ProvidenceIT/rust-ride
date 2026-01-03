@@ -6,6 +6,7 @@ pub mod actions;
 pub mod device;
 pub mod input;
 pub mod mapping;
+pub mod streamdeck;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -16,6 +17,7 @@ pub use actions::{ActionExecutor, ButtonAction};
 pub use device::{DefaultHidDeviceManager, HidDevice, HidDeviceManager, HidDeviceStatus};
 pub use input::{HidDeviceType, HidInputReader, OpenDeviceInfo};
 pub use mapping::{ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler, RawButtonEvent};
+pub use streamdeck::{StreamDeckModel, StreamDeckParser};
 
 /// HID-related errors
 #[derive(Debug, Error)]
