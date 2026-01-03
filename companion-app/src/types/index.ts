@@ -44,6 +44,27 @@ export interface RideSummary {
   distance_km: number;
   avg_power_watts: number;
   workout_name?: string;
+  is_workout?: boolean;
+}
+
+// Detailed ride information
+export interface RideDetailInfo {
+  ride_id: string;
+  started_at: string;
+  ended_at: string;
+  duration_secs: number;
+  distance_km: number;
+  calories: number;
+  avg_power_watts: number | null;
+  max_power_watts: number | null;
+  normalized_power_watts: number | null;
+  avg_heart_rate_bpm: number | null;
+  max_heart_rate_bpm: number | null;
+  avg_cadence_rpm: number | null;
+  tss: number | null;
+  intensity_factor: number | null;
+  is_workout: boolean;
+  workout_name: string | null;
 }
 
 // Server discovery result
