@@ -29,6 +29,35 @@ use crate::storage::config::{
 };
 use uuid::Uuid;
 
+/// Status of an MQTT connection test.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MqttTestStatus {
+    /// No test has been run
+    Idle,
+    /// Test is currently running
+    Testing,
+    /// Test completed successfully
+    Success {
+        /// Success message
+        message: String,
+        /// Time the test was completed
+        timestamp: std::time::Instant,
+    },
+    /// Test failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the test was completed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for MqttTestStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
 /// Settings screen state.
 pub struct SettingsScreen {
     /// Current user profile being edited
@@ -88,6 +117,10 @@ pub struct SettingsScreen {
     mqtt_password_input: String,
     /// Credential store for securely saving MQTT passwords to OS keyring
     mqtt_credential_store: MqttCredentialStore,
+    /// Status of MQTT connection test
+    pub mqtt_test_status: MqttTestStatus,
+    /// Flag indicating MQTT test was requested
+    mqtt_test_requested: bool,
     /// Editing fan profile (index, if editing)
     editing_fan_profile: Option<usize>,
     /// T100: Weather configuration
@@ -444,6 +477,8 @@ pub enum SettingsAction {
     StartLearningMode(Uuid),
     /// Stop/cancel learning mode
     StopLearningMode,
+    /// Test MQTT broker connection
+    TestMqttConnection(MqttConfig),
 }
 
 impl SettingsScreen {
@@ -491,6 +526,8 @@ impl SettingsScreen {
             mqtt_port_input: "1883".to_string(),
             mqtt_password_input: String::new(),
             mqtt_credential_store: MqttCredentialStore::new(),
+            mqtt_test_status: MqttTestStatus::Idle,
+            mqtt_test_requested: false,
             editing_fan_profile: None,
             weather_config: WeatherConfig::default(),
             show_weather: false,
@@ -567,6 +604,28 @@ impl SettingsScreen {
     /// Use this to store or retrieve passwords from the OS keyring.
     pub fn mqtt_credential_store(&self) -> &MqttCredentialStore {
         &self.mqtt_credential_store
+    }
+
+    /// Set the MQTT test status.
+    /// Called by app.rs after a connection test completes.
+    pub fn set_mqtt_test_result(&mut self, success: bool, message: String) {
+        if success {
+            self.mqtt_test_status = MqttTestStatus::Success {
+                message,
+                timestamp: std::time::Instant::now(),
+            };
+        } else {
+            self.mqtt_test_status = MqttTestStatus::Failed {
+                message,
+                timestamp: std::time::Instant::now(),
+            };
+        }
+    }
+
+    /// Set MQTT test status to testing (in progress).
+    /// Called by app.rs when starting a connection test.
+    pub fn set_mqtt_testing(&mut self) {
+        self.mqtt_test_status = MqttTestStatus::Testing;
     }
 
     /// Set incline configuration.
@@ -763,6 +822,13 @@ impl SettingsScreen {
 
             ui.add_space(32.0);
         });
+
+        // Check if MQTT test was requested
+        if self.mqtt_test_requested {
+            self.mqtt_test_requested = false;
+            self.mqtt_test_status = MqttTestStatus::Testing;
+            return SettingsAction::TestMqttConnection(self.mqtt_config.clone());
+        }
 
         // Check if HID device scan was requested
         if self.hid_settings.scan_requested {
@@ -2231,19 +2297,52 @@ impl SettingsScreen {
 
                     ui.add_space(8.0);
 
-                    // Test connection button
+                    // Test connection button and status
                     ui.horizontal(|ui| {
-                        if ui
-                            .button("Test Connection")
-                            .on_hover_text("Test MQTT broker connection")
-                            .clicked()
-                        {
-                            // TODO: Implement connection test
-                            tracing::info!(
-                                "Testing MQTT connection to {}:{}",
-                                self.mqtt_config.broker_host,
-                                self.mqtt_config.broker_port
-                            );
+                        // Determine if we can test (not already testing)
+                        let is_testing = matches!(self.mqtt_test_status, MqttTestStatus::Testing);
+
+                        // Button - disabled while testing
+                        let button_text = if is_testing {
+                            "Testing..."
+                        } else {
+                            "Test Connection"
+                        };
+
+                        let button = egui::Button::new(button_text);
+                        let button_response = ui.add_enabled(!is_testing, button)
+                            .on_hover_text("Test MQTT broker connection");
+
+                        if button_response.clicked() && !is_testing {
+                            self.mqtt_test_requested = true;
+                        }
+
+                        // Show status indicator/message
+                        ui.add_space(8.0);
+                        match &self.mqtt_test_status {
+                            MqttTestStatus::Idle => {
+                                // No message
+                            }
+                            MqttTestStatus::Testing => {
+                                ui.spinner();
+                                ui.label(RichText::new("Connecting...").weak());
+                            }
+                            MqttTestStatus::Success { message, timestamp } => {
+                                // Show success for 10 seconds, then fade
+                                let elapsed = timestamp.elapsed().as_secs();
+                                if elapsed < 10 {
+                                    ui.label(RichText::new("✓").color(Color32::from_rgb(52, 168, 83)));
+                                    ui.label(RichText::new(message).color(Color32::from_rgb(52, 168, 83)).small());
+                                }
+                            }
+                            MqttTestStatus::Failed { message, timestamp } => {
+                                // Show failure for 30 seconds
+                                let elapsed = timestamp.elapsed().as_secs();
+                                if elapsed < 30 {
+                                    ui.label(RichText::new("✗").color(Color32::from_rgb(234, 67, 53)));
+                                    ui.label(RichText::new(message).color(Color32::from_rgb(234, 67, 53)).small());
+                                }
+                            }
                         }
                     });
                 });

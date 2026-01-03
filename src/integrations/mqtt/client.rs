@@ -677,6 +677,132 @@ impl MqttClient for DefaultMqttClient {
     }
 }
 
+/// Result of a connection test
+#[derive(Debug, Clone)]
+pub struct MqttTestResult {
+    /// Whether the connection was successful
+    pub success: bool,
+    /// Message describing the result
+    pub message: String,
+    /// How long the test took
+    pub duration_ms: u64,
+}
+
+/// Test an MQTT connection without affecting the main client state.
+///
+/// This function creates a temporary connection to the broker, waits for
+/// a connection acknowledgment or timeout, then disconnects and returns the result.
+/// It's designed to be used from the settings UI to validate configuration.
+pub async fn test_mqtt_connection(config: &MqttConfig) -> MqttTestResult {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    if !config.enabled {
+        return MqttTestResult {
+            success: false,
+            message: "MQTT is disabled in configuration".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+        };
+    }
+
+    if config.broker_host.is_empty() {
+        return MqttTestResult {
+            success: false,
+            message: "Broker host is not configured".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+        };
+    }
+
+    // Create test client ID (unique for this test)
+    let test_client_id = format!("{}-test-{}", config.client_id, uuid::Uuid::new_v4().as_simple());
+
+    // Create MQTT options for the test connection
+    let mut mqtt_options = MqttOptions::new(
+        &test_client_id,
+        &config.broker_host,
+        config.broker_port,
+    );
+    mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
+
+    // Use a shorter timeout for testing (max 10 seconds)
+    let timeout_secs = std::cmp::min(config.connection_timeout_secs, 10);
+    mqtt_options.set_connection_timeout(timeout_secs.into());
+
+    // Configure TLS when enabled
+    configure_tls(&mut mqtt_options, config.use_tls);
+
+    // Configure credentials from keyring when username is set
+    let credential_store = MqttCredentialStore::new();
+    configure_credentials(&mut mqtt_options, config, &credential_store);
+
+    tracing::info!(
+        "Testing MQTT connection to {}:{} (timeout: {}s)",
+        config.broker_host,
+        config.broker_port,
+        timeout_secs
+    );
+
+    // Create the test client and event loop
+    let (_client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+
+    // Poll the event loop with a timeout to wait for connection
+    let timeout_duration = Duration::from_secs(timeout_secs as u64);
+
+    match tokio::time::timeout(timeout_duration, async {
+        // Poll events until we get a ConnAck or an error
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::ConnAck(connack))) => {
+                    if connack.code == rumqttc::ConnectReturnCode::Success {
+                        return Ok("Connection successful");
+                    } else {
+                        return Err(format!("Connection rejected: {:?}", connack.code));
+                    }
+                }
+                Ok(_event) => {
+                    // Continue polling for ConnAck
+                    continue;
+                }
+                Err(e) => {
+                    return Err(format!("Connection error: {}", e));
+                }
+            }
+        }
+    })
+    .await
+    {
+        Ok(Ok(msg)) => {
+            tracing::info!("MQTT test connection succeeded");
+            MqttTestResult {
+                success: true,
+                message: msg.to_string(),
+                duration_ms: start.elapsed().as_millis() as u64,
+            }
+        }
+        Ok(Err(error_msg)) => {
+            tracing::warn!("MQTT test connection failed: {}", error_msg);
+            MqttTestResult {
+                success: false,
+                message: error_msg,
+                duration_ms: start.elapsed().as_millis() as u64,
+            }
+        }
+        Err(_) => {
+            tracing::warn!("MQTT test connection timed out after {}s", timeout_secs);
+            MqttTestResult {
+                success: false,
+                message: format!(
+                    "Connection timed out after {}s. Check broker address and port.",
+                    timeout_secs
+                ),
+                duration_ms: start.elapsed().as_millis() as u64,
+            }
+        }
+    }
+    // Note: The test client is dropped here, which will clean up the connection
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
