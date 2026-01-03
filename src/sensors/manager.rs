@@ -50,6 +50,8 @@ struct NotificationContext {
     auto_reconnect: bool,
     /// Connection health monitor for proactive reconnection.
     health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
+    /// Conflict detector for automatic failover when primary disconnects.
+    conflict_detector: Arc<Mutex<ConflictDetector>>,
 }
 
 /// Manages BLE and ANT+ sensor discovery, connection, and data streaming.
@@ -1233,6 +1235,7 @@ impl SensorManager {
             backoff_config: self.backoff_config.clone(),
             auto_reconnect: self.config.auto_reconnect,
             health_monitor: self.health_monitor.clone(),
+            conflict_detector: self.conflict_detector.clone(),
         };
 
         tokio::spawn(async move {
@@ -1451,6 +1454,38 @@ impl SensorManager {
                     max_attempts,
                     ctx.device_id
                 );
+            }
+        }
+
+        // Trigger automatic failover if this was a primary sensor
+        // This promotes a connected secondary sensor to primary and notifies the user
+        let failovers = {
+            let mut detector = ctx.conflict_detector.lock().await;
+            detector.handle_primary_disconnect(&ctx.device_id)
+        };
+
+        // Send failover events to notify the user of automatic promotion
+        for failover in failovers {
+            tracing::info!(
+                "Auto-failover: {} switching from {} to {}",
+                failover.data_type.display_name(),
+                failover.from_sensor_name,
+                failover.to_sensor_name
+            );
+
+            // Update the new primary's is_primary flag in sensor states
+            if let Some(state) = ctx.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                state.is_primary = true;
+            }
+
+            if let Some(tx) = &ctx.event_tx {
+                let _ = tx.send(SensorEvent::FailoverActivated {
+                    data_type: failover.data_type.display_name().to_string(),
+                    from_device_id: failover.from_device_id,
+                    from_sensor_name: failover.from_sensor_name,
+                    to_device_id: failover.to_device_id,
+                    to_sensor_name: failover.to_sensor_name,
+                });
             }
         }
 
@@ -2674,6 +2709,86 @@ impl SensorManager {
         self.conflict_detector.lock().await.clear_primary(data_type);
     }
 
+    /// Get conflicts that need user attention.
+    ///
+    /// Returns conflicts that are active and haven't been notified to the user yet.
+    /// Use this to alert users about new conflicts that require resolution.
+    pub async fn get_conflicts_needing_attention(&self) -> Vec<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .conflicts_needing_attention()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Mark a specific conflict as notified.
+    ///
+    /// Call this after showing the user a conflict alert so they don't see it again.
+    pub async fn mark_conflict_notified(&self, data_type: DataType) {
+        self.conflict_detector.lock().await.mark_notified(data_type);
+    }
+
+    /// Mark all conflicts as notified.
+    ///
+    /// Call this after showing the user all conflict alerts.
+    pub async fn mark_all_conflicts_notified(&self) {
+        self.conflict_detector.lock().await.mark_all_notified();
+    }
+
+    /// Get a specific conflict by data type.
+    ///
+    /// Returns the conflict for the given data type if it exists and is active.
+    pub async fn get_conflict(&self, data_type: DataType) -> Option<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .get_conflict(data_type)
+            .cloned()
+    }
+
+    /// Get all active conflicts.
+    ///
+    /// Returns all conflicts that have multiple sensors providing the same data type.
+    pub async fn get_active_conflicts(&self) -> Vec<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .active_conflicts()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Check if a specific data type has a conflict.
+    pub async fn has_conflict(&self, data_type: DataType) -> bool {
+        self.conflict_detector.lock().await.has_conflict(data_type)
+    }
+
+    /// Auto-resolve conflicts using the configured strategy.
+    ///
+    /// Returns the data types that were auto-resolved.
+    pub async fn auto_resolve_conflicts(&mut self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.auto_resolve()
+    }
+
+    /// Apply saved conflict preferences to current sensors.
+    ///
+    /// This loads saved primary sensor preferences and applies them to
+    /// any matching sensors that are currently registered.
+    pub async fn apply_saved_conflict_preferences(&self) {
+        self.conflict_detector.lock().await.apply_saved_preferences();
+    }
+
+    /// Save conflict preferences to disk.
+    ///
+    /// This persists the current primary sensor selections so they
+    /// are remembered across app restarts.
+    pub async fn save_conflict_preferences(&self) -> Result<(), crate::sensors::conflict::ConflictError> {
+        self.conflict_detector.lock().await.save_preferences()
+    }
+
     // ========================================================================
     // Power Meter Wake-Up Detection Methods
     // ========================================================================
@@ -2799,5 +2914,102 @@ impl SensorManager {
     /// expectations, found sensors, and hints.
     pub async fn clear_power_meter_detection(&self) {
         self.power_meter_detector.lock().await.clear();
+    }
+
+    // =========================================================================
+    // Extended Power Meter Discovery API
+    // =========================================================================
+
+    /// Get the extended power meter discovery configuration.
+    ///
+    /// Extended discovery allows the discovery process to extend beyond the
+    /// standard timeout (30s) up to 45s when saved power meters are expected
+    /// but not yet found. This gives power meters more time to wake up from
+    /// sleep mode.
+    pub async fn extended_power_meter_discovery_config(
+        &self,
+    ) -> crate::sensors::power_meter::ExtendedPowerMeterDiscoveryConfig {
+        self.power_meter_detector
+            .lock()
+            .await
+            .extended_discovery_config()
+            .clone()
+    }
+
+    /// Set the extended power meter discovery configuration.
+    ///
+    /// Use `ExtendedPowerMeterDiscoveryConfig::default()` for standard behavior,
+    /// `ExtendedPowerMeterDiscoveryConfig::aggressive()` for longer waits,
+    /// or `ExtendedPowerMeterDiscoveryConfig::disabled()` to disable extension.
+    pub async fn set_extended_power_meter_discovery_config(
+        &self,
+        config: crate::sensors::power_meter::ExtendedPowerMeterDiscoveryConfig,
+    ) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .set_extended_discovery_config(config);
+    }
+
+    /// Check if extended discovery should be used based on current state.
+    ///
+    /// Returns true if:
+    /// - Extended discovery is enabled
+    /// - There are expected power meters that haven't been found
+    /// - Enough time has elapsed (past the extension threshold of 15s)
+    ///
+    /// This can be used by UI to show extended discovery status.
+    pub async fn should_use_extended_power_meter_discovery(&self) -> bool {
+        self.power_meter_detector
+            .lock()
+            .await
+            .should_use_extended_discovery()
+    }
+
+    /// Check if extended discovery has been triggered this session.
+    ///
+    /// Returns true if the discovery process has already extended beyond
+    /// the standard timeout specifically to find power meters.
+    pub async fn is_extended_power_meter_discovery_triggered(&self) -> bool {
+        self.power_meter_detector
+            .lock()
+            .await
+            .is_extended_discovery_triggered()
+    }
+
+    /// Get the extended discovery decision for the current state.
+    ///
+    /// Returns detailed information about whether extended discovery should
+    /// be used and which power meters we're waiting for.
+    pub async fn get_extended_power_meter_discovery_decision(
+        &self,
+    ) -> crate::sensors::power_meter::ExtendedDiscoveryDecision {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_extended_discovery_decision()
+    }
+
+    /// Get the recommended discovery timeout in seconds based on current state.
+    ///
+    /// Returns 45s if power meters are expected but not found, otherwise 30s.
+    /// This considers whether extended discovery is enabled and if there are
+    /// saved power meters that need more time to wake up.
+    pub async fn get_recommended_discovery_timeout_secs(&self) -> u64 {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_recommended_timeout_secs()
+    }
+
+    /// Get names of power meters we're still waiting for.
+    ///
+    /// Returns empty vector if all expected power meters have been found
+    /// or if no power meters were expected.
+    pub async fn get_missing_power_meter_names(&self) -> Vec<String> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_missing_power_meter_names()
     }
 }

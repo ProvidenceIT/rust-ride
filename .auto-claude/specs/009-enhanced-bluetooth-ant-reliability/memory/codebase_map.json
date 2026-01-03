@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "src/sensors/dual_protocol.rs": {
+      "description": "Protocol preference persistence is implemented in dual_protocol.rs with ProtocolPreferenceManager. Stores user's preferred protocol (BLE vs ANT+) for dual-protocol sensors, persists to JSON, and integrates with DualProtocolDetector for automatic use on reconnection.",
+      "category": "sensor-management",
+      "discovered_at": "2026-01-03T10:02:21.706571+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T10:02:21.706571+00:00"
+}
