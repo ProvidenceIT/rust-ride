@@ -45,27 +45,31 @@
           "id": "T003",
           "title": "Implement athlete profile fetch",
           "description": "Add get_athlete() method to TrainingPeaksClient to fetch authenticated user profile. Store athlete ID and display name for UI.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T002"
           ],
           "estimated_hours": 1.5,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "get_athlete() method was already implemented as part of T001. The implementation includes: TrainingPeaksAthleteResponse struct for API response with PascalCase field renaming, AthleteProfile public struct with id, firstname, lastname, profile_photo_url fields, display_name() method returning formatted name, complete get_athlete() method calling GET /athlete/profile with full error handling (NotConfigured, RateLimited, TokenExpired, ApiError), and comprehensive tests including HTTP mocked tests with wiremock.",
+          "updated_at": "2026-01-03T13:53:11.696503+00:00"
         },
         {
           "id": "T004",
           "title": "Implement deauthorize functionality",
           "description": "Add deauthorize() method to revoke TrainingPeaks access tokens, clearing local credentials regardless of API response status.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T002"
           ],
           "estimated_hours": 1,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "deauthorize() method was already implemented as part of T001 commit. The implementation includes: POST to /oauth/deauthorize endpoint with bearer auth, always clears local token regardless of API response status (handles rate limit, unauthorized, server errors gracefully), returns Ok(()) on success or when token was already invalid. Comprehensive tests: unit tests for no token and token clearing, HTTP mocked tests for success, rate limit, and unauthorized scenarios.",
+          "updated_at": "2026-01-03T13:55:29.617632+00:00"
         },
         {
           "id": "T005",
@@ -487,5 +491,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T13:50:18.077884+00:00"
+  "last_updated": "2026-01-03T13:55:29.617632+00:00"
 }

@@ -10,8 +10,8 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 ## Phase 1: TrainingPeaks OAuth Integration (8 hours)
 - [x] T001: Create TrainingPeaks API client module (2h) ✅
 - [x] T002: Implement TrainingPeaks OAuth token exchange (3h) ✅
-- [ ] T003: Implement athlete profile fetch (1.5h)
-- [ ] T004: Implement deauthorize functionality (1h)
+- [x] T003: Implement athlete profile fetch (1.5h) ✅
+- [x] T004: Implement deauthorize functionality (1h) ✅
 - [ ] T005: Add TrainingPeaks OAuth scopes (0.5h)
 
 ## Phase 2: Activity Upload Implementation (7.5 hours)
@@ -104,3 +104,37 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
   - test_trainingpeaks_error_response_without_description
   - test_trainingpeaks_error_response_invalid_client
 - Manual verification required (cargo test not available in this environment)
+
+### 2026-01-03 - T003: Athlete Profile Fetch (Already Complete)
+- Verified that get_athlete() was already implemented as part of T001
+- Implementation includes:
+  - TrainingPeaksAthleteResponse struct with PascalCase field renaming (Id, FirstName, LastName, Email, ProfilePhotoUrl)
+  - AthleteProfile public struct with id, firstname, lastname, profile_photo_url fields
+  - display_name() method returning "FirstName LastName" format
+  - get_athlete() method calling GET /athlete/profile with full error handling:
+    - NotConfigured if no token
+    - RateLimited for 429 responses
+    - TokenExpired for 401 responses
+    - ApiError for other failures
+  - Proper logging of athlete fetch operations
+- Tests already present:
+  - test_get_athlete_without_token_returns_not_configured
+  - test_trainingpeaks_athlete_response_deserialization (full fields)
+  - test_trainingpeaks_athlete_response_minimal (null fields)
+  - test_athlete_display_name
+  - HTTP mocked tests: test_get_athlete_success, test_get_athlete_rate_limit, test_get_athlete_unauthorized
+- No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T004: Deauthorize Functionality (Already Complete)
+- Verified that deauthorize() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 751-833):
+  - Gets access token (returns NotConfigured error if not set)
+  - POSTs to /oauth/deauthorize endpoint with bearer auth
+  - **Always clears local token** regardless of API response status
+  - Returns Ok(()) even if API returns rate limit, unauthorized, or other errors
+  - Proper logging for all scenarios
+- Tests already present:
+  - test_deauthorize_without_token_returns_not_configured
+  - test_deauthorize_clears_local_token
+  - HTTP mocked tests: test_deauthorize_success, test_deauthorize_rate_limit_still_succeeds, test_deauthorize_unauthorized_still_succeeds
+- No new commit needed - functionality already in T001 commit
