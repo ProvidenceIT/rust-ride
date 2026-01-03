@@ -15,5 +15,6 @@ pub use parser_mrc::{parse_mrc, parse_mrc_file};
 pub use parser_zwo::{parse_zwo, parse_zwo_file};
 pub use types::{
     CadenceTarget, PowerTarget, SegmentProgress, SegmentType, Workout, WorkoutError, WorkoutEvent,
-    WorkoutFormat, WorkoutParseError, WorkoutSegment, WorkoutState, WorkoutStatus,
+    WorkoutExportError, WorkoutFormat, WorkoutParseError, WorkoutSegment, WorkoutState,
+    WorkoutStatus,
 };
