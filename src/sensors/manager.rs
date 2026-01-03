@@ -13,6 +13,7 @@ use crate::sensors::cache::SensorCache;
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
 use crate::sensors::persistence::{ConnectionSessionManager, SessionSensor};
+use crate::sensors::quality::{ConnectionQualityConfig, ConnectionQualityMonitor, QualityLevel, QualityStats};
 use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
@@ -88,6 +89,10 @@ pub struct SensorManager {
     health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
     /// Session manager for persisting connection state across app restarts
     session_manager: Arc<Mutex<ConnectionSessionManager>>,
+    /// Connection quality monitor for tracking RSSI, data rate, packet loss, and latency
+    quality_monitor: Arc<Mutex<ConnectionQualityMonitor>>,
+    /// Handle for the RSSI polling task (for cancellation)
+    rssi_polling_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl SensorManager {
@@ -138,6 +143,8 @@ impl SensorManager {
             connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
             health_monitor: Arc::new(Mutex::new(ConnectionHealthMonitor::new())),
             session_manager: Arc::new(Mutex::new(session_manager)),
+            quality_monitor: Arc::new(Mutex::new(ConnectionQualityMonitor::new())),
+            rssi_polling_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1081,6 +1088,25 @@ impl SensorManager {
             health_monitor.start_monitoring_with_config(device_id, health_config);
         }
 
+        // Start quality monitoring for this connection
+        {
+            let mut quality_monitor = self.quality_monitor.lock().await;
+            // Use strict config for trainers and power meters, relaxed for others
+            let quality_config = match sensor_type_for_health {
+                Some(SensorType::Trainer) | Some(SensorType::SmartTrainer) | Some(SensorType::PowerMeter) => {
+                    ConnectionQualityConfig::strict()
+                }
+                Some(SensorType::HeartRate) | Some(SensorType::Cadence) | Some(SensorType::CadenceSensor) => {
+                    ConnectionQualityConfig::relaxed()
+                }
+                _ => ConnectionQualityConfig::default()
+            };
+            quality_monitor.start_monitoring_with_config(device_id, quality_config);
+        }
+
+        // Start RSSI polling if not already running
+        self.start_rssi_polling().await;
+
         // Start notification handler with auto-reconnect support (T029)
         // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
         let ctx = NotificationContext {
@@ -1381,6 +1407,9 @@ impl SensorManager {
 
         // Stop health monitoring for this sensor
         self.health_monitor.lock().await.stop_monitoring(device_id);
+
+        // Stop quality monitoring for this sensor
+        self.quality_monitor.lock().await.stop_monitoring(device_id);
 
         // Update sensor state
         if let Some(state) = self.sensor_states.lock().await.get_mut(device_id) {
@@ -2005,6 +2034,9 @@ impl SensorManager {
         // Stop scanning
         let _ = self.stop_discovery().await;
 
+        // Stop RSSI polling
+        self.stop_rssi_polling().await;
+
         // Prepare session for clean shutdown (preserve sensor state for reconnection)
         {
             let mut session_mgr = self.session_manager.lock().await;
@@ -2020,6 +2052,9 @@ impl SensorManager {
 
         // Clear health monitoring
         self.health_monitor.lock().await.clear();
+
+        // Clear quality monitoring
+        self.quality_monitor.lock().await.clear();
 
         // Save sensor cache
         let mut cache = self.sensor_cache.lock().await;
@@ -2164,5 +2199,179 @@ impl SensorManager {
         let mut session_mgr = self.session_manager.lock().await;
         session_mgr.clear();
         tracing::info!("Cleared sensor session");
+    }
+
+    // =========================================================================
+    // RSSI Polling for Connection Quality Monitoring
+    // =========================================================================
+
+    /// Default RSSI polling interval in milliseconds.
+    const RSSI_POLL_INTERVAL_MS: u64 = 2000;
+
+    /// Start the RSSI polling task if not already running.
+    ///
+    /// The polling task runs every 2 seconds and updates RSSI values
+    /// for all connected BLE sensors.
+    async fn start_rssi_polling(&self) {
+        let mut handle_guard = self.rssi_polling_handle.lock().await;
+
+        // Check if already running
+        if handle_guard.is_some() {
+            return;
+        }
+
+        tracing::debug!("Starting RSSI polling task");
+
+        let connected = self.connected.clone();
+        let quality_monitor = self.quality_monitor.clone();
+        let sensor_states = self.sensor_states.clone();
+
+        let handle = tokio::spawn(async move {
+            Self::run_rssi_polling_loop(connected, quality_monitor, sensor_states).await;
+        });
+
+        *handle_guard = Some(handle);
+    }
+
+    /// Stop the RSSI polling task.
+    async fn stop_rssi_polling(&self) {
+        if let Some(handle) = self.rssi_polling_handle.lock().await.take() {
+            handle.abort();
+            tracing::debug!("Stopped RSSI polling task");
+        }
+    }
+
+    /// Run the RSSI polling loop.
+    ///
+    /// This polls RSSI values for all connected BLE peripherals every 2 seconds
+    /// and updates the quality monitor with the new values.
+    async fn run_rssi_polling_loop(
+        connected: Arc<Mutex<HashMap<String, Peripheral>>>,
+        quality_monitor: Arc<Mutex<ConnectionQualityMonitor>>,
+        sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
+    ) {
+        let poll_interval = std::time::Duration::from_millis(Self::RSSI_POLL_INTERVAL_MS);
+
+        loop {
+            tokio::time::sleep(poll_interval).await;
+
+            // Get connected peripherals
+            let peripherals: Vec<(String, Peripheral)> = {
+                connected.lock().await.iter()
+                    .map(|(id, p)| (id.clone(), p.clone()))
+                    .collect()
+            };
+
+            if peripherals.is_empty() {
+                // No connected sensors, stop polling
+                tracing::trace!("No connected sensors, RSSI polling idle");
+                continue;
+            }
+
+            // Poll RSSI for each connected peripheral
+            for (device_id, peripheral) in peripherals {
+                match peripheral.properties().await {
+                    Ok(Some(properties)) => {
+                        if let Some(rssi) = properties.rssi {
+                            // Update quality monitor
+                            {
+                                let mut monitor = quality_monitor.lock().await;
+                                monitor.record_rssi(&device_id, rssi);
+                            }
+
+                            // Update sensor state
+                            {
+                                let mut states = sensor_states.lock().await;
+                                if let Some(state) = states.get_mut(&device_id) {
+                                    state.signal_strength = Some(rssi);
+                                }
+                            }
+
+                            tracing::trace!(
+                                "RSSI poll for {}: {} dBm",
+                                device_id,
+                                rssi
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::trace!("No properties available for {}", device_id);
+                    }
+                    Err(e) => {
+                        tracing::trace!("Failed to get properties for {}: {}", device_id, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Connection Quality Monitoring Methods
+    // =========================================================================
+
+    /// Get the connection quality score (0-100) for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_score(&self, device_id: &str) -> Option<u8> {
+        self.quality_monitor.lock().await.get_score(device_id)
+    }
+
+    /// Get the connection quality level for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_level(&self, device_id: &str) -> Option<QualityLevel> {
+        self.quality_monitor.lock().await.get_level(device_id)
+    }
+
+    /// Get detailed quality statistics for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_stats(&self, device_id: &str) -> Option<QualityStats> {
+        self.quality_monitor.lock().await.get_stats(device_id)
+    }
+
+    /// Get quality statistics for all monitored sensors.
+    pub async fn get_all_quality_stats(&self) -> Vec<QualityStats> {
+        self.quality_monitor.lock().await.get_all_stats()
+    }
+
+    /// Get devices with poor connection quality.
+    ///
+    /// These sensors may need attention (closer proximity, fewer obstructions).
+    pub async fn get_poor_quality_devices(&self) -> Vec<String> {
+        self.quality_monitor.lock().await.get_poor_quality_devices()
+    }
+
+    /// Get devices with degraded connection quality (fair or poor).
+    pub async fn get_degraded_quality_devices(&self) -> Vec<String> {
+        self.quality_monitor.lock().await.get_degraded_devices()
+    }
+
+    /// Check if a sensor's connection quality is acceptable.
+    ///
+    /// Returns true if quality is Fair or better.
+    pub async fn is_quality_acceptable(&self, device_id: &str) -> bool {
+        self.quality_monitor
+            .lock()
+            .await
+            .get_level(device_id)
+            .map_or(false, |level| level >= QualityLevel::Fair)
+    }
+
+    /// Reset quality tracking for a sensor.
+    ///
+    /// Call this after a manual reconnection to reset the quality state.
+    pub async fn reset_quality(&self, device_id: &str) {
+        self.quality_monitor.lock().await.reset(device_id);
+    }
+
+    /// Get the number of sensors being monitored for quality.
+    pub async fn quality_monitoring_count(&self) -> usize {
+        self.quality_monitor.lock().await.len()
+    }
+
+    /// Check if quality monitoring is running for a sensor.
+    pub async fn is_quality_monitoring(&self, device_id: &str) -> bool {
+        self.quality_monitor.lock().await.is_monitoring(device_id)
     }
 }

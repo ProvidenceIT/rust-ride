@@ -26,6 +26,7 @@ mod power_profile_tests;
 mod progressive_timeout_test;
 mod reconnection_backoff_test;
 mod ride_history_test;
+mod rssi_polling_test;
 mod ride_summary_test;
 mod segment_timing_test;
 mod sensor_cache_test;
