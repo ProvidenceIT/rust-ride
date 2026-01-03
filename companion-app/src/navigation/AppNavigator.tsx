@@ -49,8 +49,7 @@ export function AppNavigator(): React.JSX.Element {
           backgroundColor: colors.background,
         },
         animation: 'slide_from_right',
-      }}
-    >
+      }}>
       <Stack.Screen
         name="Main"
         component={TabNavigator}

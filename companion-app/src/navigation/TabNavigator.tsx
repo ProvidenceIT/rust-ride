@@ -10,12 +10,7 @@ import { StyleSheet, useColorScheme } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { MainTabParamList } from './types';
-import {
-  DashboardScreen,
-  WorkoutScreen,
-  HistoryScreen,
-  SettingsScreen,
-} from '@/screens';
+import { DashboardScreen, WorkoutScreen, HistoryScreen, SettingsScreen } from '@/screens';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -100,8 +95,7 @@ export function TabNavigator(): React.JSX.Element {
         ],
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarHideOnKeyboard: true,
-      }}
-    >
+      }}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}

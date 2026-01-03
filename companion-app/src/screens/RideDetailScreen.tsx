@@ -75,7 +75,9 @@ export function RideDetailScreen({ route }: Props): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['bottom']}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header info */}
         <View style={[styles.header, { backgroundColor: colors.surface }]}>
@@ -105,8 +107,17 @@ export function RideDetailScreen({ route }: Props): React.JSX.Element {
           <View style={styles.statsGrid}>
             <StatCard label="Average" value={String(ride.avgPower)} unit="w" colors={colors} />
             <StatCard label="Maximum" value={String(ride.maxPower)} unit="w" colors={colors} />
-            <StatCard label="Normalized" value={String(ride.normalizedPower)} unit="w" colors={colors} />
-            <StatCard label="Intensity Factor" value={ride.intensityFactor.toFixed(2)} colors={colors} />
+            <StatCard
+              label="Normalized"
+              value={String(ride.normalizedPower)}
+              unit="w"
+              colors={colors}
+            />
+            <StatCard
+              label="Intensity Factor"
+              value={ride.intensityFactor.toFixed(2)}
+              colors={colors}
+            />
           </View>
         </View>
 
@@ -114,8 +125,18 @@ export function RideDetailScreen({ route }: Props): React.JSX.Element {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Heart Rate</Text>
           <View style={styles.statsGrid}>
-            <StatCard label="Average" value={String(ride.avgHeartRate)} unit="bpm" colors={colors} />
-            <StatCard label="Maximum" value={String(ride.maxHeartRate)} unit="bpm" colors={colors} />
+            <StatCard
+              label="Average"
+              value={String(ride.avgHeartRate)}
+              unit="bpm"
+              colors={colors}
+            />
+            <StatCard
+              label="Maximum"
+              value={String(ride.maxHeartRate)}
+              unit="bpm"
+              colors={colors}
+            />
           </View>
         </View>
 

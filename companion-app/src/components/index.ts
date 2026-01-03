@@ -78,3 +78,7 @@ export type {
 // NoSessionState - shows appropriate UI when no workout/ride is active
 export { NoSessionState } from './NoSessionState';
 export type { NoSessionStateProps } from './NoSessionState';
+
+// WorkoutControlBar - fixed bottom bar with play/pause, skip, and stop buttons
+export { WorkoutControlBar } from './WorkoutControlBar';
+export type { WorkoutControlBarProps } from './WorkoutControlBar';

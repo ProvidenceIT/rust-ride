@@ -38,7 +38,9 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Workout</Text>
       </View>
@@ -84,26 +86,35 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
       </View>
 
       {/* Control buttons */}
-      <View style={[styles.controls, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+      <View
+        style={[
+          styles.controls,
+          { backgroundColor: colors.surface, borderTopColor: colors.border },
+        ]}>
         <TouchableOpacity
           style={[styles.controlButton, { backgroundColor: colors.primary }]}
           disabled={true}
-          activeOpacity={0.7}
-        >
+          activeOpacity={0.7}>
           <Text style={styles.controlButtonText}>Pause</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.controlButton, styles.controlButtonSecondary, { borderColor: colors.border }]}
+          style={[
+            styles.controlButton,
+            styles.controlButtonSecondary,
+            { borderColor: colors.border },
+          ]}
           disabled={true}
-          activeOpacity={0.7}
-        >
+          activeOpacity={0.7}>
           <Text style={[styles.controlButtonText, { color: colors.text }]}>Skip</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.controlButton, styles.controlButtonDestructive, { backgroundColor: colors.destructive }]}
+          style={[
+            styles.controlButton,
+            styles.controlButtonDestructive,
+            { backgroundColor: colors.destructive },
+          ]}
           disabled={true}
-          activeOpacity={0.7}
-        >
+          activeOpacity={0.7}>
           <Text style={styles.controlButtonText}>Stop</Text>
         </TouchableOpacity>
       </View>

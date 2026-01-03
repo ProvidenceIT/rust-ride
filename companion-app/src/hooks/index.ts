@@ -9,3 +9,6 @@ export type { AuthenticationState, AuthenticationActions, UseAuthenticationRetur
 
 export { useAutoReconnect } from './useAutoReconnect';
 export type { AutoReconnectState, AutoReconnectActions, UseAutoReconnectReturn } from './useAutoReconnect';
+
+export { useHaptics, triggerHapticFeedback } from './useHaptics';
+export type { HapticFeedbackType } from './useHaptics';

@@ -6,7 +6,15 @@
  */
 
 import React from 'react';
-import { StyleSheet, Text, View, useColorScheme, ScrollView, Switch, TouchableOpacity } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  useColorScheme,
+  ScrollView,
+  Switch,
+  TouchableOpacity,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 
@@ -39,17 +47,24 @@ interface SettingRowProps {
   colors: typeof Colors.light;
 }
 
-function SettingRow({ label, value, hasChevron, onPress, colors }: SettingRowProps): React.JSX.Element {
+function SettingRow({
+  label,
+  value,
+  hasChevron,
+  onPress,
+  colors,
+}: SettingRowProps): React.JSX.Element {
   return (
     <TouchableOpacity
       style={[styles.settingRow, { borderBottomColor: colors.border }]}
       onPress={onPress}
       disabled={!onPress}
-      activeOpacity={0.7}
-    >
+      activeOpacity={0.7}>
       <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
       <View style={styles.settingValueContainer}>
-        {value && <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{value}</Text>}
+        {value && (
+          <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{value}</Text>
+        )}
         {hasChevron && <Text style={[styles.chevron, { color: colors.textSecondary }]}>{'>'}</Text>}
       </View>
     </TouchableOpacity>
@@ -63,7 +78,12 @@ interface SettingToggleRowProps {
   colors: typeof Colors.light;
 }
 
-function SettingToggleRow({ label, value, onValueChange, colors }: SettingToggleRowProps): React.JSX.Element {
+function SettingToggleRow({
+  label,
+  value,
+  onValueChange,
+  colors,
+}: SettingToggleRowProps): React.JSX.Element {
   return (
     <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
       <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
@@ -84,7 +104,9 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
   const [keepAwake, setKeepAwake] = React.useState(true);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
       </View>
@@ -94,17 +116,8 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Connection</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
-            <SettingRow
-              label="Server"
-              value="Not connected"
-              hasChevron
-              colors={colors}
-            />
-            <SettingRow
-              label="Scan QR Code"
-              hasChevron
-              colors={colors}
-            />
+            <SettingRow label="Server" value="Not connected" hasChevron colors={colors} />
+            <SettingRow label="Scan QR Code" hasChevron colors={colors} />
           </View>
         </View>
 
@@ -112,18 +125,8 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Display</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
-            <SettingRow
-              label="Units"
-              value="Metric"
-              hasChevron
-              colors={colors}
-            />
-            <SettingRow
-              label="Theme"
-              value="System"
-              hasChevron
-              colors={colors}
-            />
+            <SettingRow label="Units" value="Metric" hasChevron colors={colors} />
+            <SettingRow label="Theme" value="System" hasChevron colors={colors} />
             <SettingToggleRow
               label="Keep Screen Awake"
               value={keepAwake}
@@ -137,12 +140,7 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Feedback</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
-            <SettingRow
-              label="Haptic Feedback"
-              value="Medium"
-              hasChevron
-              colors={colors}
-            />
+            <SettingRow label="Haptic Feedback" value="Medium" hasChevron colors={colors} />
           </View>
         </View>
 
@@ -150,11 +148,7 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
-            <SettingRow
-              label="Version"
-              value="1.0.0"
-              colors={colors}
-            />
+            <SettingRow label="Version" value="1.0.0" colors={colors} />
           </View>
         </View>
 

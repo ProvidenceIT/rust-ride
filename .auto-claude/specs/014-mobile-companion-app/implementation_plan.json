@@ -2,9 +2,9 @@
   "feature": "Mobile Companion App",
   "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
   "created_at": "2026-01-03T05:14:33.316Z",
-  "updated_at": "2026-01-03T06:30:00.000Z",
+  "updated_at": "2026-01-03T09:31:40.532Z",
   "status": "in_progress",
-  "planStatus": "planned",
+  "planStatus": "in_progress",
   "phases": [
     {
       "id": "phase-1",
@@ -212,7 +212,7 @@
           "id": "T011",
           "title": "Initialize React Native project",
           "description": "Create React Native project in companion-app/ directory using react-native-cli. Configure TypeScript, ESLint, and Prettier. Set up Android and iOS build configurations.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [],
@@ -221,13 +221,15 @@
             "TypeScript configured",
             "Builds for iOS simulator",
             "Builds for Android emulator"
-          ]
+          ],
+          "notes": "Initialized React Native 0.83.1 project with TypeScript in companion-app/. Configured: ESLint with TypeScript and React plugins, Prettier for code formatting, path aliases for clean imports, Android SDK 36 with Hermes, iOS with LAN networking support. Created base type definitions and utility functions. All verification checks pass (lint, typecheck, format, tests). Commit: f03b60e",
+          "updated_at": "2026-01-03T06:24:18.739238+00:00"
         },
         {
           "id": "T012",
           "title": "Set up navigation structure",
           "description": "Install React Navigation and configure bottom tab navigator with screens: Dashboard, Workout, History, Settings. Add stack navigators for detail screens.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -238,13 +240,15 @@
             "Stack navigation for details",
             "Deep linking configured",
             "Smooth transitions"
-          ]
+          ],
+          "notes": "Implemented React Navigation with bottom tab navigator (Dashboard, Workout, History, Settings tabs) and stack navigators for detail screens (RideDetail, Connection). Features: Tab icons using react-native-vector-icons/Ionicons, type-safe navigation with TypeScript, deep linking support for rustride:// URLs, smooth transitions. Created 6 screen components with placeholder UI. All verifications pass (lint, typecheck, tests). Commit: f7b4eb7",
+          "updated_at": "2026-01-03T06:36:34.722904+00:00"
         },
         {
           "id": "T013",
           "title": "Implement state management with Zustand",
           "description": "Set up Zustand stores for connection state, metrics state, session state, and ride history. Define typed actions and selectors.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -255,13 +259,15 @@
             "Metrics store with live data",
             "Session store with workout state",
             "History store with ride list and cache"
-          ]
+          ],
+          "notes": "Implemented Zustand stores for mobile companion app state management. Created 4 stores: (1) connectionStore with WebSocket status, serverUrl, isAuthenticated, server discovery, reconnection tracking, and PIN management; (2) metricsStore with live metrics (power, HR, cadence, speed, distance, calories), 3-second power averaging, max HR tracking, target power/cadence, and power/HR zone utilities; (3) sessionStore with session lifecycle, workout/interval tracking, pause/resume state, and elapsed time; (4) historyStore with paginated ride list, date range and ride type filters, ride detail caching (LRU with 50 max entries). All stores have typed state, actions, and selector functions for optimized component subscriptions. Added RideDetailInfo type to types/index.ts. Commit: 1b23281",
+          "updated_at": "2026-01-03T06:44:11.319803+00:00"
         },
         {
           "id": "T014",
           "title": "Create WebSocket connection service",
           "description": "Implement ConnectionService class that handles WebSocket connection, reconnection with exponential backoff, and message parsing. Integrate with Zustand stores.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 3,
           "dependencies": [
@@ -272,13 +278,15 @@
             "Automatic reconnection on disconnect",
             "Exponential backoff (1s, 2s, 4s, max 30s)",
             "Message parsing and store updates"
-          ]
+          ],
+          "notes": "Implemented ConnectionService class for WebSocket connection management. Features: (1) WebSocket connection to ws://host:port with lifecycle management, (2) Automatic reconnection with exponential backoff (1s, 2s, 4s, max 30s), (3) Message parsing for CompanionResponse and CompanionEvent types, (4) Integration with Zustand stores (connection, metrics, session, history), (5) Request/response correlation with timeouts, (6) Ping/pong keep-alive (30s interval), (7) Auth flow with PIN support, (8) Workout control methods (pause, resume, skip, stop), (9) Ride history fetching with pagination. Added WebSocket protocol types (CompanionRequest, CompanionResponse, CompanionEvent) to types/index.ts. Comprehensive unit tests (17 tests). Commit: a559280",
+          "updated_at": "2026-01-03T06:51:16.452104+00:00"
         },
         {
           "id": "T015",
           "title": "Implement mDNS discovery service",
           "description": "Use react-native-zeroconf to discover RustRide servers on LAN. Parse TXT records for port and version. Provide list of available servers to connection UI.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -289,13 +297,15 @@
             "Extracts host and port",
             "Updates available servers list",
             "Handles service removal"
-          ]
+          ],
+          "notes": "Implemented DiscoveryService with react-native-zeroconf for mDNS discovery. Features: (1) Scans for _rustride._tcp.local. services, (2) Parses TXT records for port and version info, (3) Prefers IPv4 addresses with fallback to hostname, (4) Integration with connectionStore for discovered servers, (5) 30-second default scan timeout, (6) Event callbacks (onServerFound, onServerLost, onScanStarted, onScanStopped, onError), (7) Manual server addition support, (8) buildServerUrl() helper for WebSocket URLs. Added TypeScript type definitions for react-native-zeroconf, Jest mock for testing, and 21 comprehensive unit tests. Commit: 31cb93e",
+          "updated_at": "2026-01-03T07:05:02.599718+00:00"
         },
         {
           "id": "T016",
           "title": "Create design system and theme",
           "description": "Define color palette, typography, spacing, and component styles matching desktop app. Create ThemeProvider with dark/light mode support.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -306,13 +316,15 @@
             "Typography scale defined",
             "Dark and light themes",
             "Consistent with desktop app style"
-          ]
+          ],
+          "notes": "Implemented complete design system and theme for React Native companion app matching desktop. Created: (1) colors.ts with dark/light palettes matching src/ui/theme.rs, power zone colors Z1-Z7, and HR zone colors; (2) typography.ts with font scale, text styles for metrics, buttons, labels; (3) spacing.ts with 4px base unit scale, border radius, shadows, component spacing; (4) theme.ts with Theme type and dark/light theme objects; (5) ThemeProvider.tsx with React Context, system theme detection, manual theme switching, useTheme/useColors/useSpacing hooks. Added @theme path alias to tsconfig.json, babel.config.js, jest.config.js. All 34 tests passing. Commit: d51e6f5",
+          "updated_at": "2026-01-03T07:15:09.371823+00:00"
         },
         {
           "id": "T017",
           "title": "Build reusable UI components",
           "description": "Create MetricCard, Button, IconButton, ConnectionStatus, and LoadingSpinner components. Use React Native StyleSheet for styling.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 3,
           "dependencies": [
@@ -323,7 +335,9 @@
             "Button with variants (primary, secondary)",
             "ConnectionStatus indicator",
             "Components are accessible"
-          ]
+          ],
+          "notes": "Created 5 reusable UI components for the mobile companion app. Components: (1) MetricCard - displays workout metrics with value/unit/label, supports 3 sizes, zone colors, target/secondary values. (2) Button - customizable button with 5 variants (primary/secondary/outline/danger/ghost), 3 sizes, loading state, icon support. (3) IconButton - icon-only button with variants, circular option, loading state, proper accessibility. (4) ConnectionStatus - connection indicator with dot/badge/full variants, animated pulse for connecting state. (5) LoadingSpinner - animated spinner with message text, includes FullScreenLoader and InlineLoader variants. All components use theme system hooks, have TypeScript types, and are covered by 27 unit tests. Commit: ffe9923",
+          "updated_at": "2026-01-03T07:25:27.252991+00:00"
         }
       ]
     },
@@ -337,7 +351,7 @@
           "id": "T018",
           "title": "Create connection screen UI",
           "description": "Build screen showing discovered servers, manual entry option, and connection status. Display server name, IP, and port in list.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -349,13 +363,15 @@
             "Manual IP:port entry option",
             "Connection status indicator",
             "Pull to refresh discovery"
-          ]
+          ],
+          "notes": "Implemented full ConnectionScreen for server discovery and connection. Created ServerListItem component for displaying discovered servers (name, host:port, version badge). Created ManualEntryModal for manual IP:port entry with validation. Features: mDNS auto-discovery on mount, pull-to-refresh, connection status indicator, empty state UI. Added 19 unit tests for new components (117 total tests pass). Commit: c4fae89",
+          "updated_at": "2026-01-03T07:33:31.314430+00:00"
         },
         {
           "id": "T019",
           "title": "Implement QR code scanner",
           "description": "Add QR code scanning using react-native-camera or vision-camera. Parse connection URL and PIN from QR data. Auto-connect after successful scan.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -366,13 +382,15 @@
             "QR code detection and parsing",
             "Extracts URL and PIN",
             "Initiates connection automatically"
-          ]
+          ],
+          "notes": "Implemented QR code scanning using react-native-camera-kit. Added QrConnectionData type with parsing functions, QRScannerModal component with camera permission handling, visual scan frame, and auto-connect. Updated ConnectionScreen to integrate QR scanning. Added 15 comprehensive tests.",
+          "updated_at": "2026-01-03T07:45:03.743302+00:00"
         },
         {
           "id": "T020",
           "title": "Build PIN entry dialog",
           "description": "Create modal dialog for PIN entry when server requires authentication. 6-digit numeric input with keypad. Visual feedback on entry.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -383,13 +401,15 @@
             "Numeric keypad",
             "Shake animation on wrong PIN",
             "Auto-submit on 6 digits"
-          ]
+          ],
+          "notes": "Implemented PinEntryModal component for server authentication. Features: 6-digit numeric PIN input with visual dot indicators, custom numeric keypad (0-9 with backspace), shake animation on wrong PIN with haptic feedback (Vibration API), auto-submit when 6 digits entered, loading state while authenticating, error message display, accessible with ARIA labels and live regions. Added 18 comprehensive unit tests covering all functionality. Commit: edc5122",
+          "updated_at": "2026-01-03T07:51:22.291744+00:00"
         },
         {
           "id": "T021",
           "title": "Implement authentication flow",
           "description": "Send auth message with PIN over WebSocket. Handle auth_ok and auth_failed responses. Store authenticated state in Zustand.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -401,13 +421,15 @@
             "Handles success and failure",
             "Updates connection store",
             "Shows appropriate UI feedback"
-          ]
+          ],
+          "notes": "Implemented authentication flow with PIN over WebSocket. Created useAuthentication hook that manages the auth flow lifecycle: detects when auth is required via ConnectionService callbacks, handles auth_ok/auth_failed responses, updates Zustand connectionStore. Integrated PinEntryModal into ConnectionScreen. Fixed ConnectionService to properly update store after auth responses. Added @hooks path alias and 27 comprehensive tests. Commit: af4c543",
+          "updated_at": "2026-01-03T07:59:46.059855+00:00"
         },
         {
           "id": "T022",
           "title": "Add connection persistence",
           "description": "Store last connected server in AsyncStorage. Auto-reconnect on app launch if server is available. Remember PIN if user opts in.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -418,7 +440,9 @@
             "Auto-connect on app start",
             "Optional PIN storage (secure)",
             "Skip connection screen if auto-connected"
-          ]
+          ],
+          "notes": "Implemented persistent connection storage with AsyncStorage. Added StorageService for storing last server, PIN, and preferences. Created useAutoReconnect hook and AutoReconnectProvider for auto-reconnect on app launch. Updated connectionStore with currentServer tracking and storage integration. Updated ConnectionScreen to track current server when connecting.",
+          "updated_at": "2026-01-03T08:09:47.114972+00:00"
         }
       ]
     },
@@ -432,7 +456,7 @@
           "id": "T023",
           "title": "Create dashboard screen layout",
           "description": "Build main dashboard with grid of metric cards. Responsive layout for portrait and landscape orientations. Status bar with connection indicator.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -443,13 +467,15 @@
             "Adapts to portrait/landscape",
             "Connection status visible",
             "Clean, readable design"
-          ]
+          ],
+          "notes": "Implemented responsive dashboard with grid of metric cards. Features: portrait/landscape layouts, connection status in header, power zone colors, 3s averages, target values, accessibility labels. Added 42 unit tests and AsyncStorage mock for testing.",
+          "updated_at": "2026-01-03T08:25:05.738639+00:00"
         },
         {
           "id": "T024",
           "title": "Implement power metric display",
           "description": "Create large power display with current watts, 3s average, and zone indicator. Color-code by power zone. Show target power during workouts.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -460,13 +486,15 @@
             "3-second average shown",
             "Power zone color coding",
             "Target power overlay for ERG"
-          ]
+          ],
+          "notes": "Created PowerDisplay component with large power value, 3s average, zone indicator (Z1-Z7 with color coding), and target power overlay for ERG workouts. Component shows power difference from target with coaching hints (increase/reduce power). Integrated into DashboardScreen. Added 15 unit tests. Commit: c95d66a",
+          "updated_at": "2026-01-03T08:34:27.552986+00:00"
         },
         {
           "id": "T025",
           "title": "Implement heart rate display",
           "description": "Show current HR with BPM, zone indicator, and optional pulse animation. Color-code by HR zone. Show max HR for session.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -477,13 +505,15 @@
             "HR zone indicator",
             "Zone-based color",
             "Session max HR"
-          ]
+          ],
+          "notes": "Implemented HeartRateDisplay component with: 1) Current HR in large BPM font, 2) HR zone indicator (Z1-Z5 Recovery/Easy/Aerobic/Threshold/Max) with color coding matching desktop theme, 3) Session max HR display, 4) Optional animated pulse effect that syncs with heart rate, 5) Decorative heart icon with pulse animation, 6) Full accessibility support. Replaced MetricCard for heart rate in DashboardScreen with the new component. Added 15 unit tests. Commit: 4313fdb",
+          "updated_at": "2026-01-03T08:43:11.661641+00:00"
         },
         {
           "id": "T026",
           "title": "Implement cadence display",
           "description": "Show current cadence in RPM with target cadence during workouts. Visual indicator when outside target range.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 1,
           "dependencies": [
@@ -493,13 +523,15 @@
             "Current cadence RPM",
             "Target cadence if applicable",
             "Warning when out of range"
-          ]
+          ],
+          "notes": "Implemented CadenceDisplay component with: 1) Large RPM display with current cadence, 2) Target cadence display for structured workouts, 3) Visual indicator (animated badge + color) when outside target range (default 10 RPM tolerance), 4) Status hints: \"Spin Faster\", \"Slow Down\", or \"On Target\", 5) Configurable tolerance parameter, 6) Rotation icon indicator, 7) Full accessibility support. Integrated into DashboardScreen replacing MetricCard. Added 18 comprehensive tests. Commit: abdd3af",
+          "updated_at": "2026-01-03T10:07:22.498488+00:00"
         },
         {
           "id": "T027",
           "title": "Implement secondary metrics",
           "description": "Add smaller cards for speed (km/h or mph), distance, elapsed time, and calories. Unit preference from settings.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -510,13 +542,15 @@
             "Distance with unit preference",
             "Elapsed time (HH:MM:SS)",
             "Calorie count"
-          ]
+          ],
+          "notes": "Implemented secondary metrics display with unit preference support. Created settingsStore for persisting user preferences (units, theme, haptics). Added unit conversion utilities (km/h \u2194 mph, km \u2194 mi). Created SpeedDisplay, DistanceDisplay, ElapsedTimeDisplay, CaloriesDisplay components with icons for visual distinction. Updated DashboardScreen to use new secondary metrics with unit preferences loaded on mount. Added 54 unit tests for new stores and components. Commit: 294066d",
+          "updated_at": "2026-01-03T10:17:29.314490+00:00"
         },
         {
           "id": "T028",
           "title": "Add workout interval display",
           "description": "When workout is active, show current interval name, time remaining, and progress bar. Next interval preview.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -527,13 +561,15 @@
             "Time remaining in interval",
             "Progress bar",
             "Next interval preview"
-          ]
+          ],
+          "notes": "Implemented WorkoutIntervalDisplay component for showing workout interval progress. Features: (1) Current interval name and counter (e.g., \"Interval 3 of 8\"), (2) Time remaining countdown in MM:SS or HH:MM:SS format, (3) Visual progress bar showing overall workout completion, (4) Next interval preview with name, target power, and duration, (5) Power zone color coding based on target power and FTP, (6) PAUSED badge when workout is paused, (7) Full accessibility support with descriptive labels. Integrated into DashboardScreen for structured workouts. Added 30 comprehensive unit tests. Commit: b7108b4",
+          "updated_at": "2026-01-03T10:23:19.887812+00:00"
         },
         {
           "id": "T029",
           "title": "Implement no-session state",
           "description": "Show appropriate UI when no workout/ride is active. Display connection status and hint to start session on desktop.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 1,
           "dependencies": [
@@ -543,7 +579,9 @@
             "Clear 'no session' indicator",
             "Connection status shown",
             "Helpful text for user"
-          ]
+          ],
+          "notes": "Implemented NoSessionState component for Dashboard screen. Features: (1) Three states: disconnected (with Connect button), connecting (animated status), and connected (Ready to Ride with tips). (2) Clear status icons and descriptions for each state. (3) Connection status badge with server name when connected. (4) Helpful tips section explaining mobile app capabilities. (5) Full accessibility support with ARIA labels. Updated DashboardScreen to use NoSessionState component. Added RootStackNavigationProp type for navigation. 19 comprehensive unit tests. Commit: a8b5204",
+          "updated_at": "2026-01-03T10:31:08.468813+00:00"
         }
       ]
     },
@@ -557,7 +595,7 @@
           "id": "T030",
           "title": "Create control button bar",
           "description": "Fixed bottom bar with play/pause, skip interval, and stop buttons. Disabled state when no session. Haptic feedback on press.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -568,7 +606,9 @@
             "Skip forward button",
             "Stop button with confirmation",
             "Haptic feedback"
-          ]
+          ],
+          "notes": "Implemented WorkoutControlBar component with play/pause, skip, stop buttons. Created useHaptics hook for haptic feedback with configurable intensity. All tests pass (50 tests).",
+          "updated_at": "2026-01-03T10:41:51.289965+00:00"
         },
         {
           "id": "T031",
@@ -1039,5 +1079,6 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T06:13:32.357897+00:00"
+  "last_updated": "2026-01-03T10:41:51.289965+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:40.217Z"
 }

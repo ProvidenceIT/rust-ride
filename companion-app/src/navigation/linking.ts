@@ -75,7 +75,7 @@ export function parseConnectionParams(url: string): { url: string; pin?: string 
     const params: Record<string, string> = {};
 
     // Parse query parameters
-    queryString.split('&').forEach((pair) => {
+    queryString.split('&').forEach(pair => {
       const [key, value] = pair.split('=');
       if (key && value) {
         params[decodeURIComponent(key)] = decodeURIComponent(value);

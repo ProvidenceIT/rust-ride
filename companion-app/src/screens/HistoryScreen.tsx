@@ -58,8 +58,7 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
     <TouchableOpacity
       style={[styles.rideCard, { backgroundColor: colors.surface }]}
       onPress={() => handleRidePress(item.id)}
-      activeOpacity={0.7}
-    >
+      activeOpacity={0.7}>
       <View style={styles.rideHeader}>
         <Text style={[styles.rideDate, { color: colors.text }]}>{item.date}</Text>
         {item.workoutName && (
@@ -95,14 +94,16 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>History</Text>
       </View>
 
       <FlatList
         data={rides}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         renderItem={renderRideItem}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmptyState}
