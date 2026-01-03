@@ -1,0 +1,16 @@
+# Sound assets directory for RustRide audio engine
+#
+# Place WAV or MP3 sound files here. The audio backend will load
+# them by name (without extension).
+#
+# Expected sounds:
+# - countdown_tick.wav - Short tick for countdown timers
+# - interval_change.wav - Sound for workout interval changes
+# - achievement_bronze.wav - Bronze achievement unlocked
+# - achievement_silver.wav - Silver achievement unlocked
+# - achievement_gold.wav - Gold achievement unlocked
+# - workout_start.wav - Workout session starting
+# - workout_complete.wav - Workout completed
+#
+# If audio files are missing, the audio engine will fall back to
+# generated tones.

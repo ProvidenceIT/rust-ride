@@ -8,6 +8,7 @@
 //! T082: ZoneChangeDetector with debouncing
 
 pub mod alerts;
+pub mod backend;
 pub mod cues;
 pub mod engine;
 pub mod tones;
@@ -22,6 +23,7 @@ pub use alerts::{
     AlertCategory, AlertConfig, AlertContext, AlertData, AlertManager, AlertType,
     DefaultAlertManager,
 };
+pub use backend::{BackendError, BackendState, CachedSound, RodioAudioBackend};
 pub use cues::{CueBuilder, CueTemplate};
 pub use engine::{AudioEngine, DefaultAudioEngine};
 pub use tones::{
