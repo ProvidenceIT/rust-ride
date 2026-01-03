@@ -19,6 +19,7 @@ import {
   ManualEntryModal,
   QRScannerModal,
   PinEntryModal,
+  PowerDisplay,
 } from '../../src/components';
 import {
   parseQrConnectionData,
@@ -995,5 +996,238 @@ describe('PinEntryModal', () => {
     const pinDisplay = getByLabelText('PIN entry, 0 of 6 digits entered');
     expect(pinDisplay.props.accessibilityRole).toBe('text');
     expect(pinDisplay.props.accessibilityLiveRegion).toBe('polite');
+  });
+});
+
+describe('PowerDisplay', () => {
+  it('renders current power value', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={250}
+        power3sAvg={245}
+        powerZone="tempo"
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('250')).toBeTruthy();
+    expect(getByText('W')).toBeTruthy();
+    expect(getByText('POWER')).toBeTruthy();
+  });
+
+  it('renders 3-second average', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={280}
+        power3sAvg={275}
+        powerZone="threshold"
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('275')).toBeTruthy();
+    expect(getByText(/3s avg/)).toBeTruthy();
+  });
+
+  it('renders power zone badge', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={300}
+        power3sAvg={295}
+        powerZone="vo2max"
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText(/Z5 VO2max/i)).toBeTruthy();
+  });
+
+  it('renders different zone badges correctly', () => {
+    const zones = [
+      { zone: 'recovery', label: 'Z1 Recovery' },
+      { zone: 'endurance', label: 'Z2 Endurance' },
+      { zone: 'tempo', label: 'Z3 Tempo' },
+      { zone: 'threshold', label: 'Z4 Threshold' },
+      { zone: 'vo2max', label: 'Z5 VO2max' },
+      { zone: 'anaerobic', label: 'Z6 Anaerobic' },
+      { zone: 'neuromuscular', label: 'Z7 Neuromuscular' },
+    ] as const;
+
+    zones.forEach(({ zone, label }) => {
+      const { getByText } = renderWithTheme(
+        <PowerDisplay
+          power={200}
+          power3sAvg={195}
+          powerZone={zone}
+          showMetrics={true}
+        />,
+      );
+
+      expect(getByText(label)).toBeTruthy();
+    });
+  });
+
+  it('renders target power when provided', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={275}
+        power3sAvg={270}
+        powerZone="threshold"
+        targetPower={280}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('TARGET')).toBeTruthy();
+    expect(getByText('280')).toBeTruthy();
+  });
+
+  it('shows power difference from target', () => {
+    // Power is 320W vs target 280W = +40W (14.3% above, outside 5% tolerance)
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={320}
+        power3sAvg={315}
+        powerZone="threshold"
+        targetPower={280}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('+40W')).toBeTruthy();
+    expect(getByText('Reduce power')).toBeTruthy();
+  });
+
+  it('shows negative power difference', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={260}
+        power3sAvg={255}
+        powerZone="tempo"
+        targetPower={280}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('-20W')).toBeTruthy();
+    expect(getByText('Increase power')).toBeTruthy();
+  });
+
+  it('shows on target message when within 5%', () => {
+    const { getByText } = renderWithTheme(
+      <PowerDisplay
+        power={282}
+        power3sAvg={280}
+        powerZone="threshold"
+        targetPower={280}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('On target')).toBeTruthy();
+  });
+
+  it('renders placeholder when showMetrics is false', () => {
+    const { getAllByText, queryByText } = renderWithTheme(
+      <PowerDisplay
+        power={250}
+        power3sAvg={245}
+        powerZone="tempo"
+        showMetrics={false}
+      />,
+    );
+
+    // Both power and 3s avg show "--" when no metrics
+    const placeholders = getAllByText('--');
+    expect(placeholders.length).toBeGreaterThanOrEqual(1);
+    expect(queryByText('250')).toBeNull();
+    expect(queryByText(/Z3 Tempo/)).toBeNull();
+  });
+
+  it('does not show zone badge when power is 0', () => {
+    const { queryByText } = renderWithTheme(
+      <PowerDisplay
+        power={0}
+        power3sAvg={0}
+        powerZone="recovery"
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText(/Z1 Recovery/)).toBeNull();
+  });
+
+  it('does not show target section when targetPower is null', () => {
+    const { queryByText } = renderWithTheme(
+      <PowerDisplay
+        power={250}
+        power3sAvg={245}
+        powerZone="tempo"
+        targetPower={null}
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText('TARGET')).toBeNull();
+  });
+
+  it('does not show target section when showMetrics is false', () => {
+    const { queryByText } = renderWithTheme(
+      <PowerDisplay
+        power={250}
+        power3sAvg={245}
+        powerZone="tempo"
+        targetPower={280}
+        showMetrics={false}
+      />,
+    );
+
+    expect(queryByText('TARGET')).toBeNull();
+  });
+
+  it('has correct accessibility label', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PowerDisplay
+        power={285}
+        power3sAvg={280}
+        powerZone="threshold"
+        targetPower={275}
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Power: 285 watts.*3 second average: 280 watts.*Zone: Threshold.*Target: 275 watts/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label without target', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PowerDisplay
+        power={200}
+        power3sAvg={195}
+        powerZone="endurance"
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Power: 200 watts.*3 second average: 195 watts.*Zone: Endurance/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label when no metrics', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PowerDisplay
+        power={0}
+        power3sAvg={0}
+        powerZone="recovery"
+        showMetrics={false}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Power: no data/),
+    ).toBeTruthy();
   });
 });

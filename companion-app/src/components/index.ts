@@ -40,3 +40,7 @@ export type { QRScannerModalProps } from './QRScannerModal';
 // PinEntryModal - modal for PIN entry during authentication
 export { PinEntryModal } from './PinEntryModal';
 export type { PinEntryModalProps } from './PinEntryModal';
+
+// PowerDisplay - large power display with zone indicator for dashboard
+export { PowerDisplay } from './PowerDisplay';
+export type { PowerDisplayProps } from './PowerDisplay';

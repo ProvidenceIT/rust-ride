@@ -23,7 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { MetricCard, ConnectionStatus } from '@/components';
+import { MetricCard, ConnectionStatus, PowerDisplay } from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
   useMetricsStore,
@@ -38,7 +38,6 @@ import {
   selectTargetPower,
   selectTargetCadence,
   getPowerZone,
-  getPowerZoneColor,
   getHeartRateZone,
   getHeartRateZoneColor,
 } from '@/stores/metricsStore';
@@ -147,9 +146,8 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
   // Calculate grid configuration
   const gridConfig = useMemo(() => getGridConfig(width, height), [width, height]);
 
-  // Calculate power zone and color
+  // Calculate power zone
   const powerZone = useMemo(() => getPowerZone(power, DEFAULT_FTP), [power]);
-  const powerColor = useMemo(() => getPowerZoneColor(powerZone), [powerZone]);
 
   // Calculate HR zone and color
   const hrZone = useMemo(
@@ -223,19 +221,14 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
       >
         {/* Metrics Grid */}
         <View style={[styles.metricsGrid, { gap: gridConfig.gap }]}>
-          {/* Power Card - Primary metric */}
-          <MetricCard
-            value={showMetrics ? power : '--'}
-            unit="W"
-            label="Power"
-            size="large"
-            accentColor={showMetrics && power > 0 ? powerColor : undefined}
-            secondaryValue={showMetrics && power3sAvg > 0 ? power3sAvg : undefined}
-            secondaryLabel="3s avg"
-            targetValue={targetPower ?? undefined}
-            targetLabel="Target"
+          {/* Power Display - Primary metric with zone indicator */}
+          <PowerDisplay
+            power={power}
+            power3sAvg={power3sAvg}
+            powerZone={powerZone}
+            targetPower={targetPower}
+            showMetrics={showMetrics}
             style={{ width: powerCardWidth }}
-            accessibilityLabel={`Power: ${showMetrics ? power : 'no data'} watts`}
           />
 
           {/* Heart Rate */}
