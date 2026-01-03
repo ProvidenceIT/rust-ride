@@ -1,0 +1,25 @@
+{
+  "discovered_files": {
+    "src/hid/": {
+      "description": "HID module exists with stub implementations. mod.rs has config types, known devices list (Stream Deck variants). device.rs has HidDevice struct and HidDeviceManager trait with TODO comments for hidapi integration. mapping.rs has ButtonInputHandler with learning mode. actions.rs has comprehensive ButtonAction enum.",
+      "category": "architecture",
+      "discovered_at": "2026-01-03T05:34:05.685160+00:00"
+    },
+    "src/storage/hardware_store.rs": {
+      "description": "HardwareStore has complete CRUD methods for HID devices (save_hid_device, get_hid_devices, delete_hid_device) and button mappings (save_button_mapping, get_button_mappings, delete_button_mapping). Already integrated with database schema.",
+      "category": "database",
+      "discovered_at": "2026-01-03T05:34:05.772989+00:00"
+    },
+    "Cargo.toml": {
+      "description": "hidapi crate v2.4 is already added as dependency. No additional crate dependencies needed for HID support.",
+      "category": "dependencies",
+      "discovered_at": "2026-01-03T05:34:05.840276+00:00"
+    },
+    "src/hid/device.rs": {
+      "description": "start_monitoring() now spawns a background tokio task that polls for device changes every 2 seconds. Uses identity_key() method (VID:PID:Serial or path) for device tracking. Emits DeviceConnected/DeviceDisconnected events. Auto-closes handles on disconnect. stop_monitoring() signals task via is_monitoring flag.",
+      "category": "implementation",
+      "discovered_at": "2026-01-03T05:47:19.687289+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T05:47:19.687289+00:00"
+}

@@ -1,0 +1,118 @@
+# Complete HID Device Support - Build Progress
+
+## Status: Planning Complete
+Last Updated: 2026-01-03
+
+## Summary
+Implementation plan created with 5 phases and 20 subtasks to complete HID device
+support for Stream Deck and USB button controllers.
+
+## Existing Code Analysis
+
+### Already Implemented:
+- `src/hid/mod.rs` - Base module with config types, error types, known devices list
+- `src/hid/device.rs` - HidDevice struct, HidDeviceManager trait (stub implementation)
+- `src/hid/mapping.rs` - ButtonMapping, ButtonInputHandler with learning mode
+- `src/hid/actions.rs` - ButtonAction enum with 20+ action types
+- `src/storage/hardware_store.rs` - Database persistence for HID devices/mappings
+- `src/ui/screens/settings.rs` - HID settings UI with device list and mapping UI
+- `tests/integration/hid_test.rs` - Unit tests for existing types
+
+### Known Devices Already Defined:
+- Elgato Stream Deck (15 buttons) - VID: 0x0FD9, PID: 0x0060
+- Elgato Stream Deck Mini (6 buttons) - VID: 0x0FD9, PID: 0x006C
+- Elgato Stream Deck XL (32 buttons) - VID: 0x0FD9, PID: 0x006D
+- Elgato Stream Deck MK.2 (15 buttons) - VID: 0x0FD9, PID: 0x0080
+- Elgato Stream Deck Pedal (3 buttons) - VID: 0x0FD9, PID: 0x0086
+
+### Needs Implementation:
+- Actual device enumeration using hidapi
+- Device open/close with real HID handles
+- Hotplug monitoring (polling-based)
+- Auto-reconnect logic
+- HID input reading background task
+- Stream Deck protocol parsing
+- Generic USB button controller support
+- Action execution wiring to app systems
+- Config persistence to database
+- UI integration for scanning and learning mode
+
+## Implementation Phases
+
+### Phase 1: Device Enumeration & Connection (4 subtasks)
+- [ ] 1.1 Implement hidapi device enumeration
+- [ ] 1.2 Implement device open/close with hidapi handles
+- [ ] 1.3 Implement device monitoring with hotplug detection
+- [ ] 1.4 Add auto-reconnect logic for disconnected devices
+
+### Phase 2: Input Reading & Event Processing (4 subtasks)
+- [ ] 2.1 Implement HID input reading task
+- [ ] 2.2 Add Stream Deck protocol support
+- [ ] 2.3 Add generic USB button controller support
+- [ ] 2.4 Wire input events through ButtonInputHandler
+
+### Phase 3: Action Execution & Integration (4 subtasks)
+- [ ] 3.1 Implement DefaultActionExecutor
+- [ ] 3.2 Integrate with workout engine for ride/workout actions
+- [ ] 3.3 Integrate with audio and fan systems
+- [ ] 3.4 Integrate with UI navigation
+
+### Phase 4: Configuration Persistence & UI Integration (4 subtasks)
+- [ ] 4.1 Wire HID config persistence to database
+- [ ] 4.2 Complete settings screen device scanning
+- [ ] 4.3 Complete learning mode integration
+- [ ] 4.4 Add default mappings for known devices
+
+### Phase 5: Testing & Polish (4 subtasks)
+- [ ] 5.1 Add unit tests for HID input parsing
+- [ ] 5.2 Add integration tests for action execution
+- [ ] 5.3 Add reconnection stress tests
+- [ ] 5.4 Document HID setup and troubleshooting
+
+## Key Dependencies
+- hidapi crate (already in Cargo.toml v2.4)
+- tokio for async operations
+- crossbeam channels for event passing
+
+## Risks & Mitigations
+1. Platform permissions - Document setup requirements per OS
+2. Device protocol variations - Modular parser design
+3. Input latency - Dedicated high-priority input thread
+
+## Next Steps
+1. Start with Phase 1, subtask 1.1 - Implement hidapi device enumeration
+2. Complete enumeration before moving to device opening
+3. Test with real Stream Deck if available, or mock for CI
+
+---
+Progress updates will be logged below as implementation proceeds.
+
+## 2026-01-03 - Subtask 1.4 Complete: Auto-Reconnect Logic
+
+### Completed:
+- Added `auto_reconnect` and `reconnect_delay_ms` config options to `HidConfig`
+- Added `DeviceReconnected` event type for auto-reconnect notifications
+- Added `auto_reconnect_targets` HashMap to track devices that should be auto-reconnected
+- Implemented `track_for_reconnect()` and `untrack_for_reconnect()` methods
+- Modified `open_device()` to automatically track devices for reconnect
+- Modified `close_device()` to remove devices from reconnect tracking (user explicitly closed)
+- Updated monitoring loop to detect returning devices and auto-reconnect them
+- Added configurable delay before reconnect attempt (default 1 second)
+- Added unit tests for reconnect tracking and config
+
+### Auto-Reconnect Flow:
+1. When user opens a device via `open_device()`, it's tracked by identity key
+2. If device is unplugged, it remains tracked for reconnection
+3. When device is replugged and detected in monitoring loop:
+   - Check if it's in reconnect targets
+   - Wait for configured delay (default 1 second)
+   - Attempt to reopen the device
+   - Emit `DeviceReconnected` event on success
+4. If user explicitly calls `close_device()`, device is removed from tracking
+
+### Files Modified:
+- `src/hid/mod.rs` - Added config fields and DeviceReconnected event
+- `src/hid/device.rs` - Implemented auto-reconnect tracking and logic
+
+### Verification Required:
+Manual verification needed (cargo not available in sandbox)

@@ -47,6 +47,20 @@ pub struct HidConfig {
     pub enabled: bool,
     /// Device configurations
     pub devices: Vec<HidDeviceConfig>,
+    /// Delay in milliseconds before attempting to reconnect a device
+    #[serde(default = "default_reconnect_delay_ms")]
+    pub reconnect_delay_ms: u64,
+    /// Whether auto-reconnect is enabled
+    #[serde(default = "default_auto_reconnect")]
+    pub auto_reconnect: bool,
+}
+
+fn default_reconnect_delay_ms() -> u64 {
+    1000
+}
+
+fn default_auto_reconnect() -> bool {
+    true
 }
 
 impl Default for HidConfig {
@@ -54,6 +68,8 @@ impl Default for HidConfig {
         Self {
             enabled: true,
             devices: Vec::new(),
+            reconnect_delay_ms: default_reconnect_delay_ms(),
+            auto_reconnect: default_auto_reconnect(),
         }
     }
 }
@@ -97,6 +113,8 @@ pub enum HidDeviceEvent {
     DeviceOpened(Uuid),
     /// Device closed
     DeviceClosed(Uuid),
+    /// Device automatically reconnected and opened
+    DeviceReconnected(Uuid),
     /// Error occurred
     Error {
         device_id: Option<Uuid>,
@@ -174,6 +192,8 @@ mod tests {
         let config = HidConfig::default();
         assert!(config.enabled);
         assert!(config.devices.is_empty());
+        assert!(config.auto_reconnect);
+        assert_eq!(config.reconnect_delay_ms, 1000);
     }
 
     #[test]

@@ -1,0 +1,458 @@
+{
+  "feature": "Complete HID Device Support",
+  "description": "Finish HID device enumeration and control for Stream Deck and USB button controllers. Enable configurable button mappings for workout control without touching keyboard/mouse.",
+  "created_at": "2026-01-03T05:14:00.927Z",
+  "updated_at": "2026-01-03T06:00:00.000Z",
+  "status": "in_progress",
+  "planStatus": "approved",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Device Enumeration & Connection",
+      "description": "Implement actual HID device enumeration using hidapi library and device lifecycle management",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Implement hidapi device enumeration",
+          "description": "Complete the scan_devices() method in DefaultHidDeviceManager to use hidapi::HidApi for actual device enumeration. Filter for known devices and map them to HidDevice structs.",
+          "status": "completed",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/device.rs"
+          ],
+          "acceptance_criteria": [
+            "HidApi::new() is called to initialize the HID API",
+            "device_list() is used to enumerate all connected HID devices",
+            "Known devices are filtered by vendor_id and product_id",
+            "Serial numbers are captured when available",
+            "Returns populated Vec<HidDevice> with real device data"
+          ],
+          "notes": "Implemented scan_devices() using hidapi::HidApi for real device enumeration. Filters for known devices, captures serial numbers, handles duplicates, and updates internal device list.",
+          "updated_at": "2026-01-03T05:37:04.417873+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Implement device open/close with hidapi handles",
+          "description": "Complete open_device() and close_device() methods to actually open HID device handles using hidapi. Store device handles for later input reading.",
+          "status": "completed",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/device.rs"
+          ],
+          "acceptance_criteria": [
+            "Device is opened using HidApi::open(vendor_id, product_id)",
+            "Device handle is stored in a HashMap keyed by device UUID",
+            "close_device() properly closes the handle and removes from storage",
+            "Proper error handling for device not found, permission denied, etc."
+          ],
+          "notes": "Implemented open_device() and close_device() methods with actual hidapi integration. Added device_path field for path-based opening. Device handles stored in Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>>. Uses spawn_blocking for thread-safe hidapi operations. Path-first opening strategy with VID/PID fallback. Proper error handling for permissions and device access issues.",
+          "updated_at": "2026-01-03T05:43:44.135352+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Implement device monitoring with hotplug detection",
+          "description": "Complete start_monitoring() to spawn a background task that periodically scans for device changes (connect/disconnect) and emits appropriate events.",
+          "status": "completed",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/device.rs"
+          ],
+          "acceptance_criteria": [
+            "Background task polls for device changes every 2 seconds",
+            "DeviceConnected event emitted when new device detected",
+            "DeviceDisconnected event emitted when device removed",
+            "Monitoring can be stopped via stop_monitoring()",
+            "Thread-safe access to device state"
+          ],
+          "notes": "Implemented start_monitoring() with background polling task that scans for HID device changes every 2 seconds. Uses identity_key() (VID:PID:Serial or VID:PID:Path) for device tracking across scans. Emits DeviceConnected and DeviceDisconnected events via broadcast channel. Auto-closes device handles on disconnect. Thread-safe with Arc<RwLock> and Arc<Mutex>. Added unit tests for identity_key() method.",
+          "updated_at": "2026-01-03T05:47:19.611307+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Add auto-reconnect logic for disconnected devices",
+          "description": "Implement automatic reconnection when a previously connected device is unplugged and replugged. Track devices by serial number or VID:PID for identification.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/device.rs",
+            "src/hid/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "Previously opened devices are tracked by serial number or VID:PID",
+            "When device reconnects, it is automatically re-opened",
+            "Button mappings are restored on reconnect",
+            "DeviceOpened event emitted on successful reconnect",
+            "Configurable reconnect delay (default 1 second)"
+          ],
+          "notes": "Essential for user experience during workouts when cables may get jostled."
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Input Reading & Event Processing",
+      "description": "Implement reading button presses from HID devices and processing them through the mapping system",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Implement HID input reading task",
+          "description": "Create a background task that reads input reports from open HID devices and translates them to RawButtonEvent structs.",
+          "status": "pending",
+          "estimated_effort": "high",
+          "files": [
+            "src/hid/device.rs",
+            "src/hid/input.rs"
+          ],
+          "acceptance_criteria": [
+            "New input.rs module with HidInputReader struct",
+            "Non-blocking read loop using device.read_timeout()",
+            "Raw HID reports parsed to identify button presses",
+            "RawButtonEvent emitted for each button press/release",
+            "Handles multiple devices concurrently"
+          ],
+          "notes": "Stream Deck uses a specific report format - need to handle different device types."
+        },
+        {
+          "id": "2.2",
+          "title": "Add Stream Deck protocol support",
+          "description": "Implement Stream Deck-specific input report parsing. Stream Deck devices use a custom protocol for button state reporting.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/streamdeck.rs",
+            "src/hid/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "New streamdeck.rs module for Stream Deck protocol",
+            "Parse button state report (which button pressed)",
+            "Handle button release detection",
+            "Support all Stream Deck variants (6, 15, 32 buttons)",
+            "Proper button index mapping for each model"
+          ],
+          "notes": "Stream Deck report format: [0x01, button_states...] where each bit represents a button."
+        },
+        {
+          "id": "2.3",
+          "title": "Add generic USB button controller support",
+          "description": "Implement support for generic USB button controllers that send standard HID gamepad/keyboard reports.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/generic.rs",
+            "src/hid/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "New generic.rs module for standard HID button devices",
+            "Parse gamepad-style button reports",
+            "Support keyboard-style button devices",
+            "Auto-detect report format based on usage page",
+            "Map generic button indices to internal codes"
+          ],
+          "notes": "Many USB foot pedals and button boxes use standard HID gamepad or keyboard protocols."
+        },
+        {
+          "id": "2.4",
+          "title": "Wire input events through ButtonInputHandler",
+          "description": "Connect the HID input reading to the existing ButtonInputHandler to process raw events and emit mapped actions.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "src/hid/device.rs",
+            "src/hid/mapping.rs"
+          ],
+          "acceptance_criteria": [
+            "HidInputReader sends RawButtonEvent to ButtonInputHandler",
+            "ButtonInputHandler.process_event() is called for each event",
+            "ButtonActionEvent emitted when mapping exists",
+            "Learning mode captures button codes correctly"
+          ],
+          "notes": "The mapping infrastructure already exists, just needs to be wired up."
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Action Execution & Integration",
+      "description": "Implement the action executor and integrate with app systems (workout, audio, fan, etc.)",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Implement DefaultActionExecutor",
+          "description": "Create a concrete implementation of the ActionExecutor trait that handles all ButtonAction types by calling appropriate app subsystems.",
+          "status": "pending",
+          "estimated_effort": "high",
+          "files": [
+            "src/hid/actions.rs",
+            "src/hid/executor.rs"
+          ],
+          "acceptance_criteria": [
+            "New executor.rs module with DefaultActionExecutor",
+            "Implements execute() for all ButtonAction variants",
+            "Injects dependencies for workout engine, audio, fan controller",
+            "Emits ActionResult events via broadcast channel",
+            "Handles context checking (ride active, workout active, etc.)"
+          ],
+          "notes": "Needs access to multiple app subsystems - use dependency injection."
+        },
+        {
+          "id": "3.2",
+          "title": "Integrate with workout engine for ride/workout actions",
+          "description": "Wire up ride control actions (pause, lap, end) and workout actions (skip interval, extend, restart) to the workout engine.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/executor.rs",
+            "src/workouts/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "AddLapMarker triggers ride_recorder.add_lap()",
+            "PauseResume toggles ride state",
+            "EndRide triggers ride completion flow",
+            "SkipInterval calls workout_engine.skip_interval()",
+            "ExtendInterval calls workout_engine.extend_interval()",
+            "RestartInterval calls workout_engine.restart_interval()"
+          ],
+          "notes": "Need to expose these methods from workout engine if not already available."
+        },
+        {
+          "id": "3.3",
+          "title": "Integrate with audio and fan systems",
+          "description": "Wire up audio control actions (volume, mute) and fan control actions (speed, toggle) to their respective subsystems.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "src/hid/executor.rs"
+          ],
+          "acceptance_criteria": [
+            "VolumeUp/Down adjusts audio engine master volume",
+            "MuteToggle toggles audio mute state",
+            "FanSpeedUp/Down adjusts fan controller speed",
+            "FanToggle toggles fan on/off",
+            "Graceful handling when MQTT not connected"
+          ],
+          "notes": "Audio and fan controller already have these methods exposed."
+        },
+        {
+          "id": "3.4",
+          "title": "Integrate with UI navigation",
+          "description": "Wire up UI navigation actions (show metrics, map, workout view, fullscreen toggle) to the app's screen management.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "src/hid/executor.rs",
+            "src/app.rs"
+          ],
+          "acceptance_criteria": [
+            "ShowMetrics switches ride screen to metrics view",
+            "ShowMap switches ride screen to map view",
+            "ShowWorkout switches ride screen to workout view",
+            "ToggleFullscreen toggles full-screen mode",
+            "View changes are reflected immediately in UI"
+          ],
+          "notes": "May need to add event channel for UI state changes."
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Configuration Persistence & UI Integration",
+      "description": "Persist button mappings to database and complete UI integration",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Wire HID config persistence to database",
+          "description": "Connect the existing HardwareStore HID methods to the app config loading/saving flow. Load mappings on startup and save on changes.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/app.rs",
+            "src/storage/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "HID devices loaded from database on app startup",
+            "Button mappings loaded for each enabled device",
+            "Changes from settings screen saved to database",
+            "Config survives app restart"
+          ],
+          "notes": "HardwareStore already has save/load methods - need to wire them up."
+        },
+        {
+          "id": "4.2",
+          "title": "Complete settings screen device scanning",
+          "description": "Wire the 'Scan for Devices' button in settings to trigger actual HID device scanning and update the device list.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "src/ui/screens/settings.rs",
+            "src/app.rs"
+          ],
+          "acceptance_criteria": [
+            "Scan button triggers HidDeviceManager.scan_devices()",
+            "Device list UI updates with detected devices",
+            "Status indicators reflect actual device state",
+            "Newly detected devices can be enabled/disabled"
+          ],
+          "notes": "UI code exists, needs to be connected to device manager."
+        },
+        {
+          "id": "4.3",
+          "title": "Complete learning mode integration",
+          "description": "Wire the learning mode UI to the ButtonInputHandler to capture actual button presses from devices.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/ui/screens/settings.rs",
+            "src/app.rs"
+          ],
+          "acceptance_criteria": [
+            "Start Learning Mode calls ButtonInputHandler.start_learning_mode()",
+            "Button press on device is captured and shown in UI",
+            "Learned button code can be assigned to action",
+            "Cancel learning mode stops capture",
+            "Multiple devices can be in learning mode sequentially"
+          ],
+          "notes": "Learning mode logic exists in ButtonInputHandler, needs UI connection."
+        },
+        {
+          "id": "4.4",
+          "title": "Add default mappings for known devices",
+          "description": "Populate default button mappings for known devices like Stream Deck when first connected, so users have useful defaults out of the box.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "src/hid/mod.rs",
+            "src/hid/device.rs"
+          ],
+          "acceptance_criteria": [
+            "Stream Deck gets sensible defaults (Pause, Lap, Skip, etc.)",
+            "Stream Deck Pedal gets 3-button defaults",
+            "Defaults only applied if no existing config for device",
+            "User can override or clear defaults"
+          ],
+          "notes": "Populate the default_mappings field in KNOWN_DEVICES."
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Testing & Polish",
+      "description": "Add comprehensive tests and polish the implementation",
+      "status": "pending",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Add unit tests for HID input parsing",
+          "description": "Write unit tests for Stream Deck and generic input report parsing to ensure correct button detection.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "src/hid/streamdeck.rs",
+            "src/hid/generic.rs"
+          ],
+          "acceptance_criteria": [
+            "Test Stream Deck button press detection",
+            "Test Stream Deck button release detection",
+            "Test generic gamepad button parsing",
+            "Test edge cases (multiple buttons, all buttons, no buttons)"
+          ],
+          "notes": "Use mock input reports based on real device captures."
+        },
+        {
+          "id": "5.2",
+          "title": "Add integration tests for action execution",
+          "description": "Write integration tests that verify button actions properly trigger their target subsystems.",
+          "status": "pending",
+          "estimated_effort": "medium",
+          "files": [
+            "tests/integration/hid_test.rs"
+          ],
+          "acceptance_criteria": [
+            "Test lap marker action adds lap to recorder",
+            "Test pause/resume toggles ride state",
+            "Test skip interval advances workout",
+            "Test volume actions change audio level",
+            "Test mock device manager for CI environments"
+          ],
+          "notes": "Need mock implementations for testing without real hardware."
+        },
+        {
+          "id": "5.3",
+          "title": "Add reconnection stress tests",
+          "description": "Write tests that simulate device disconnect/reconnect scenarios to verify reliability.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "tests/integration/hid_test.rs"
+          ],
+          "acceptance_criteria": [
+            "Test device disconnect emits correct events",
+            "Test device reconnect restores mappings",
+            "Test rapid disconnect/reconnect cycles",
+            "Test multiple device disconnect scenarios"
+          ],
+          "notes": "Important for workout reliability."
+        },
+        {
+          "id": "5.4",
+          "title": "Document HID setup and troubleshooting",
+          "description": "Add user-facing documentation for setting up HID devices, including udev rules for Linux.",
+          "status": "pending",
+          "estimated_effort": "small",
+          "files": [
+            "docs/hid-setup.md"
+          ],
+          "acceptance_criteria": [
+            "Document supported devices",
+            "Document Linux udev rules setup",
+            "Document Windows driver requirements",
+            "Document macOS permissions",
+            "Troubleshooting guide for common issues"
+          ],
+          "notes": "Essential for users to actually use this feature."
+        }
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    "Stream Deck devices are detected and connected",
+    "Button presses trigger configured actions (pause, lap, skip interval)",
+    "Button mappings are user-configurable",
+    "Works with common USB button controllers",
+    "Device reconnects automatically if unplugged/replugged"
+  ],
+  "dependencies": {
+    "external": [
+      "hidapi crate (already in Cargo.toml)"
+    ],
+    "internal": [
+      "src/workouts - workout engine for ride/workout actions",
+      "src/audio - audio engine for volume actions",
+      "src/integrations/mqtt - fan controller for fan actions",
+      "src/storage/hardware_store - database persistence"
+    ]
+  },
+  "risks": [
+    {
+      "risk": "Platform-specific HID access issues (permissions, drivers)",
+      "mitigation": "Comprehensive documentation and graceful error handling"
+    },
+    {
+      "risk": "Stream Deck protocol changes in new models",
+      "mitigation": "Modular protocol handling, easy to add new device support"
+    },
+    {
+      "risk": "Latency in button response during intensive workouts",
+      "mitigation": "Dedicated input reading thread with high priority"
+    }
+  ],
+  "qa_status": {
+    "status": "not_started",
+    "issues": "",
+    "tests_passed": ""
+  },
+  "last_updated": "2026-01-03T05:47:19.611307+00:00"
+}
