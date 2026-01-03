@@ -726,6 +726,8 @@ pub enum MetricType {
     PowerZone,
     /// Current HR zone
     HrZone,
+    /// Current cadence zone
+    CadenceZone,
 }
 
 impl std::fmt::Display for MetricType {
@@ -744,6 +746,7 @@ impl std::fmt::Display for MetricType {
             MetricType::IntensityFactor => write!(f, "IF"),
             MetricType::PowerZone => write!(f, "Power Zone"),
             MetricType::HrZone => write!(f, "HR Zone"),
+            MetricType::CadenceZone => write!(f, "Cadence Zone"),
         }
     }
 }
