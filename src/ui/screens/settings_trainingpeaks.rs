@@ -15,6 +15,12 @@ use super::Screen;
 /// TrainingPeaks brand color (teal)
 const TRAININGPEAKS_TEAL: Color32 = Color32::from_rgb(0, 128, 128);
 
+/// Options for how many days to look ahead for scheduled workouts.
+const LOOKAHEAD_OPTIONS: &[i32] = &[7, 14, 21, 28, 30];
+
+/// Options for how many days to look back for past workouts.
+const LOOKBACK_OPTIONS: &[i32] = &[0, 3, 7, 14, 30];
+
 /// Connection state for TrainingPeaks
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrainingPeaksConnectionState {
@@ -36,6 +42,25 @@ impl Default for TrainingPeaksConnectionState {
     }
 }
 
+/// Workout sync status for UI display.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum WorkoutSyncStatus {
+    /// No sync in progress, waiting for next scheduled sync
+    #[default]
+    Idle,
+    /// Sync is in progress
+    Syncing,
+    /// Last sync completed successfully
+    Success {
+        /// Number of new workouts synced
+        new_workouts: usize,
+        /// Timestamp of successful sync
+        timestamp: String,
+    },
+    /// Last sync failed
+    Error(String),
+}
+
 /// Actions that can result from the TrainingPeaks settings screen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrainingPeaksSettingsAction {
@@ -55,6 +80,12 @@ pub enum TrainingPeaksSettingsAction {
     SetSyncFrequency(u32),
     /// Update the full TrainingPeaks config
     UpdateConfig(TrainingPeaksPlatformConfig),
+    /// Trigger manual workout plan sync now
+    SyncWorkoutsNow,
+    /// Set the number of days to look ahead for scheduled workouts
+    SetLookaheadDays(i32),
+    /// Set the number of days to look back for past workouts
+    SetLookbackDays(i32),
 }
 
 /// TrainingPeaks settings screen state.
@@ -76,6 +107,8 @@ pub struct TrainingPeaksSettingsScreen {
     pub last_workout_sync: Option<String>,
     /// Number of synced workouts
     pub synced_workouts_count: usize,
+    /// Current workout sync status
+    pub workout_sync_status: WorkoutSyncStatus,
 }
 
 impl TrainingPeaksSettingsScreen {
@@ -122,6 +155,16 @@ impl TrainingPeaksSettingsScreen {
     /// Set the number of synced workouts.
     pub fn set_synced_workouts_count(&mut self, count: usize) {
         self.synced_workouts_count = count;
+    }
+
+    /// Set the workout sync status.
+    pub fn set_workout_sync_status(&mut self, status: WorkoutSyncStatus) {
+        self.workout_sync_status = status;
+    }
+
+    /// Check if a workout sync is in progress.
+    pub fn is_syncing_workouts(&self) -> bool {
+        matches!(self.workout_sync_status, WorkoutSyncStatus::Syncing)
     }
 
     /// Check if currently connected.
@@ -452,13 +495,13 @@ impl TrainingPeaksSettingsScreen {
                     }
                 });
 
-                // Only show frequency options if workout sync is enabled
+                // Only show detailed options if workout sync is enabled
                 if self.tp_config.sync_workout_plans {
                     ui.add_space(8.0);
 
                     // Sync frequency dropdown
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Sync frequency:").weak());
+                        ui.label(RichText::new("Auto-sync frequency:").weak());
 
                         let current_freq = self.tp_config.sync_frequency_hours;
                         let display = self.tp_config.sync_frequency_display();
@@ -479,9 +522,72 @@ impl TrainingPeaksSettingsScreen {
                             });
                     });
 
+                    ui.add_space(12.0);
+
+                    // Date range selection section
+                    ui.label(RichText::new("Date Range").size(12.0).weak());
+                    ui.add_space(4.0);
+
+                    // Lookahead days selection
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Look ahead:").weak());
+
+                        let current_lookahead = self.tp_config.lookahead_days;
+
+                        egui::ComboBox::from_id_salt("lookahead_days")
+                            .selected_text(format!("{} days", self.tp_config.lookahead_days))
+                            .width(100.0)
+                            .show_ui(ui, |ui| {
+                                for days in LOOKAHEAD_OPTIONS {
+                                    if ui
+                                        .selectable_value(&mut self.tp_config.lookahead_days, *days, format!("{} days", days))
+                                        .clicked()
+                                    {
+                                        if self.tp_config.lookahead_days != current_lookahead {
+                                            action = Some(TrainingPeaksSettingsAction::SetLookaheadDays(*days));
+                                        }
+                                    }
+                                }
+                            });
+
+                        ui.label(RichText::new("(future workouts)").weak().small());
+                    });
+
+                    ui.add_space(4.0);
+
+                    // Lookback days selection
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Look back:").weak());
+
+                        let current_lookback = self.tp_config.lookback_days;
+
+                        egui::ComboBox::from_id_salt("lookback_days")
+                            .selected_text(format!("{} days", self.tp_config.lookback_days))
+                            .width(100.0)
+                            .show_ui(ui, |ui| {
+                                for days in LOOKBACK_OPTIONS {
+                                    if ui
+                                        .selectable_value(&mut self.tp_config.lookback_days, *days, format!("{} days", days))
+                                        .clicked()
+                                    {
+                                        if self.tp_config.lookback_days != current_lookback {
+                                            action = Some(TrainingPeaksSettingsAction::SetLookbackDays(*days));
+                                        }
+                                    }
+                                }
+                            });
+
+                        ui.label(RichText::new("(past workouts)").weak().small());
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Sync status display
+                    self.render_workout_sync_status(ui);
+
                     ui.add_space(8.0);
 
-                    // Workout sync status
+                    // Workout sync statistics
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Synced workouts:").weak());
                         ui.label(RichText::new(format!("{}", self.synced_workouts_count)).weak());
@@ -489,10 +595,35 @@ impl TrainingPeaksSettingsScreen {
 
                     if let Some(ref last_workout_sync) = self.last_workout_sync {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("Last workout sync:").weak());
+                            ui.label(RichText::new("Last sync:").weak());
                             ui.label(RichText::new(last_workout_sync).weak());
                         });
                     }
+
+                    ui.add_space(8.0);
+
+                    // Manual sync button
+                    ui.horizontal(|ui| {
+                        let is_syncing = self.is_syncing_workouts();
+
+                        let sync_button = egui::Button::new(
+                            if is_syncing {
+                                RichText::new("Syncing...").size(13.0)
+                            } else {
+                                RichText::new("Sync Now").size(13.0).color(Color32::WHITE)
+                            }
+                        )
+                        .fill(if is_syncing { Color32::GRAY } else { TRAININGPEAKS_TEAL })
+                        .min_size(Vec2::new(100.0, 32.0));
+
+                        if ui.add_enabled(!is_syncing, sync_button).clicked() {
+                            action = Some(TrainingPeaksSettingsAction::SyncWorkoutsNow);
+                        }
+
+                        if is_syncing {
+                            ui.spinner();
+                        }
+                    });
 
                     ui.add_space(4.0);
 
@@ -603,6 +734,59 @@ impl TrainingPeaksSettingsScreen {
             });
 
         action
+    }
+
+    /// Render the workout sync status indicator.
+    fn render_workout_sync_status(&self, ui: &mut Ui) {
+        match &self.workout_sync_status {
+            WorkoutSyncStatus::Idle => {
+                // No special display for idle state
+            }
+            WorkoutSyncStatus::Syncing => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Syncing workouts...").color(TRAININGPEAKS_TEAL));
+                });
+            }
+            WorkoutSyncStatus::Success { new_workouts, timestamp } => {
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(30, 50, 30))
+                    .inner_margin(8.0)
+                    .corner_radius(4.0)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("✓").color(Color32::from_rgb(52, 168, 83)));
+                            if *new_workouts > 0 {
+                                ui.label(
+                                    RichText::new(format!("Synced {} new workout{}", new_workouts, if *new_workouts == 1 { "" } else { "s" }))
+                                        .color(Color32::from_rgb(52, 168, 83)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new("Sync complete - no new workouts")
+                                        .color(Color32::from_rgb(52, 168, 83)),
+                                );
+                            }
+                            ui.label(RichText::new(format!("at {}", timestamp)).weak().small());
+                        });
+                    });
+            }
+            WorkoutSyncStatus::Error(error) => {
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(50, 30, 30))
+                    .inner_margin(8.0)
+                    .corner_radius(4.0)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("✗").color(Color32::from_rgb(234, 67, 53)));
+                            ui.label(
+                                RichText::new(format!("Sync failed: {}", error))
+                                    .color(Color32::from_rgb(234, 67, 53)),
+                            );
+                        });
+                    });
+            }
+        }
     }
 }
 
@@ -835,5 +1019,166 @@ mod tests {
         } else {
             panic!("Expected UpdateConfig action");
         }
+    }
+
+    #[test]
+    fn test_workout_sync_status_default() {
+        let status = WorkoutSyncStatus::default();
+        assert_eq!(status, WorkoutSyncStatus::Idle);
+    }
+
+    #[test]
+    fn test_workout_sync_status_syncing() {
+        let status = WorkoutSyncStatus::Syncing;
+        assert_eq!(status, WorkoutSyncStatus::Syncing);
+    }
+
+    #[test]
+    fn test_workout_sync_status_success() {
+        let status = WorkoutSyncStatus::Success {
+            new_workouts: 5,
+            timestamp: "10:30 AM".to_string(),
+        };
+
+        if let WorkoutSyncStatus::Success { new_workouts, timestamp } = status {
+            assert_eq!(new_workouts, 5);
+            assert_eq!(timestamp, "10:30 AM");
+        } else {
+            panic!("Expected Success status");
+        }
+    }
+
+    #[test]
+    fn test_workout_sync_status_error() {
+        let error_msg = "Network timeout".to_string();
+        let status = WorkoutSyncStatus::Error(error_msg.clone());
+
+        if let WorkoutSyncStatus::Error(err) = status {
+            assert_eq!(err, error_msg);
+        } else {
+            panic!("Expected Error status");
+        }
+    }
+
+    #[test]
+    fn test_set_workout_sync_status() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Default is Idle
+        assert_eq!(screen.workout_sync_status, WorkoutSyncStatus::Idle);
+
+        // Set to Syncing
+        screen.set_workout_sync_status(WorkoutSyncStatus::Syncing);
+        assert_eq!(screen.workout_sync_status, WorkoutSyncStatus::Syncing);
+
+        // Set to Success
+        screen.set_workout_sync_status(WorkoutSyncStatus::Success {
+            new_workouts: 3,
+            timestamp: "11:00 AM".to_string(),
+        });
+        if let WorkoutSyncStatus::Success { new_workouts, .. } = &screen.workout_sync_status {
+            assert_eq!(*new_workouts, 3);
+        } else {
+            panic!("Expected Success status");
+        }
+
+        // Set to Error
+        screen.set_workout_sync_status(WorkoutSyncStatus::Error("API error".to_string()));
+        if let WorkoutSyncStatus::Error(err) = &screen.workout_sync_status {
+            assert_eq!(err, "API error");
+        } else {
+            panic!("Expected Error status");
+        }
+    }
+
+    #[test]
+    fn test_is_syncing_workouts() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Not syncing by default
+        assert!(!screen.is_syncing_workouts());
+
+        // Set to syncing
+        screen.set_workout_sync_status(WorkoutSyncStatus::Syncing);
+        assert!(screen.is_syncing_workouts());
+
+        // Set to success - not syncing
+        screen.set_workout_sync_status(WorkoutSyncStatus::Success {
+            new_workouts: 0,
+            timestamp: "12:00 PM".to_string(),
+        });
+        assert!(!screen.is_syncing_workouts());
+
+        // Set to error - not syncing
+        screen.set_workout_sync_status(WorkoutSyncStatus::Error("Test".to_string()));
+        assert!(!screen.is_syncing_workouts());
+    }
+
+    #[test]
+    fn test_sync_workouts_now_action() {
+        assert_eq!(
+            TrainingPeaksSettingsAction::SyncWorkoutsNow,
+            TrainingPeaksSettingsAction::SyncWorkoutsNow
+        );
+    }
+
+    #[test]
+    fn test_set_lookahead_days_action() {
+        assert_eq!(
+            TrainingPeaksSettingsAction::SetLookaheadDays(14),
+            TrainingPeaksSettingsAction::SetLookaheadDays(14)
+        );
+        assert_ne!(
+            TrainingPeaksSettingsAction::SetLookaheadDays(7),
+            TrainingPeaksSettingsAction::SetLookaheadDays(14)
+        );
+    }
+
+    #[test]
+    fn test_set_lookback_days_action() {
+        assert_eq!(
+            TrainingPeaksSettingsAction::SetLookbackDays(7),
+            TrainingPeaksSettingsAction::SetLookbackDays(7)
+        );
+        assert_ne!(
+            TrainingPeaksSettingsAction::SetLookbackDays(3),
+            TrainingPeaksSettingsAction::SetLookbackDays(7)
+        );
+    }
+
+    #[test]
+    fn test_lookahead_options() {
+        // Verify lookahead options are reasonable values
+        assert!(LOOKAHEAD_OPTIONS.contains(&7));
+        assert!(LOOKAHEAD_OPTIONS.contains(&14));
+        assert!(LOOKAHEAD_OPTIONS.contains(&28));
+        assert!(!LOOKAHEAD_OPTIONS.is_empty());
+    }
+
+    #[test]
+    fn test_lookback_options() {
+        // Verify lookback options include 0 (no lookback) and reasonable values
+        assert!(LOOKBACK_OPTIONS.contains(&0));
+        assert!(LOOKBACK_OPTIONS.contains(&7));
+        assert!(LOOKBACK_OPTIONS.contains(&14));
+        assert!(!LOOKBACK_OPTIONS.is_empty());
+    }
+
+    #[test]
+    fn test_date_range_config() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Check default lookahead/lookback values
+        assert_eq!(screen.tp_config.lookahead_days, 14);
+        assert_eq!(screen.tp_config.lookback_days, 7);
+
+        // Update config with new date range
+        let mut config = TrainingPeaksPlatformConfig::default();
+        config.lookahead_days = 28;
+        config.lookback_days = 3;
+        screen.set_tp_config(config);
+
+        assert_eq!(screen.tp_config.lookahead_days, 28);
+        assert_eq!(screen.tp_config.lookback_days, 3);
     }
 }

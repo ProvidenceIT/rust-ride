@@ -61,6 +61,7 @@ pub use settings_strava::{
 };
 pub use settings_trainingpeaks::{
     TrainingPeaksConnectionState, TrainingPeaksSettingsAction, TrainingPeaksSettingsScreen,
+    WorkoutSyncStatus,
 };
 pub use streaming::{StreamingAction, StreamingScreen};
 pub use training_plans::{PlanSortOrder, TrainingPlansAction, TrainingPlansScreen};
