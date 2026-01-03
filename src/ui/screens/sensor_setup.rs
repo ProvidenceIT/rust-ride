@@ -4,6 +4,7 @@
 //! T046: Implement sensor pairing confirmation dialog
 //! T009-3.4: Add connection quality indicators to sensor setup screen
 //! T009-4.4: Add sensor conflict resolution dialog
+//! T009-5.4: Add power meter calibration dialog
 //! T009-6.4: Add in-app troubleshooting tips
 
 use std::collections::HashMap;
@@ -11,6 +12,9 @@ use std::collections::HashMap;
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::sensors::ant::dongle::{AntDongle, DongleStatus};
+use crate::sensors::calibration::{
+    CalibrationRequest, CalibrationType, is_calibratable_sensor,
+};
 use crate::sensors::conflict::{DataType, SensorConflict};
 use crate::sensors::health::HealthStatus;
 use crate::sensors::quality::{QualityLevel, QualityStats};
@@ -19,6 +23,9 @@ use crate::sensors::troubleshooting::{
     get_ant_plus_tips, IssueDetector, TroubleshootingTip, TipPriority,
 };
 use crate::sensors::types::{ConnectionState, DiscoveredSensor, Protocol, SensorState, SensorType};
+use crate::ui::dialogs::calibration::{
+    CalibrationDialog, CalibrationDialogAction, CalibrationDialogState,
+};
 use crate::ui::dialogs::sensor_conflict::{
     ConflictNotificationBanner, ConflictResolutionAction, SensorConflictDialog,
     SensorConflictDialogState,
@@ -62,6 +69,12 @@ pub struct SensorSetupScreen {
     pub show_troubleshooting_panel: bool,
     /// Dismissed tip titles (to avoid showing same tip repeatedly)
     dismissed_tips: std::collections::HashSet<String>,
+    /// State for the calibration dialog
+    pub calibration_dialog_state: CalibrationDialogState,
+    /// Last calibration action (for external handling)
+    pub last_calibration_action: Option<CalibrationDialogAction>,
+    /// Pending calibration requests
+    pub pending_calibration_requests: Vec<CalibrationRequest>,
 }
 
 impl Default for SensorSetupScreen {
@@ -83,6 +96,9 @@ impl Default for SensorSetupScreen {
             issue_detector: IssueDetector::new(),
             show_troubleshooting_panel: false,
             dismissed_tips: std::collections::HashSet::new(),
+            calibration_dialog_state: CalibrationDialogState::new(),
+            last_calibration_action: None,
+            pending_calibration_requests: Vec::new(),
         }
     }
 }
@@ -324,6 +340,102 @@ impl SensorSetupScreen {
         self.show_troubleshooting_panel = !self.show_troubleshooting_panel;
     }
 
+    // =========================================================================
+    // Calibration Management
+    // =========================================================================
+
+    /// Open the calibration dialog for a sensor.
+    pub fn open_calibration_dialog(&mut self, sensor: &SensorState) {
+        self.calibration_dialog_state.open(
+            sensor.device_id.clone(),
+            sensor.name.clone(),
+            sensor.protocol,
+        );
+    }
+
+    /// Open the calibration dialog with calibration type selection.
+    pub fn open_calibration_dialog_with_selection(&mut self, sensor: &SensorState) {
+        self.calibration_dialog_state.open_with_selection(
+            sensor.device_id.clone(),
+            sensor.name.clone(),
+            sensor.protocol,
+        );
+    }
+
+    /// Open the calibration dialog for a specific calibration type.
+    pub fn open_calibration_dialog_with_type(
+        &mut self,
+        sensor: &SensorState,
+        calibration_type: CalibrationType,
+    ) {
+        self.calibration_dialog_state.open_with_type(
+            sensor.device_id.clone(),
+            sensor.name.clone(),
+            sensor.protocol,
+            calibration_type,
+        );
+    }
+
+    /// Close the calibration dialog.
+    pub fn close_calibration_dialog(&mut self) {
+        self.calibration_dialog_state.close();
+    }
+
+    /// Check if the calibration dialog is visible.
+    pub fn is_calibration_dialog_visible(&self) -> bool {
+        self.calibration_dialog_state.visible
+    }
+
+    /// Check if a calibration is in progress.
+    pub fn is_calibrating(&self) -> bool {
+        self.calibration_dialog_state.is_calibrating()
+    }
+
+    /// Update the calibration with a successful result.
+    pub fn complete_calibration(&mut self, offset_value: Option<i32>) {
+        self.calibration_dialog_state.complete(offset_value);
+    }
+
+    /// Update the calibration with a failure.
+    pub fn fail_calibration(&mut self, error_message: String) {
+        self.calibration_dialog_state.fail(error_message);
+    }
+
+    /// Advance the calibration to the next step.
+    pub fn advance_calibration_step(&mut self) {
+        self.calibration_dialog_state.advance_step();
+    }
+
+    /// Take the last calibration action (consumes it).
+    pub fn take_calibration_action(&mut self) -> Option<CalibrationDialogAction> {
+        self.last_calibration_action.take()
+    }
+
+    /// Take the next pending calibration request (consumes it).
+    pub fn take_pending_calibration_request(&mut self) -> Option<CalibrationRequest> {
+        if !self.pending_calibration_requests.is_empty() {
+            Some(self.pending_calibration_requests.remove(0))
+        } else {
+            None
+        }
+    }
+
+    /// Check if there are pending calibration requests.
+    pub fn has_pending_calibration_requests(&self) -> bool {
+        !self.pending_calibration_requests.is_empty()
+    }
+
+    /// Get connected sensors that can be calibrated.
+    pub fn get_calibratable_sensors(&self) -> Vec<&SensorState> {
+        self.connected_sensors
+            .iter()
+            .filter(|s| {
+                s.connection_state == ConnectionState::Connected
+                    && is_calibratable_sensor(s.sensor_type)
+            })
+            .collect()
+    }
+
     /// Check if a sensor with the same name exists with a different protocol.
     /// Returns Some((device_id, ble_sensor, ant_sensor)) if dual-protocol detected.
     pub fn find_dual_protocol_sensor(
@@ -507,7 +619,9 @@ impl SensorSetupScreen {
                             ui.add_space(8.0);
                         }
 
-                        for sensor in &self.connected_sensors {
+                        // Clone sensors to avoid borrow conflict with mutable self
+                        let connected: Vec<_> = self.connected_sensors.clone();
+                        for sensor in &connected {
                             self.render_connected_sensor(ui, sensor);
                         }
                     }
@@ -549,6 +663,63 @@ impl SensorSetupScreen {
                     // Dialog was cancelled, no action needed
                 }
                 ConflictResolutionAction::None => {
+                    // Dialog still open
+                }
+            }
+        }
+
+        // Power meter calibration dialog
+        if self.calibration_dialog_state.visible {
+            let response = CalibrationDialog::new(&mut self.calibration_dialog_state).show(ui);
+            match response.action {
+                CalibrationDialogAction::StartCalibration { device_id, calibration_type } => {
+                    // Store the action for external handling
+                    self.last_calibration_action = Some(CalibrationDialogAction::StartCalibration {
+                        device_id: device_id.clone(),
+                        calibration_type,
+                    });
+
+                    // Create a calibration request for the sensor manager
+                    if let Some(process) = self.calibration_dialog_state.current_process() {
+                        let request = CalibrationRequest::new(
+                            device_id,
+                            process.device_name.clone(),
+                            process.protocol,
+                            calibration_type,
+                        );
+                        self.pending_calibration_requests.push(request);
+                    }
+                }
+                CalibrationDialogAction::Retry { device_id, calibration_type } => {
+                    // Handle retry - similar to start but restarts the process
+                    self.last_calibration_action = Some(CalibrationDialogAction::Retry {
+                        device_id: device_id.clone(),
+                        calibration_type,
+                    });
+
+                    // Create a new calibration request for retry
+                    if let Some(process) = self.calibration_dialog_state.current_process() {
+                        let request = CalibrationRequest::new(
+                            device_id,
+                            process.device_name.clone(),
+                            process.protocol,
+                            calibration_type,
+                        );
+                        self.pending_calibration_requests.push(request);
+                    }
+                }
+                CalibrationDialogAction::Close { record_calibration, notes: _ } => {
+                    // Store the action for external handling (to record in CalibrationManager)
+                    self.last_calibration_action = Some(CalibrationDialogAction::Close {
+                        record_calibration,
+                        notes: self.calibration_dialog_state.get_notes(),
+                    });
+                }
+                CalibrationDialogAction::Cancel => {
+                    // Dialog was cancelled
+                    self.last_calibration_action = Some(CalibrationDialogAction::Cancel);
+                }
+                CalibrationDialogAction::None => {
                     // Dialog still open
                 }
             }
@@ -599,11 +770,16 @@ impl SensorSetupScreen {
     }
 
     /// Render a connected sensor item.
-    fn render_connected_sensor(&self, ui: &mut Ui, sensor: &SensorState) {
-        let quality_stats = self.quality_stats.get(&sensor.device_id);
+    fn render_connected_sensor(&mut self, ui: &mut Ui, sensor: &SensorState) {
+        let quality_stats = self.quality_stats.get(&sensor.device_id).cloned();
         let is_poor_quality = quality_stats
+            .as_ref()
             .map(|q| q.level == QualityLevel::Poor)
             .unwrap_or(false);
+
+        // Check if this sensor can be calibrated
+        let can_calibrate = sensor.connection_state == ConnectionState::Connected
+            && is_calibratable_sensor(sensor.sensor_type);
 
         // Use different background color for poor quality connections
         let bg_color = if is_poor_quality {
@@ -616,6 +792,9 @@ impl SensorSetupScreen {
             .fill(bg_color)
             .inner_margin(12.0)
             .corner_radius(4.0);
+
+        // Clone sensor info needed for calibration
+        let sensor_for_calibration = sensor.clone();
 
         frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -646,7 +825,7 @@ impl SensorSetupScreen {
                     // Show quality indicator for connected sensors
                     if sensor.connection_state == ConnectionState::Connected {
                         ui.horizontal(|ui| {
-                            if let Some(stats) = quality_stats {
+                            if let Some(stats) = &quality_stats {
                                 ConnectionQualityIndicator::new()
                                     .with_stats(stats.clone())
                                     .compact()
@@ -683,6 +862,23 @@ impl SensorSetupScreen {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.button("Disconnect").clicked() {
                         // TODO: Disconnect sensor
+                    }
+
+                    // Show calibrate button for power meters and trainers
+                    if can_calibrate {
+                        ui.add_space(4.0);
+                        let calibrate_button = egui::Button::new(
+                            RichText::new("⚡ Calibrate").small(),
+                        )
+                        .fill(Color32::from_rgba_unmultiplied(66, 133, 244, 40));
+
+                        if ui.add(calibrate_button).clicked() {
+                            self.calibration_dialog_state.open(
+                                sensor_for_calibration.device_id.clone(),
+                                sensor_for_calibration.name.clone(),
+                                sensor_for_calibration.protocol,
+                            );
+                        }
                     }
                 });
             });

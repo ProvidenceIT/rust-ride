@@ -1083,6 +1083,222 @@ pub fn is_calibratable_sensor(sensor_type: SensorType) -> bool {
     )
 }
 
+// ============================================================================
+// Calibration Command Interface
+// ============================================================================
+
+/// A calibration command to be sent to a power meter.
+#[derive(Debug, Clone)]
+pub struct CalibrationCommand {
+    /// The device ID of the power meter.
+    pub device_id: String,
+    /// The type of calibration to perform.
+    pub calibration_type: CalibrationType,
+    /// When the command was created.
+    pub created_at: std::time::Instant,
+    /// Timeout for the calibration command in seconds.
+    pub timeout_secs: u32,
+}
+
+impl CalibrationCommand {
+    /// Create a new calibration command.
+    pub fn new(device_id: String, calibration_type: CalibrationType) -> Self {
+        Self {
+            device_id,
+            calibration_type,
+            created_at: std::time::Instant::now(),
+            timeout_secs: 30, // Default 30 second timeout
+        }
+    }
+
+    /// Create a zero-offset calibration command.
+    pub fn zero_offset(device_id: String) -> Self {
+        Self::new(device_id, CalibrationType::ZeroOffset)
+    }
+
+    /// Create a manual calibration command.
+    pub fn manual(device_id: String) -> Self {
+        Self::new(device_id, CalibrationType::ManualCalibration)
+    }
+
+    /// Create an automatic calibration command.
+    pub fn automatic(device_id: String) -> Self {
+        Self::new(device_id, CalibrationType::AutomaticCalibration)
+    }
+
+    /// Set the timeout for this command.
+    pub fn with_timeout(mut self, timeout_secs: u32) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+
+    /// Check if the command has timed out.
+    pub fn is_timed_out(&self) -> bool {
+        self.created_at.elapsed().as_secs() > self.timeout_secs as u64
+    }
+
+    /// Get the elapsed time in seconds.
+    pub fn elapsed_secs(&self) -> f32 {
+        self.created_at.elapsed().as_secs_f32()
+    }
+}
+
+/// Response from a calibration command.
+#[derive(Debug, Clone)]
+pub struct CalibrationResponse {
+    /// The device ID of the power meter.
+    pub device_id: String,
+    /// Whether the calibration was successful.
+    pub success: bool,
+    /// The calibration offset value (if available).
+    pub offset_value: Option<i32>,
+    /// Error message if calibration failed.
+    pub error_message: Option<String>,
+    /// The type of calibration that was performed.
+    pub calibration_type: CalibrationType,
+}
+
+impl CalibrationResponse {
+    /// Create a successful calibration response.
+    pub fn success(device_id: String, calibration_type: CalibrationType, offset_value: Option<i32>) -> Self {
+        Self {
+            device_id,
+            success: true,
+            offset_value,
+            error_message: None,
+            calibration_type,
+        }
+    }
+
+    /// Create a failed calibration response.
+    pub fn failure(device_id: String, calibration_type: CalibrationType, error_message: String) -> Self {
+        Self {
+            device_id,
+            success: false,
+            offset_value: None,
+            error_message: Some(error_message),
+            calibration_type,
+        }
+    }
+
+    /// Create a timeout response.
+    pub fn timeout(device_id: String, calibration_type: CalibrationType) -> Self {
+        Self::failure(device_id, calibration_type, "Calibration timed out".to_string())
+    }
+}
+
+/// A request to start a calibration process.
+///
+/// This is used to communicate between the UI and the sensor manager.
+#[derive(Debug, Clone)]
+pub struct CalibrationRequest {
+    /// The device ID of the power meter.
+    pub device_id: String,
+    /// Name of the power meter (for display).
+    pub device_name: String,
+    /// Protocol of the power meter.
+    pub protocol: Protocol,
+    /// The type of calibration to perform.
+    pub calibration_type: CalibrationType,
+}
+
+impl CalibrationRequest {
+    /// Create a new calibration request.
+    pub fn new(
+        device_id: String,
+        device_name: String,
+        protocol: Protocol,
+        calibration_type: CalibrationType,
+    ) -> Self {
+        Self {
+            device_id,
+            device_name,
+            protocol,
+            calibration_type,
+        }
+    }
+
+    /// Create a zero-offset calibration request.
+    pub fn zero_offset(device_id: String, device_name: String, protocol: Protocol) -> Self {
+        Self::new(device_id, device_name, protocol, CalibrationType::ZeroOffset)
+    }
+}
+
+/// State of calibration requests for the UI to track.
+#[derive(Debug, Default)]
+pub struct CalibrationRequestTracker {
+    /// Pending calibration requests that haven't been sent yet.
+    pending_requests: Vec<CalibrationRequest>,
+    /// Active calibration (currently in progress).
+    active_request: Option<CalibrationRequest>,
+    /// Last calibration response received.
+    last_response: Option<CalibrationResponse>,
+}
+
+impl CalibrationRequestTracker {
+    /// Create a new tracker.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queue a calibration request.
+    pub fn queue_request(&mut self, request: CalibrationRequest) {
+        self.pending_requests.push(request);
+    }
+
+    /// Get the next pending request.
+    pub fn take_next_request(&mut self) -> Option<CalibrationRequest> {
+        if self.active_request.is_none() && !self.pending_requests.is_empty() {
+            let request = self.pending_requests.remove(0);
+            self.active_request = Some(request.clone());
+            Some(request)
+        } else {
+            None
+        }
+    }
+
+    /// Check if there's an active calibration.
+    pub fn has_active_request(&self) -> bool {
+        self.active_request.is_some()
+    }
+
+    /// Get the active request.
+    pub fn active_request(&self) -> Option<&CalibrationRequest> {
+        self.active_request.as_ref()
+    }
+
+    /// Complete the active request with a response.
+    pub fn complete_request(&mut self, response: CalibrationResponse) {
+        self.last_response = Some(response);
+        self.active_request = None;
+    }
+
+    /// Take the last response (consuming it).
+    pub fn take_last_response(&mut self) -> Option<CalibrationResponse> {
+        self.last_response.take()
+    }
+
+    /// Get the last response.
+    pub fn last_response(&self) -> Option<&CalibrationResponse> {
+        self.last_response.as_ref()
+    }
+
+    /// Clear all pending requests.
+    pub fn clear_pending(&mut self) {
+        self.pending_requests.clear();
+    }
+
+    /// Cancel the active request.
+    pub fn cancel_active(&mut self) {
+        self.active_request = None;
+    }
+
+    /// Get the number of pending requests.
+    pub fn pending_count(&self) -> usize {
+        self.pending_requests.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1608,5 +1824,242 @@ mod tests {
 
         process.current_step = CalibrationStep::Completed;
         assert_eq!(process.progress_percent(), 100.0);
+    }
+
+    // =========================================================================
+    // Calibration Command Interface Tests
+    // =========================================================================
+
+    #[test]
+    fn test_calibration_command_new() {
+        let cmd = CalibrationCommand::new("device1".to_string(), CalibrationType::ZeroOffset);
+
+        assert_eq!(cmd.device_id, "device1");
+        assert_eq!(cmd.calibration_type, CalibrationType::ZeroOffset);
+        assert_eq!(cmd.timeout_secs, 30);
+        assert!(!cmd.is_timed_out());
+    }
+
+    #[test]
+    fn test_calibration_command_factory_methods() {
+        let zero = CalibrationCommand::zero_offset("d1".to_string());
+        assert_eq!(zero.calibration_type, CalibrationType::ZeroOffset);
+
+        let manual = CalibrationCommand::manual("d2".to_string());
+        assert_eq!(manual.calibration_type, CalibrationType::ManualCalibration);
+
+        let auto = CalibrationCommand::automatic("d3".to_string());
+        assert_eq!(auto.calibration_type, CalibrationType::AutomaticCalibration);
+    }
+
+    #[test]
+    fn test_calibration_command_with_timeout() {
+        let cmd = CalibrationCommand::zero_offset("device1".to_string())
+            .with_timeout(60);
+
+        assert_eq!(cmd.timeout_secs, 60);
+    }
+
+    #[test]
+    fn test_calibration_response_success() {
+        let response = CalibrationResponse::success(
+            "device1".to_string(),
+            CalibrationType::ZeroOffset,
+            Some(42),
+        );
+
+        assert!(response.success);
+        assert_eq!(response.device_id, "device1");
+        assert_eq!(response.offset_value, Some(42));
+        assert!(response.error_message.is_none());
+    }
+
+    #[test]
+    fn test_calibration_response_failure() {
+        let response = CalibrationResponse::failure(
+            "device1".to_string(),
+            CalibrationType::ZeroOffset,
+            "Sensor busy".to_string(),
+        );
+
+        assert!(!response.success);
+        assert_eq!(response.device_id, "device1");
+        assert!(response.offset_value.is_none());
+        assert_eq!(response.error_message, Some("Sensor busy".to_string()));
+    }
+
+    #[test]
+    fn test_calibration_response_timeout() {
+        let response = CalibrationResponse::timeout(
+            "device1".to_string(),
+            CalibrationType::ZeroOffset,
+        );
+
+        assert!(!response.success);
+        assert!(response.error_message.as_ref().unwrap().contains("timeout"));
+    }
+
+    #[test]
+    fn test_calibration_request_new() {
+        let request = CalibrationRequest::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert_eq!(request.device_id, "device1");
+        assert_eq!(request.device_name, "Stages Power");
+        assert_eq!(request.protocol, Protocol::BleCyclingPower);
+        assert_eq!(request.calibration_type, CalibrationType::ZeroOffset);
+    }
+
+    #[test]
+    fn test_calibration_request_zero_offset() {
+        let request = CalibrationRequest::zero_offset(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+        );
+
+        assert_eq!(request.calibration_type, CalibrationType::ZeroOffset);
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_new() {
+        let tracker = CalibrationRequestTracker::new();
+
+        assert!(!tracker.has_active_request());
+        assert_eq!(tracker.pending_count(), 0);
+        assert!(tracker.last_response().is_none());
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_queue_and_take() {
+        let mut tracker = CalibrationRequestTracker::new();
+
+        let request = CalibrationRequest::zero_offset(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+        );
+
+        tracker.queue_request(request.clone());
+        assert_eq!(tracker.pending_count(), 1);
+
+        let taken = tracker.take_next_request();
+        assert!(taken.is_some());
+        assert_eq!(taken.unwrap().device_id, "device1");
+        assert!(tracker.has_active_request());
+        assert_eq!(tracker.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_complete() {
+        let mut tracker = CalibrationRequestTracker::new();
+
+        let request = CalibrationRequest::zero_offset(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+        );
+
+        tracker.queue_request(request);
+        tracker.take_next_request();
+
+        assert!(tracker.has_active_request());
+
+        let response = CalibrationResponse::success(
+            "device1".to_string(),
+            CalibrationType::ZeroOffset,
+            Some(100),
+        );
+
+        tracker.complete_request(response);
+
+        assert!(!tracker.has_active_request());
+        assert!(tracker.last_response().is_some());
+        assert!(tracker.last_response().unwrap().success);
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_cancel() {
+        let mut tracker = CalibrationRequestTracker::new();
+
+        let request = CalibrationRequest::zero_offset(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+        );
+
+        tracker.queue_request(request);
+        tracker.take_next_request();
+
+        assert!(tracker.has_active_request());
+
+        tracker.cancel_active();
+
+        assert!(!tracker.has_active_request());
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_clear_pending() {
+        let mut tracker = CalibrationRequestTracker::new();
+
+        tracker.queue_request(CalibrationRequest::zero_offset(
+            "d1".to_string(),
+            "PM1".to_string(),
+            Protocol::BleCyclingPower,
+        ));
+        tracker.queue_request(CalibrationRequest::zero_offset(
+            "d2".to_string(),
+            "PM2".to_string(),
+            Protocol::BleCyclingPower,
+        ));
+
+        assert_eq!(tracker.pending_count(), 2);
+
+        tracker.clear_pending();
+
+        assert_eq!(tracker.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_calibration_request_tracker_multiple_requests() {
+        let mut tracker = CalibrationRequestTracker::new();
+
+        // Queue two requests
+        tracker.queue_request(CalibrationRequest::zero_offset(
+            "d1".to_string(),
+            "PM1".to_string(),
+            Protocol::BleCyclingPower,
+        ));
+        tracker.queue_request(CalibrationRequest::zero_offset(
+            "d2".to_string(),
+            "PM2".to_string(),
+            Protocol::BleCyclingPower,
+        ));
+
+        assert_eq!(tracker.pending_count(), 2);
+
+        // Take first request
+        let first = tracker.take_next_request().unwrap();
+        assert_eq!(first.device_id, "d1");
+        assert_eq!(tracker.pending_count(), 1);
+
+        // Can't take second while first is active
+        assert!(tracker.take_next_request().is_none());
+
+        // Complete first
+        tracker.complete_request(CalibrationResponse::success(
+            "d1".to_string(),
+            CalibrationType::ZeroOffset,
+            None,
+        ));
+
+        // Now can take second
+        let second = tracker.take_next_request().unwrap();
+        assert_eq!(second.device_id, "d2");
+        assert_eq!(tracker.pending_count(), 0);
     }
 }
