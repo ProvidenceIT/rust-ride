@@ -2,9 +2,9 @@
   "feature": "Complete Audio Engine",
   "description": "Finish the audio engine implementation using rodio for sound effects, audio cues, and background audio during rides. Includes countdown sounds, achievement chimes, and optional workout music playback.",
   "created_at": "2026-01-03T05:14:12.855Z",
-  "updated_at": "2026-01-03T06:11:25.070Z",
+  "updated_at": "2026-01-03T06:45:00.000Z",
   "status": "in_progress",
-  "planStatus": "in_progress",
+  "planStatus": "approved",
   "phases": [
     {
       "id": "phase-1",
@@ -109,7 +109,7 @@
             "src/audio/tones.rs"
           ],
           "estimated_effort": "small",
-          "notes": "Extended CuePattern enum with 5 countdown-specific patterns: CountdownTick10 (G4, 60ms), CountdownTick5 (A4, 80ms), CountdownFinal3 (B4, 100ms), CountdownFinal2 (C5, 120ms double-beep), CountdownFinal1 (D5, 150ms triple-beep). Added escalating frequencies (G4→D5) and durations for urgency. All patterns under 200ms. Added helper methods: for_countdown_seconds(), is_countdown_pattern(), is_final_countdown(). Comprehensive unit tests verify distinct sounds, duration limits, and escalating frequencies.",
+          "notes": "Extended CuePattern enum with 5 countdown-specific patterns: CountdownTick10 (G4, 60ms), CountdownTick5 (A4, 80ms), CountdownFinal3 (B4, 100ms), CountdownFinal2 (C5, 120ms double-beep), CountdownFinal1 (D5, 150ms triple-beep). Added escalating frequencies (G4\u2192D5) and durations for urgency. All patterns under 200ms. Added helper methods: for_countdown_seconds(), is_countdown_pattern(), is_final_countdown(). Comprehensive unit tests verify distinct sounds, duration limits, and escalating frequencies.",
           "updated_at": "2026-01-03T05:55:42.511101+00:00"
         },
         {
@@ -161,7 +161,7 @@
           "id": "3.1",
           "title": "Create achievement chime patterns by tier",
           "description": "Define CuePatterns for achievement unlocks with variation by tier: Bronze (simple chime), Silver (richer harmony), Gold (triumphant fanfare), Platinum (epic celebration). Also create patterns for level-up notifications.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "CuePattern::AchievementBronze, Silver, Gold, Platinum exist",
             "CuePattern::LevelUp exists",
@@ -171,13 +171,15 @@
           "files": [
             "src/audio/tones.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Added achievement chime patterns to CuePattern enum with progressively impressive sounds:\\n\\n**New CuePattern variants:**\\n- AchievementBronze: Simple single-tone chime (E4, 150ms)\\n- AchievementSilver: Two-tone ascending harmony (G4\u2192B4)\\n- AchievementGold: Three-tone triumphant fanfare (C5\u2192E5\u2192G5)\\n- AchievementPlatinum: Epic multi-note celebration with buildup and sustained finale\\n- LevelUp: Distinct ascending progression (D5\u2192F#5\u2192A5)\\n\\n**New helper methods:**\\n- for_achievement_tier(tier: &str) - get pattern by tier name (case-insensitive)\\n- is_achievement_pattern() - check if pattern is achievement-related\\n- is_celebration_pattern() - check if pattern is celebration (achievement/level-up/success)\\n- achievement_tier_level() - get numeric tier level (1-4)\\n- achievement_tier_name() - get tier name string\\n\\n**Comprehensive tests added** verifying progressive impressiveness, distinct sounds, ascending frequencies, and appropriate durations (100-1000ms range).",
+          "updated_at": "2026-01-03T06:16:03.596641+00:00"
         },
         {
           "id": "3.2",
           "title": "Create AchievementAudioBridge",
           "description": "Create a bridge component that monitors the NotificationQueue from the achievements module and triggers appropriate audio (chime + optional voice announcement). Handle concurrent achievements gracefully.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "New achievement notifications trigger tier-appropriate chime",
             "Optional voice announcement ('Achievement unlocked: [name]')",
@@ -188,13 +190,15 @@
             "src/audio/achievement_bridge.rs",
             "src/audio/mod.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Created AchievementAudioBridge component in src/audio/achievement_bridge.rs that monitors achievement notifications and triggers audio feedback:\\n\\n**New Files:**\\n- src/audio/achievement_bridge.rs - Main bridge component\\n\\n**Key Features:**\\n- AchievementAudioBridgeConfig with settings for: chimes_enabled, voice_enabled, level_up_sounds/voice_enabled, max_queued_sounds, audio_spacing_ms\\n- handle_achievement_notification() - Plays tier-appropriate chimes and optional voice announcements\\n- handle_level_up() - Plays LevelUp pattern and voice announcement\\n- handle_multiple_achievements() - Queues multiple achievements with spacing, sorted by tier (highest first)\\n- tier_to_priority() - Maps Bronze/Silver to Normal, Gold/Diamond to High, Legendary to Critical priority\\n- Fallback patterns for Diamond (uses Gold) and Legendary (uses Platinum) since CuePattern only has Bronze-Platinum\\n- Queue limiting to prevent audio pileup with max_queued_sounds config\\n\\n**Modified Files:**\\n- src/audio/alerts.rs - Added AlertData::Achievement and AlertData::Custom variants, AlertContext::achievement() and ::custom() methods\\n- src/audio/cues.rs - Updated expand_template() to handle new AlertData variants, enhanced AchievementUnlocked template with alternatives\\n- src/audio/mod.rs - Added achievement_bridge module and exports\\n\\n**Tests:**\\n- Comprehensive tests for config, serialization, tier priority mapping, chime playback, voice announcements, level-up handling, enable/disable toggles, multiple achievements, and fallback patterns",
+          "updated_at": "2026-01-03T06:23:10.494481+00:00"
         },
         {
           "id": "3.3",
           "title": "Add milestone celebration sounds",
           "description": "Implement audio feedback for distance/time/calorie milestones. Create distinct but subtle sounds for milestone achievements to provide feedback without being intrusive during the ride.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Distance milestones (5km, 10km, etc.) trigger subtle chime",
             "Time milestones (15min, 30min, etc.) trigger feedback",
@@ -205,7 +209,9 @@
             "src/audio/tones.rs",
             "src/audio/alerts.rs"
           ],
-          "estimated_effort": "small"
+          "estimated_effort": "small",
+          "notes": "Implemented audio feedback for distance/time/calorie milestones:\\n\\n**Added to tones.rs:**\\n- CuePattern variants: MilestoneDistance (A4\u2192C#5), MilestoneTime (B4\u2192D5), MilestoneCalories (E5\u2192G5), PersonalRecord (F#5\u2192A5\u2192C#6)\\n- Helper methods: for_milestone_type(), is_milestone_pattern(), is_personal_record(), milestone_type_name()\\n- All milestone patterns are now included in is_celebration_pattern()\\n- Milestone sounds are subtle (<400ms), PR is more elaborate (<500ms)\\n\\n**Created milestone_bridge.rs:**\\n- MilestoneAudioBridge component for handling milestone events\\n- MilestoneAudioBridgeConfig with per-type enable/disable for sounds and voice\\n- MilestoneType enum with cue_pattern() and alert_type() methods\\n- MilestoneData with format_announcement() for voice announcements\\n- Default: sounds enabled, voice disabled (subtle), PR voice enabled\\n- Regular milestones: Low priority, PRs: High priority\\n\\n**Updated mod.rs:**\\n- Added milestones_enabled, milestone_volume, personal_record_sounds_enabled to AudioConfig\\n- Exported MilestoneAudioBridge, MilestoneAudioBridgeConfig, MilestoneData, MilestoneType",
+          "updated_at": "2026-01-03T06:31:49.899492+00:00"
         }
       ]
     },
@@ -219,7 +225,7 @@
           "id": "4.1",
           "title": "Implement per-category volume controls",
           "description": "Extend AudioConfig with separate volume levels for: master, voice/TTS, sound effects, countdown tones, achievement sounds. Implement volume mixing in the audio backend.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Master volume affects all audio",
             "Separate volume for voice, effects, and tones",
@@ -230,13 +236,15 @@
             "src/audio/mod.rs",
             "src/audio/engine.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Extended AudioConfig with separate volume levels for: master, voice/TTS, sound effects, countdown tones, achievement sounds, milestones. Implemented AudioCategory enum with methods: volume_from_config(), is_enabled(), effective_volume(), display_name(). Added AudioItem helper constructors for category-specific items: countdown_tone(), achievement_sound(), achievement_tone(), milestone_sound(), milestone_tone(). Updated RodioAudioBackend with play_sound_with_volume() and play_tone_with_volume() methods. Updated DefaultAudioEngine process_queue() to check item.is_enabled() and apply item.effective_volume(). Added new AudioEngine trait methods: play_sound_with_category(), play_tone_with_category(), set_category_volume(), get_category_volume(). Comprehensive tests for AudioCategory and per-category volume controls.",
+          "updated_at": "2026-01-03T06:40:49.737952+00:00"
         },
         {
           "id": "4.2",
           "title": "Add mute functionality with quick toggle",
           "description": "Implement mute/unmute functionality that can be triggered quickly during a ride. Maintain separate mute states for different audio categories if desired.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Global mute toggle available",
             "Mute state persists across audio items in queue",
@@ -247,13 +255,15 @@
             "src/audio/engine.rs",
             "src/audio/mod.rs"
           ],
-          "estimated_effort": "small"
+          "estimated_effort": "small",
+          "notes": "Implemented comprehensive mute/unmute functionality:\n\n**AudioConfig additions:**\n- muted: bool - Global mute state\n- voice_muted, sound_effects_muted, countdown_muted, achievement_muted, milestone_muted - Per-category mute states\n\n**AudioCategory additions:**\n- is_muted(config) - Check if category is muted (global or category-specific)\n- should_play(config) - Check if audio should play (enabled and not muted)\n- effective_volume() now returns 0.0 when muted\n- all() - Get all audio categories\n\n**AudioItem additions:**\n- should_play(config) - Check if item should play considering mute state\n\n**MuteState struct for UI:**\n- from_config(config) - Create mute state snapshot\n- any_muted() - Check if any audio is muted\n- is_category_muted(category) - Check specific category\n- display_string() - Human-readable mute status\n- icon_hint() - Icon suggestion for UI\n\n**AudioEngine trait additions:**\n- mute(), unmute(), toggle_mute(), is_muted() - Global mute control\n- mute_category(), unmute_category(), toggle_category_mute(), is_category_muted() - Per-category mute\n- get_mute_state() - Get current mute state for UI\n\n**DefaultAudioEngine implementation:**\n- All mute methods implemented with proper state management\n- Backend mute synced with global mute\n- Volume preserved during mute/unmute cycles\n- process_queue updated to use should_play()\n\n**Tests:**\n- Comprehensive tests for mute state, category muting, global muting\n- Tests for MuteState UI helpers\n- Tests for serde serialization/backward compatibility",
+          "updated_at": "2026-01-03T06:48:16.710593+00:00"
         },
         {
           "id": "4.3",
           "title": "Create audio settings UI panel",
           "description": "Add an audio settings section to the settings UI with sliders for each volume category, toggles for audio features (countdown sounds, achievement chimes, voice announcements), and test buttons to preview sounds.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Volume sliders for master/voice/effects categories",
             "Toggles for countdown, achievement, voice features",
@@ -264,7 +274,9 @@
             "src/ui/settings/audio_settings.rs",
             "src/ui/settings/mod.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Created audio settings section in settings UI with:\\n\\n**New Files:**\\n- src/ui/settings/mod.rs - Settings UI submodule\\n- src/ui/settings/audio_settings.rs - AudioSettingsPanel widget\\n\\n**AudioSettingsPanel Features:**\\n- Volume sliders for master and each AudioCategory (voice, sound effects, countdown, achievement, milestone)\\n- Feature toggles for countdown sounds, achievement chimes, voice announcements, milestones, personal records\\n- Test buttons to preview: voice, countdown sounds, achievement chimes (by tier in advanced mode), milestone sounds, personal record fanfare\\n- Global and per-category mute controls with visual indicators\\n- Compact volume control helper for embedding in other UIs\\n- Advanced settings section with speech rate, voice selection, alert interval\\n\\n**Integration:**\\n- Added AudioConfig field to SettingsScreen\\n- New render_audio_settings_section() method using AudioSettingsPanel::show()\\n- SettingsAction::TestAudio(AudioTestType) for playing test sounds\\n- SettingsAction::AudioConfigChanged(AudioConfig) for auto-save on changes\\n- Re-exports from ui::settings and ui::mod.rs",
+          "updated_at": "2026-01-03T06:59:01.995499+00:00"
         }
       ]
     },
@@ -278,7 +290,7 @@
           "id": "5.1",
           "title": "Implement platform-specific audio initialization",
           "description": "Handle audio device initialization differences across Windows, macOS, and Linux. Implement fallback behavior when audio devices are unavailable. Add audio device hot-plug support where possible.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Audio initializes correctly on Windows/macOS/Linux",
             "Graceful fallback when no audio device present",
@@ -289,7 +301,9 @@
             "src/audio/backend.rs",
             "src/audio/engine.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Implemented platform-specific audio device initialization handling for Windows, macOS, and Linux:\n\n**New Types (backend.rs):**\n- `Platform` enum with `detect()` for runtime platform detection, `audio_backend_name()` for backend identification, and `troubleshooting_hints()` for platform-specific help\n- `AudioDeviceError` struct with platform-specific user-friendly messages, raw error storage, and formatted help messages with troubleshooting steps\n- `AudioDeviceStatus` struct for device monitoring with availability, state, recovery tracking, and UI helpers\n- `HotPlugConfig` for hot-plug recovery configuration with exponential backoff settings\n\n**Enhanced RodioAudioBackend:**\n- Platform detection on creation with debug logging\n- Enhanced `initialize()` with platform-specific pre-init checks and detailed error logging\n- `reinitialize()` with recovery tracking\n- `try_recovery()` implementing exponential backoff for hot-plug support\n- `reset_recovery()` to allow manual recovery restart\n- `get_device_status()` for monitoring and UI display\n- `get_troubleshooting_hints()` for platform-specific help\n- Hot-plug configuration management\n\n**Enhanced AudioEngine:**\n- Added device status methods to trait: `get_device_status()`, `get_platform()`, `is_device_available()`, `try_device_recovery()`, `reset_device_recovery()`, `get_hot_plug_config()`, `set_hot_plug_config()`, `get_troubleshooting_hints()`\n- Implemented all methods in DefaultAudioEngine delegating to backend\n\n**Comprehensive Tests:**\n- Platform detection and backend names\n- AudioDeviceError message generation for various error types\n- AudioDeviceStatus state tracking and UI helpers\n- HotPlugConfig defaults and customization\n- Backend device status retrieval\n- Engine device status methods\n\n**Exported Types:**\n- All new types exported from mod.rs: Platform, AudioDeviceError, AudioDeviceStatus, HotPlugConfig",
+          "updated_at": "2026-01-03T07:06:05.394868+00:00"
         },
         {
           "id": "5.2",
@@ -428,5 +442,5 @@
     "ToneGenerator already uses rodio for sine wave generation - this can be extended",
     "AudioEngine has the structure but TODOs in play_sound() and play_tone() methods"
   ],
-  "last_updated": "2026-01-03T06:10:33.193920+00:00"
+  "last_updated": "2026-01-03T07:06:05.395868+00:00"
 }
