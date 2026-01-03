@@ -118,7 +118,10 @@ Date: 2026-01-03
 - [x] T005: Implement metrics streaming handler - COMPLETED (cea141c)
 - [x] T006: Implement workout control handlers - COMPLETED (7a89c33)
 - [x] T007: Implement ride history API handlers - COMPLETED
-- [ ] Phase 1 in progress (7/10 subtasks)
+- [x] T008: Add companion server configuration - COMPLETED (3a97ae9)
+- [x] T009: Add connection QR code generation - COMPLETED (291771c)
+- [x] T010: Add session status endpoint - COMPLETED
+- [x] Phase 1 COMPLETE (10/10 subtasks)
 - [ ] Phase 2 not started
 
 ## Completed Subtasks
@@ -189,7 +192,47 @@ Date: 2026-01-03
   - Tests for pagination, empty results, invalid IDs
   - Tests for database unavailable scenarios
 
+### T008: Add companion server configuration
+- Integrated CompanionConfig into AppConfig for persistence
+- Added CompanionConfig to storage/config.rs with #[serde(default)] for backward compatibility
+- Fields: enabled, port (default 9876), require_pin, session_timeout_secs, max_connections
+- Added re-export from storage::mod
+- Helper functions: load_companion_config() and example_companion_config()
+- Comprehensive tests for serialization, deserialization, and partial config handling
+- Commit: 3a97ae9
+
+### T009: Add connection QR code generation
+- Created src/companion/qr.rs module for QR code generation
+- CompanionConnectionData: JSON-serializable connection info with url, optional pin, version
+- CompanionQrCode: QR generator with ASCII and SVG output formats
+- Uses qrcode crate with Medium (EcLevel::M) error correction
+- Integrated with CompanionServer via generate_qr_code(), get_qr_ascii(), get_qr_svg() methods
+- generate_pairing_qr_code() convenience function for standalone use
+- QrCodeError for error handling
+- Comprehensive unit tests included
+- Commit: 291771c
+
+### T010: Add session status endpoint
+- Session status endpoint already fully implemented in handlers.rs (lines 103-173)
+- handle_get_session_status() queries DaemonState for active session information
+- Returns active: false, session: None when no active session
+- For active sessions, returns SessionStatusInfo with:
+  - session_id, session_type (free_ride or workout)
+  - workout_name and workout_path for structured workouts
+  - is_paused flag
+  - elapsed_secs from session start
+  - current_interval_index, total_intervals, current_interval_name
+  - target_power_watts for ERG mode
+  - interval_remaining_secs for workout intervals
+- Comprehensive unit tests: test_get_session_status_with_active_workout, test_get_session_status_no_session
+- All acceptance criteria verified and met
+
 ## Next Steps
-1. Add companion server configuration (T008)
-2. Add connection QR code generation (T009)
-3. Add session status endpoint (T010)
+1. Phase 2: Mobile App - Core Framework (T011-T017)
+   - Initialize React Native project
+   - Set up navigation structure
+   - Implement state management with Zustand
+   - Create WebSocket connection service
+   - Implement mDNS discovery service
+   - Create design system and theme
+   - Build reusable UI components

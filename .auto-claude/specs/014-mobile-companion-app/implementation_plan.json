@@ -146,7 +146,7 @@
           "id": "T008",
           "title": "Add companion server configuration",
           "description": "Add CompanionConfig to storage/config.rs with enabled flag, port number, require_pin flag, and session timeout. Integrate with app settings UI.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -157,13 +157,15 @@
             "Persisted to user config file",
             "Default port 9876",
             "PIN requirement configurable"
-          ]
+          ],
+          "notes": "Integrated CompanionConfig into AppConfig for persistence. Added CompanionConfig to storage/config.rs with #[serde(default)] for backward compatibility. Added re-export from storage::mod. Added example_companion_config() and load_companion_config() helper functions. Added 5 comprehensive tests for serialization, deserialization, defaults, and partial config handling. Commit: 3a97ae9",
+          "updated_at": "2026-01-03T06:06:17.379817+00:00"
         },
         {
           "id": "T009",
           "title": "Add connection QR code generation",
           "description": "Generate QR code containing connection URL (ws://ip:port) and optional PIN for easy mobile app pairing. Use existing qrcode crate.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 2,
           "dependencies": [
@@ -175,13 +177,15 @@
             "PIN included if authentication required",
             "QR displayable in desktop app UI",
             "ASCII and SVG formats available"
-          ]
+          ],
+          "notes": "Implemented QR code generation for companion app pairing. Created src/companion/qr.rs with: CompanionConnectionData (JSON-serializable connection info with url, optional pin, and version), CompanionQrCode (QR generator with ASCII and SVG output formats), generate_pairing_qr_code() convenience function, and QrCodeError for error handling. Added methods to CompanionServer: generate_qr_code(), get_qr_ascii(), get_qr_svg(), get_qr_svg_custom(). Uses existing qrcode crate with Medium error correction. Comprehensive unit tests included. Commit: 291771c",
+          "updated_at": "2026-01-03T06:11:47.863183+00:00"
         },
         {
           "id": "T010",
           "title": "Add session status endpoint",
           "description": "Create handler returning current session state: active workout info, elapsed time, current interval, target power. Used by mobile app to sync UI state.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -192,7 +196,9 @@
             "Includes workout name and file for workouts",
             "Includes current interval details",
             "Includes elapsed and remaining time"
-          ]
+          ],
+          "notes": "Session status endpoint already fully implemented. handle_get_session_status() in handlers.rs (lines 103-173) returns current session state from DaemonState. Returns active: false when no session. For active sessions, returns SessionStatusInfo with: session_id, session_type (free_ride/workout), workout_name, workout_path, is_paused, elapsed_secs, current_interval_index, total_intervals, current_interval_name, target_power_watts, interval_remaining_secs. Unit tests included: test_get_session_status_with_active_workout and test_get_session_status_no_session. All acceptance criteria verified.",
+          "updated_at": "2026-01-03T06:13:32.357897+00:00"
         }
       ]
     },
@@ -1033,5 +1039,5 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T06:01:06.602156+00:00"
+  "last_updated": "2026-01-03T06:13:32.357897+00:00"
 }
