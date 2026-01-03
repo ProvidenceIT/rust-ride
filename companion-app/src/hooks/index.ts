@@ -12,3 +12,6 @@ export type { AutoReconnectState, AutoReconnectActions, UseAutoReconnectReturn }
 
 export { useHaptics, triggerHapticFeedback } from './useHaptics';
 export type { HapticFeedbackType } from './useHaptics';
+
+export { useWorkoutControls } from './useWorkoutControls';
+export type { UseWorkoutControlsReturn } from './useWorkoutControls';
