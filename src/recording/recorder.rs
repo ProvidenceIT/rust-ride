@@ -5,7 +5,10 @@
 //! T031-T038: Autosave and crash recovery
 //! T140: Integrate motion data recording
 //! T115: Integrate SmO2 data recording
+//! T104: Integrate auto-sync on ride completion
 
+use crate::integrations::sync::{PlatformConfig, SyncPlatform, SyncServiceHandle};
+use crate::recording::exporter_fit::export_fit;
 use crate::recording::types::{
     LiveRideSummary, RecorderConfig, RecorderError, RecordingStatus, Ride, RideSample,
 };
@@ -67,6 +70,10 @@ pub struct RideRecorder {
     autosave_handle: Option<Arc<TokioMutex<Option<tokio::task::JoinHandle<()>>>>>,
     /// Flag to indicate if autosave is running
     autosave_running: Arc<TokioMutex<bool>>,
+    /// T104: Sync service handle for auto-upload
+    sync_service: Option<SyncServiceHandle>,
+    /// T104: Platform configurations for auto-sync
+    platform_configs: std::collections::HashMap<SyncPlatform, PlatformConfig>,
 }
 
 /// T115: SmO2 sample for recording.
@@ -102,6 +109,8 @@ impl RideRecorder {
             database: None,
             autosave_handle: None,
             autosave_running: Arc::new(TokioMutex::new(false)),
+            sync_service: None,
+            platform_configs: std::collections::HashMap::new(),
         }
     }
 
@@ -123,12 +132,37 @@ impl RideRecorder {
             database: Some(database),
             autosave_handle: None,
             autosave_running: Arc::new(TokioMutex::new(false)),
+            sync_service: None,
+            platform_configs: std::collections::HashMap::new(),
         }
     }
 
     /// Set the database for autosave functionality.
     pub fn set_database(&mut self, database: Arc<Mutex<Database>>) {
         self.database = Some(database);
+    }
+
+    /// T104: Set the sync service handle for auto-upload functionality.
+    ///
+    /// When a sync service is configured, completed rides will be automatically
+    /// exported to FIT format and queued for upload to platforms with auto_sync enabled.
+    pub fn set_sync_service(&mut self, sync_service: SyncServiceHandle) {
+        self.sync_service = Some(sync_service);
+    }
+
+    /// T104: Update platform configuration for auto-sync.
+    ///
+    /// This determines which platforms will receive automatic uploads when rides complete.
+    pub fn set_platform_config(&mut self, platform: SyncPlatform, config: PlatformConfig) {
+        self.platform_configs.insert(platform, config);
+    }
+
+    /// T104: Get the current auto-sync status for a platform.
+    pub fn is_auto_sync_enabled(&self, platform: SyncPlatform) -> bool {
+        self.platform_configs
+            .get(&platform)
+            .map(|c| c.enabled && c.auto_sync)
+            .unwrap_or(false)
     }
 
     /// Start recording a new ride.
@@ -388,6 +422,9 @@ impl RideRecorder {
     }
 
     /// Save the current ride to the database (T031).
+    ///
+    /// After saving, this will automatically queue uploads to any platforms
+    /// with auto_sync enabled.
     pub fn save_ride(&mut self) -> Result<Ride, RecorderError> {
         let (ride, samples) = self.finish()?;
 
@@ -414,7 +451,88 @@ impl RideRecorder {
             tracing::warn!("No database configured, ride not persisted");
         }
 
+        // T104: Trigger auto-sync for platforms with auto_sync enabled
+        self.trigger_auto_sync(&ride, &samples);
+
         Ok(ride)
+    }
+
+    /// T104: Trigger automatic sync to platforms with auto_sync enabled.
+    ///
+    /// This exports the ride to FIT format and queues uploads for each platform
+    /// that has auto_sync enabled. The upload runs in the background so it doesn't
+    /// block ride saving.
+    fn trigger_auto_sync(&self, ride: &Ride, samples: &[RideSample]) {
+        // Check if sync service is configured
+        let sync_service = match &self.sync_service {
+            Some(s) => s.clone(),
+            None => {
+                tracing::debug!("No sync service configured, skipping auto-sync");
+                return;
+            }
+        };
+
+        // Find platforms with auto_sync enabled
+        let auto_sync_platforms: Vec<SyncPlatform> = self
+            .platform_configs
+            .iter()
+            .filter(|(_, config)| config.enabled && config.auto_sync)
+            .map(|(platform, _)| *platform)
+            .collect();
+
+        if auto_sync_platforms.is_empty() {
+            tracing::debug!("No platforms have auto_sync enabled, skipping");
+            return;
+        }
+
+        // Export ride to FIT format
+        let fit_data = match export_fit(ride, samples) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to export ride to FIT format for auto-sync: {}", e);
+                return;
+            }
+        };
+
+        let ride_id = ride.id;
+        let activity_name = ride.notes.clone();
+
+        tracing::info!(
+            "Auto-syncing ride {} to {} platform(s)",
+            ride_id,
+            auto_sync_platforms.len()
+        );
+
+        // Queue uploads for each platform (spawn async task)
+        for platform in auto_sync_platforms {
+            let sync_handle = sync_service.clone();
+            let fit_data_clone = fit_data.clone();
+            let activity_name_clone = activity_name.clone();
+
+            tokio::spawn(async move {
+                match sync_handle
+                    .queue_upload(ride_id, platform, fit_data_clone, activity_name_clone)
+                    .await
+                {
+                    Ok(record) => {
+                        tracing::info!(
+                            "Queued auto-sync upload for ride {} to {:?} (record: {})",
+                            ride_id,
+                            platform,
+                            record.id
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to queue auto-sync upload for ride {} to {:?}: {}",
+                            ride_id,
+                            platform,
+                            e
+                        );
+                    }
+                }
+            });
+        }
     }
 
     /// Enable autosave with periodic saves (T032).

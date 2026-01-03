@@ -28,6 +28,7 @@ mod parallel_discovery_test;
 mod persistence_test;
 mod power_meter_test;
 mod power_profile_tests;
+mod profile_export_tests;
 mod progressive_timeout_test;
 mod protocol_preference_test;
 mod reconnection_backoff_test;

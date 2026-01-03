@@ -11,7 +11,8 @@ A cross-platform indoor cycling application built in Rust with real-time sensor 
 - **ERG Mode** - Automatic resistance control to match target power during workouts
 - **Voice Alerts** - Text-to-speech announcements for interval changes, countdowns, and workout events
 - **Ride Recording** - Automatic recording with pause detection and lap markers
-- **Export Formats** - Export rides to TCX and CSV for upload to Strava, TrainingPeaks, etc.
+- **Strava Sync** - Automatic upload to Strava with OAuth authentication, token refresh, and retry support
+- **Export Formats** - Export rides to FIT, TCX, and CSV for upload to TrainingPeaks, Garmin Connect, etc.
 - **Ride History** - Browse past rides with filtering, sorting, and detailed analytics
 - **Offline-First** - All data stored locally in SQLite, no account required
 
@@ -131,6 +132,92 @@ sudo pacman -S speech-dispatcher espeak-ng
 2. **Connect sensors** - Go to Sensor Setup and scan for Bluetooth devices
 3. **Configure FTP** - Set your Functional Threshold Power in Settings for accurate zone calculations
 4. **Start riding** - Return to Home and click "Start Ride"
+
+## Strava Integration
+
+RustRide can automatically upload your rides to Strava after each session. To enable this feature, you need to set up Strava API credentials.
+
+### Step 1: Create a Strava API Application
+
+1. **Log in to Strava** - Visit [www.strava.com](https://www.strava.com) and sign in to your account
+2. **Go to API Settings** - Navigate to [www.strava.com/settings/api](https://www.strava.com/settings/api)
+3. **Create Your Application**:
+   - **Application Name**: Enter a name (e.g., "RustRide")
+   - **Category**: Select "Training"
+   - **Club**: Leave blank (optional)
+   - **Website**: Enter any valid URL (e.g., "https://github.com/ProvidenceIT/rust-ride")
+   - **Application Description**: Brief description of your use
+   - **Authorization Callback Domain**: Enter `localhost`
+4. **Accept the API Agreement** and click "Create"
+
+### Step 2: Get Your API Credentials
+
+After creating your application, you'll see:
+- **Client ID**: A numeric identifier (e.g., `12345`)
+- **Client Secret**: A long alphanumeric string (keep this secure!)
+
+> ⚠️ **Security Note**: Never share your Client Secret publicly. Treat it like a password.
+
+### Step 3: Configure RustRide
+
+Set the following environment variables before launching RustRide:
+
+**Windows (PowerShell):**
+```powershell
+$env:STRAVA_CLIENT_ID = "your_client_id"
+$env:STRAVA_CLIENT_SECRET = "your_client_secret"
+.\rustride.exe
+```
+
+**Windows (Command Prompt):**
+```cmd
+set STRAVA_CLIENT_ID=your_client_id
+set STRAVA_CLIENT_SECRET=your_client_secret
+rustride.exe
+```
+
+**macOS / Linux:**
+```bash
+export STRAVA_CLIENT_ID="your_client_id"
+export STRAVA_CLIENT_SECRET="your_client_secret"
+./rustride
+```
+
+For persistent configuration, add these to your shell profile (`.bashrc`, `.zshrc`, or Windows environment variables).
+
+### Step 4: Connect Your Account
+
+1. Open RustRide and go to **Settings > Strava**
+2. Click **"Connect to Strava"**
+3. Your browser will open for Strava authorization
+4. Log in and click **"Authorize"** to grant RustRide access
+5. Return to RustRide - you should see your Strava profile
+
+### Features
+
+Once connected, RustRide provides:
+
+- **Auto-sync**: Automatically upload rides after each session (configurable)
+- **Manual retry**: Retry failed uploads from Ride History
+- **Token refresh**: Automatic token refresh when expired
+- **Upload status**: View sync status in Ride History and Ride Detail screens
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Authorization required" error | Ensure STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are set correctly |
+| Browser doesn't open | Check if the authorization URL is displayed in the console |
+| Upload fails repeatedly | Verify your internet connection and Strava service status |
+| "Token expired" after reconnect | Disconnect and reconnect your Strava account |
+
+### API Rate Limits
+
+Strava imposes rate limits on API usage:
+- **100 requests per 15 minutes**
+- **1,000 requests per day**
+
+RustRide is designed to stay well within these limits for normal usage. If you encounter rate limiting, wait 15 minutes before retrying.
 
 ## Workout File Formats
 

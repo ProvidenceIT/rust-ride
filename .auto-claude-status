@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "007-rider-profile-export-import",
+  "state": "building",
+  "subtasks": {
+    "completed": 18,
+    "total": 27,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "UI Integration",
+    "id": null,
+    "total": 4
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 20,
+    "started_at": "2026-01-02T23:53:06.451074"
+  },
+  "last_update": "2026-01-03T00:49:31.140640"
+}

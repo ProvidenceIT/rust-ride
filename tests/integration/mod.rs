@@ -15,6 +15,7 @@ mod segment_test;
 mod sensor_flow_test;
 mod sensor_mock;
 mod streaming_test;
+mod sync_integration_test;
 mod tts_test;
 mod weather_test;
 mod workout_audio_test;

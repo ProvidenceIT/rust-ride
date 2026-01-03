@@ -12,6 +12,7 @@ pub mod power_profile_store;
 pub mod rewards_store;
 pub mod schema;
 pub mod social_store;
+pub mod sync_store;
 pub mod xp_store;
 
 pub use analytics_store::AnalyticsStore;
@@ -20,7 +21,11 @@ pub use database::{Database, DatabaseError};
 pub use hardware_store::{
     HardwareStore, StoredAntDongle, StoredAudioSettings, StoredButtonMapping,
     StoredDualProtocolBinding, StoredFanProfile, StoredHidDevice, StoredPlatformSync,
-    StoredSyncRecord, StoredVideoSync,
+    StoredSyncRecord as HwStoredSyncRecord, StoredVideoSync,
+};
+pub use sync_store::{
+    delete_fit_from_queue, get_upload_queue_dir, load_fit_from_queue, save_fit_for_queue,
+    StoredSyncRecord, StoredUploadQueueEntry, SyncRecordStatus, SyncStore,
 };
 pub use ml_store::{CachedPrediction, FatigueStateRecord, MlStore, WorkoutRecommendationRecord};
 pub use social_store::{

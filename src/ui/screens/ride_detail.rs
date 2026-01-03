@@ -6,14 +6,20 @@
 //! T136: Show lap/segment breakdown (if workout)
 //! T137: Implement export and delete actions
 //! T142: Add motion visualization to post-ride analysis
+//! 3.4: Add sync status display and retry button for failed syncs
 
 use chrono::Local;
-use egui::{Align, Color32, Layout, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
+use egui::{Align, Color32, CursorIcon, Layout, Pos2, RichText, ScrollArea, Stroke, Ui, Vec2};
 
 use crate::recording::types::{ExportFormat, Ride, RideSample};
 use crate::sensors::MotionSample;
 use crate::storage::config::Units;
 use crate::ui::theme::zone_colors;
+
+use super::ride_history::RideSyncStatus;
+
+/// Strava brand color
+const STRAVA_ORANGE: Color32 = Color32::from_rgb(252, 82, 0);
 
 /// Actions that can result from the ride detail screen.
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +32,11 @@ pub enum RideDetailAction {
     Export(ExportFormat),
     /// Delete ride
     Delete,
+    /// Retry sync for failed upload
+    RetrySync {
+        /// Platform to retry (e.g., "Strava")
+        platform: String,
+    },
 }
 
 /// Ride detail screen state.
@@ -46,6 +57,8 @@ pub struct RideDetailScreen {
     pub units: Units,
     /// FTP at time of ride (for zone calculations)
     pub ftp: u16,
+    /// 3.4: Sync status for this ride
+    pub sync_status: RideSyncStatus,
 }
 
 impl Default for RideDetailScreen {
@@ -56,9 +69,10 @@ impl Default for RideDetailScreen {
             motion_samples: Vec::new(),
             show_delete_dialog: false,
             show_export_dialog: false,
-            export_format: ExportFormat::Fit,
+            export_format: ExportFormat::Tcx,
             units: Units::Metric,
             ftp: 200,
+            sync_status: RideSyncStatus::NotSynced,
         }
     }
 }
@@ -77,6 +91,17 @@ impl RideDetailScreen {
         self.motion_samples.clear();
         self.show_delete_dialog = false;
         self.show_export_dialog = false;
+        self.sync_status = RideSyncStatus::NotSynced;
+    }
+
+    /// 3.4: Set the sync status for this ride.
+    pub fn set_sync_status(&mut self, status: RideSyncStatus) {
+        self.sync_status = status;
+    }
+
+    /// 3.4: Get the sync status for this ride.
+    pub fn get_sync_status(&self) -> &RideSyncStatus {
+        &self.sync_status
     }
 
     /// T142: Set motion samples for visualization.
@@ -126,6 +151,7 @@ impl RideDetailScreen {
         ui.separator();
 
         // Main content
+        let mut sync_retry_action: Option<RideDetailAction> = None;
         ScrollArea::vertical().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
 
@@ -133,6 +159,14 @@ impl RideDetailScreen {
             self.render_summary_grid(ui, ride);
 
             ui.add_space(16.0);
+
+            // 3.4: Sync status section (only show if not NotSynced)
+            if !matches!(self.sync_status, RideSyncStatus::NotSynced) {
+                if let Some(retry_action) = self.render_sync_section(ui) {
+                    sync_retry_action = Some(retry_action);
+                }
+                ui.add_space(16.0);
+            }
 
             // Power metrics
             self.render_power_section(ui, ride);
@@ -162,6 +196,11 @@ impl RideDetailScreen {
 
             ui.add_space(32.0);
         });
+
+        // Handle sync retry action
+        if let Some(retry_action) = sync_retry_action {
+            action = retry_action;
+        }
 
         // Delete confirmation dialog
         if self.show_delete_dialog {
@@ -299,7 +338,7 @@ impl RideDetailScreen {
                 });
 
                 // Normalized Power
-                ui.group(|ui| {
+ui.group(|ui| {
                     ui.vertical(|ui| {
                         let np = ride
                             .normalized_power
@@ -428,14 +467,126 @@ impl RideDetailScreen {
                         .allocate_exact_size(Vec2::new(bar_max_width, 16.0), egui::Sense::hover());
                     ui.painter().rect_filled(
                         egui::Rect::from_min_size(rect.min, Vec2::new(bar_width, 16.0)),
-                        2.0,
+                        0.0,
                         bar_color,
+                    );
+
+                    // Draw border
+                    ui.painter().rect_stroke(
+                        egui::Rect::from_min_size(rect.min, Vec2::new(bar_max_width, 16.0)),
+                        0.0,
+                        Stroke::new(1.0, Color32::GRAY),
                     );
 
                     ui.add_space(8.0);
                     ui.label(format!("{}:{:02} ({:.0}%)", minutes, seconds, pct * 100.0));
                 });
             }
+        });
+    }
+
+    /// 3.4: Render the sync status section.
+    fn render_sync_section(&self, ui: &mut Ui) -> Option<RideDetailAction> {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.label(RichText::new("Sync Status").size(18.0).strong());
+            ui.add_space(8.0);
+
+            match &self.sync_status {
+                RideSyncStatus::Synced { platform } => {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::GREEN, "✓");
+                        ui.label(format!("Synced to {}", platform));
+                    });
+                }
+                RideSyncStatus::Syncing { platform } => {
+                    ui.horizontal(|ui| {
+                        ui.label("⟳ Syncing to");
+                        ui.colored_label(STRAVA_ORANGE, platform);
+                    });
+                }
+                RideSyncStatus::Failed { platform, error } => {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::RED, "✕");
+                        ui.vertical(|ui| {
+                            ui.label(format!("Failed to sync to {}", platform));
+                            ui.label(RichText::new(error).weak().small());
+                        });
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Retry button
+                    if ui
+                        .button(
+                            RichText::new("Retry").color(Color32::WHITE)
+                                .background_color(STRAVA_ORANGE),
+                        )
+                        .on_hover_cursor(CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        return Some(RideDetailAction::RetrySync {
+                            platform: platform.clone(),
+                        });
+                    }
+                }
+                RideSyncStatus::NotSynced => {
+                    // Should not render when NotSynced, but handle it just in case
+                    ui.label("Not synced");
+                }
+            }
+
+            None
+        })
+        .inner
+    }
+
+    /// Render motion visualization section.
+    fn render_motion_section(&self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.label(RichText::new("Motion Data").size(18.0).strong());
+            ui.add_space(8.0);
+
+            if self.motion_samples.is_empty() {
+                ui.label(RichText::new("No motion data available").weak().italics());
+                return;
+            }
+
+            // Display motion data summary
+            ui.label(format!("Motion samples: {}", self.motion_samples.len()));
+
+            // Calculate acceleration stats
+            let mut max_accel = 0.0f32;
+            let mut avg_accel = 0.0f32;
+            for sample in &self.motion_samples {
+                let accel_magnitude =
+                    (sample.accel_x.powi(2) + sample.accel_y.powi(2) + sample.accel_z.powi(2))
+                        .sqrt();
+                if accel_magnitude > max_accel {
+                    max_accel = accel_magnitude;
+                }
+                avg_accel += accel_magnitude;
+            }
+            avg_accel /= self.motion_samples.len() as f32;
+
+            ui.horizontal(|ui| {
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(format!("{:.2} m/s²", max_accel)).strong());
+                        ui.label(RichText::new("Max Acceleration").weak());
+                    });
+                });
+
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(format!("{:.2} m/s²", avg_accel)).strong());
+                        ui.label(RichText::new("Avg Acceleration").weak());
+                    });
+                });
+            });
         });
     }
 
@@ -446,300 +597,94 @@ impl RideDetailScreen {
 
             ui.label(RichText::new("Notes").size(18.0).strong());
             ui.add_space(8.0);
+
             ui.label(notes);
         });
     }
 
-    /// Render delete confirmation dialog. Returns Some(true) to confirm delete.
-    fn render_delete_dialog(&mut self, ui: &mut Ui) -> Option<bool> {
-        let mut result = None;
-
-        egui::Window::new("Delete Ride?")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.label("Are you sure you want to delete this ride?");
-                ui.label(RichText::new("This action cannot be undone.").weak());
-
-                ui.add_space(16.0);
-
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        result = Some(false);
-                    }
-
-                    if ui
-                        .button(RichText::new("Delete").color(Color32::from_rgb(234, 67, 53)))
-                        .clicked()
-                    {
-                        result = Some(true);
-                    }
-                });
-            });
-
-        result
-    }
-
-    /// Render export dialog. Returns Some(format) when export is requested.
-    fn render_export_dialog(&mut self, ui: &mut Ui) -> Option<ExportFormat> {
-        let mut result = None;
-
-        egui::Window::new("Export Ride")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.label("Select export format:");
-                ui.add_space(8.0);
-
-                // Format selection with radio buttons
-                ui.horizontal(|ui| {
-                    ui.radio_value(
-                        &mut self.export_format,
-                        ExportFormat::Fit,
-                        "FIT (Garmin/Native) — Recommended",
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.radio_value(
-                        &mut self.export_format,
-                        ExportFormat::Tcx,
-                        "TCX (Strava/Garmin)",
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.radio_value(
-                        &mut self.export_format,
-                        ExportFormat::Csv,
-                        "CSV (Data Analysis)",
-                    );
-                });
-
-                ui.add_space(8.0);
-
-                ui.label(
-                    RichText::new(
-                        "FIT is the preferred format for Garmin Connect, TrainingPeaks, and other platforms supporting native FIT. TCX works with Strava and legacy systems. CSV is for spreadsheet analysis.",
-                    )
-                    .weak()
-                    .size(12.0),
-                );
-
-                ui.add_space(16.0);
-
-                ui.horizontal(|ui| {
-                    if ui.button("Export").clicked() {
-                        result = Some(self.export_format);
-                    }
-
-                    if ui.button("Cancel").clicked() {
-                        self.show_export_dialog = false;
-                    }
-                });
-            });
-
-        result
-    }
-
-    /// Format duration as string.
+    /// Format duration in seconds to readable string.
     fn format_duration(&self, seconds: u32) -> String {
         let hours = seconds / 3600;
         let minutes = (seconds % 3600) / 60;
         let secs = seconds % 60;
 
         if hours > 0 {
-            format!("{}:{:02}:{:02}", hours, minutes, secs)
+            format!("{}h {:.0}m", hours, minutes)
         } else {
-            format!("{}:{:02}", minutes, secs)
+            format!("{:.0}m {:.0}s", minutes, secs)
         }
     }
 
-    /// T142: Render motion data visualization section.
-    fn render_motion_section(&self, ui: &mut Ui) {
-        ui.group(|ui| {
-            ui.set_min_width(ui.available_width() - 16.0);
+    /// Render the delete confirmation dialog.
+    fn render_delete_dialog(&self, ui: &mut Ui) -> Option<bool> {
+        let mut result = None;
 
-            ui.label(RichText::new("Motion Data").size(18.0).strong());
-            ui.add_space(8.0);
+        let modal_id = egui::Id::new("delete_confirm_dialog");
+        let is_open = ui.memory_mut(|mem| mem.data.get_temp::<bool>(modal_id).unwrap_or(true));
 
-            // Calculate motion statistics
-            let stats = self.calculate_motion_stats();
+        if is_open {
+            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, true));
 
-            // Summary metrics
-            ui.horizontal(|ui| {
-                // Max tilt
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new(format!("{:.1}°", stats.max_tilt))
-                                .size(24.0)
-                                .strong(),
-                        );
-                        ui.label(RichText::new("Max Tilt").weak());
+            egui::Window::new("Delete Ride")
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Are you sure you want to delete this ride? This cannot be undone.");
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            result = Some(false);
+                            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, false));
+                        }
+
+                        if ui
+                            .button(RichText::new("Delete").color(Color32::from_rgb(234, 67, 53)))
+                            .clicked()
+                        {
+                            result = Some(true);
+                            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, false));
+                        }
                     });
                 });
+        }
 
-                // Average tilt
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new(format!("{:.1}°", stats.avg_tilt))
-                                .size(24.0)
-                                .strong(),
-                        );
-                        ui.label(RichText::new("Avg Tilt").weak());
+        result
+    }
+
+    /// Render the export dialog.
+    fn render_export_dialog(&self, ui: &mut Ui) -> Option<ExportFormat> {
+        let mut result = None;
+
+        let modal_id = egui::Id::new("export_dialog");
+        let is_open = ui.memory_mut(|mem| mem.data.get_temp::<bool>(modal_id).unwrap_or(true));
+
+        if is_open {
+            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, true));
+
+            egui::Window::new("Export Ride")
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Select export format:");
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, false));
+                        }
+
+                        if ui.button("TCX").clicked() {
+                            result = Some(ExportFormat::Tcx);
+                            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, false));
+                        }
+
+                        if ui.button("CSV").clicked() {
+                            result = Some(ExportFormat::Csv);
+                            ui.memory_mut(|mem| mem.data.insert_temp(modal_id, false));
+                        }
                     });
                 });
+        }
 
-                // Total motion samples
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new(format!("{}", self.motion_samples.len()))
-                                .size(24.0)
-                                .strong(),
-                        );
-                        ui.label(RichText::new("Samples").weak());
-                    });
-                });
-            });
-
-            ui.add_space(12.0);
-
-            // Tilt over time chart
-            self.render_tilt_chart(ui);
-        });
+        result
     }
-
-    /// T142: Calculate motion statistics.
-    fn calculate_motion_stats(&self) -> MotionStats {
-        if self.motion_samples.is_empty() {
-            return MotionStats::default();
-        }
-
-        let mut max_tilt = 0.0f32;
-        let mut total_tilt = 0.0f32;
-        let mut max_roll = 0.0f32;
-        let mut max_pitch = 0.0f32;
-
-        for sample in &self.motion_samples {
-            let roll_abs = sample.tilt_degrees.0.abs();
-            let pitch_abs = sample.tilt_degrees.1.abs();
-            let combined_tilt = (roll_abs * roll_abs + pitch_abs * pitch_abs).sqrt();
-
-            max_tilt = max_tilt.max(combined_tilt);
-            total_tilt += combined_tilt;
-            max_roll = max_roll.max(roll_abs);
-            max_pitch = max_pitch.max(pitch_abs);
-        }
-
-        let avg_tilt = total_tilt / self.motion_samples.len() as f32;
-
-        MotionStats {
-            max_tilt,
-            avg_tilt,
-            max_roll,
-            max_pitch,
-        }
-    }
-
-    /// T142: Render tilt over time chart.
-    fn render_tilt_chart(&self, ui: &mut Ui) {
-        let chart_height = 100.0;
-        let chart_width = ui.available_width() - 16.0;
-
-        let (response, painter) =
-            ui.allocate_painter(Vec2::new(chart_width, chart_height), egui::Sense::hover());
-        let rect = response.rect;
-
-        // Background
-        painter.rect_filled(rect, 4.0, Color32::from_rgb(30, 30, 35));
-
-        // Draw grid lines
-        let mid_y = rect.center().y;
-        painter.line_segment(
-            [
-                Pos2::new(rect.left(), mid_y),
-                Pos2::new(rect.right(), mid_y),
-            ],
-            Stroke::new(1.0, Color32::from_rgb(60, 60, 65)),
-        );
-
-        if self.motion_samples.is_empty() {
-            return;
-        }
-
-        // Find max tilt for scaling
-        let max_tilt = self
-            .motion_samples
-            .iter()
-            .map(|s| s.tilt_degrees.0.abs().max(s.tilt_degrees.1.abs()))
-            .fold(0.0f32, f32::max)
-            .max(5.0); // At least 5 degrees
-
-        let sample_count = self.motion_samples.len();
-        let x_step = chart_width / sample_count as f32;
-
-        // Draw roll line (orange)
-        let mut roll_points: Vec<Pos2> = Vec::with_capacity(sample_count);
-        for (i, sample) in self.motion_samples.iter().enumerate() {
-            let x = rect.left() + i as f32 * x_step;
-            let normalized_roll = sample.tilt_degrees.0 / max_tilt;
-            let y = mid_y - normalized_roll * (chart_height / 2.0 - 5.0);
-            roll_points.push(Pos2::new(x, y));
-        }
-
-        if roll_points.len() >= 2 {
-            // Downsample for performance
-            let step = (roll_points.len() / 500).max(1);
-            let downsampled: Vec<Pos2> = roll_points.iter().step_by(step).copied().collect();
-            for window in downsampled.windows(2) {
-                painter.line_segment(
-                    [window[0], window[1]],
-                    Stroke::new(1.5, Color32::from_rgb(255, 165, 0)),
-                );
-            }
-        }
-
-        // Draw pitch line (cyan)
-        let mut pitch_points: Vec<Pos2> = Vec::with_capacity(sample_count);
-        for (i, sample) in self.motion_samples.iter().enumerate() {
-            let x = rect.left() + i as f32 * x_step;
-            let normalized_pitch = sample.tilt_degrees.1 / max_tilt;
-            let y = mid_y - normalized_pitch * (chart_height / 2.0 - 5.0);
-            pitch_points.push(Pos2::new(x, y));
-        }
-
-        if pitch_points.len() >= 2 {
-            let step = (pitch_points.len() / 500).max(1);
-            let downsampled: Vec<Pos2> = pitch_points.iter().step_by(step).copied().collect();
-            for window in downsampled.windows(2) {
-                painter.line_segment(
-                    [window[0], window[1]],
-                    Stroke::new(1.5, Color32::from_rgb(0, 200, 200)),
-                );
-            }
-        }
-
-        // Legend
-        ui.horizontal(|ui| {
-            ui.colored_label(Color32::from_rgb(255, 165, 0), "● Roll");
-            ui.colored_label(Color32::from_rgb(0, 200, 200), "● Pitch");
-            ui.label(RichText::new(format!("(±{:.1}°)", max_tilt)).weak());
-        });
-    }
-}
-
-/// T142: Motion statistics.
-#[derive(Default)]
-struct MotionStats {
-    max_tilt: f32,
-    avg_tilt: f32,
-    /// Maximum roll angle (reserved for future use)
-    #[allow(dead_code)]
-    max_roll: f32,
-    /// Maximum pitch angle (reserved for future use)
-    #[allow(dead_code)]
-    max_pitch: f32,
 }
