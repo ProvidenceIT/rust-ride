@@ -126,11 +126,56 @@
   - Real-world scenario tests (trainer workout, HR failure, multi-sensor)
 - Updated `tests/unit/mod.rs` with new test module
 
+### 2.4 - Add persistent reconnection across app restarts (COMPLETED)
+- Created `src/sensors/persistence.rs` with:
+  - `SessionSensor` struct - stores sensor connection state:
+    - device_id, name, sensor_type, protocol
+    - connected_at, last_data_at timestamps
+    - is_primary flag for primary sensors
+    - was_healthy flag for connection health status
+  - `ConnectionSession` struct - represents a connection session:
+    - started_at, last_updated_at timestamps
+    - sensors HashMap for tracking connected sensors
+    - clean_shutdown flag to detect crashes vs intentional exits
+    - app_version for compatibility tracking
+    - Methods: add_sensor(), remove_sensor(), reconnection_priority()
+    - Priority sorting: primary first, healthy before unhealthy, then by sensor type
+  - `ConnectionSessionManager` - manages session persistence:
+    - JSON-based persistence at {data_dir}/sensor_session.json
+    - Auto-save on sensor connect/disconnect
+    - Session staleness detection (24 hour max age)
+    - Reconnection target ordering by priority
+    - Clean shutdown tracking for crash recovery
+  - `PersistenceError` enum for error handling
+- Updated `src/sensors/manager.rs`:
+  - Added `session_manager` field to SensorManager
+  - Session loaded on initialization
+  - Sensor recorded in session on successful connection
+  - Sensor removed from session on intentional disconnect
+  - Session prepared for clean shutdown in shutdown()
+  - New public methods:
+    - `has_reconnectable_session()` - check for previous session
+    - `get_session_reconnection_targets()` - get sensors to reconnect
+    - `get_session_reconnection_device_ids()` - get device IDs to reconnect
+    - `reconnect_previous_session()` - auto-reconnect to previous sensors
+    - `start_new_session()` - start fresh session
+    - `session_sensor_count()` - get current session sensor count
+    - `was_session_clean_shutdown()` - check if last session ended cleanly
+    - `clear_session()` - clear the current session
+- Updated `src/sensors/mod.rs` with persistence exports
+- Created comprehensive unit tests in `tests/unit/persistence_test.rs`:
+  - SessionSensor creation and update tests
+  - ConnectionSession add/remove/query tests
+  - Reconnection priority ordering tests
+  - SessionManager save/load tests
+  - Real-world scenario tests (workout session, crash recovery)
+- Updated `tests/unit/mod.rs` with new test module
+
 ## Phase 1: Enhanced Discovery & Fast Connection - COMPLETE
 
-## Phase 2: Robust Automatic Reconnection - IN PROGRESS (3/4 complete)
+## Phase 2: Robust Automatic Reconnection - COMPLETE (4/4 complete)
 
-## Status: Phase 2 In Progress
+## Status: Phase 2 Complete - Ready for Phase 3
 
 ## Implementation Plan Created
 - 6 phases with 24 total subtasks

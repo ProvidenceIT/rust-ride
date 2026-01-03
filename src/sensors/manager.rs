@@ -12,6 +12,7 @@ use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::cache::SensorCache;
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
+use crate::sensors::persistence::{ConnectionSessionManager, SessionSensor};
 use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
@@ -85,6 +86,8 @@ pub struct SensorManager {
     connection_queue: Arc<Mutex<ConnectionQueue>>,
     /// Connection health monitor for proactive stale detection
     health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
+    /// Session manager for persisting connection state across app restarts
+    session_manager: Arc<Mutex<ConnectionSessionManager>>,
 }
 
 impl SensorManager {
@@ -96,6 +99,15 @@ impl SensorManager {
             "Loaded {} cached sensors for fast reconnection",
             sensor_cache.len()
         );
+
+        // Load session manager for persistent reconnection
+        let session_manager = ConnectionSessionManager::load();
+        if session_manager.has_reconnectable_session() {
+            tracing::info!(
+                "Found previous session with {} sensors for potential reconnection",
+                session_manager.sensor_count()
+            );
+        }
 
         // Create exponential backoff config from sensor config
         // Uses the max_reconnect_attempts from config
@@ -125,6 +137,7 @@ impl SensorManager {
             progressive_timeout_state: Arc::new(Mutex::new(None)),
             connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
             health_monitor: Arc::new(Mutex::new(ConnectionHealthMonitor::new())),
+            session_manager: Arc::new(Mutex::new(session_manager)),
         }
     }
 
@@ -1032,6 +1045,18 @@ impl SensorManager {
                 if let Err(e) = cache.save() {
                     tracing::warn!("Failed to save sensor cache: {}", e);
                 }
+
+                // Record in session for reconnection across app restarts
+                let mut session_mgr = self.session_manager.lock().await;
+                session_mgr.sensor_connected(
+                    device_id.to_string(),
+                    disc_sensor.name.clone(),
+                    disc_sensor.sensor_type,
+                    disc_sensor.protocol,
+                    disc_sensor.sensor_type == SensorType::Trainer
+                        || disc_sensor.sensor_type == SensorType::SmartTrainer
+                        || disc_sensor.sensor_type == SensorType::PowerMeter,
+                );
             } else {
                 sensor_type_for_health = None;
             }
@@ -1361,6 +1386,9 @@ impl SensorManager {
         if let Some(state) = self.sensor_states.lock().await.get_mut(device_id) {
             state.connection_state = ConnectionState::Disconnected;
         }
+
+        // Remove from session (intentional disconnect)
+        self.session_manager.lock().await.sensor_disconnected(device_id);
 
         // Send disconnected event
         self.send_event(SensorEvent::ConnectionChanged {
@@ -1977,6 +2005,12 @@ impl SensorManager {
         // Stop scanning
         let _ = self.stop_discovery().await;
 
+        // Prepare session for clean shutdown (preserve sensor state for reconnection)
+        {
+            let mut session_mgr = self.session_manager.lock().await;
+            session_mgr.prepare_shutdown();
+        }
+
         // Disconnect all sensors
         let device_ids: Vec<String> = self.connected.lock().await.keys().cloned().collect();
 
@@ -1992,5 +2026,143 @@ impl SensorManager {
         if let Err(e) = cache.save() {
             tracing::warn!("Failed to save sensor cache on shutdown: {}", e);
         }
+    }
+
+    // =========================================================================
+    // Session Persistence Methods for App Restart Reconnection
+    // =========================================================================
+
+    /// Check if there's a previous session that can be used for reconnection.
+    ///
+    /// Returns true if a session exists that is not stale (< 24 hours old)
+    /// and contains at least one sensor.
+    pub async fn has_reconnectable_session(&self) -> bool {
+        self.session_manager.lock().await.has_reconnectable_session()
+    }
+
+    /// Get sensors from the previous session that should be reconnected.
+    ///
+    /// Returns sensors sorted by reconnection priority:
+    /// 1. Primary sensors first
+    /// 2. Healthy sensors before unhealthy
+    /// 3. By sensor type priority (trainers/power meters first)
+    pub async fn get_session_reconnection_targets(&self) -> Vec<SessionSensor> {
+        self.session_manager
+            .lock()
+            .await
+            .get_reconnection_targets()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Get device IDs for sensors that should be reconnected from previous session.
+    pub async fn get_session_reconnection_device_ids(&self) -> Vec<String> {
+        self.session_manager
+            .lock()
+            .await
+            .get_reconnection_device_ids()
+    }
+
+    /// Attempt to reconnect to sensors from the previous session.
+    ///
+    /// This method:
+    /// 1. Gets sensors from the previous session
+    /// 2. Checks if they're currently visible (using fast_reconnect_cached)
+    /// 3. Connects to those that are found
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn reconnect_previous_session(&mut self) -> Result<Vec<String>, SensorError> {
+        let session_device_ids: Vec<String> = {
+            let session_mgr = self.session_manager.lock().await;
+            if !session_mgr.has_reconnectable_session() {
+                tracing::debug!("No reconnectable session found");
+                return Ok(Vec::new());
+            }
+            session_mgr.get_reconnection_device_ids()
+        };
+
+        if session_device_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Attempting to reconnect {} sensors from previous session",
+            session_device_ids.len()
+        );
+
+        // First, try fast reconnection to discover cached sensors
+        let found_sensors = self.fast_reconnect_cached().await?;
+
+        // Find which session sensors are currently visible
+        let reconnectable: Vec<String> = session_device_ids
+            .into_iter()
+            .filter(|id| found_sensors.contains(id))
+            .collect();
+
+        if reconnectable.is_empty() {
+            tracing::info!("No previous session sensors are currently visible");
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Found {}/{} session sensors, attempting reconnection",
+            reconnectable.len(),
+            found_sensors.len()
+        );
+
+        // Connect to each reconnectable sensor
+        let mut connected = Vec::new();
+        for device_id in reconnectable {
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    tracing::info!("Reconnected to session sensor: {}", device_id);
+                    connected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to reconnect to session sensor {}: {}",
+                        device_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        if !connected.is_empty() {
+            tracing::info!(
+                "Successfully reconnected {} sensors from previous session",
+                connected.len()
+            );
+        }
+
+        Ok(connected)
+    }
+
+    /// Start a new session, discarding the previous one.
+    ///
+    /// Call this when the user explicitly starts a new ride/workout
+    /// and doesn't want to use the previous session's sensors.
+    pub async fn start_new_session(&self) {
+        let mut session_mgr = self.session_manager.lock().await;
+        session_mgr.start_new_session(false);
+        tracing::info!("Started new sensor session");
+    }
+
+    /// Get the number of sensors in the current session.
+    pub async fn session_sensor_count(&self) -> usize {
+        self.session_manager.lock().await.sensor_count()
+    }
+
+    /// Check if the previous session ended cleanly.
+    pub async fn was_session_clean_shutdown(&self) -> bool {
+        self.session_manager.lock().await.was_clean_shutdown()
+    }
+
+    /// Clear the current session.
+    pub async fn clear_session(&self) {
+        let mut session_mgr = self.session_manager.lock().await;
+        session_mgr.clear();
+        tracing::info!("Cleared sensor session");
     }
 }

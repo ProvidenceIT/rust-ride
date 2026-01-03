@@ -140,7 +140,7 @@
           "id": "2.4",
           "title": "Add persistent reconnection across app restarts",
           "description": "Save connection state to enable reconnection to last-known sensors on app restart. Automatically attempt to reconnect to previously connected sensors.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/persistence.rs",
             "src/sensors/manager.rs",
@@ -149,7 +149,9 @@
           "tests": [
             "tests/unit/persistence_test.rs"
           ],
-          "acceptance": "App restarts automatically reconnect to previously connected sensors"
+          "acceptance": "App restarts automatically reconnect to previously connected sensors",
+          "notes": "Implemented connection session persistence for automatic reconnection across app restarts. Created src/sensors/persistence.rs with SessionSensor, ConnectionSession, and ConnectionSessionManager. Integrated with SensorManager to save session on connect/disconnect, load on startup, and prepare for clean shutdown. Added public methods for session-based reconnection: has_reconnectable_session(), get_session_reconnection_targets(), reconnect_previous_session(), start_new_session(), session_sensor_count(), was_session_clean_shutdown(), clear_session(). Created comprehensive unit tests in tests/unit/persistence_test.rs covering all functionality including real-world scenarios. Updated mod.rs with new exports.",
+          "updated_at": "2026-01-03T00:18:27.986208+00:00"
         }
       ]
     },
@@ -447,5 +449,5 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-03T00:05:57.969588+00:00"
+  "last_updated": "2026-01-03T00:18:27.986208+00:00"
 }

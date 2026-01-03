@@ -19,6 +19,7 @@ mod leaderboard_test;
 mod npc_ai_test;
 mod npc_spawner_test;
 mod parallel_discovery_test;
+mod persistence_test;
 mod power_profile_tests;
 mod progressive_timeout_test;
 mod reconnection_backoff_test;

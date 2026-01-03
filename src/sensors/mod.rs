@@ -11,6 +11,7 @@ pub mod health;
 pub mod imu;
 pub mod incline;
 pub mod manager;
+pub mod persistence;
 pub mod reconnection;
 pub mod smo2;
 pub mod types;
@@ -37,6 +38,9 @@ pub use connection_state::{
 };
 pub use health::{
     ConnectionHealth, ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus,
+};
+pub use persistence::{
+    ConnectionSession, ConnectionSessionManager, PersistenceError, SessionSensor,
 };
 pub use reconnection::{
     ExponentialBackoff, ExponentialBackoffConfig, ReconnectionManager, ReconnectionStats,
