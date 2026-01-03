@@ -324,15 +324,26 @@ impl MqttClient for DefaultMqttClient {
         Ok(())
     }
 
-    async fn subscribe(&self, topic: &str, _qos: QoS) -> Result<(), MqttError> {
+    async fn subscribe(&self, topic: &str, qos: QoS) -> Result<(), MqttError> {
         if !self.is_connected() {
             return Err(MqttError::NotConnected);
         }
 
-        tracing::debug!("Subscribing to {}", topic);
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(MqttError::NotConnected)?;
 
-        // TODO: Actual subscribe using rumqttc
-        // client.subscribe(topic, qos_to_rumqttc(qos)).await?;
+        tracing::debug!("Subscribing to {} with QoS {:?}", topic, qos);
+
+        // Convert our QoS to rumqttc QoS
+        let rumqttc_qos = qos_to_rumqttc(qos);
+
+        // Subscribe using rumqttc AsyncClient
+        client
+            .subscribe(topic, rumqttc_qos)
+            .await
+            .map_err(|e| MqttError::SubscribeFailed(e.to_string()))?;
 
         Ok(())
     }
@@ -342,10 +353,18 @@ impl MqttClient for DefaultMqttClient {
             return Err(MqttError::NotConnected);
         }
 
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(MqttError::NotConnected)?;
+
         tracing::debug!("Unsubscribing from {}", topic);
 
-        // TODO: Actual unsubscribe
-        // client.unsubscribe(topic).await?;
+        // Unsubscribe using rumqttc AsyncClient
+        client
+            .unsubscribe(topic)
+            .await
+            .map_err(|e| MqttError::SubscribeFailed(format!("Unsubscribe failed: {}", e)))?;
 
         Ok(())
     }
@@ -388,6 +407,20 @@ mod tests {
     async fn test_publish_not_connected() {
         let client = DefaultMqttClient::new();
         let result = client.publish("test", "payload", QoS::AtMostOnce).await;
+        assert!(matches!(result, Err(MqttError::NotConnected)));
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_not_connected() {
+        let client = DefaultMqttClient::new();
+        let result = client.subscribe("test/topic", QoS::AtLeastOnce).await;
+        assert!(matches!(result, Err(MqttError::NotConnected)));
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_not_connected() {
+        let client = DefaultMqttClient::new();
+        let result = client.unsubscribe("test/topic").await;
         assert!(matches!(result, Err(MqttError::NotConnected)));
     }
 }
