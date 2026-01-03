@@ -4,11 +4,17 @@
 //! - Connection status display
 //! - Connect/disconnect buttons
 //! - Athlete profile display when connected
+//!
+//! T025: Added sync history view showing:
+//! - Recent ride uploads with status
+//! - Failed syncs with retry option
+//! - Scrollable history list
 
-use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
+use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui, Vec2};
+use uuid::Uuid;
 
 use crate::integrations::sync::trainingpeaks::AthleteProfile;
-use crate::integrations::sync::{PlatformConfig, SyncPlatform, TrainingPeaksPlatformConfig};
+use crate::integrations::sync::{PlatformConfig, SyncPlatform, SyncRecordStatus, TrainingPeaksPlatformConfig};
 
 use super::Screen;
 
@@ -61,6 +67,81 @@ pub enum WorkoutSyncStatus {
     Error(String),
 }
 
+/// Maximum number of sync history entries to display.
+const MAX_SYNC_HISTORY_ENTRIES: usize = 10;
+
+/// A sync history entry for display in the UI.
+///
+/// Represents a single ride upload attempt to TrainingPeaks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncHistoryEntry {
+    /// Unique ID of the sync record
+    pub id: Uuid,
+    /// ID of the ride that was synced
+    pub ride_id: Uuid,
+    /// Display name for the ride (e.g., "Morning Ride" or "Ride 2024-01-15")
+    pub ride_name: String,
+    /// Current sync status
+    pub status: SyncRecordStatus,
+    /// Error message if sync failed
+    pub error_message: Option<String>,
+    /// External activity ID on TrainingPeaks (if completed)
+    pub external_id: Option<String>,
+    /// URL to view activity on TrainingPeaks
+    pub external_url: Option<String>,
+    /// When this sync was created (formatted for display)
+    pub created_at: String,
+    /// When this sync completed (formatted for display)
+    pub completed_at: Option<String>,
+    /// Number of retry attempts
+    pub retry_count: u32,
+}
+
+impl SyncHistoryEntry {
+    /// Check if this entry can be retried.
+    pub fn can_retry(&self) -> bool {
+        self.status == SyncRecordStatus::Failed
+    }
+
+    /// Check if this entry is currently syncing.
+    pub fn is_syncing(&self) -> bool {
+        matches!(self.status, SyncRecordStatus::Pending | SyncRecordStatus::Uploading)
+    }
+
+    /// Get the status display text.
+    pub fn status_text(&self) -> &'static str {
+        match self.status {
+            SyncRecordStatus::Pending => "Pending",
+            SyncRecordStatus::Uploading => "Uploading...",
+            SyncRecordStatus::Completed => "Synced",
+            SyncRecordStatus::Failed => "Failed",
+            SyncRecordStatus::Cancelled => "Cancelled",
+        }
+    }
+
+    /// Get the status color.
+    pub fn status_color(&self) -> Color32 {
+        match self.status {
+            SyncRecordStatus::Pending => Color32::from_rgb(251, 188, 4), // Amber
+            SyncRecordStatus::Uploading => TRAININGPEAKS_TEAL,
+            SyncRecordStatus::Completed => Color32::from_rgb(52, 168, 83), // Green
+            SyncRecordStatus::Failed => Color32::from_rgb(234, 67, 53), // Red
+            SyncRecordStatus::Cancelled => Color32::GRAY,
+        }
+    }
+
+    /// Get the status icon.
+    pub fn status_icon(&self) -> &'static str {
+        match self.status {
+            SyncRecordStatus::Pending => "⏳",
+            SyncRecordStatus::Uploading => "↑",
+            SyncRecordStatus::Completed => "✓",
+            SyncRecordStatus::Failed => "✗",
+            SyncRecordStatus::Cancelled => "○",
+        }
+    }
+}
+
 /// Actions that can result from the TrainingPeaks settings screen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrainingPeaksSettingsAction {
@@ -86,6 +167,10 @@ pub enum TrainingPeaksSettingsAction {
     SetLookaheadDays(i32),
     /// Set the number of days to look back for past workouts
     SetLookbackDays(i32),
+    /// Retry a failed sync (by sync record ID)
+    RetrySyncRecord(Uuid),
+    /// View an activity on TrainingPeaks (by external URL)
+    ViewExternalActivity(String),
 }
 
 /// TrainingPeaks settings screen state.
@@ -109,6 +194,8 @@ pub struct TrainingPeaksSettingsScreen {
     pub synced_workouts_count: usize,
     /// Current workout sync status
     pub workout_sync_status: WorkoutSyncStatus,
+    /// Sync history entries (recent uploads)
+    pub sync_history: Vec<SyncHistoryEntry>,
 }
 
 impl TrainingPeaksSettingsScreen {
@@ -170,6 +257,36 @@ impl TrainingPeaksSettingsScreen {
     /// Check if currently connected.
     pub fn is_connected(&self) -> bool {
         matches!(self.connection_state, TrainingPeaksConnectionState::Connected)
+    }
+
+    /// Set the sync history entries.
+    pub fn set_sync_history(&mut self, history: Vec<SyncHistoryEntry>) {
+        // Keep only the most recent entries
+        self.sync_history = if history.len() > MAX_SYNC_HISTORY_ENTRIES {
+            history.into_iter().take(MAX_SYNC_HISTORY_ENTRIES).collect()
+        } else {
+            history
+        };
+    }
+
+    /// Add a single sync history entry.
+    pub fn add_sync_history_entry(&mut self, entry: SyncHistoryEntry) {
+        self.sync_history.insert(0, entry);
+        if self.sync_history.len() > MAX_SYNC_HISTORY_ENTRIES {
+            self.sync_history.pop();
+        }
+    }
+
+    /// Get the count of failed syncs in history.
+    pub fn failed_sync_count(&self) -> usize {
+        self.sync_history.iter()
+            .filter(|e| e.status == SyncRecordStatus::Failed)
+            .count()
+    }
+
+    /// Check if there are any failed syncs that can be retried.
+    pub fn has_failed_syncs(&self) -> bool {
+        self.sync_history.iter().any(|e| e.can_retry())
     }
 
     /// Render the TrainingPeaks settings screen.
@@ -641,6 +758,13 @@ impl TrainingPeaksSettingsScreen {
 
         ui.add_space(16.0);
 
+        // Sync history section
+        if let Some(history_action) = self.render_sync_history(ui) {
+            action = Some(history_action);
+        }
+
+        ui.add_space(16.0);
+
         // TrainingPeaks profile link
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
@@ -787,6 +911,175 @@ impl TrainingPeaksSettingsScreen {
                     });
             }
         }
+    }
+
+    /// Render the sync history section showing recent uploads.
+    fn render_sync_history(&self, ui: &mut Ui) -> Option<TrainingPeaksSettingsAction> {
+        let mut action = None;
+
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .inner_margin(16.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+
+                // Header with failed count indicator
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Sync History").size(14.0).strong());
+
+                    let failed_count = self.failed_sync_count();
+                    if failed_count > 0 {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(format!("{} failed", failed_count))
+                                .color(Color32::from_rgb(234, 67, 53))
+                                .small(),
+                        );
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                if self.sync_history.is_empty() {
+                    // Empty state
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("No recent syncs").weak().italics());
+                    });
+                } else {
+                    // Sync history list with scroll area
+                    let max_height = 200.0;
+                    ScrollArea::vertical()
+                        .max_height(max_height)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            for entry in &self.sync_history {
+                                if let Some(entry_action) = self.render_sync_history_entry(ui, entry) {
+                                    action = Some(entry_action);
+                                }
+                                ui.add_space(4.0);
+                            }
+                        });
+                }
+            });
+
+        action
+    }
+
+    /// Render a single sync history entry.
+    fn render_sync_history_entry(&self, ui: &mut Ui, entry: &SyncHistoryEntry) -> Option<TrainingPeaksSettingsAction> {
+        let mut action = None;
+
+        // Entry background color based on status
+        let bg_color = match entry.status {
+            SyncRecordStatus::Failed => Color32::from_rgb(40, 25, 25),
+            SyncRecordStatus::Completed => ui.visuals().extreme_bg_color,
+            _ => ui.visuals().extreme_bg_color,
+        };
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .inner_margin(8.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // Status icon
+                    ui.label(
+                        RichText::new(entry.status_icon())
+                            .color(entry.status_color())
+                            .size(14.0),
+                    );
+
+                    ui.add_space(4.0);
+
+                    // Ride name
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(&entry.ride_name)
+                                    .size(13.0)
+                                    .strong(),
+                            );
+
+                            ui.label(
+                                RichText::new(entry.status_text())
+                                    .color(entry.status_color())
+                                    .size(11.0),
+                            );
+                        });
+
+                        // Timestamp and details
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(&entry.created_at)
+                                    .weak()
+                                    .small(),
+                            );
+
+                            if let Some(ref completed) = entry.completed_at {
+                                ui.label(
+                                    RichText::new(format!(" → {}", completed))
+                                        .weak()
+                                        .small(),
+                                );
+                            }
+
+                            if entry.retry_count > 0 {
+                                ui.label(
+                                    RichText::new(format!(" ({} retries)", entry.retry_count))
+                                        .weak()
+                                        .small(),
+                                );
+                            }
+                        });
+
+                        // Error message for failed syncs
+                        if entry.status == SyncRecordStatus::Failed {
+                            if let Some(ref error) = entry.error_message {
+                                ui.label(
+                                    RichText::new(error)
+                                        .color(Color32::from_rgb(234, 67, 53))
+                                        .small(),
+                                );
+                            }
+                        }
+                    });
+
+                    // Right side: action buttons
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // View on TrainingPeaks button (for completed syncs)
+                        if entry.status == SyncRecordStatus::Completed {
+                            if let Some(ref url) = entry.external_url {
+                                if ui.small_button("View").on_hover_text("View on TrainingPeaks").clicked() {
+                                    action = Some(TrainingPeaksSettingsAction::ViewExternalActivity(url.clone()));
+                                }
+                            }
+                        }
+
+                        // Retry button for failed syncs
+                        if entry.can_retry() {
+                            let retry_button = egui::Button::new(
+                                RichText::new("Retry")
+                                    .size(11.0)
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(TRAININGPEAKS_TEAL)
+                            .min_size(Vec2::new(50.0, 22.0));
+
+                            if ui.add(retry_button).on_hover_text("Retry this upload").clicked() {
+                                action = Some(TrainingPeaksSettingsAction::RetrySyncRecord(entry.id));
+                            }
+                        }
+
+                        // Uploading spinner
+                        if entry.is_syncing() {
+                            ui.spinner();
+                        }
+                    });
+                });
+            });
+
+        action
     }
 }
 
@@ -1180,5 +1473,243 @@ mod tests {
 
         assert_eq!(screen.tp_config.lookahead_days, 28);
         assert_eq!(screen.tp_config.lookback_days, 3);
+    }
+
+    // ========== Sync History Tests (T025) ==========
+
+    fn create_test_sync_entry(status: SyncRecordStatus) -> SyncHistoryEntry {
+        SyncHistoryEntry {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            ride_name: "Test Ride".to_string(),
+            status,
+            error_message: if status == SyncRecordStatus::Failed {
+                Some("Network error".to_string())
+            } else {
+                None
+            },
+            external_id: if status == SyncRecordStatus::Completed {
+                Some("12345".to_string())
+            } else {
+                None
+            },
+            external_url: if status == SyncRecordStatus::Completed {
+                Some("https://www.trainingpeaks.com/workout/12345".to_string())
+            } else {
+                None
+            },
+            created_at: "2024-01-15 10:00".to_string(),
+            completed_at: if status == SyncRecordStatus::Completed {
+                Some("2024-01-15 10:01".to_string())
+            } else {
+                None
+            },
+            retry_count: 0,
+        }
+    }
+
+    #[test]
+    fn test_sync_history_entry_can_retry() {
+        let failed_entry = create_test_sync_entry(SyncRecordStatus::Failed);
+        assert!(failed_entry.can_retry());
+
+        let completed_entry = create_test_sync_entry(SyncRecordStatus::Completed);
+        assert!(!completed_entry.can_retry());
+
+        let pending_entry = create_test_sync_entry(SyncRecordStatus::Pending);
+        assert!(!pending_entry.can_retry());
+    }
+
+    #[test]
+    fn test_sync_history_entry_is_syncing() {
+        let pending_entry = create_test_sync_entry(SyncRecordStatus::Pending);
+        assert!(pending_entry.is_syncing());
+
+        let uploading_entry = create_test_sync_entry(SyncRecordStatus::Uploading);
+        assert!(uploading_entry.is_syncing());
+
+        let completed_entry = create_test_sync_entry(SyncRecordStatus::Completed);
+        assert!(!completed_entry.is_syncing());
+
+        let failed_entry = create_test_sync_entry(SyncRecordStatus::Failed);
+        assert!(!failed_entry.is_syncing());
+    }
+
+    #[test]
+    fn test_sync_history_entry_status_text() {
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Pending).status_text(), "Pending");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Uploading).status_text(), "Uploading...");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Completed).status_text(), "Synced");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Failed).status_text(), "Failed");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Cancelled).status_text(), "Cancelled");
+    }
+
+    #[test]
+    fn test_sync_history_entry_status_icon() {
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Pending).status_icon(), "⏳");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Uploading).status_icon(), "↑");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Completed).status_icon(), "✓");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Failed).status_icon(), "✗");
+        assert_eq!(create_test_sync_entry(SyncRecordStatus::Cancelled).status_icon(), "○");
+    }
+
+    #[test]
+    fn test_sync_history_entry_status_color() {
+        let pending_color = create_test_sync_entry(SyncRecordStatus::Pending).status_color();
+        assert_eq!(pending_color, Color32::from_rgb(251, 188, 4)); // Amber
+
+        let completed_color = create_test_sync_entry(SyncRecordStatus::Completed).status_color();
+        assert_eq!(completed_color, Color32::from_rgb(52, 168, 83)); // Green
+
+        let failed_color = create_test_sync_entry(SyncRecordStatus::Failed).status_color();
+        assert_eq!(failed_color, Color32::from_rgb(234, 67, 53)); // Red
+    }
+
+    #[test]
+    fn test_set_sync_history() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert!(screen.sync_history.is_empty());
+
+        let entries = vec![
+            create_test_sync_entry(SyncRecordStatus::Completed),
+            create_test_sync_entry(SyncRecordStatus::Failed),
+        ];
+
+        screen.set_sync_history(entries);
+        assert_eq!(screen.sync_history.len(), 2);
+    }
+
+    #[test]
+    fn test_set_sync_history_max_entries() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Create more than MAX_SYNC_HISTORY_ENTRIES
+        let entries: Vec<SyncHistoryEntry> = (0..15)
+            .map(|_| create_test_sync_entry(SyncRecordStatus::Completed))
+            .collect();
+
+        screen.set_sync_history(entries);
+
+        // Should be capped at MAX_SYNC_HISTORY_ENTRIES
+        assert_eq!(screen.sync_history.len(), MAX_SYNC_HISTORY_ENTRIES);
+    }
+
+    #[test]
+    fn test_add_sync_history_entry() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert!(screen.sync_history.is_empty());
+
+        let entry = create_test_sync_entry(SyncRecordStatus::Completed);
+        screen.add_sync_history_entry(entry.clone());
+
+        assert_eq!(screen.sync_history.len(), 1);
+        assert_eq!(screen.sync_history[0].status, SyncRecordStatus::Completed);
+    }
+
+    #[test]
+    fn test_add_sync_history_entry_inserts_at_front() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        let mut entry1 = create_test_sync_entry(SyncRecordStatus::Completed);
+        entry1.ride_name = "First Ride".to_string();
+        screen.add_sync_history_entry(entry1);
+
+        let mut entry2 = create_test_sync_entry(SyncRecordStatus::Failed);
+        entry2.ride_name = "Second Ride".to_string();
+        screen.add_sync_history_entry(entry2);
+
+        assert_eq!(screen.sync_history.len(), 2);
+        // Most recent should be first
+        assert_eq!(screen.sync_history[0].ride_name, "Second Ride");
+        assert_eq!(screen.sync_history[1].ride_name, "First Ride");
+    }
+
+    #[test]
+    fn test_add_sync_history_entry_caps_at_max() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Fill to max
+        for i in 0..MAX_SYNC_HISTORY_ENTRIES {
+            let mut entry = create_test_sync_entry(SyncRecordStatus::Completed);
+            entry.ride_name = format!("Ride {}", i);
+            screen.add_sync_history_entry(entry);
+        }
+
+        assert_eq!(screen.sync_history.len(), MAX_SYNC_HISTORY_ENTRIES);
+
+        // Add one more
+        let mut new_entry = create_test_sync_entry(SyncRecordStatus::Failed);
+        new_entry.ride_name = "New Ride".to_string();
+        screen.add_sync_history_entry(new_entry);
+
+        // Should still be at max
+        assert_eq!(screen.sync_history.len(), MAX_SYNC_HISTORY_ENTRIES);
+        // New entry should be first
+        assert_eq!(screen.sync_history[0].ride_name, "New Ride");
+    }
+
+    #[test]
+    fn test_failed_sync_count() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert_eq!(screen.failed_sync_count(), 0);
+
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Completed));
+        assert_eq!(screen.failed_sync_count(), 0);
+
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Failed));
+        assert_eq!(screen.failed_sync_count(), 1);
+
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Failed));
+        assert_eq!(screen.failed_sync_count(), 2);
+    }
+
+    #[test]
+    fn test_has_failed_syncs() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert!(!screen.has_failed_syncs());
+
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Completed));
+        assert!(!screen.has_failed_syncs());
+
+        screen.add_sync_history_entry(create_test_sync_entry(SyncRecordStatus::Failed));
+        assert!(screen.has_failed_syncs());
+    }
+
+    #[test]
+    fn test_retry_sync_record_action() {
+        let id = Uuid::new_v4();
+        let action = TrainingPeaksSettingsAction::RetrySyncRecord(id);
+
+        if let TrainingPeaksSettingsAction::RetrySyncRecord(record_id) = action {
+            assert_eq!(record_id, id);
+        } else {
+            panic!("Expected RetrySyncRecord action");
+        }
+    }
+
+    #[test]
+    fn test_view_external_activity_action() {
+        let url = "https://www.trainingpeaks.com/workout/12345".to_string();
+        let action = TrainingPeaksSettingsAction::ViewExternalActivity(url.clone());
+
+        if let TrainingPeaksSettingsAction::ViewExternalActivity(activity_url) = action {
+            assert_eq!(activity_url, url);
+        } else {
+            panic!("Expected ViewExternalActivity action");
+        }
+    }
+
+    #[test]
+    fn test_sync_history_entry_equality() {
+        let entry1 = create_test_sync_entry(SyncRecordStatus::Completed);
+        let entry2 = entry1.clone();
+
+        assert_eq!(entry1, entry2);
+    }
+
+    #[test]
+    fn test_sync_history_default_empty() {
+        let screen = TrainingPeaksSettingsScreen::new();
+        assert!(screen.sync_history.is_empty());
     }
 }
