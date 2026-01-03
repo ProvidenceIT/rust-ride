@@ -12,11 +12,11 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 - [x] T002: Implement TrainingPeaks OAuth token exchange (3h) ✅
 - [x] T003: Implement athlete profile fetch (1.5h) ✅
 - [x] T004: Implement deauthorize functionality (1h) ✅
-- [ ] T005: Add TrainingPeaks OAuth scopes (0.5h)
+- [x] T005: Add TrainingPeaks OAuth scopes (0.5h) ✅
 
 ## Phase 2: Activity Upload Implementation (7.5 hours)
-- [ ] T006: Implement FIT file upload to TrainingPeaks (3h)
-- [ ] T007: Add upload status checking (1.5h)
+- [x] T006: Implement FIT file upload to TrainingPeaks (3h) ✅
+- [x] T007: Add upload status checking (1.5h) ✅
 - [ ] T008: Integrate TrainingPeaks with SyncService (2h)
 - [ ] T009: Add duplicate activity detection (1h)
 
@@ -138,3 +138,56 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
   - test_deauthorize_clears_local_token
   - HTTP mocked tests: test_deauthorize_success, test_deauthorize_rate_limit_still_succeeds, test_deauthorize_unauthorized_still_succeeds
 - No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T005: OAuth Scopes (Already Complete)
+- Verified that OAuth scopes were already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 865-882):
+  - `pub mod scopes` containing scope constants:
+    - `ATHLETE_PROFILE` = "athlete:profile" - Read athlete profile
+    - `WORKOUTS_READ` = "workouts:read" - Read workouts
+    - `FILE_WRITE` = "file:write" - Write/upload files (activities)
+  - `pub fn default_scopes() -> Vec<String>` returning all required scopes
+- Pattern matches Strava implementation exactly (src/integrations/sync/strava.rs lines 758-777)
+- Tests already present:
+  - test_default_scopes - verifies all three scopes are included
+- No new commit needed - functionality already in T001 commit
+- **Phase 1 Complete!** All OAuth integration subtasks (T001-T005) are now done
+
+### 2026-01-03 - T006: FIT File Upload (Already Complete)
+- Verified that upload_activity() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 362-507):
+  - FIT file validation via validate_fit_file() before upload
+  - Multipart form POST to /v1/file endpoint
+  - Comprehensive error handling:
+    - RateLimited for 429 responses
+    - TokenExpired for 401 responses
+    - DuplicateActivity detection via is_duplicate_error()
+    - ApiError for other failures
+  - Returns SyncRecord with upload_id in external_id for status polling
+- Tests already present:
+  - test_validate_fit_file_* (various validation scenarios)
+  - test_is_duplicate_error_detection
+  - HTTP mocked tests: test_upload_activity_success, test_upload_activity_rate_limit,
+    test_upload_activity_unauthorized, test_upload_activity_api_error,
+    test_upload_activity_duplicate_detection
+- No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T007: Upload Status Checking (Already Complete)
+- Verified that check_upload_status() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 527-647):
+  - GET request to /v1/file/{upload_id}
+  - Handles rate limiting (429), unauthorized (401), not found (404)
+  - Returns UploadStatus enum:
+    - Processing - still being processed
+    - Ready { file_id: i64 } - successfully processed
+    - Error { error: String } - processing failed
+    - Duplicate { error: String } - duplicate detected during processing
+- UploadStatus enum defined at lines 836-847
+- Tests already present:
+  - test_check_upload_status_without_token_returns_not_configured
+  - test_upload_status_enum_variants
+  - HTTP mocked tests: test_check_upload_status_processing, test_check_upload_status_ready,
+    test_check_upload_status_error, test_check_upload_status_duplicate,
+    test_check_upload_status_not_found
+- No new code commit needed - functionality already in T001 commit
+- Manual verification complete: implementation matches Strava pattern exactly

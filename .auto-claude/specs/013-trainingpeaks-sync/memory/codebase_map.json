@@ -1,0 +1,15 @@
+{
+  "discovered_files": {
+    "src/integrations/sync/trainingpeaks.rs": {
+      "description": "check_upload_status() polls GET /v1/file/{upload_id} for async upload processing status. Returns UploadStatus enum: Processing (still processing), Ready{file_id} (complete), Error{error} (failed), Duplicate{error} (duplicate detected). Same polling pattern as Strava but uses file_id instead of activity_id.",
+      "category": "api",
+      "discovered_at": "2026-01-03T14:02:33.786628+00:00"
+    },
+    "src/integrations/sync/oauth.rs": {
+      "description": "TrainingPeaks OAuth uses standard OAuth2 with expires_in (seconds until expiry) rather than expires_at (Unix timestamp) like Strava. Token endpoint at oauth.trainingpeaks.com/oauth/token requires redirect_uri in token exchange request. Error responses use standard OAuth2 error/error_description format.",
+      "category": "API Pattern",
+      "discovered_at": "2026-01-03T13:51:14.825277+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T14:02:33.786628+00:00"
+}

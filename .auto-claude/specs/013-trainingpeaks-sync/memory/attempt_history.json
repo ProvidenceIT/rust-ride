@@ -1,0 +1,81 @@
+{
+  "subtasks": {
+    "T001": {
+      "attempts": [
+        {
+          "session": 2,
+          "timestamp": "2026-01-03T14:42:54.110076",
+          "approach": "Implemented: Create src/integrations/sync/trainingpeaks.rs with TrainingPeaksClient struct, API base URL constant",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T002": {
+      "attempts": [
+        {
+          "session": 3,
+          "timestamp": "2026-01-03T14:51:29.533601",
+          "approach": "Implemented: Add TrainingPeaks-specific OAuth token exchange and refresh logic in the DefaultOAuthHandler. Traini",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T003": {
+      "attempts": [
+        {
+          "session": 4,
+          "timestamp": "2026-01-03T14:53:58.340167",
+          "approach": "Implemented: Add get_athlete() method to TrainingPeaksClient to fetch authenticated user profile. Store athlete I",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T004": {
+      "attempts": [
+        {
+          "session": 5,
+          "timestamp": "2026-01-03T14:56:24.740270",
+          "approach": "Implemented: Add deauthorize() method to revoke TrainingPeaks access tokens, clearing local credentials regardles",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T005": {
+      "attempts": [
+        {
+          "session": 6,
+          "timestamp": "2026-01-03T14:58:52.135009",
+          "approach": "Implemented: Define required OAuth scopes for TrainingPeaks API access (workouts:read, file:write, athlete:profil",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T006": {
+      "attempts": [
+        {
+          "session": 7,
+          "timestamp": "2026-01-03T15:00:34.753959",
+          "approach": "Implemented: Add upload_activity() method to TrainingPeaksClient for uploading FIT files via multipart form POST ",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    }
+  },
+  "stuck_subtasks": [],
+  "metadata": {
+    "created_at": "2026-01-03T14:31:22.767041",
+    "last_updated": "2026-01-03T15:00:34.753959"
+  }
+}

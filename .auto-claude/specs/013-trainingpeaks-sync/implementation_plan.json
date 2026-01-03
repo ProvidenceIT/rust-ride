@@ -112,14 +112,16 @@
           "id": "T007",
           "title": "Add upload status checking",
           "description": "Implement check_upload_status() to poll TrainingPeaks for upload processing status. TrainingPeaks may process files asynchronously.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T006"
           ],
           "estimated_hours": 1.5,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "check_upload_status() method was already implemented as part of T001. Implementation includes: GET /v1/file/{upload_id} endpoint, handles rate limit (429), unauthorized (401), not found (404), returns UploadStatus enum with Processing/Ready/Error/Duplicate variants. Comprehensive wiremock HTTP mocked tests for all status scenarios. Matches Strava pattern exactly.",
+          "updated_at": "2026-01-03T14:02:33.719721+00:00"
         },
         {
           "id": "T008",
@@ -495,5 +497,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T14:00:04.164938+00:00"
+  "last_updated": "2026-01-03T14:02:33.719721+00:00"
 }
