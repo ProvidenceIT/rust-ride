@@ -360,3 +360,11 @@ When "Remember PIN" is enabled on mobile:
 - Metric/imperial units
 - Haptic feedback options
 - Offline ride cache
+
+---
+
+## Developer Resources
+
+For developers building custom integrations or troubleshooting advanced issues:
+
+- **[Companion API Reference](./companion-api.md)** - Complete WebSocket API documentation with message types, authentication flow, and JSON schemas
