@@ -498,7 +498,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 "#;
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 9;
+pub const CURRENT_VERSION: i32 = 10;
 
 /// SQL for migration from v1 to v2 (analytics tables)
 pub const MIGRATION_V1_TO_V2: &str = r#"
@@ -1218,4 +1218,36 @@ CREATE TABLE IF NOT EXISTS plan_assignments (
     status TEXT NOT NULL DEFAULT 'active',
     available_days INTEGER NOT NULL DEFAULT 127
 );
+"#;
+
+/// SQL for migration from v9 to v10 (TrainingPeaks Workout Sync)
+/// T016: Extend workout storage to save TrainingPeaks-sourced workouts with
+/// external ID reference for sync tracking.
+pub const MIGRATION_V9_TO_V10: &str = r#"
+-- Add TrainingPeaks sync columns to workouts table
+ALTER TABLE workouts ADD COLUMN external_id TEXT;
+ALTER TABLE workouts ADD COLUMN external_platform TEXT;
+ALTER TABLE workouts ADD COLUMN scheduled_date TEXT;
+ALTER TABLE workouts ADD COLUMN planned_tss REAL;
+ALTER TABLE workouts ADD COLUMN planned_if REAL;
+
+-- Create index for external ID lookups (for sync tracking)
+CREATE INDEX IF NOT EXISTS idx_workouts_external ON workouts(external_platform, external_id);
+CREATE INDEX IF NOT EXISTS idx_workouts_scheduled_date ON workouts(scheduled_date);
+
+-- TrainingPeaks workout sync tracking table
+-- Tracks which TrainingPeaks workouts have been synced to prevent duplicates
+CREATE TABLE IF NOT EXISTS trainingpeaks_workout_sync (
+    id TEXT PRIMARY KEY,
+    external_workout_id INTEGER NOT NULL UNIQUE,
+    local_workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+    scheduled_date TEXT,
+    synced_at TEXT NOT NULL,
+    last_modified TEXT,
+    sync_hash TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_external ON trainingpeaks_workout_sync(external_workout_id);
+CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_local ON trainingpeaks_workout_sync(local_workout_id);
+CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_date ON trainingpeaks_workout_sync(scheduled_date);
 "#;

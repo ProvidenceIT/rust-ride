@@ -15,7 +15,8 @@ use crate::sensors::types::{Protocol, SavedSensor, SensorType};
 use crate::storage::config::{Theme, Units, UserProfile};
 use crate::storage::schema::{
     CURRENT_VERSION, MIGRATION_V1_TO_V2, MIGRATION_V2_TO_V3, MIGRATION_V5_TO_V6,
-    MIGRATION_V6_TO_V7, MIGRATION_V7_TO_V8, MIGRATION_V8_TO_V9, SCHEMA, SCHEMA_VERSION_TABLE,
+    MIGRATION_V6_TO_V7, MIGRATION_V7_TO_V8, MIGRATION_V8_TO_V9, MIGRATION_V9_TO_V10,
+    SCHEMA, SCHEMA_VERSION_TABLE,
 };
 use crate::workouts::types::{Workout, WorkoutFormat, WorkoutSegment};
 use crate::world::avatar::{AvatarConfig, BikeStyle};
@@ -251,6 +252,23 @@ impl Database {
                 .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
 
             tracing::info!("Database migrated to version 9 (Competitive Features tables)");
+        }
+
+        // T016: Migration v9 -> v10: Add TrainingPeaks Workout Sync columns
+        if from_version < 10 {
+            self.conn
+                .execute_batch(MIGRATION_V9_TO_V10)
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            // Record version 10
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (10, datetime('now'))",
+                    [],
+                )
+                .map_err(|e| DatabaseError::MigrationFailed(e.to_string()))?;
+
+            tracing::info!("Database migrated to version 10 (TrainingPeaks Workout Sync)");
         }
 
         Ok(())
@@ -2706,6 +2724,7 @@ impl WorkoutRow {
                 "mrc" => Some(WorkoutFormat::Mrc),
                 "fit" => Some(WorkoutFormat::Fit),
                 "native" => Some(WorkoutFormat::Native),
+                "trainingpeaks" => Some(WorkoutFormat::TrainingPeaks),
                 _ => None,
             });
 

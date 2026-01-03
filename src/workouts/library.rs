@@ -1191,6 +1191,422 @@ pub enum LibraryError {
     NotFound(Uuid),
 }
 
+// ========== TrainingPeaks Workout Store (T016) ==========
+
+use crate::workouts::types::{Workout, WorkoutFormat};
+use chrono::NaiveDate;
+
+/// Stored workout with TrainingPeaks sync metadata.
+#[derive(Debug, Clone)]
+pub struct StoredTrainingPeaksWorkout {
+    /// The workout data
+    pub workout: Workout,
+    /// TrainingPeaks external workout ID
+    pub external_id: i64,
+    /// Platform identifier (always "trainingpeaks")
+    pub external_platform: String,
+    /// Scheduled date from TrainingPeaks
+    pub scheduled_date: Option<NaiveDate>,
+    /// Planned TSS from TrainingPeaks
+    pub planned_tss: Option<f64>,
+    /// Planned IF from TrainingPeaks
+    pub planned_if: Option<f64>,
+    /// When this workout was synced
+    pub synced_at: DateTime<Utc>,
+}
+
+/// TrainingPeaks workout sync record.
+#[derive(Debug, Clone)]
+pub struct TrainingPeaksSyncRecord {
+    /// Unique ID
+    pub id: Uuid,
+    /// External workout ID from TrainingPeaks
+    pub external_workout_id: i64,
+    /// Local workout ID in our database
+    pub local_workout_id: Uuid,
+    /// Scheduled date from TrainingPeaks
+    pub scheduled_date: Option<String>,
+    /// When this was synced
+    pub synced_at: DateTime<Utc>,
+    /// Last modified date from TrainingPeaks (for detecting updates)
+    pub last_modified: Option<String>,
+    /// Hash of workout content (for detecting changes)
+    pub sync_hash: Option<String>,
+}
+
+/// Store for TrainingPeaks-imported workouts.
+///
+/// Handles persistence of workouts synced from TrainingPeaks with external ID
+/// tracking for sync management and duplicate prevention.
+pub struct TrainingPeaksWorkoutStore<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> TrainingPeaksWorkoutStore<'a> {
+    /// Create a new TrainingPeaks workout store.
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    /// Save a TrainingPeaks-imported workout to the database.
+    ///
+    /// This inserts the workout into the workouts table with TrainingPeaks-specific
+    /// metadata (external_id, scheduled_date, planned_tss, planned_if) and creates
+    /// a sync tracking record.
+    pub fn save_imported_workout(
+        &self,
+        workout: &Workout,
+        external_id: i64,
+        scheduled_date: Option<NaiveDate>,
+        planned_tss: Option<f64>,
+        planned_if: Option<f64>,
+    ) -> Result<(), LibraryError> {
+        let segments_json = serde_json::to_string(&workout.segments)?;
+        let tags_json = if workout.tags.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&workout.tags)?)
+        };
+
+        let source_format = workout
+            .source_format
+            .map(|f| format!("{:?}", f).to_lowercase());
+
+        let scheduled_date_str = scheduled_date.map(|d| d.format("%Y-%m-%d").to_string());
+
+        // Insert or update the workout
+        self.conn.execute(
+            "INSERT INTO workouts (id, name, description, author, source_file, source_format,
+             segments_json, total_duration_seconds, estimated_tss, estimated_if, tags_json,
+             created_at, external_id, external_platform, scheduled_date, planned_tss, planned_if)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                segments_json = excluded.segments_json,
+                total_duration_seconds = excluded.total_duration_seconds,
+                estimated_tss = excluded.estimated_tss,
+                estimated_if = excluded.estimated_if,
+                scheduled_date = excluded.scheduled_date,
+                planned_tss = excluded.planned_tss,
+                planned_if = excluded.planned_if",
+            params![
+                workout.id.to_string(),
+                workout.name,
+                workout.description,
+                workout.author,
+                workout.source_file,
+                source_format,
+                segments_json,
+                workout.total_duration_seconds,
+                workout.estimated_tss,
+                workout.estimated_if,
+                tags_json,
+                workout.created_at.to_rfc3339(),
+                external_id.to_string(),
+                "trainingpeaks",
+                scheduled_date_str,
+                planned_tss,
+                planned_if,
+            ],
+        )?;
+
+        // Create or update sync tracking record
+        let sync_id = Uuid::new_v4();
+        self.conn.execute(
+            "INSERT INTO trainingpeaks_workout_sync
+             (id, external_workout_id, local_workout_id, scheduled_date, synced_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(external_workout_id) DO UPDATE SET
+                local_workout_id = excluded.local_workout_id,
+                scheduled_date = excluded.scheduled_date,
+                synced_at = excluded.synced_at",
+            params![
+                sync_id.to_string(),
+                external_id,
+                workout.id.to_string(),
+                scheduled_date_str,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Check if a workout with the given external ID has already been synced.
+    pub fn is_workout_synced(&self, external_id: i64) -> Result<bool, LibraryError> {
+        let count: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+            params![external_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Get the local workout ID for a synced TrainingPeaks workout.
+    pub fn get_local_workout_id(&self, external_id: i64) -> Result<Option<Uuid>, LibraryError> {
+        let result: Result<String, rusqlite::Error> = self.conn.query_row(
+            "SELECT local_workout_id FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+            params![external_id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(id_str) => {
+                let uuid = Uuid::parse_str(&id_str)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        0, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+                Ok(Some(uuid))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(LibraryError::DatabaseError(e)),
+        }
+    }
+
+    /// Get all TrainingPeaks workouts for a given date range.
+    pub fn get_workouts_by_date_range(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<Vec<StoredTrainingPeaksWorkout>, LibraryError> {
+        let start_str = start_date.format("%Y-%m-%d").to_string();
+        let end_str = end_date.format("%Y-%m-%d").to_string();
+
+        let mut stmt = self.conn.prepare(
+            "SELECT w.id, w.name, w.description, w.author, w.source_file, w.source_format,
+                    w.segments_json, w.total_duration_seconds, w.estimated_tss, w.estimated_if,
+                    w.tags_json, w.created_at, w.external_id, w.scheduled_date, w.planned_tss,
+                    w.planned_if, s.synced_at
+             FROM workouts w
+             JOIN trainingpeaks_workout_sync s ON w.id = s.local_workout_id
+             WHERE w.external_platform = 'trainingpeaks'
+               AND w.scheduled_date >= ?1 AND w.scheduled_date <= ?2
+             ORDER BY w.scheduled_date ASC",
+        )?;
+
+        let rows = stmt.query_map(params![start_str, end_str], |row| {
+            self.map_stored_workout_row(row)
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(LibraryError::from)
+    }
+
+    /// Get all synced TrainingPeaks workouts.
+    pub fn get_all_synced_workouts(&self) -> Result<Vec<StoredTrainingPeaksWorkout>, LibraryError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT w.id, w.name, w.description, w.author, w.source_file, w.source_format,
+                    w.segments_json, w.total_duration_seconds, w.estimated_tss, w.estimated_if,
+                    w.tags_json, w.created_at, w.external_id, w.scheduled_date, w.planned_tss,
+                    w.planned_if, s.synced_at
+             FROM workouts w
+             JOIN trainingpeaks_workout_sync s ON w.id = s.local_workout_id
+             WHERE w.external_platform = 'trainingpeaks'
+             ORDER BY w.scheduled_date DESC NULLS LAST",
+        )?;
+
+        let rows = stmt.query_map([], |row| self.map_stored_workout_row(row))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(LibraryError::from)
+    }
+
+    /// Get a TrainingPeaks workout by its external ID.
+    pub fn get_by_external_id(&self, external_id: i64) -> Result<Option<StoredTrainingPeaksWorkout>, LibraryError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT w.id, w.name, w.description, w.author, w.source_file, w.source_format,
+                    w.segments_json, w.total_duration_seconds, w.estimated_tss, w.estimated_if,
+                    w.tags_json, w.created_at, w.external_id, w.scheduled_date, w.planned_tss,
+                    w.planned_if, s.synced_at
+             FROM workouts w
+             JOIN trainingpeaks_workout_sync s ON w.id = s.local_workout_id
+             WHERE w.external_id = ?1 AND w.external_platform = 'trainingpeaks'",
+        )?;
+
+        let mut rows = stmt.query_map(params![external_id.to_string()], |row| {
+            self.map_stored_workout_row(row)
+        })?;
+
+        match rows.next() {
+            Some(Ok(workout)) => Ok(Some(workout)),
+            Some(Err(e)) => Err(LibraryError::DatabaseError(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get sync records for all TrainingPeaks workouts.
+    pub fn get_sync_records(&self) -> Result<Vec<TrainingPeaksSyncRecord>, LibraryError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                    synced_at, last_modified, sync_hash
+             FROM trainingpeaks_workout_sync
+             ORDER BY synced_at DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let id_str: String = row.get(0)?;
+            let external_workout_id: i64 = row.get(1)?;
+            let local_workout_id_str: String = row.get(2)?;
+            let scheduled_date: Option<String> = row.get(3)?;
+            let synced_at_str: String = row.get(4)?;
+            let last_modified: Option<String> = row.get(5)?;
+            let sync_hash: Option<String> = row.get(6)?;
+
+            let id = Uuid::parse_str(&id_str).unwrap_or_default();
+            let local_workout_id = Uuid::parse_str(&local_workout_id_str).unwrap_or_default();
+            let synced_at = DateTime::parse_from_rfc3339(&synced_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+
+            Ok(TrainingPeaksSyncRecord {
+                id,
+                external_workout_id,
+                local_workout_id,
+                scheduled_date,
+                synced_at,
+                last_modified,
+                sync_hash,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(LibraryError::from)
+    }
+
+    /// Get count of synced TrainingPeaks workouts.
+    pub fn count_synced(&self) -> Result<usize, LibraryError> {
+        let count: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM trainingpeaks_workout_sync",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Delete a TrainingPeaks workout sync record and the associated workout.
+    pub fn delete_synced_workout(&self, external_id: i64) -> Result<(), LibraryError> {
+        // First get the local workout ID
+        if let Some(local_id) = self.get_local_workout_id(external_id)? {
+            // Delete from sync tracking table first (due to foreign key)
+            self.conn.execute(
+                "DELETE FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+                params![external_id],
+            )?;
+            // Delete the workout itself
+            self.conn.execute(
+                "DELETE FROM workouts WHERE id = ?1",
+                params![local_id.to_string()],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Clear all synced TrainingPeaks workouts.
+    pub fn clear_all_synced(&self) -> Result<usize, LibraryError> {
+        // Get all local workout IDs first
+        let mut stmt = self.conn.prepare(
+            "SELECT local_workout_id FROM trainingpeaks_workout_sync",
+        )?;
+        let ids: Vec<String> = stmt.query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Delete sync records
+        let deleted = self.conn.execute(
+            "DELETE FROM trainingpeaks_workout_sync",
+            [],
+        )?;
+
+        // Delete workouts
+        for id in ids {
+            self.conn.execute(
+                "DELETE FROM workouts WHERE id = ?1",
+                params![id],
+            )?;
+        }
+
+        Ok(deleted)
+    }
+
+    /// Map a database row to StoredTrainingPeaksWorkout.
+    fn map_stored_workout_row(&self, row: &rusqlite::Row) -> rusqlite::Result<StoredTrainingPeaksWorkout> {
+        let id_str: String = row.get(0)?;
+        let name: String = row.get(1)?;
+        let description: Option<String> = row.get(2)?;
+        let author: Option<String> = row.get(3)?;
+        let source_file: Option<String> = row.get(4)?;
+        let source_format_str: Option<String> = row.get(5)?;
+        let segments_json: String = row.get(6)?;
+        let total_duration_seconds: u32 = row.get(7)?;
+        let estimated_tss: Option<f32> = row.get(8)?;
+        let estimated_if: Option<f32> = row.get(9)?;
+        let tags_json: Option<String> = row.get(10)?;
+        let created_at_str: String = row.get(11)?;
+        let external_id_str: Option<String> = row.get(12)?;
+        let scheduled_date_str: Option<String> = row.get(13)?;
+        let planned_tss: Option<f64> = row.get(14)?;
+        let planned_if: Option<f64> = row.get(15)?;
+        let synced_at_str: String = row.get(16)?;
+
+        let id = Uuid::parse_str(&id_str).unwrap_or_default();
+        let source_format = source_format_str.and_then(|s| match s.as_str() {
+            "trainingpeaks" => Some(WorkoutFormat::TrainingPeaks),
+            "zwo" => Some(WorkoutFormat::Zwo),
+            "mrc" => Some(WorkoutFormat::Mrc),
+            "fit" => Some(WorkoutFormat::Fit),
+            "native" => Some(WorkoutFormat::Native),
+            _ => None,
+        });
+
+        let segments: Vec<super::types::WorkoutSegment> =
+            serde_json::from_str(&segments_json).unwrap_or_default();
+        let tags: Vec<String> = tags_json
+            .map(|json| serde_json::from_str(&json).unwrap_or_default())
+            .unwrap_or_default();
+
+        let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        let external_id = external_id_str
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+
+        let scheduled_date = scheduled_date_str
+            .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+
+        let synced_at = DateTime::parse_from_rfc3339(&synced_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        let workout = Workout {
+            id,
+            name,
+            description,
+            author,
+            source_file,
+            source_format,
+            segments,
+            total_duration_seconds,
+            estimated_tss,
+            estimated_if,
+            tags,
+            created_at,
+        };
+
+        Ok(StoredTrainingPeaksWorkout {
+            workout,
+            external_id,
+            external_platform: "trainingpeaks".to_string(),
+            scheduled_date,
+            planned_tss,
+            planned_if,
+            synced_at,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1277,5 +1693,338 @@ mod tests {
 
         library.seed_if_empty().unwrap();
         assert_eq!(library.count().unwrap(), 80);
+    }
+
+    // ========== TrainingPeaksWorkoutStore Tests (T016) ==========
+
+    fn setup_tp_test_db() -> (NamedTempFile, Connection) {
+        let file = NamedTempFile::new().unwrap();
+        let conn = Connection::open(file.path()).unwrap();
+
+        // Create both workouts and trainingpeaks_workout_sync tables
+        conn.execute_batch(
+            r#"
+            CREATE TABLE workouts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                author TEXT,
+                source_file TEXT,
+                source_format TEXT,
+                segments_json TEXT NOT NULL,
+                total_duration_seconds INTEGER NOT NULL,
+                estimated_tss REAL,
+                estimated_if REAL,
+                tags_json TEXT,
+                created_at TEXT NOT NULL,
+                external_id TEXT,
+                external_platform TEXT,
+                scheduled_date TEXT,
+                planned_tss REAL,
+                planned_if REAL
+            );
+
+            CREATE INDEX idx_workouts_external ON workouts(external_platform, external_id);
+            CREATE INDEX idx_workouts_scheduled_date ON workouts(scheduled_date);
+
+            CREATE TABLE trainingpeaks_workout_sync (
+                id TEXT PRIMARY KEY,
+                external_workout_id INTEGER NOT NULL UNIQUE,
+                local_workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+                scheduled_date TEXT,
+                synced_at TEXT NOT NULL,
+                last_modified TEXT,
+                sync_hash TEXT
+            );
+
+            CREATE INDEX idx_tp_workout_sync_external ON trainingpeaks_workout_sync(external_workout_id);
+            CREATE INDEX idx_tp_workout_sync_local ON trainingpeaks_workout_sync(local_workout_id);
+            "#,
+        )
+        .unwrap();
+
+        (file, conn)
+    }
+
+    fn create_test_workout() -> Workout {
+        use crate::workouts::types::{PowerTarget, SegmentType, WorkoutSegment};
+
+        Workout {
+            id: Uuid::new_v4(),
+            name: "Test Workout".to_string(),
+            description: Some("A test workout from TrainingPeaks".to_string()),
+            author: Some("Coach".to_string()),
+            source_file: None,
+            source_format: Some(WorkoutFormat::TrainingPeaks),
+            segments: vec![
+                WorkoutSegment {
+                    segment_type: SegmentType::Warmup,
+                    duration_seconds: 300,
+                    power_target: PowerTarget::PercentFtp { percent: 50 },
+                    cadence_target: None,
+                    text_event: None,
+                },
+                WorkoutSegment {
+                    segment_type: SegmentType::SteadyState,
+                    duration_seconds: 1200,
+                    power_target: PowerTarget::PercentFtp { percent: 90 },
+                    cadence_target: None,
+                    text_event: None,
+                },
+            ],
+            total_duration_seconds: 1500,
+            estimated_tss: Some(45.0),
+            estimated_if: Some(0.85),
+            tags: vec!["threshold".to_string()],
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_save_imported_workout() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+        let scheduled_date = NaiveDate::from_ymd_opt(2026, 1, 15);
+
+        let result = store.save_imported_workout(
+            &workout,
+            external_id,
+            scheduled_date,
+            Some(45.0),
+            Some(0.85),
+        );
+        assert!(result.is_ok());
+
+        // Verify workout was synced
+        assert!(store.is_workout_synced(external_id).unwrap());
+        assert_eq!(store.count_synced().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_is_workout_synced() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+
+        // Not synced initially
+        assert!(!store.is_workout_synced(external_id).unwrap());
+
+        // After saving, should be synced
+        store.save_imported_workout(&workout, external_id, None, None, None).unwrap();
+        assert!(store.is_workout_synced(external_id).unwrap());
+
+        // Different ID should not be synced
+        assert!(!store.is_workout_synced(99999).unwrap());
+    }
+
+    #[test]
+    fn test_get_local_workout_id() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+
+        // Save the workout
+        store.save_imported_workout(&workout, external_id, None, None, None).unwrap();
+
+        // Get the local workout ID
+        let local_id = store.get_local_workout_id(external_id).unwrap();
+        assert!(local_id.is_some());
+        assert_eq!(local_id.unwrap(), workout.id);
+
+        // Non-existent external ID should return None
+        let missing = store.get_local_workout_id(99999).unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_get_by_external_id() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+        let scheduled_date = NaiveDate::from_ymd_opt(2026, 1, 15);
+
+        store.save_imported_workout(
+            &workout,
+            external_id,
+            scheduled_date,
+            Some(50.0),
+            Some(0.88),
+        ).unwrap();
+
+        // Retrieve by external ID
+        let retrieved = store.get_by_external_id(external_id).unwrap();
+        assert!(retrieved.is_some());
+
+        let stored = retrieved.unwrap();
+        assert_eq!(stored.workout.name, "Test Workout");
+        assert_eq!(stored.external_id, external_id);
+        assert_eq!(stored.scheduled_date, scheduled_date);
+        assert_eq!(stored.planned_tss, Some(50.0));
+        assert_eq!(stored.planned_if, Some(0.88));
+    }
+
+    #[test]
+    fn test_get_workouts_by_date_range() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        // Create multiple workouts with different dates
+        let workout1 = create_test_workout();
+        let mut workout2 = create_test_workout();
+        workout2.id = Uuid::new_v4();
+        workout2.name = "Workout 2".to_string();
+        let mut workout3 = create_test_workout();
+        workout3.id = Uuid::new_v4();
+        workout3.name = "Workout 3".to_string();
+
+        store.save_imported_workout(
+            &workout1, 1001,
+            NaiveDate::from_ymd_opt(2026, 1, 10),
+            None, None,
+        ).unwrap();
+        store.save_imported_workout(
+            &workout2, 1002,
+            NaiveDate::from_ymd_opt(2026, 1, 15),
+            None, None,
+        ).unwrap();
+        store.save_imported_workout(
+            &workout3, 1003,
+            NaiveDate::from_ymd_opt(2026, 1, 20),
+            None, None,
+        ).unwrap();
+
+        // Query for mid-range dates
+        let start = NaiveDate::from_ymd_opt(2026, 1, 12).unwrap();
+        let end = NaiveDate::from_ymd_opt(2026, 1, 18).unwrap();
+        let results = store.get_workouts_by_date_range(start, end).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].workout.name, "Workout 2");
+    }
+
+    #[test]
+    fn test_get_all_synced_workouts() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        // Initially empty
+        let all = store.get_all_synced_workouts().unwrap();
+        assert!(all.is_empty());
+
+        // Add some workouts
+        let workout1 = create_test_workout();
+        let mut workout2 = create_test_workout();
+        workout2.id = Uuid::new_v4();
+        workout2.name = "Workout 2".to_string();
+
+        store.save_imported_workout(&workout1, 1001, None, None, None).unwrap();
+        store.save_imported_workout(&workout2, 1002, None, None, None).unwrap();
+
+        let all = store.get_all_synced_workouts().unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_get_sync_records() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+        let scheduled_date = NaiveDate::from_ymd_opt(2026, 1, 15);
+
+        store.save_imported_workout(
+            &workout,
+            external_id,
+            scheduled_date,
+            None, None,
+        ).unwrap();
+
+        let records = store.get_sync_records().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].external_workout_id, external_id);
+        assert_eq!(records[0].local_workout_id, workout.id);
+    }
+
+    #[test]
+    fn test_delete_synced_workout() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let workout = create_test_workout();
+        let external_id = 12345i64;
+
+        store.save_imported_workout(&workout, external_id, None, None, None).unwrap();
+        assert!(store.is_workout_synced(external_id).unwrap());
+        assert_eq!(store.count_synced().unwrap(), 1);
+
+        // Delete the synced workout
+        store.delete_synced_workout(external_id).unwrap();
+        assert!(!store.is_workout_synced(external_id).unwrap());
+        assert_eq!(store.count_synced().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_clear_all_synced() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        // Add multiple workouts
+        let workout1 = create_test_workout();
+        let mut workout2 = create_test_workout();
+        workout2.id = Uuid::new_v4();
+
+        store.save_imported_workout(&workout1, 1001, None, None, None).unwrap();
+        store.save_imported_workout(&workout2, 1002, None, None, None).unwrap();
+        assert_eq!(store.count_synced().unwrap(), 2);
+
+        // Clear all
+        let deleted = store.clear_all_synced().unwrap();
+        assert_eq!(deleted, 2);
+        assert_eq!(store.count_synced().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_update_existing_workout_on_resync() {
+        let (_file, conn) = setup_tp_test_db();
+        let store = TrainingPeaksWorkoutStore::new(&conn);
+
+        let mut workout = create_test_workout();
+        let external_id = 12345i64;
+
+        // Initial save
+        store.save_imported_workout(
+            &workout, external_id,
+            NaiveDate::from_ymd_opt(2026, 1, 15),
+            Some(50.0), Some(0.85),
+        ).unwrap();
+
+        // Update workout and resync
+        workout.name = "Updated Workout Name".to_string();
+        workout.estimated_tss = Some(60.0);
+
+        store.save_imported_workout(
+            &workout, external_id,
+            NaiveDate::from_ymd_opt(2026, 1, 16), // Updated date
+            Some(60.0), Some(0.90),
+        ).unwrap();
+
+        // Should still only have one synced workout
+        assert_eq!(store.count_synced().unwrap(), 1);
+
+        // Verify the workout was updated
+        let retrieved = store.get_by_external_id(external_id).unwrap().unwrap();
+        assert_eq!(retrieved.workout.name, "Updated Workout Name");
+        assert_eq!(retrieved.planned_tss, Some(60.0));
+        assert_eq!(retrieved.planned_if, Some(0.90));
     }
 }
