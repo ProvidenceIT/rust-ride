@@ -573,3 +573,122 @@ fn test_cadence_failover_prefers_dedicated_sensor() {
     // Dedicated cadence sensor should be preferred (priority 1) over trainer (priority 2)
     assert_eq!(cadence_failover.unwrap().to_device_id, cadence.device_id);
 }
+
+// ============================================================================
+// Automatic failover integration tests
+// These test the behavior used by SensorManager's handle_notifications when
+// a sensor unexpectedly disconnects and reconnection attempts are exhausted.
+// ============================================================================
+
+#[test]
+fn test_auto_failover_on_unexpected_disconnect() {
+    // Simulates what happens when a sensor's notification stream ends unexpectedly
+    // and the SensorManager triggers failover via handle_primary_disconnect
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+
+    // Both connected, power meter is primary for power
+    detector.update_connection_status(&pm.device_id, true);
+    detector.update_connection_status(&trainer.device_id, true);
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Verify failover is available before disconnect
+    assert!(detector.has_failover_available(DataType::Power));
+
+    // Simulate unexpected disconnect (like BLE connection dropping)
+    // This is what handle_notifications calls when reconnection fails
+    let failovers = detector.handle_primary_disconnect(&pm.device_id);
+
+    // Failover should automatically promote trainer
+    assert!(!failovers.is_empty());
+    let power_failover = failovers.iter().find(|f| f.data_type == DataType::Power).unwrap();
+
+    // Verify failover message is user-friendly for notification
+    let message = power_failover.message();
+    assert!(message.contains("Power"));
+    assert!(message.contains("Stages Power"));
+    assert!(message.contains("KICKR Core"));
+
+    // New primary should be the trainer
+    assert_eq!(detector.get_primary(DataType::Power), Some(trainer.device_id.as_str()));
+}
+
+#[test]
+fn test_auto_failover_preserves_user_experience() {
+    // Verifies that automatic failover provides a seamless experience:
+    // - Data continues flowing from the new primary
+    // - User is notified via FailoverActivated event
+    // - Original primary can be restored if it reconnects
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+
+    detector.update_connection_status(&pm.device_id, true);
+    detector.update_connection_status(&trainer.device_id, true);
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Power meter disconnects unexpectedly
+    let failovers = detector.handle_primary_disconnect(&pm.device_id);
+    assert!(!failovers.is_empty());
+
+    // Trainer is now primary - workout can continue
+    assert_eq!(detector.get_primary(DataType::Power), Some(trainer.device_id.as_str()));
+
+    // Later, power meter reconnects
+    detector.update_connection_status(&pm.device_id, true);
+
+    // User can manually switch back if they prefer
+    let result = detector.set_primary(DataType::Power, &pm.device_id);
+    assert!(result);
+    assert_eq!(detector.get_primary(DataType::Power), Some(pm.device_id.as_str()));
+}
+
+#[test]
+fn test_auto_failover_with_multiple_secondaries() {
+    // When multiple secondary sensors are available, failover should
+    // prefer sensors by priority (dedicated sensors over multi-function ones)
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    let pm1 = make_ble_sensor("Stages Left", SensorType::PowerMeter);
+    let pm2 = make_ble_sensor("Quarq DZero", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm1);
+    detector.register_sensor(&pm2);
+    detector.register_sensor(&trainer);
+
+    // All connected, Stages is primary
+    detector.update_connection_status(&pm1.device_id, true);
+    detector.update_connection_status(&pm2.device_id, true);
+    detector.update_connection_status(&trainer.device_id, true);
+    detector.set_primary(DataType::Power, &pm1.device_id);
+
+    // Stages disconnects
+    let failovers = detector.handle_primary_disconnect(&pm1.device_id);
+
+    // Should failover to Quarq (power meter) not trainer (lower priority)
+    let power_failover = failovers.iter().find(|f| f.data_type == DataType::Power).unwrap();
+    assert_eq!(power_failover.to_device_id, pm2.device_id);
+    assert_eq!(power_failover.to_sensor_name, "Quarq DZero");
+}

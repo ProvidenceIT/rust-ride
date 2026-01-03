@@ -50,6 +50,8 @@ struct NotificationContext {
     auto_reconnect: bool,
     /// Connection health monitor for proactive reconnection.
     health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
+    /// Conflict detector for automatic failover when primary disconnects.
+    conflict_detector: Arc<Mutex<ConflictDetector>>,
 }
 
 /// Manages BLE and ANT+ sensor discovery, connection, and data streaming.
@@ -1233,6 +1235,7 @@ impl SensorManager {
             backoff_config: self.backoff_config.clone(),
             auto_reconnect: self.config.auto_reconnect,
             health_monitor: self.health_monitor.clone(),
+            conflict_detector: self.conflict_detector.clone(),
         };
 
         tokio::spawn(async move {
@@ -1451,6 +1454,38 @@ impl SensorManager {
                     max_attempts,
                     ctx.device_id
                 );
+            }
+        }
+
+        // Trigger automatic failover if this was a primary sensor
+        // This promotes a connected secondary sensor to primary and notifies the user
+        let failovers = {
+            let mut detector = ctx.conflict_detector.lock().await;
+            detector.handle_primary_disconnect(&ctx.device_id)
+        };
+
+        // Send failover events to notify the user of automatic promotion
+        for failover in failovers {
+            tracing::info!(
+                "Auto-failover: {} switching from {} to {}",
+                failover.data_type.display_name(),
+                failover.from_sensor_name,
+                failover.to_sensor_name
+            );
+
+            // Update the new primary's is_primary flag in sensor states
+            if let Some(state) = ctx.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                state.is_primary = true;
+            }
+
+            if let Some(tx) = &ctx.event_tx {
+                let _ = tx.send(SensorEvent::FailoverActivated {
+                    data_type: failover.data_type.display_name().to_string(),
+                    from_device_id: failover.from_device_id,
+                    from_sensor_name: failover.from_sensor_name,
+                    to_device_id: failover.to_device_id,
+                    to_sensor_name: failover.to_sensor_name,
+                });
             }
         }
 
