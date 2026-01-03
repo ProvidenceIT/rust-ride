@@ -6,6 +6,7 @@
 
 use crate::audio::AudioConfig;
 use crate::companion::types::CompanionConfig;
+use crate::integrations::mqtt::MqttConfig;
 use crate::metrics::zones::{CadenceZones, HRZones, PowerZones};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -647,6 +648,9 @@ pub struct AppConfig {
     /// T008: Mobile companion app server settings
     #[serde(default)]
     pub companion: CompanionConfig,
+    /// T012: MQTT smart fan control settings
+    #[serde(default)]
+    pub mqtt: MqttConfig,
 }
 
 impl Default for AppConfig {
@@ -660,6 +664,7 @@ impl Default for AppConfig {
             audio: AudioConfig::default(),
             daemon: DaemonSettings::default(),
             companion: CompanionConfig::default(),
+            mqtt: MqttConfig::default(),
         }
     }
 }
@@ -1172,6 +1177,53 @@ pub fn load_companion_config() -> CompanionConfig {
     config.companion
 }
 
+/// Example TOML configuration for MQTT smart fan settings.
+/// This can be used to generate a default config file.
+pub fn example_mqtt_config() -> &'static str {
+    r#"
+# MQTT smart fan control settings
+[mqtt]
+# Enable MQTT for smart fan control
+enabled = false
+
+# MQTT broker hostname or IP address
+broker_host = "localhost"
+
+# MQTT broker port (default: 1883 for plain, 8883 for TLS)
+broker_port = 1883
+
+# Use TLS/SSL for secure connection
+use_tls = false
+
+# Username for broker authentication (optional)
+# username = "homeassistant"
+
+# Password is stored securely in the OS keyring, not in this file
+
+# Unique client ID for this connection (auto-generated if not specified)
+# client_id = "rustride-fan-control"
+
+# Reconnect interval in seconds when connection is lost
+reconnect_interval_secs = 5
+
+# Keep-alive interval in seconds
+keep_alive_secs = 60
+
+# Connection timeout in seconds
+connection_timeout_secs = 30
+
+# Maximum reconnection attempts (null = unlimited)
+# max_reconnect_attempts = 10
+"#
+}
+
+/// Load MQTT configuration from the config file.
+/// Returns default MqttConfig if config file doesn't exist or is invalid.
+pub fn load_mqtt_config() -> MqttConfig {
+    let config = load_config().unwrap_or_default();
+    config.mqtt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1486,5 +1538,187 @@ mod tests {
         assert!(config.companion.require_pin);
         assert_eq!(config.companion.session_timeout_secs, 3600);
         assert_eq!(config.companion.max_connections, 5);
+    }
+
+    // =========================================================================
+    // T012: MqttConfig Tests
+    // =========================================================================
+
+    #[test]
+    fn test_app_config_default_has_mqtt() {
+        let config = AppConfig::default();
+        // Verify mqtt config is included with defaults
+        assert!(!config.mqtt.enabled);
+        assert_eq!(config.mqtt.broker_host, "localhost");
+        assert_eq!(config.mqtt.broker_port, 1883);
+        assert!(!config.mqtt.use_tls);
+        assert!(config.mqtt.username.is_none());
+        assert_eq!(config.mqtt.reconnect_interval_secs, 5);
+        assert_eq!(config.mqtt.keep_alive_secs, 60);
+        assert_eq!(config.mqtt.connection_timeout_secs, 30);
+        assert!(config.mqtt.max_reconnect_attempts.is_none());
+    }
+
+    #[test]
+    fn test_mqtt_config_serialization() {
+        let mqtt = MqttConfig {
+            enabled: true,
+            broker_host: "mqtt.example.com".to_string(),
+            broker_port: 8883,
+            use_tls: true,
+            username: Some("testuser".to_string()),
+            client_id: "rustride-test".to_string(),
+            reconnect_interval_secs: 10,
+            keep_alive_secs: 120,
+            connection_timeout_secs: 60,
+            max_reconnect_attempts: Some(5),
+        };
+
+        let config = AppConfig {
+            mqtt,
+            ..Default::default()
+        };
+
+        // Serialize to TOML
+        let toml_str = toml::to_string(&config).expect("Failed to serialize");
+
+        // Verify the mqtt section is present
+        assert!(toml_str.contains("[mqtt]"));
+        assert!(toml_str.contains("enabled = true"));
+        assert!(toml_str.contains("broker_host = \"mqtt.example.com\""));
+        assert!(toml_str.contains("broker_port = 8883"));
+        assert!(toml_str.contains("use_tls = true"));
+        assert!(toml_str.contains("username = \"testuser\""));
+        assert!(toml_str.contains("client_id = \"rustride-test\""));
+        assert!(toml_str.contains("max_reconnect_attempts = 5"));
+    }
+
+    #[test]
+    fn test_mqtt_config_deserialization() {
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [mqtt]
+            enabled = true
+            broker_host = "192.168.1.100"
+            broker_port = 1883
+            use_tls = false
+            username = "homeassistant"
+            client_id = "rustride-fan"
+            reconnect_interval_secs = 3
+            keep_alive_secs = 30
+            connection_timeout_secs = 15
+            max_reconnect_attempts = 10
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        assert!(config.mqtt.enabled);
+        assert_eq!(config.mqtt.broker_host, "192.168.1.100");
+        assert_eq!(config.mqtt.broker_port, 1883);
+        assert!(!config.mqtt.use_tls);
+        assert_eq!(config.mqtt.username, Some("homeassistant".to_string()));
+        assert_eq!(config.mqtt.client_id, "rustride-fan");
+        assert_eq!(config.mqtt.reconnect_interval_secs, 3);
+        assert_eq!(config.mqtt.keep_alive_secs, 30);
+        assert_eq!(config.mqtt.connection_timeout_secs, 15);
+        assert_eq!(config.mqtt.max_reconnect_attempts, Some(10));
+    }
+
+    #[test]
+    fn test_mqtt_config_missing_uses_defaults() {
+        // Config without mqtt section should use defaults
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Should have default mqtt settings
+        assert!(!config.mqtt.enabled);
+        assert_eq!(config.mqtt.broker_host, "localhost");
+        assert_eq!(config.mqtt.broker_port, 1883);
+        assert!(!config.mqtt.use_tls);
+        assert!(config.mqtt.username.is_none());
+        assert_eq!(config.mqtt.reconnect_interval_secs, 5);
+        assert_eq!(config.mqtt.keep_alive_secs, 60);
+        assert_eq!(config.mqtt.connection_timeout_secs, 30);
+        assert!(config.mqtt.max_reconnect_attempts.is_none());
+    }
+
+    #[test]
+    fn test_mqtt_config_partial_uses_defaults() {
+        // Config with partial mqtt section should use defaults for missing fields
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [mqtt]
+            enabled = true
+            broker_host = "homeassistant.local"
+            broker_port = 1883
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Custom values should be preserved
+        assert!(config.mqtt.enabled);
+        assert_eq!(config.mqtt.broker_host, "homeassistant.local");
+        assert_eq!(config.mqtt.broker_port, 1883);
+
+        // Other fields should use defaults
+        assert!(!config.mqtt.use_tls);
+        assert!(config.mqtt.username.is_none());
+        assert_eq!(config.mqtt.reconnect_interval_secs, 5);
+        assert_eq!(config.mqtt.keep_alive_secs, 60);
+        assert_eq!(config.mqtt.connection_timeout_secs, 30);
+        assert!(config.mqtt.max_reconnect_attempts.is_none());
     }
 }
