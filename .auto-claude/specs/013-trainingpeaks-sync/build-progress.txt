@@ -21,14 +21,14 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 - [x] T009: Add duplicate activity detection (1h) ✅
 
 ## Phase 3: Workout Plan Download (12 hours)
-- [ ] T010: Define TrainingPeaks workout API types (2h)
-- [ ] T011: Implement scheduled workouts fetch (2.5h)
-- [ ] T012: Implement workout detail fetch (2h)
+- [x] T010: Define TrainingPeaks workout API types (2h) ✅
+- [x] T011: Implement scheduled workouts fetch (2.5h) ✅
+- [x] T012: Implement workout detail fetch (2h) ✅
 - [ ] T013: Create TrainingPeaks to internal workout converter (3h)
 - [ ] T014: Add workout plan sync manager (2.5h)
 
 ## Phase 4: Workout Library Integration (5 hours)
-- [ ] T015: Add TrainingPeaks source to WorkoutFormat (0.5h)
+- [x] T015: Add TrainingPeaks source to WorkoutFormat (0.5h) ✅ (done as part of T010)
 - [ ] T016: Store TrainingPeaks workouts in database (2h)
 - [ ] T017: Add workout sync status tracking (1.5h)
 - [ ] T018: Display TrainingPeaks badge in workout library (1h)
@@ -228,3 +228,63 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
   - HTTP mocked: test_upload_activity_duplicate_detection, test_check_upload_status_duplicate
 - No new code commit needed - functionality already in T001 commit
 - **Phase 2 Complete!** All activity upload subtasks (T006-T009) are now done
+
+### 2026-01-03 - T010: TrainingPeaks Workout API Types & Conversion
+- TrainingPeaks workout types (TPWorkout, TPWorkoutStructure, TPWorkoutStep, TPWorkoutTarget) already defined
+- Implemented conversion from TrainingPeaks workout format to internal Workout/WorkoutSegment types
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - TPWorkout::to_workout(ftp) - main conversion method
+  - convert_structure_to_segments() - handles structured workouts or fallback to total_time
+  - convert_step_to_segments() - recursively handles nested repeat steps
+  - step_to_segment() - converts single step to WorkoutSegment
+  - extract_power_target() - handles Power targets (absolute watts or %FTP)
+  - extract_cadence_target() - extracts Cadence targets to CadenceTarget struct
+  - map_step_type_to_segment_type() - maps TP step types (Warmup, Cooldown, Interval, etc.) to SegmentType
+  - WorkoutConversionError - error type for conversion failures
+  - convert_tp_workouts() - batch conversion helper
+- Added WorkoutFormat::TrainingPeaks variant to src/workouts/types.rs (completes T015 early)
+- Comprehensive tests added:
+  - test_workout_conversion_simple - basic workout without structure
+  - test_workout_conversion_with_structure - warmup/intervals/cooldown
+  - test_workout_conversion_with_repeats - 5x3min interval structure
+  - test_workout_conversion_with_cadence_target - power + cadence targets
+  - test_workout_conversion_error_* - error cases
+  - test_map_step_type_to_segment_type - step type mapping
+  - test_power_target_*_conversion - absolute watts and %FTP conversion
+  - test_convert_tp_workouts_batch - batch conversion
+- Commit: 57a5567
+
+### 2026-01-03 - T011: Scheduled Workouts Fetch (Already Complete)
+- Verified that get_scheduled_workouts() was already implemented in previous session
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - GET request to /v1/workouts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+  - Uses NaiveDate for date parameters
+  - Returns Vec<TPWorkout> with full workout structure
+  - Handles rate limiting (429), unauthorized (401), and API errors
+- Tests present:
+  - test_get_scheduled_workouts_without_token_returns_not_configured
+  - test_get_scheduled_workouts_success
+  - test_get_scheduled_workouts_empty_result
+  - test_get_scheduled_workouts_rate_limit
+  - test_get_scheduled_workouts_unauthorized
+  - test_get_scheduled_workouts_api_error
+  - test_get_scheduled_workouts_with_structure
+- No new commit needed - functionality already implemented
+
+### 2026-01-03 - T012: Workout Detail Fetch
+- Implemented get_workout_details() method in TrainingPeaksClient
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - GET request to /v1/workouts/{workoutId}
+  - Fetches full workout structure with steps/intervals
+  - Handles rate limiting (429), unauthorized (401), not found (404), and API errors
+  - Returns TPWorkout with complete structure
+- Tests added:
+  - test_get_workout_details_without_token_returns_not_configured
+  - test_get_workout_details_success - verifies full workout parsing with structure
+  - test_get_workout_details_not_found - 404 handling
+  - test_get_workout_details_rate_limit - 429 handling
+  - test_get_workout_details_unauthorized - 401 handling
+  - test_get_workout_details_api_error - 500 error handling
+  - test_get_workout_details_with_repeat_steps - nested repeat structure
+  - test_get_workout_details_without_structure - simple workouts without steps
+- Manual verification required (cargo test not available in this environment)

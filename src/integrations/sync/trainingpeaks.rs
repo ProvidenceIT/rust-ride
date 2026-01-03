@@ -952,6 +952,115 @@ impl TrainingPeaksClient {
 
         Ok(workouts)
     }
+
+    /// Get workout details by ID
+    ///
+    /// Fetches the full workout structure with steps/intervals from TrainingPeaks.
+    /// This provides more detailed workout structure than the scheduled workouts list.
+    ///
+    /// # Arguments
+    /// * `workout_id` - The TrainingPeaks workout ID to fetch
+    ///
+    /// # Returns
+    /// The full workout structure including all steps and intervals
+    ///
+    /// # Errors
+    /// * `NotConfigured` - If no access token is set
+    /// * `RateLimited` - If TrainingPeaks' rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
+    /// * `ApiError` - If the API returned an error response (including not found)
+    pub async fn get_workout_details(&self, workout_id: i64) -> Result<TPWorkout, SyncError> {
+        let token = self
+            .access_token
+            .read()
+            .await
+            .clone()
+            .ok_or(SyncError::NotConfigured(SyncPlatform::TrainingPeaks))?;
+
+        tracing::debug!("Fetching TrainingPeaks workout details for ID {}", workout_id);
+
+        let url = format!("{}/workouts/{}", self.base_url, workout_id);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    SyncError::Timeout(DEFAULT_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    SyncError::NetworkError(format!("Failed to fetch workout details: {}", e))
+                }
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("TrainingPeaks API rate limit exceeded");
+            return Err(SyncError::RateLimited);
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!(
+                "TrainingPeaks API returned 401 Unauthorized - token may be expired or revoked"
+            );
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle not found (404)
+        if status_code == reqwest::StatusCode::NOT_FOUND {
+            tracing::warn!("TrainingPeaks workout {} not found", workout_id);
+            return Err(SyncError::ApiError(format!(
+                "Workout {} not found",
+                workout_id
+            )));
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<TrainingPeaksApiError>(&body) {
+                tracing::error!("TrainingPeaks workout fetch failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "TrainingPeaks error: {}",
+                    error_response
+                )));
+            }
+            tracing::error!(
+                "TrainingPeaks workout fetch failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::ApiError(format!(
+                "Failed to fetch workout with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response - API returns a single workout object
+        let workout: TPWorkout = serde_json::from_str(&body).map_err(|e| {
+            SyncError::ApiError(format!("Failed to parse workout response: {}", e))
+        })?;
+
+        tracing::info!(
+            "Fetched workout details for TrainingPeaks workout {} ({})",
+            workout_id,
+            workout.title
+        );
+
+        Ok(workout)
+    }
 }
 
 /// TrainingPeaks upload status
@@ -2984,5 +3093,329 @@ mod http_mocked_tests {
         assert_eq!(structure.steps[1].step_type, "Interval");
         assert_eq!(structure.steps[1].name, Some("VO2max Work".to_string()));
         assert_eq!(structure.steps[1].length, Some(300.0));
+    }
+
+    // ============================================================================
+    // Get Workout Details Tests (T012)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_workout_details_without_token_returns_not_configured() {
+        let client = TrainingPeaksClient::new();
+
+        let result = client.get_workout_details(12345).await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_success() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "Id": 12345,
+            "Title": "Sweet Spot Intervals",
+            "Description": "Build endurance with steady state efforts",
+            "WorkoutType": "Bike",
+            "WorkoutDay": "2025-01-15T00:00:00",
+            "TotalTime": 3600.0,
+            "TSSPlanned": 75.0,
+            "IFPlanned": 0.85,
+            "Structure": {
+                "PrimaryLengthMetric": "Duration",
+                "PrimaryIntensityMetric": "Power",
+                "Steps": [
+                    {
+                        "Type": "Warmup",
+                        "Name": "Easy spin",
+                        "Length": 600.0,
+                        "LengthMetric": "Duration"
+                    },
+                    {
+                        "Type": "Interval",
+                        "Name": "Sweet Spot",
+                        "Length": 1200.0,
+                        "LengthMetric": "Duration",
+                        "Targets": [
+                            {
+                                "Type": "Power",
+                                "MinValue": 250,
+                                "MaxValue": 270,
+                                "Unit": "Watts"
+                            }
+                        ]
+                    },
+                    {
+                        "Type": "Rest",
+                        "Name": "Recovery",
+                        "Length": 300.0,
+                        "LengthMetric": "Duration"
+                    },
+                    {
+                        "Type": "Cooldown",
+                        "Name": "Easy spin",
+                        "Length": 600.0,
+                        "LengthMetric": "Duration"
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12345"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12345).await;
+
+        assert!(result.is_ok());
+        let workout = result.unwrap();
+        assert_eq!(workout.id, 12345);
+        assert_eq!(workout.title, "Sweet Spot Intervals");
+        assert_eq!(
+            workout.description,
+            Some("Build endurance with steady state efforts".to_string())
+        );
+        assert_eq!(workout.workout_type, "Bike");
+        assert_eq!(workout.total_time, Some(3600.0));
+        assert_eq!(workout.tss_planned, Some(75.0));
+        assert_eq!(workout.if_planned, Some(0.85));
+
+        // Verify structure
+        assert!(workout.structure.is_some());
+        let structure = workout.structure.unwrap();
+        assert_eq!(structure.primary_length_metric, Some("Duration".to_string()));
+        assert_eq!(structure.primary_intensity_metric, Some("Power".to_string()));
+        assert_eq!(structure.steps.len(), 4);
+
+        // Verify steps
+        assert_eq!(structure.steps[0].step_type, "Warmup");
+        assert_eq!(structure.steps[0].name, Some("Easy spin".to_string()));
+        assert_eq!(structure.steps[0].length, Some(600.0));
+
+        assert_eq!(structure.steps[1].step_type, "Interval");
+        assert_eq!(structure.steps[1].name, Some("Sweet Spot".to_string()));
+        assert_eq!(structure.steps[1].length, Some(1200.0));
+        assert!(structure.steps[1].targets.is_some());
+        let targets = structure.steps[1].targets.as_ref().unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].target_type, "Power");
+        assert_eq!(targets[0].min_value, Some(250.0));
+        assert_eq!(targets[0].max_value, Some(270.0));
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_not_found() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/99999"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(99999).await;
+
+        assert!(
+            matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("not found"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12345"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12345).await;
+
+        assert!(matches!(result, Err(SyncError::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12345"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12345).await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "Message": "Internal server error",
+            "ErrorCode": "SERVER_ERROR",
+            "Errors": []
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12345"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12345).await;
+
+        assert!(
+            matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Internal server error"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_with_repeat_steps() {
+        let mock_server = MockServer::start().await;
+
+        // Workout with nested repeat steps
+        let response_body = r#"{
+            "Id": 12346,
+            "Title": "VO2max Repeats",
+            "Description": "High intensity interval training",
+            "WorkoutType": "Bike",
+            "WorkoutDay": "2025-01-16T00:00:00",
+            "TotalTime": 4200.0,
+            "Structure": {
+                "PrimaryLengthMetric": "Duration",
+                "PrimaryIntensityMetric": "Power",
+                "Steps": [
+                    {
+                        "Type": "Warmup",
+                        "Name": "Easy warmup",
+                        "Length": 600.0,
+                        "LengthMetric": "Duration"
+                    },
+                    {
+                        "Type": "Repeat",
+                        "Reps": 5,
+                        "Steps": [
+                            {
+                                "Type": "Interval",
+                                "Name": "VO2max effort",
+                                "Length": 180.0,
+                                "LengthMetric": "Duration",
+                                "Targets": [
+                                    {
+                                        "Type": "Power",
+                                        "MinValue": 350,
+                                        "MaxValue": 380,
+                                        "Unit": "Watts"
+                                    }
+                                ]
+                            },
+                            {
+                                "Type": "Rest",
+                                "Name": "Recovery spin",
+                                "Length": 180.0,
+                                "LengthMetric": "Duration"
+                            }
+                        ]
+                    },
+                    {
+                        "Type": "Cooldown",
+                        "Name": "Easy spin",
+                        "Length": 600.0,
+                        "LengthMetric": "Duration"
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12346"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12346).await;
+
+        assert!(result.is_ok());
+        let workout = result.unwrap();
+        assert_eq!(workout.id, 12346);
+        assert_eq!(workout.title, "VO2max Repeats");
+
+        let structure = workout.structure.unwrap();
+        assert_eq!(structure.steps.len(), 3);
+
+        // Verify repeat step
+        let repeat_step = &structure.steps[1];
+        assert_eq!(repeat_step.step_type, "Repeat");
+        assert_eq!(repeat_step.reps, Some(5));
+        assert!(repeat_step.steps.is_some());
+
+        let nested_steps = repeat_step.steps.as_ref().unwrap();
+        assert_eq!(nested_steps.len(), 2);
+        assert_eq!(nested_steps[0].step_type, "Interval");
+        assert_eq!(nested_steps[0].name, Some("VO2max effort".to_string()));
+        assert_eq!(nested_steps[1].step_type, "Rest");
+    }
+
+    #[tokio::test]
+    async fn test_get_workout_details_without_structure() {
+        let mock_server = MockServer::start().await;
+
+        // Simple workout without structured data (e.g., free ride)
+        let response_body = r#"{
+            "Id": 12347,
+            "Title": "Free Ride",
+            "Description": "Easy endurance ride",
+            "WorkoutType": "Bike",
+            "WorkoutDay": "2025-01-17T00:00:00",
+            "TotalTime": 7200.0,
+            "TSSPlanned": 50.0
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/12347"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_workout_details(12347).await;
+
+        assert!(result.is_ok());
+        let workout = result.unwrap();
+        assert_eq!(workout.id, 12347);
+        assert_eq!(workout.title, "Free Ride");
+        assert_eq!(workout.total_time, Some(7200.0));
+        assert!(workout.structure.is_none());
     }
 }

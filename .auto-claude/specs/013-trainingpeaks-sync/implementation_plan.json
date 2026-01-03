@@ -164,40 +164,46 @@
           "id": "T010",
           "title": "Define TrainingPeaks workout API types",
           "description": "Create types for TrainingPeaks workout API responses: TPWorkout, TPWorkoutStep, TPWorkoutTarget. Map to internal Workout/WorkoutSegment types.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T003"
           ],
           "estimated_hours": 2,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Implemented TrainingPeaks workout type conversion to internal Workout format. Added: TPWorkout::to_workout(ftp) for conversion, map_step_type_to_segment_type() for step mapping, WorkoutConversionError for error handling, WorkoutFormat::TrainingPeaks enum variant, convert_tp_workouts() batch helper. Handles nested repeat steps, power targets (absolute watts/%FTP), and cadence targets. Comprehensive tests added.",
+          "updated_at": "2026-01-03T14:17:49.137102+00:00"
         },
         {
           "id": "T011",
           "title": "Implement scheduled workouts fetch",
           "description": "Add get_scheduled_workouts() method to fetch workouts scheduled for a date range. TrainingPeaks API: GET /v1/workouts?startDate=&endDate=",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T010"
           ],
           "estimated_hours": 2.5,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Implemented get_scheduled_workouts() method in TrainingPeaksClient. Features: accepts NaiveDate start/end parameters, formats as YYYY-MM-DD for API query (GET /v1/workouts?startDate=&endDate=), returns Vec<TPWorkout>, comprehensive error handling (rate limit, unauthorized, API errors). Added 7 tests: unit test for NotConfigured, and HTTP mocked tests using wiremock for success (with multiple workouts), empty result, rate limit, unauthorized, API error, and structured workout with steps.",
+          "updated_at": "2026-01-03T14:23:30.462674+00:00"
         },
         {
           "id": "T012",
           "title": "Implement workout detail fetch",
           "description": "Add get_workout_details() to fetch full workout structure with steps/intervals from TrainingPeaks API.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T010"
           ],
           "estimated_hours": 2,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Implemented get_workout_details(workout_id) method in TrainingPeaksClient. Features: GET request to /v1/workouts/{workoutId}, returns TPWorkout with full structure including steps/intervals, comprehensive error handling (rate limit 429, unauthorized 401, not found 404, API errors). Added 8 comprehensive tests: NotConfigured, success with full structure, not found, rate limit, unauthorized, API error, repeat steps, and workouts without structure.",
+          "updated_at": "2026-01-03T14:28:08.011995+00:00"
         },
         {
           "id": "T013",
@@ -236,12 +242,14 @@
           "id": "T015",
           "title": "Add TrainingPeaks source to WorkoutFormat",
           "description": "Add TrainingPeaks variant to WorkoutFormat enum in src/workouts/types.rs to identify imported TrainingPeaks workouts.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [],
           "estimated_hours": 0.5,
           "files": [
             "src/workouts/types.rs"
-          ]
+          ],
+          "notes": "Completed as part of T010. Added WorkoutFormat::TrainingPeaks variant to src/workouts/types.rs to identify workouts synced from TrainingPeaks API.",
+          "updated_at": "2026-01-03T14:18:32.981792+00:00"
         },
         {
           "id": "T016",
@@ -501,5 +509,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T14:11:24.537565+00:00"
+  "last_updated": "2026-01-03T14:28:08.011995+00:00"
 }
