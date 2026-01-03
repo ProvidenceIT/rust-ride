@@ -11,6 +11,7 @@ mod power_profile_test;
 mod ride_recording_test;
 mod route_import_test;
 mod segment_test;
+mod sensor_flow_test;
 mod sensor_mock;
 mod streaming_test;
 mod tts_test;
