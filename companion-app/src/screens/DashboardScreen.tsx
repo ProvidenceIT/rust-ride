@@ -23,7 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { MetricCard, ConnectionStatus, PowerDisplay, HeartRateDisplay } from '@/components';
+import { MetricCard, ConnectionStatus, PowerDisplay, HeartRateDisplay, CadenceDisplay } from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
   useMetricsStore,
@@ -236,23 +236,12 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
             style={{ width: cardWidth }}
           />
 
-          {/* Cadence */}
-          <MetricCard
-            value={showMetrics && cadence ? cadence : '--'}
-            unit="rpm"
-            label="Cadence"
-            size="medium"
-            targetValue={targetCadence ?? undefined}
-            targetLabel="Target"
-            accentColor={
-              showMetrics && targetCadence && cadence
-                ? Math.abs(cadence - targetCadence) > 10
-                  ? colors.warning
-                  : colors.success
-                : undefined
-            }
+          {/* Cadence Display - with target and visual warning */}
+          <CadenceDisplay
+            cadence={cadence}
+            targetCadence={targetCadence}
+            showMetrics={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Cadence: ${showMetrics && cadence ? cadence : 'no data'} revolutions per minute`}
           />
 
           {/* Speed */}

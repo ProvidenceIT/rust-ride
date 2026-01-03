@@ -48,3 +48,7 @@ export type { PowerDisplayProps } from './PowerDisplay';
 // HeartRateDisplay - large heart rate display with zone indicator and pulse animation for dashboard
 export { HeartRateDisplay } from './HeartRateDisplay';
 export type { HeartRateDisplayProps } from './HeartRateDisplay';
+
+// CadenceDisplay - cadence display with target and visual warning when outside range
+export { CadenceDisplay } from './CadenceDisplay';
+export type { CadenceDisplayProps } from './CadenceDisplay';

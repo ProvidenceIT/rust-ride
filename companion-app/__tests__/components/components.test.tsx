@@ -21,6 +21,7 @@ import {
   PinEntryModal,
   PowerDisplay,
   HeartRateDisplay,
+  CadenceDisplay,
 } from '../../src/components';
 import {
   parseQrConnectionData,
@@ -1456,5 +1457,235 @@ describe('HeartRateDisplay', () => {
     );
 
     expect(getByText('130')).toBeTruthy();
+  });
+});
+
+describe('CadenceDisplay', () => {
+  it('renders current cadence value', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('90')).toBeTruthy();
+    expect(getByText('rpm')).toBeTruthy();
+    expect(getByText('CADENCE')).toBeTruthy();
+  });
+
+  it('renders placeholder when showMetrics is false', () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={false}
+      />,
+    );
+
+    expect(getByText('--')).toBeTruthy();
+    expect(queryByText('90')).toBeNull();
+  });
+
+  it('renders placeholder when cadence is null', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={null}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('--')).toBeTruthy();
+  });
+
+  it('renders target cadence when provided', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={85}
+        targetCadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('TARGET')).toBeTruthy();
+    expect(getByText('90')).toBeTruthy();
+  });
+
+  it('shows cadence difference from target', () => {
+    const { getByText, getAllByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={75}
+        targetCadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('-15 rpm')).toBeTruthy();
+    // "Spin Faster" appears in badge and hint
+    expect(getAllByText('Spin Faster').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows positive cadence difference', () => {
+    const { getByText, getAllByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={105}
+        targetCadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('+15 rpm')).toBeTruthy();
+    // "Slow Down" appears in badge and hint
+    expect(getAllByText('Slow Down').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows on target when within default tolerance (10 RPM)', () => {
+    const { getAllByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={95}
+        targetCadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    // "On Target" appears in badge and hint
+    expect(getAllByText('On Target').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('respects custom tolerance', () => {
+    // With 5 RPM tolerance, 97 should be out of range (7 > 5)
+    const { getAllByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={97}
+        targetCadence={90}
+        tolerance={5}
+        showMetrics={true}
+      />,
+    );
+
+    // "Slow Down" appears in badge and hint
+    expect(getAllByText('Slow Down').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not show target section when targetCadence is null', () => {
+    const { queryByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        targetCadence={null}
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText('TARGET')).toBeNull();
+  });
+
+  it('does not show target section when showMetrics is false', () => {
+    const { queryByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        targetCadence={85}
+        showMetrics={false}
+      />,
+    );
+
+    expect(queryByText('TARGET')).toBeNull();
+  });
+
+  it('shows no target set hint when no target', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(getByText('No target set')).toBeTruthy();
+  });
+
+  it('does not show no target hint when target is provided', () => {
+    const { queryByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        targetCadence={85}
+        showMetrics={true}
+      />,
+    );
+
+    expect(queryByText('No target set')).toBeNull();
+  });
+
+  it('shows rotation icon when cadence is active', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    // Rotation icon is rendered as Unicode character
+    expect(getByText('\u21BB')).toBeTruthy();
+  });
+
+  it('does not show rotation icon when showMetrics is false', () => {
+    const { queryByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={false}
+      />,
+    );
+
+    expect(queryByText('\u21BB')).toBeNull();
+  });
+
+  it('has correct accessibility label with target', () => {
+    // 75 vs 90 = -15, outside 10 RPM tolerance, so "Spin Faster"
+    const { getByLabelText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={75}
+        targetCadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Cadence: 75 revolutions per minute.*Target: 90 RPM.*Status: Spin Faster/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label without target', () => {
+    const { getByLabelText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={90}
+        showMetrics={true}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Cadence: 90 revolutions per minute/),
+    ).toBeTruthy();
+  });
+
+  it('has correct accessibility label when no metrics', () => {
+    const { getByLabelText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={null}
+        showMetrics={false}
+      />,
+    );
+
+    expect(
+      getByLabelText(/Cadence: no data/),
+    ).toBeTruthy();
+  });
+
+  it('renders with custom style', () => {
+    const { getByText } = renderWithTheme(
+      <CadenceDisplay
+        cadence={85}
+        showMetrics={true}
+        style={{ width: 200 }}
+      />,
+    );
+
+    expect(getByText('85')).toBeTruthy();
   });
 });
