@@ -145,6 +145,94 @@ pub struct PlatformConfig {
     pub auto_sync: bool,
 }
 
+/// TrainingPeaks-specific platform configuration
+///
+/// Extends the base PlatformConfig with TrainingPeaks-specific options
+/// for workout plan syncing and sync frequency control.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingPeaksPlatformConfig {
+    /// Base platform configuration
+    pub enabled: bool,
+    /// Auto-sync rides after completion
+    pub auto_sync_rides: bool,
+    /// Whether to sync workout plans from TrainingPeaks
+    pub sync_workout_plans: bool,
+    /// Sync frequency in hours (how often to check for new workouts)
+    pub sync_frequency_hours: u32,
+    /// Number of days to look ahead for scheduled workouts
+    pub lookahead_days: i32,
+    /// Number of days to look back for scheduled workouts
+    pub lookback_days: i32,
+    /// Only sync cycling workouts (filter out running, swimming, etc.)
+    pub cycling_only: bool,
+}
+
+impl Default for TrainingPeaksPlatformConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_sync_rides: true,
+            sync_workout_plans: true,
+            sync_frequency_hours: 6,
+            lookahead_days: 14,
+            lookback_days: 7,
+            cycling_only: true,
+        }
+    }
+}
+
+impl TrainingPeaksPlatformConfig {
+    /// Create a new TrainingPeaks configuration
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create config from base PlatformConfig
+    pub fn from_platform_config(config: &PlatformConfig) -> Self {
+        Self {
+            enabled: config.enabled,
+            auto_sync_rides: config.auto_sync,
+            ..Default::default()
+        }
+    }
+
+    /// Convert to base PlatformConfig
+    pub fn to_platform_config(&self) -> PlatformConfig {
+        PlatformConfig {
+            enabled: self.enabled,
+            auto_sync: self.auto_sync_rides,
+        }
+    }
+
+    /// Check if workout sync is due based on last sync time
+    pub fn is_workout_sync_due(&self, last_sync_hours_ago: u64) -> bool {
+        self.sync_workout_plans && last_sync_hours_ago >= self.sync_frequency_hours as u64
+    }
+
+    /// Get available sync frequency options in hours
+    pub fn sync_frequency_options() -> &'static [(u32, &'static str)] {
+        &[
+            (1, "Every hour"),
+            (3, "Every 3 hours"),
+            (6, "Every 6 hours"),
+            (12, "Every 12 hours"),
+            (24, "Daily"),
+        ]
+    }
+
+    /// Get display name for sync frequency
+    pub fn sync_frequency_display(&self) -> &'static str {
+        match self.sync_frequency_hours {
+            1 => "Every hour",
+            3 => "Every 3 hours",
+            6 => "Every 6 hours",
+            12 => "Every 12 hours",
+            24 => "Daily",
+            _ => "Custom",
+        }
+    }
+}
+
 /// Sync record for tracking upload status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncRecord {
@@ -226,5 +314,109 @@ mod tests {
         let config = SyncConfig::default();
         assert!(config.platforms.contains_key(&SyncPlatform::Strava));
         assert!(!config.platforms.get(&SyncPlatform::Strava).unwrap().enabled);
+    }
+
+    #[test]
+    fn test_trainingpeaks_platform_config_default() {
+        let config = TrainingPeaksPlatformConfig::default();
+        assert!(!config.enabled);
+        assert!(config.auto_sync_rides);
+        assert!(config.sync_workout_plans);
+        assert_eq!(config.sync_frequency_hours, 6);
+        assert_eq!(config.lookahead_days, 14);
+        assert_eq!(config.lookback_days, 7);
+        assert!(config.cycling_only);
+    }
+
+    #[test]
+    fn test_trainingpeaks_platform_config_new() {
+        let config = TrainingPeaksPlatformConfig::new();
+        assert!(!config.enabled);
+        assert!(config.auto_sync_rides);
+    }
+
+    #[test]
+    fn test_trainingpeaks_from_platform_config() {
+        let platform_config = PlatformConfig {
+            enabled: true,
+            auto_sync: false,
+        };
+        let tp_config = TrainingPeaksPlatformConfig::from_platform_config(&platform_config);
+
+        assert!(tp_config.enabled);
+        assert!(!tp_config.auto_sync_rides);
+        // Defaults should be preserved
+        assert!(tp_config.sync_workout_plans);
+        assert_eq!(tp_config.sync_frequency_hours, 6);
+    }
+
+    #[test]
+    fn test_trainingpeaks_to_platform_config() {
+        let tp_config = TrainingPeaksPlatformConfig {
+            enabled: true,
+            auto_sync_rides: false,
+            sync_workout_plans: true,
+            sync_frequency_hours: 12,
+            lookahead_days: 14,
+            lookback_days: 7,
+            cycling_only: true,
+        };
+        let platform_config = tp_config.to_platform_config();
+
+        assert!(platform_config.enabled);
+        assert!(!platform_config.auto_sync);
+    }
+
+    #[test]
+    fn test_trainingpeaks_is_workout_sync_due() {
+        let config = TrainingPeaksPlatformConfig {
+            sync_workout_plans: true,
+            sync_frequency_hours: 6,
+            ..Default::default()
+        };
+
+        // Not due yet
+        assert!(!config.is_workout_sync_due(5));
+        // Due now
+        assert!(config.is_workout_sync_due(6));
+        // Overdue
+        assert!(config.is_workout_sync_due(10));
+    }
+
+    #[test]
+    fn test_trainingpeaks_sync_due_disabled() {
+        let config = TrainingPeaksPlatformConfig {
+            sync_workout_plans: false,
+            sync_frequency_hours: 6,
+            ..Default::default()
+        };
+
+        // Never due when disabled
+        assert!(!config.is_workout_sync_due(100));
+    }
+
+    #[test]
+    fn test_trainingpeaks_sync_frequency_options() {
+        let options = TrainingPeaksPlatformConfig::sync_frequency_options();
+        assert_eq!(options.len(), 5);
+        assert_eq!(options[0], (1, "Every hour"));
+        assert_eq!(options[4], (24, "Daily"));
+    }
+
+    #[test]
+    fn test_trainingpeaks_sync_frequency_display() {
+        let mut config = TrainingPeaksPlatformConfig::default();
+
+        config.sync_frequency_hours = 1;
+        assert_eq!(config.sync_frequency_display(), "Every hour");
+
+        config.sync_frequency_hours = 6;
+        assert_eq!(config.sync_frequency_display(), "Every 6 hours");
+
+        config.sync_frequency_hours = 24;
+        assert_eq!(config.sync_frequency_display(), "Daily");
+
+        config.sync_frequency_hours = 48;
+        assert_eq!(config.sync_frequency_display(), "Custom");
     }
 }

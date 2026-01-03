@@ -8,7 +8,7 @@
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::integrations::sync::trainingpeaks::AthleteProfile;
-use crate::integrations::sync::{PlatformConfig, SyncPlatform};
+use crate::integrations::sync::{PlatformConfig, SyncPlatform, TrainingPeaksPlatformConfig};
 
 use super::Screen;
 
@@ -47,8 +47,14 @@ pub enum TrainingPeaksSettingsAction {
     Connect,
     /// Disconnect from TrainingPeaks
     Disconnect,
-    /// Toggle auto-sync setting
-    ToggleAutoSync(bool),
+    /// Toggle auto-sync rides setting
+    ToggleAutoSyncRides(bool),
+    /// Toggle sync workout plans setting
+    ToggleSyncWorkoutPlans(bool),
+    /// Change sync frequency (hours)
+    SetSyncFrequency(u32),
+    /// Update the full TrainingPeaks config
+    UpdateConfig(TrainingPeaksPlatformConfig),
 }
 
 /// TrainingPeaks settings screen state.
@@ -58,12 +64,18 @@ pub struct TrainingPeaksSettingsScreen {
     pub connection_state: TrainingPeaksConnectionState,
     /// Athlete profile (when connected)
     pub athlete_profile: Option<AthleteProfile>,
-    /// Platform configuration
+    /// Base platform configuration (for backward compatibility)
     pub config: PlatformConfig,
+    /// Extended TrainingPeaks-specific configuration
+    pub tp_config: TrainingPeaksPlatformConfig,
     /// Number of pending uploads
     pub pending_uploads: usize,
-    /// Last sync timestamp
+    /// Last ride sync timestamp
     pub last_sync: Option<String>,
+    /// Last workout plan sync timestamp
+    pub last_workout_sync: Option<String>,
+    /// Number of synced workouts
+    pub synced_workouts_count: usize,
 }
 
 impl TrainingPeaksSettingsScreen {
@@ -87,14 +99,29 @@ impl TrainingPeaksSettingsScreen {
         self.config = config;
     }
 
+    /// Set the TrainingPeaks-specific configuration.
+    pub fn set_tp_config(&mut self, config: TrainingPeaksPlatformConfig) {
+        self.tp_config = config;
+    }
+
     /// Set the number of pending uploads.
     pub fn set_pending_uploads(&mut self, count: usize) {
         self.pending_uploads = count;
     }
 
-    /// Set the last sync timestamp.
+    /// Set the last ride sync timestamp.
     pub fn set_last_sync(&mut self, timestamp: Option<String>) {
         self.last_sync = timestamp;
+    }
+
+    /// Set the last workout plan sync timestamp.
+    pub fn set_last_workout_sync(&mut self, timestamp: Option<String>) {
+        self.last_workout_sync = timestamp;
+    }
+
+    /// Set the number of synced workouts.
+    pub fn set_synced_workouts_count(&mut self, count: usize) {
+        self.synced_workouts_count = count;
     }
 
     /// Check if currently connected.
@@ -351,7 +378,7 @@ impl TrainingPeaksSettingsScreen {
 
         ui.add_space(16.0);
 
-        // Sync settings section
+        // Ride Sync settings section
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .inner_margin(16.0)
@@ -359,19 +386,20 @@ impl TrainingPeaksSettingsScreen {
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
 
-                ui.label(RichText::new("Sync Settings").size(14.0).strong());
+                ui.label(RichText::new("Ride Sync").size(14.0).strong());
                 ui.add_space(12.0);
 
-                // Auto-sync toggle
+                // Auto-sync rides toggle
                 ui.horizontal(|ui| {
-                    let mut auto_sync = self.config.auto_sync;
+                    let mut auto_sync_rides = self.tp_config.auto_sync_rides;
                     if ui
-                        .checkbox(&mut auto_sync, "Auto-sync rides")
+                        .checkbox(&mut auto_sync_rides, "Auto-sync rides")
                         .on_hover_text("Automatically upload rides after each session")
                         .changed()
                     {
-                        self.config.auto_sync = auto_sync;
-                        action = Some(TrainingPeaksSettingsAction::ToggleAutoSync(auto_sync));
+                        self.tp_config.auto_sync_rides = auto_sync_rides;
+                        self.config.auto_sync = auto_sync_rides;
+                        action = Some(TrainingPeaksSettingsAction::ToggleAutoSyncRides(auto_sync_rides));
                     }
                 });
 
@@ -392,9 +420,91 @@ impl TrainingPeaksSettingsScreen {
 
                 if let Some(ref last_sync) = self.last_sync {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Last sync:").weak());
+                        ui.label(RichText::new("Last ride sync:").weak());
                         ui.label(RichText::new(last_sync).weak());
                     });
+                }
+            });
+
+        ui.add_space(16.0);
+
+        // Workout Plan Sync settings section
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .inner_margin(16.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+
+                ui.label(RichText::new("Workout Plan Sync").size(14.0).strong());
+                ui.add_space(12.0);
+
+                // Sync workout plans toggle
+                ui.horizontal(|ui| {
+                    let mut sync_workouts = self.tp_config.sync_workout_plans;
+                    if ui
+                        .checkbox(&mut sync_workouts, "Sync workout plans")
+                        .on_hover_text("Download scheduled workouts from TrainingPeaks")
+                        .changed()
+                    {
+                        self.tp_config.sync_workout_plans = sync_workouts;
+                        action = Some(TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(sync_workouts));
+                    }
+                });
+
+                // Only show frequency options if workout sync is enabled
+                if self.tp_config.sync_workout_plans {
+                    ui.add_space(8.0);
+
+                    // Sync frequency dropdown
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Sync frequency:").weak());
+
+                        let current_freq = self.tp_config.sync_frequency_hours;
+                        let display = self.tp_config.sync_frequency_display();
+
+                        egui::ComboBox::from_id_salt("sync_frequency")
+                            .selected_text(display)
+                            .show_ui(ui, |ui| {
+                                for (hours, label) in TrainingPeaksPlatformConfig::sync_frequency_options() {
+                                    if ui
+                                        .selectable_value(&mut self.tp_config.sync_frequency_hours, *hours, *label)
+                                        .clicked()
+                                    {
+                                        if self.tp_config.sync_frequency_hours != current_freq {
+                                            action = Some(TrainingPeaksSettingsAction::SetSyncFrequency(*hours));
+                                        }
+                                    }
+                                }
+                            });
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Workout sync status
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Synced workouts:").weak());
+                        ui.label(RichText::new(format!("{}", self.synced_workouts_count)).weak());
+                    });
+
+                    if let Some(ref last_workout_sync) = self.last_workout_sync {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Last workout sync:").weak());
+                            ui.label(RichText::new(last_workout_sync).weak());
+                        });
+                    }
+
+                    ui.add_space(4.0);
+
+                    // Cycling only filter hint
+                    if self.tp_config.cycling_only {
+                        ui.label(
+                            RichText::new("Only cycling workouts are synced")
+                                .weak()
+                                .small()
+                                .italics(),
+                        );
+                    }
                 }
             });
 
@@ -606,12 +716,36 @@ mod tests {
         assert_eq!(TrainingPeaksSettingsAction::Connect, TrainingPeaksSettingsAction::Connect);
         assert_eq!(TrainingPeaksSettingsAction::Disconnect, TrainingPeaksSettingsAction::Disconnect);
         assert_eq!(
-            TrainingPeaksSettingsAction::ToggleAutoSync(true),
-            TrainingPeaksSettingsAction::ToggleAutoSync(true)
+            TrainingPeaksSettingsAction::ToggleAutoSyncRides(true),
+            TrainingPeaksSettingsAction::ToggleAutoSyncRides(true)
         );
         assert_ne!(
-            TrainingPeaksSettingsAction::ToggleAutoSync(true),
-            TrainingPeaksSettingsAction::ToggleAutoSync(false)
+            TrainingPeaksSettingsAction::ToggleAutoSyncRides(true),
+            TrainingPeaksSettingsAction::ToggleAutoSyncRides(false)
+        );
+    }
+
+    #[test]
+    fn test_settings_action_sync_workout_plans() {
+        assert_eq!(
+            TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(true),
+            TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(true)
+        );
+        assert_ne!(
+            TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(true),
+            TrainingPeaksSettingsAction::ToggleSyncWorkoutPlans(false)
+        );
+    }
+
+    #[test]
+    fn test_settings_action_sync_frequency() {
+        assert_eq!(
+            TrainingPeaksSettingsAction::SetSyncFrequency(6),
+            TrainingPeaksSettingsAction::SetSyncFrequency(6)
+        );
+        assert_ne!(
+            TrainingPeaksSettingsAction::SetSyncFrequency(6),
+            TrainingPeaksSettingsAction::SetSyncFrequency(12)
         );
     }
 
@@ -628,11 +762,78 @@ mod tests {
     }
 
     #[test]
+    fn test_last_workout_sync_timestamp() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert!(screen.last_workout_sync.is_none());
+
+        screen.set_last_workout_sync(Some("2024-01-15 11:00 AM".to_string()));
+        assert_eq!(screen.last_workout_sync, Some("2024-01-15 11:00 AM".to_string()));
+
+        screen.set_last_workout_sync(None);
+        assert!(screen.last_workout_sync.is_none());
+    }
+
+    #[test]
+    fn test_synced_workouts_count() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+        assert_eq!(screen.synced_workouts_count, 0);
+
+        screen.set_synced_workouts_count(15);
+        assert_eq!(screen.synced_workouts_count, 15);
+    }
+
+    #[test]
+    fn test_tp_config() {
+        let mut screen = TrainingPeaksSettingsScreen::new();
+
+        // Check defaults
+        assert!(screen.tp_config.auto_sync_rides);
+        assert!(screen.tp_config.sync_workout_plans);
+        assert_eq!(screen.tp_config.sync_frequency_hours, 6);
+
+        // Update config
+        let mut config = TrainingPeaksPlatformConfig::default();
+        config.auto_sync_rides = false;
+        config.sync_workout_plans = false;
+        config.sync_frequency_hours = 12;
+
+        screen.set_tp_config(config);
+
+        assert!(!screen.tp_config.auto_sync_rides);
+        assert!(!screen.tp_config.sync_workout_plans);
+        assert_eq!(screen.tp_config.sync_frequency_hours, 12);
+    }
+
+    #[test]
     fn test_disconnecting_state() {
         let mut screen = TrainingPeaksSettingsScreen::new();
         screen.set_connection_state(TrainingPeaksConnectionState::Disconnecting);
 
         assert!(!screen.is_connected());
         assert_eq!(screen.connection_state, TrainingPeaksConnectionState::Disconnecting);
+    }
+
+    #[test]
+    fn test_update_config_action() {
+        let config = TrainingPeaksPlatformConfig {
+            enabled: true,
+            auto_sync_rides: true,
+            sync_workout_plans: true,
+            sync_frequency_hours: 12,
+            lookahead_days: 14,
+            lookback_days: 7,
+            cycling_only: true,
+        };
+
+        let action = TrainingPeaksSettingsAction::UpdateConfig(config.clone());
+
+        if let TrainingPeaksSettingsAction::UpdateConfig(c) = action {
+            assert!(c.enabled);
+            assert!(c.auto_sync_rides);
+            assert!(c.sync_workout_plans);
+            assert_eq!(c.sync_frequency_hours, 12);
+        } else {
+            panic!("Expected UpdateConfig action");
+        }
     }
 }
