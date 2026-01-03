@@ -539,8 +539,8 @@ impl RideScreen {
 
             ui.add_space(32.0);
 
-            // Cadence
-            MetricDisplay::cadence(self.metrics.cadence)
+            // Cadence (smoothed 3s average with fallback to raw)
+            MetricDisplay::cadence(self.metrics.cadence_3s_avg.or(self.metrics.cadence))
                 .with_size(MetricSize::Large)
                 .show(ui);
         });
@@ -963,13 +963,14 @@ impl RideScreen {
 
                 ui.add_space(48.0);
 
-                // Cadence
+                // Cadence (smoothed with raw fallback)
                 ui.vertical(|ui| {
                     ui.label(RichText::new("CADENCE").size(16.0).weak());
                     ui.horizontal(|ui| {
                         let cad_text = self
                             .metrics
-                            .cadence
+                            .cadence_3s_avg
+                            .or(self.metrics.cadence)
                             .map(|c| c.to_string())
                             .unwrap_or_else(|| "--".to_string());
                         ui.label(RichText::new(cad_text).size(96.0).strong());
@@ -1063,6 +1064,16 @@ impl RideScreen {
             }
             MetricType::Cadence => {
                 MetricDisplay::cadence(self.metrics.cadence)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Cadence3s => {
+                MetricDisplay::cadence_3s(self.metrics.cadence_3s_avg)
+                    .with_size(size)
+                    .show(ui);
+            }
+            MetricType::Cadence10s => {
+                MetricDisplay::cadence_10s(self.metrics.cadence_10s_avg)
                     .with_size(size)
                     .show(ui);
             }

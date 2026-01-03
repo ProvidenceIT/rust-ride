@@ -1,0 +1,20 @@
+{
+  "discovered_files": {
+    "src/metrics/smoothing.rs": {
+      "description": "RollingAverage struct uses u16 values with configurable window_size. Factory methods: three_second() (window=3), thirty_second() (window=30). Used for power smoothing. Need ten_second() for cadence.",
+      "category": "architecture",
+      "discovered_at": "2026-01-02T22:56:42.418117+00:00"
+    },
+    "src/metrics/calculator.rs": {
+      "description": "Cadence rolling averages in process(): converts u8 cadence to u16 for RollingAverage.add(), then maps result back to u8 with .map(|v| v as u8). Pattern: self.cadence_3s.add(cadence as u16).map(|v| v as u8)",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T23:06:15.750221+00:00"
+    },
+    "src/ui/screens/ride.rs": {
+      "description": "Full-screen mode cadence display in render_full_screen_mode() now uses cadence_3s_avg.or(self.metrics.cadence) pattern, consistent with main metrics display. Both use .or() for smoothed with raw fallback.",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T23:18:12.847539+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T23:18:12.847539+00:00"
+}

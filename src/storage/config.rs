@@ -708,6 +708,10 @@ pub enum MetricType {
     HeartRate,
     /// Cadence
     Cadence,
+    /// 3-second cadence average
+    Cadence3s,
+    /// 10-second cadence average
+    Cadence10s,
     /// Speed
     Speed,
     /// Distance
@@ -735,6 +739,8 @@ impl std::fmt::Display for MetricType {
             MetricType::Power3s => write!(f, "3s Power"),
             MetricType::HeartRate => write!(f, "Heart Rate"),
             MetricType::Cadence => write!(f, "Cadence"),
+            MetricType::Cadence3s => write!(f, "3s Cadence"),
+            MetricType::Cadence10s => write!(f, "10s Cadence"),
             MetricType::Speed => write!(f, "Speed"),
             MetricType::Distance => write!(f, "Distance"),
             MetricType::Duration => write!(f, "Duration"),

@@ -1,0 +1,53 @@
+# Rolling Cadence Average Display - Build Progress
+
+## Feature Summary
+Add 3-second and 10-second rolling cadence averages to the metrics display, matching the existing power averaging functionality for smoother, more readable cadence values.
+
+## Status: IN PROGRESS - Phase 6 (Verification)
+
+## Implementation Overview
+
+### Phase 1: Extend RollingAverage (smoothing.rs)
+- [x] 1.1 Add ten_second() factory method (28a8d87)
+- [x] 1.2 Add test for 10-second rolling average (da2e1a4)
+
+### Phase 2: Extend AggregatedMetrics (calculator.rs)
+- [x] 2.1 Add cadence_3s_avg and cadence_10s_avg fields (72dd961)
+
+### Phase 3: MetricsCalculator cadence smoothing (calculator.rs)
+- [x] 3.1 Add cadence_3s and cadence_10s RollingAverage fields (2e1c253)
+- [x] 3.2 Process cadence through rolling averages in process() (63e7bd0)
+- [x] 3.3 Add cadence smoothing tests (bbd2699)
+
+### Phase 4: UI metric types (config.rs, metric_display.rs, ride.rs)
+- [x] 4.1 Add Cadence3s and Cadence10s to MetricType enum (6e38521)
+- [x] 4.2 Add cadence_3s() and cadence_10s() helpers to MetricDisplay (2efb1fd)
+- [x] 4.3 Handle new metric types in render_metric() (c366367)
+
+### Phase 5: Default display uses smoothed cadence (ride.rs)
+- [x] 5.1 Update render_main_metrics() to use cadence_3s_avg (28dd90d)
+- [x] 5.2 Update render_full_screen_mode() to use cadence_3s_avg (0a08cd6)
+
+### Phase 6: Verification
+- [x] 6.1 Manual code review (cargo not allowed in sandbox)
+- [ ] 6.2 cargo test --lib
+
+## Files to Modify
+- src/metrics/smoothing.rs
+- src/metrics/calculator.rs
+- src/storage/config.rs
+- src/ui/widgets/metric_display.rs
+- src/ui/screens/ride.rs
+
+## Key Patterns Identified
+- RollingAverage struct already supports configurable window sizes
+- Power uses three_second() and thirty_second() factory methods
+- MetricsCalculator processes power through RollingAverage instances
+- AggregatedMetrics stores power_3s_avg and power_30s_avg
+- MetricType enum in config.rs controls dashboard layout options
+- MetricDisplay widget has factory methods for different metric types
+
+## Notes
+- RollingAverage uses u16 internally; cadence is u8, so conversion needed
+- Spec requests 3s and 10s averages (not 30s like power)
+- 3s average should be default display, 10s available for configuration

@@ -94,6 +94,22 @@ impl<'a> MetricDisplay<'a> {
         Self::new(value, "rpm", "Cadence")
     }
 
+    /// Create a metric display for 3-second average cadence.
+    pub fn cadence_3s(rpm: Option<u8>) -> Self {
+        let value = rpm
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "--".to_string());
+        Self::new(value, "rpm", "3s Cad")
+    }
+
+    /// Create a metric display for 10-second average cadence.
+    pub fn cadence_10s(rpm: Option<u8>) -> Self {
+        let value = rpm
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "--".to_string());
+        Self::new(value, "rpm", "10s Cad")
+    }
+
     /// Create a metric display for speed.
     pub fn speed(speed_kmh: Option<f32>) -> Self {
         let value = speed_kmh

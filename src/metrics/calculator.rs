@@ -23,6 +23,10 @@ pub struct AggregatedMetrics {
     pub power_30s_avg: Option<u16>,
     /// Current cadence
     pub cadence: Option<u8>,
+    /// 3-second rolling average cadence
+    pub cadence_3s_avg: Option<u8>,
+    /// 10-second rolling average cadence
+    pub cadence_10s_avg: Option<u8>,
     /// Current heart rate
     pub heart_rate: Option<u8>,
     /// Current speed in km/h
@@ -68,10 +72,14 @@ pub struct PowerMetrics {
 pub struct MetricsCalculator {
     /// Power filter
     power_filter: PowerFilter,
-    /// 3-second rolling average
+    /// 3-second rolling average power
     power_3s: RollingAverage,
-    /// 30-second rolling average (for display)
+    /// 30-second rolling average power (for display)
     power_30s: RollingAverage,
+    /// 3-second rolling average cadence
+    cadence_3s: RollingAverage,
+    /// 10-second rolling average cadence
+    cadence_10s: RollingAverage,
     /// Normalized Power calculator
     np_calculator: NormalizedPowerCalculator,
     /// Power zones
@@ -103,6 +111,8 @@ impl MetricsCalculator {
             power_filter: PowerFilter::new(),
             power_3s: RollingAverage::three_second(),
             power_30s: RollingAverage::thirty_second(),
+            cadence_3s: RollingAverage::three_second(),
+            cadence_10s: RollingAverage::ten_second(),
             np_calculator: NormalizedPowerCalculator::new(),
             power_zones: Some(PowerZones::from_ftp(ftp)),
             hr_zones: None,
@@ -184,6 +194,12 @@ impl MetricsCalculator {
         // Process cadence
         if let Some(cadence) = reading.cadence_rpm {
             self.current_metrics.cadence = Some(cadence);
+
+            // Calculate rolling averages (convert u8 to u16 for RollingAverage, then back to u8)
+            self.current_metrics.cadence_3s_avg =
+                self.cadence_3s.add(cadence as u16).map(|v| v as u8);
+            self.current_metrics.cadence_10s_avg =
+                self.cadence_10s.add(cadence as u16).map(|v| v as u8);
         }
 
         // Process speed
@@ -274,6 +290,8 @@ impl MetricsCalculator {
         self.power_filter.reset();
         self.power_3s.reset();
         self.power_30s.reset();
+        self.cadence_3s.reset();
+        self.cadence_10s.reset();
         self.np_calculator.reset();
         self.power_sum = 0;
         self.power_count = 0;
@@ -314,6 +332,18 @@ mod tests {
         }
     }
 
+    fn make_cadence_reading(cadence: u8) -> SensorReading {
+        SensorReading {
+            sensor_id: Uuid::new_v4(),
+            timestamp: Instant::now(),
+            power_watts: None,
+            cadence_rpm: Some(cadence),
+            heart_rate_bpm: None,
+            speed_kmh: None,
+            distance_delta_m: None,
+        }
+    }
+
     #[test]
     fn test_metrics_calculator_basic() {
         let mut calc = MetricsCalculator::new(200);
@@ -340,5 +370,62 @@ mod tests {
         // 200W for 1 hour = 720 kJ ≈ 720 kcal
         let calories = estimate_calories(200, 3600);
         assert_eq!(calories, 720);
+    }
+
+    #[test]
+    fn test_cadence_smoothing() {
+        let mut calc = MetricsCalculator::new(200);
+
+        // First cadence sample
+        let metrics = calc.process(&make_cadence_reading(90));
+        assert_eq!(metrics.cadence, Some(90));
+        assert_eq!(metrics.cadence_3s_avg, Some(90)); // Average of just 90
+        assert_eq!(metrics.cadence_10s_avg, Some(90)); // Average of just 90
+
+        // Second sample
+        let metrics = calc.process(&make_cadence_reading(100));
+        assert_eq!(metrics.cadence, Some(100));
+        assert_eq!(metrics.cadence_3s_avg, Some(95)); // (90+100)/2 = 95
+        assert_eq!(metrics.cadence_10s_avg, Some(95)); // (90+100)/2 = 95
+
+        // Third sample - 3s buffer now full
+        let metrics = calc.process(&make_cadence_reading(80));
+        assert_eq!(metrics.cadence, Some(80));
+        assert_eq!(metrics.cadence_3s_avg, Some(90)); // (90+100+80)/3 = 90
+        assert_eq!(metrics.cadence_10s_avg, Some(90)); // (90+100+80)/3 = 90
+
+        // Fourth sample - oldest (90) drops from 3s, but stays in 10s
+        let metrics = calc.process(&make_cadence_reading(95));
+        assert_eq!(metrics.cadence, Some(95));
+        assert_eq!(metrics.cadence_3s_avg, Some(91)); // (100+80+95)/3 = 91.67 -> 91
+        assert_eq!(metrics.cadence_10s_avg, Some(91)); // (90+100+80+95)/4 = 91.25 -> 91
+
+        // Fill up to 10 samples to test 10s window
+        // Currently have: 90, 100, 80, 95 (4 samples)
+        // Add 6 more: all at 100 RPM
+        for _ in 0..6 {
+            calc.process(&make_cadence_reading(100));
+        }
+        // Now 10s has: 90, 100, 80, 95, 100, 100, 100, 100, 100, 100
+        // Sum = 965, Avg = 96.5 -> 96
+        let metrics = calc.current_metrics();
+        assert_eq!(metrics.cadence_10s_avg, Some(96));
+        assert_eq!(metrics.cadence_3s_avg, Some(100)); // Last 3 were all 100
+
+        // One more sample - oldest (90) drops from 10s buffer
+        let metrics = calc.process(&make_cadence_reading(110));
+        // 10s now has: 100, 80, 95, 100, 100, 100, 100, 100, 100, 110
+        // Sum = 985, Avg = 98.5 -> 98
+        assert_eq!(metrics.cadence_10s_avg, Some(98));
+        // 3s now has: 100, 100, 110
+        // Sum = 310, Avg = 103.33 -> 103
+        assert_eq!(metrics.cadence_3s_avg, Some(103));
+
+        // Test reset clears cadence averages
+        calc.reset();
+        let metrics = calc.current_metrics();
+        assert_eq!(metrics.cadence, None);
+        assert_eq!(metrics.cadence_3s_avg, None);
+        assert_eq!(metrics.cadence_10s_avg, None);
     }
 }
