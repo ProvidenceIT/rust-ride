@@ -8,7 +8,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use super::actions::ButtonAction;
-use super::{ButtonMappingConfig, HidConfig, HidDeviceConfig};
+use super::device::HidDevice;
+use super::{get_default_mappings, ButtonMappingConfig, HidConfig, HidDeviceConfig};
 use crate::storage::hardware_store::{StoredButtonMapping, StoredHidDevice};
 
 /// Convert a StoredHidDevice to an HidDeviceConfig.
@@ -22,6 +23,46 @@ pub fn stored_device_to_config(stored: &StoredHidDevice) -> HidDeviceConfig {
         product_id: stored.product_id,
         name: stored.name.clone(),
         enabled: stored.is_enabled,
+        mappings: Vec::new(),
+    }
+}
+
+/// Create a new HidDeviceConfig from a detected HidDevice.
+///
+/// This is used when a new device is connected for the first time.
+/// Default mappings are automatically applied for known devices.
+pub fn new_device_config(device: &HidDevice) -> HidDeviceConfig {
+    let defaults = get_default_mappings(device.vendor_id, device.product_id);
+
+    if !defaults.is_empty() {
+        tracing::info!(
+            "Creating config for {} with {} default mappings",
+            device.name,
+            defaults.len()
+        );
+    }
+
+    HidDeviceConfig {
+        device_id: device.id,
+        vendor_id: device.vendor_id,
+        product_id: device.product_id,
+        name: device.name.clone(),
+        enabled: true, // Newly connected devices are enabled by default
+        mappings: defaults,
+    }
+}
+
+/// Create a new HidDeviceConfig from a detected HidDevice without default mappings.
+///
+/// Use this when you explicitly want an empty mapping configuration,
+/// for example if the user has cleared all mappings.
+pub fn new_device_config_without_defaults(device: &HidDevice) -> HidDeviceConfig {
+    HidDeviceConfig {
+        device_id: device.id,
+        vendor_id: device.vendor_id,
+        product_id: device.product_id,
+        name: device.name.clone(),
+        enabled: true,
         mappings: Vec::new(),
     }
 }
@@ -197,6 +238,8 @@ fn serialize_button_action(action: &ButtonAction) -> (String, Option<String>) {
 ///
 /// This loads all HID devices for the user and their button mappings,
 /// converting them to an HidConfig for use by the application.
+/// If a device has no existing mappings but is a known device with defaults,
+/// the default mappings will be applied automatically.
 pub fn load_hid_config_from_db(
     store: &crate::storage::hardware_store::HardwareStore,
     user_id: &Uuid,
@@ -232,6 +275,21 @@ pub fn load_hid_config_from_db(
                     stored_device.id,
                     e
                 );
+            }
+        }
+
+        // If no mappings exist, apply defaults for known devices
+        if config.mappings.is_empty() {
+            let defaults = get_default_mappings(config.vendor_id, config.product_id);
+            if !defaults.is_empty() {
+                tracing::info!(
+                    "Applying {} default mappings for device {} (VID:{:04X} PID:{:04X})",
+                    defaults.len(),
+                    config.name,
+                    config.vendor_id,
+                    config.product_id
+                );
+                config.mappings = defaults;
             }
         }
 
@@ -484,5 +542,63 @@ mod tests {
         assert!(stored.action_params_json.is_some());
         assert!(stored.action_params_json.as_ref().unwrap().contains("60"));
         assert_eq!(stored.label, Some("Extend +60s".to_string()));
+    }
+
+    #[test]
+    fn test_new_device_config_stream_deck() {
+        // Stream Deck should get default mappings
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        let config = new_device_config(&device);
+
+        assert_eq!(config.device_id, device.id);
+        assert_eq!(config.vendor_id, 0x0FD9);
+        assert_eq!(config.product_id, 0x0060);
+        assert!(config.enabled);
+
+        // Should have default mappings
+        assert!(!config.mappings.is_empty());
+        assert_eq!(config.mappings.len(), 9); // Stream Deck has 9 default mappings
+
+        // First mapping should be PauseResume on button 0
+        let first = &config.mappings[0];
+        assert_eq!(first.button_code, 0);
+        assert_eq!(first.action, ButtonAction::PauseResume);
+        assert_eq!(first.label, Some("Pause/Resume".to_string()));
+    }
+
+    #[test]
+    fn test_new_device_config_stream_deck_pedal() {
+        // Stream Deck Pedal should get foot-friendly defaults
+        let device = HidDevice::new(0x0FD9, 0x0086, "Stream Deck Pedal".to_string());
+        let config = new_device_config(&device);
+
+        assert_eq!(config.mappings.len(), 3); // All 3 pedals mapped
+
+        // Verify foot-friendly mapping (hands-free controls)
+        assert_eq!(config.mappings[0].action, ButtonAction::AddLapMarker);  // Left
+        assert_eq!(config.mappings[1].action, ButtonAction::PauseResume);   // Center
+        assert_eq!(config.mappings[2].action, ButtonAction::SkipInterval);  // Right
+    }
+
+    #[test]
+    fn test_new_device_config_unknown_device() {
+        // Unknown device should have no default mappings
+        let device = HidDevice::new(0x1234, 0x5678, "Unknown Device".to_string());
+        let config = new_device_config(&device);
+
+        assert_eq!(config.device_id, device.id);
+        assert!(config.enabled);
+        assert!(config.mappings.is_empty());
+    }
+
+    #[test]
+    fn test_new_device_config_without_defaults() {
+        // Even known device should have no mappings when using without_defaults
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        let config = new_device_config_without_defaults(&device);
+
+        assert_eq!(config.device_id, device.id);
+        assert!(config.enabled);
+        assert!(config.mappings.is_empty());
     }
 }
