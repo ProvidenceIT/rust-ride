@@ -160,15 +160,72 @@ fn format_text_event(event: &TextEventEntry) -> String {
 ///
 /// Returns the workout as an MRC-formatted text string.
 ///
+/// The MRC format consists of:
+/// - `[COURSE HEADER]` section with FILE NAME and optional DESCRIPTION
+/// - `[COURSE DATA]` section with time/power percentage pairs
+/// - `[COURSE TEXT]` section with text events (if any exist)
+///
+/// # Arguments
+/// * `workout` - The workout to export
+///
 /// # Errors
 /// Returns `WorkoutExportError::EmptyWorkout` if the workout has no segments.
+///
+/// # Example
+/// ```ignore
+/// let workout = Workout::new("Sweet Spot", segments);
+/// let mrc_content = export_mrc(&workout)?;
+/// ```
 pub fn export_mrc(workout: &Workout) -> Result<String, WorkoutExportError> {
+    export_mrc_with_ftp(workout, None)
+}
+
+/// Export a workout to MRC format with a specific FTP value.
+///
+/// This variant allows specifying an FTP value for converting absolute power
+/// targets to percentages. Use this when the workout contains absolute watt targets.
+///
+/// # Arguments
+/// * `workout` - The workout to export
+/// * `ftp` - Optional FTP value for converting absolute power targets (defaults to 200W)
+///
+/// # Errors
+/// Returns `WorkoutExportError::EmptyWorkout` if the workout has no segments.
+pub fn export_mrc_with_ftp(workout: &Workout, ftp: Option<u16>) -> Result<String, WorkoutExportError> {
     if workout.segments.is_empty() {
         return Err(WorkoutExportError::EmptyWorkout);
     }
 
-    // TODO: Implement MRC format generation in phase 3
-    todo!("MRC export implementation")
+    let mut output = String::new();
+
+    // Build [COURSE HEADER] section
+    output.push_str("[COURSE HEADER]\n");
+    output.push_str(&format!("FILE NAME = {}\n", workout.name));
+    if let Some(ref desc) = workout.description {
+        output.push_str(&format!("DESCRIPTION = {}\n", desc));
+    }
+    output.push_str("[END COURSE HEADER]\n");
+
+    // Build [COURSE DATA] section
+    output.push_str("[COURSE DATA]\n");
+    let course_data = segments_to_course_data(&workout.segments, ftp);
+    for point in &course_data {
+        output.push_str(&format!("{:.2}\t{}\n", point.minutes, point.power_percent));
+    }
+    output.push_str("[END COURSE DATA]\n");
+
+    // Build [COURSE TEXT] section if there are text events
+    let text_events = extract_text_events(&workout.segments);
+    if !text_events.is_empty() {
+        output.push_str("[COURSE TEXT]\n");
+        for event in &text_events {
+            output.push_str(&format_text_event(event));
+            output.push('\n');
+        }
+        output.push_str("[END COURSE TEXT]\n");
+    }
+
+    Ok(output)
 }
 
 /// Export a workout to MRC format and write to a file.
@@ -749,5 +806,187 @@ mod tests {
             formatted,
             "0.00\t\"This is a longer text message for the workout\""
         );
+    }
+
+    // export_mrc tests
+
+    #[test]
+    fn test_export_mrc_simple_workout() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Simple Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify structure
+        assert!(mrc.contains("[COURSE HEADER]"));
+        assert!(mrc.contains("FILE NAME = Simple Test"));
+        assert!(mrc.contains("[END COURSE HEADER]"));
+        assert!(mrc.contains("[COURSE DATA]"));
+        assert!(mrc.contains("0.00\t75"));
+        assert!(mrc.contains("5.00\t75"));
+        assert!(mrc.contains("[END COURSE DATA]"));
+        // No text events, so no COURSE TEXT section
+        assert!(!mrc.contains("[COURSE TEXT]"));
+    }
+
+    #[test]
+    fn test_export_mrc_with_description() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let mut workout = Workout::new("Described Workout".to_string(), segments);
+        workout.description = Some("A test workout with a description".to_string());
+
+        let mrc = export_mrc(&workout).unwrap();
+
+        assert!(mrc.contains("FILE NAME = Described Workout"));
+        assert!(mrc.contains("DESCRIPTION = A test workout with a description"));
+    }
+
+    #[test]
+    fn test_export_mrc_with_text_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: Some("Warm up!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot effort".to_string()),
+            },
+        ];
+
+        let workout = Workout::new("Text Event Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify text event section exists
+        assert!(mrc.contains("[COURSE TEXT]"));
+        assert!(mrc.contains("0.00\t\"Warm up!\""));
+        assert!(mrc.contains("5.00\t\"Sweet spot effort\""));
+        assert!(mrc.contains("[END COURSE TEXT]"));
+    }
+
+    #[test]
+    fn test_export_mrc_warmup_cooldown_ramp() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(70),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900, // 15 minutes
+                power_target: PowerTarget::percent_ftp(90),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let workout = Workout::new("Ramp Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Warmup ramp: 0-10 min, 40% to 70%
+        assert!(mrc.contains("0.00\t40"));
+        assert!(mrc.contains("10.00\t70"));
+        // Main set: 10-25 min at 90%
+        assert!(mrc.contains("10.00\t90"));
+        assert!(mrc.contains("25.00\t90"));
+        // Cooldown: 25-30 min, 60% to 40%
+        assert!(mrc.contains("25.00\t60"));
+        assert!(mrc.contains("30.00\t40"));
+    }
+
+    #[test]
+    fn test_export_mrc_complete_structure() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Zone 2".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let mut workout = Workout::new("Complete Test".to_string(), segments);
+        workout.description = Some("Full MRC structure test".to_string());
+
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify complete structure order
+        let header_start = mrc.find("[COURSE HEADER]").unwrap();
+        let header_end = mrc.find("[END COURSE HEADER]").unwrap();
+        let data_start = mrc.find("[COURSE DATA]").unwrap();
+        let data_end = mrc.find("[END COURSE DATA]").unwrap();
+        let text_start = mrc.find("[COURSE TEXT]").unwrap();
+        let text_end = mrc.find("[END COURSE TEXT]").unwrap();
+
+        // Verify order of sections
+        assert!(header_start < header_end);
+        assert!(header_end < data_start);
+        assert!(data_start < data_end);
+        assert!(data_end < text_start);
+        assert!(text_start < text_end);
+    }
+
+    #[test]
+    fn test_export_mrc_with_ftp() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::absolute(225), // 225W with 300W FTP = 75%
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Absolute Power Test".to_string(), segments);
+        let mrc = export_mrc_with_ftp(&workout, Some(300)).unwrap();
+
+        // 225W with 300W FTP = 75%
+        assert!(mrc.contains("0.00\t75"));
+        assert!(mrc.contains("5.00\t75"));
     }
 }
