@@ -12,6 +12,7 @@ pub mod alerts;
 pub mod backend;
 pub mod cues;
 pub mod engine;
+pub mod milestone_bridge;
 pub mod sounds;
 pub mod tones;
 pub mod tts;
@@ -35,6 +36,7 @@ pub use tts::{DefaultTtsProvider, ThreadSafeTtsProvider, TtsProvider, VoiceInfo}
 pub use sounds::{SoundAsset, SoundCatalog, SoundCategory, SoundDefinition};
 pub use workout_bridge::{WorkoutAudioBridge, WorkoutAudioBridgeConfig};
 pub use achievement_bridge::{AchievementAudioBridge, AchievementAudioBridgeConfig};
+pub use milestone_bridge::{MilestoneAudioBridge, MilestoneAudioBridgeConfig, MilestoneData, MilestoneType};
 
 /// Errors that can occur during audio operations
 #[derive(Debug, Error)]
@@ -82,6 +84,15 @@ pub struct AudioConfig {
     /// Volume for countdown sounds (0-100), separate from master and speech volume
     #[serde(default = "default_countdown_volume")]
     pub countdown_volume: u8,
+    /// Enable milestone sounds (distance, time, calorie)
+    #[serde(default = "default_milestones_enabled")]
+    pub milestones_enabled: bool,
+    /// Volume for milestone sounds (0-100), separate from master volume
+    #[serde(default = "default_milestone_volume")]
+    pub milestone_volume: u8,
+    /// Enable personal record sounds
+    #[serde(default = "default_pr_enabled")]
+    pub personal_record_sounds_enabled: bool,
 }
 
 fn default_countdown_enabled() -> bool {
@@ -90,6 +101,18 @@ fn default_countdown_enabled() -> bool {
 
 fn default_countdown_volume() -> u8 {
     100
+}
+
+fn default_milestones_enabled() -> bool {
+    true
+}
+
+fn default_milestone_volume() -> u8 {
+    70 // Milestones are subtle, 70% of normal volume
+}
+
+fn default_pr_enabled() -> bool {
+    true
 }
 
 impl Default for AudioConfig {
@@ -106,6 +129,9 @@ impl Default for AudioConfig {
             min_alert_interval_ms: 3000,
             countdown_enabled: default_countdown_enabled(),
             countdown_volume: default_countdown_volume(),
+            milestones_enabled: default_milestones_enabled(),
+            milestone_volume: default_milestone_volume(),
+            personal_record_sounds_enabled: default_pr_enabled(),
         }
     }
 }
@@ -225,6 +251,9 @@ mod tests {
         assert_eq!(config.speech_rate, 1.0);
         assert!(config.countdown_enabled);
         assert_eq!(config.countdown_volume, 100);
+        assert!(config.milestones_enabled);
+        assert_eq!(config.milestone_volume, 70);
+        assert!(config.personal_record_sounds_enabled);
     }
 
     #[test]
@@ -282,15 +311,21 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("countdown_enabled"));
         assert!(json.contains("countdown_volume"));
+        assert!(json.contains("milestones_enabled"));
+        assert!(json.contains("milestone_volume"));
+        assert!(json.contains("personal_record_sounds_enabled"));
 
         let deserialized: AudioConfig = serde_json::from_str(&json).unwrap();
         assert!(deserialized.countdown_enabled);
         assert_eq!(deserialized.countdown_volume, 100);
+        assert!(deserialized.milestones_enabled);
+        assert_eq!(deserialized.milestone_volume, 70);
+        assert!(deserialized.personal_record_sounds_enabled);
     }
 
     #[test]
     fn test_audio_config_serde_with_defaults() {
-        // Test deserializing without the new countdown fields (backward compatibility)
+        // Test deserializing without the new fields (backward compatibility)
         let json = r#"{
             "enabled": true,
             "volume": 80,
@@ -304,9 +339,12 @@ mod tests {
         }"#;
 
         let config: AudioConfig = serde_json::from_str(json).unwrap();
-        // Should use defaults for missing countdown fields
+        // Should use defaults for missing fields
         assert!(config.countdown_enabled);
         assert_eq!(config.countdown_volume, 100);
+        assert!(config.milestones_enabled);
+        assert_eq!(config.milestone_volume, 70);
+        assert!(config.personal_record_sounds_enabled);
     }
 
     #[test]
@@ -328,5 +366,28 @@ mod tests {
         let config: AudioConfig = serde_json::from_str(json).unwrap();
         assert!(!config.countdown_enabled);
         assert_eq!(config.countdown_volume, 50);
+    }
+
+    #[test]
+    fn test_audio_config_with_custom_milestone_settings() {
+        let json = r#"{
+            "enabled": true,
+            "volume": 80,
+            "voice_enabled": true,
+            "voice_volume": 100,
+            "preferred_voice": null,
+            "speech_rate": 1.0,
+            "sound_effects_enabled": true,
+            "sound_effects_volume": 80,
+            "min_alert_interval_ms": 3000,
+            "milestones_enabled": false,
+            "milestone_volume": 50,
+            "personal_record_sounds_enabled": false
+        }"#;
+
+        let config: AudioConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.milestones_enabled);
+        assert_eq!(config.milestone_volume, 50);
+        assert!(!config.personal_record_sounds_enabled);
     }
 }
