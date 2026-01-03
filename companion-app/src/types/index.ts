@@ -82,3 +82,113 @@ export interface AppSettings {
   hapticFeedback: 'off' | 'light' | 'medium' | 'strong';
   theme: 'system' | 'light' | 'dark';
 }
+
+// ============================================================
+// WebSocket Protocol Types
+// ============================================================
+
+/**
+ * Request messages sent to the RustRide desktop app.
+ * Matches CompanionRequest from src/companion/types.rs
+ */
+export type CompanionRequest =
+  | { type: 'auth'; pin: string }
+  | { type: 'get_session_status' }
+  | { type: 'subscribe_metrics' }
+  | { type: 'unsubscribe_metrics' }
+  | { type: 'workout_pause' }
+  | { type: 'workout_resume' }
+  | { type: 'workout_skip' }
+  | { type: 'workout_stop' }
+  | { type: 'adjust_resistance'; delta: number }
+  | { type: 'get_ride_history'; limit: number; offset: number }
+  | { type: 'get_ride_details'; ride_id: string }
+  | { type: 'ping' };
+
+/**
+ * Error codes returned by the server.
+ * Matches CompanionErrorCode from src/companion/types.rs
+ */
+export type CompanionErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'INVALID_PIN'
+  | 'NO_SESSION'
+  | 'SESSION_ACTIVE'
+  | 'UNKNOWN_COMMAND'
+  | 'INVALID_PARAMS'
+  | 'RATE_LIMITED'
+  | 'INTERNAL_ERROR';
+
+/**
+ * Response messages received from the RustRide desktop app.
+ * Matches CompanionResponse from src/companion/types.rs
+ */
+export type CompanionResponse =
+  | { type: 'auth_ok'; session_id: string }
+  | { type: 'auth_failed'; reason: string }
+  | { type: 'session_status'; active: boolean; session: SessionStatusInfo | null }
+  | { type: 'subscribed_metrics' }
+  | { type: 'unsubscribed_metrics' }
+  | { type: 'command_ok'; command: string }
+  | { type: 'command_failed'; command: string; error: string }
+  | { type: 'ride_history'; rides: RideSummary[]; total: number }
+  | { type: 'ride_details'; ride: RideDetailInfo }
+  | { type: 'pong' }
+  | { type: 'error'; code: CompanionErrorCode; message: string };
+
+/**
+ * Event messages pushed from the RustRide desktop app.
+ * Matches CompanionEvent from src/companion/types.rs
+ */
+export type CompanionEvent =
+  | {
+      type: 'metrics';
+      power_watts: number | null;
+      heart_rate_bpm: number | null;
+      cadence_rpm: number | null;
+      speed_kmh: number | null;
+      distance_km: number;
+      elapsed_secs: number;
+      calories: number;
+    }
+  | {
+      type: 'session_state_changed';
+      state: 'idle' | 'starting' | 'active' | 'paused' | 'stopping' | 'completed';
+      session: SessionStatusInfo | null;
+    }
+  | {
+      type: 'interval_changed';
+      interval_index: number;
+      total_intervals: number;
+      interval_name: string;
+      target_power_watts: number;
+      duration_secs: number;
+    }
+  | {
+      type: 'disconnecting';
+      reason: string;
+    };
+
+/**
+ * Union type for all possible WebSocket messages from the server
+ */
+export type ServerMessage = CompanionResponse | CompanionEvent;
+
+/**
+ * Helper to check if a message is an event (vs response)
+ */
+export function isCompanionEvent(message: ServerMessage): message is CompanionEvent {
+  return (
+    message.type === 'metrics' ||
+    message.type === 'session_state_changed' ||
+    message.type === 'interval_changed' ||
+    message.type === 'disconnecting'
+  );
+}
+
+/**
+ * Helper to check if a message is a response
+ */
+export function isCompanionResponse(message: ServerMessage): message is CompanionResponse {
+  return !isCompanionEvent(message);
+}
