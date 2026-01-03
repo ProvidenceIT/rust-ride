@@ -643,6 +643,41 @@ impl RustRideApp {
         });
     }
 
+    /// Stop MQTT connection and fan controller when a ride ends (T071/4.2).
+    ///
+    /// If MQTT is enabled in the configuration, this method:
+    /// 1. Stops the fan controller (turns off all fans)
+    /// 2. Disconnects from the MQTT broker
+    ///
+    /// This should be called when a ride ends (completion, cancel, or navigation away).
+    fn stop_mqtt_fan_control(&self) {
+        if !self.mqtt_config.enabled {
+            tracing::debug!("MQTT not enabled, skipping fan control shutdown");
+            return;
+        }
+
+        let mqtt_client = self.mqtt_client.clone();
+        let fan_controller = self.fan_controller.clone();
+
+        self.tokio_runtime.spawn(async move {
+            // Stop the fan controller (turns off all fans)
+            tracing::info!("Stopping fan controller");
+            if let Err(e) = fan_controller.stop().await {
+                tracing::error!("Failed to stop fan controller: {}", e);
+            } else {
+                tracing::info!("Fan controller stopped, fans turned off");
+            }
+
+            // Disconnect from MQTT broker
+            tracing::info!("Disconnecting from MQTT broker");
+            if let Err(e) = mqtt_client.disconnect().await {
+                tracing::error!("Failed to disconnect from MQTT broker: {}", e);
+            } else {
+                tracing::info!("MQTT broker disconnected");
+            }
+        });
+    }
+
     /// Update streaming server with current metrics (T080).
     ///
     /// Broadcasts metrics to all connected external displays.
@@ -1174,6 +1209,8 @@ impl eframe::App for RustRideApp {
                         if next == Screen::RideSummary {
                             self.check_ride_achievements();
                         }
+                        // T071/4.2: Stop MQTT fan control when ride ends
+                        self.stop_mqtt_fan_control();
                         // Reset gradient controller when leaving ride
                         self.gradient_controller.reset();
                         // T135: Reset cadence fusion when ending ride
