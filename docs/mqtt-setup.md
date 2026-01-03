@@ -460,6 +460,464 @@ connection_timeout_secs = 30
 
 ---
 
+## Home Assistant Integration
+
+This section provides detailed instructions for integrating RustRide with Home Assistant-controlled fans. Home Assistant is a popular open-source home automation platform that can control a wide variety of fan devices.
+
+### Prerequisites
+
+1. Home Assistant installed and running
+2. Mosquitto MQTT broker add-on installed (see "Option 2: Home Assistant MQTT" above)
+3. MQTT integration configured in Home Assistant
+4. A fan device or smart plug added to Home Assistant
+
+### Step 1: Set Up Your Fan in Home Assistant
+
+Before connecting RustRide, ensure your fan is properly configured in Home Assistant.
+
+#### Option A: Native Fan Entity
+
+If your fan device is already in Home Assistant (e.g., Zigbee fan, WiFi smart fan):
+
+1. Go to **Settings** > **Devices & Services**
+2. Find your fan device
+3. Note the entity ID (e.g., `fan.training_room_fan`)
+
+#### Option B: Smart Plug as Fan Controller
+
+If using a smart plug to control a regular fan:
+
+1. Add your smart plug to Home Assistant (via Zigbee, WiFi, or Z-Wave)
+2. Create a template fan entity in `configuration.yaml`:
+
+```yaml
+fan:
+  - platform: template
+    fans:
+      training_fan:
+        friendly_name: "Training Room Fan"
+        unique_id: training_fan
+        value_template: "{{ states('switch.training_plug') }}"
+        turn_on:
+          service: switch.turn_on
+          target:
+            entity_id: switch.training_plug
+        turn_off:
+          service: switch.turn_off
+          target:
+            entity_id: switch.training_plug
+        # For on/off plugs, no speed control
+        speed_count: 1
+```
+
+#### Option C: PWM-Controlled Fan (Advanced)
+
+For fans with variable speed control via PWM:
+
+```yaml
+fan:
+  - platform: template
+    fans:
+      pwm_training_fan:
+        friendly_name: "PWM Training Fan"
+        unique_id: pwm_training_fan
+        value_template: "{{ states('switch.fan_relay') }}"
+        percentage_template: "{{ states('input_number.fan_speed') | int }}"
+        turn_on:
+          service: switch.turn_on
+          target:
+            entity_id: switch.fan_relay
+        turn_off:
+          service: switch.turn_off
+          target:
+            entity_id: switch.fan_relay
+        set_percentage:
+          service: input_number.set_value
+          target:
+            entity_id: input_number.fan_speed
+          data:
+            value: "{{ percentage }}"
+        speed_count: 100
+
+input_number:
+  fan_speed:
+    name: Fan Speed
+    min: 0
+    max: 100
+    step: 1
+    mode: slider
+```
+
+### Step 2: Configure MQTT Discovery for Your Fan
+
+Home Assistant can automatically expose fans via MQTT using MQTT discovery. Add this to your `configuration.yaml`:
+
+```yaml
+mqtt:
+  fan:
+    - name: "Training Fan MQTT"
+      unique_id: training_fan_mqtt
+      state_topic: "homeassistant/fan/training_fan/state"
+      command_topic: "homeassistant/fan/training_fan/set"
+      percentage_state_topic: "homeassistant/fan/training_fan/percentage_state"
+      percentage_command_topic: "homeassistant/fan/training_fan/percentage/set"
+      json_attributes_topic: "homeassistant/fan/training_fan/attributes"
+      payload_on: "ON"
+      payload_off: "OFF"
+      speed_range_min: 0
+      speed_range_max: 100
+```
+
+After adding this configuration, restart Home Assistant.
+
+### Step 3: Create an Automation to Control Your Physical Fan
+
+This automation listens to the MQTT topic that RustRide publishes to and controls your actual fan:
+
+```yaml
+automation:
+  - id: rustride_fan_control
+    alias: "RustRide Fan Control"
+    description: "Control training room fan based on RustRide MQTT commands"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/percentage/set"
+    action:
+      - service: fan.set_percentage
+        target:
+          entity_id: fan.training_room_fan
+        data:
+          percentage: "{{ trigger.payload | int }}"
+
+  - id: rustride_fan_on_off
+    alias: "RustRide Fan On/Off"
+    description: "Turn training fan on or off based on RustRide commands"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/set"
+    action:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | from_json | default({}) | selectattr('on') | list | length > 0 and (trigger.payload | from_json).on == true }}"
+            sequence:
+              - service: fan.turn_on
+                target:
+                  entity_id: fan.training_room_fan
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | from_json | default({}) | selectattr('on') | list | length > 0 and (trigger.payload | from_json).on == false }}"
+            sequence:
+              - service: fan.turn_off
+                target:
+                  entity_id: fan.training_room_fan
+```
+
+### Step 4: Configure RustRide for Home Assistant
+
+In RustRide Settings > MQTT / Smart Fan:
+
+| Setting | Value |
+|---------|-------|
+| **Broker Host** | Your Home Assistant IP (e.g., `192.168.1.100`) |
+| **Port** | `1883` |
+| **Username** | Your Home Assistant username |
+| **Password** | Your Home Assistant password |
+| **Use TLS** | Off (for local network) |
+
+For the fan profile:
+
+| Setting | Value |
+|---------|-------|
+| **MQTT Topic** | `homeassistant/fan/training_fan/percentage` |
+| **Add /set Suffix** | Yes |
+| **Payload Format** | Speed Only |
+
+### Step 5: Test the Integration
+
+1. In RustRide, click **Test Connection** to verify MQTT connectivity
+2. Click **Test Fan** to cycle through speeds
+3. Verify your physical fan responds to each speed change
+
+### Example Automations
+
+Here are additional Home Assistant automations that enhance RustRide integration:
+
+#### Automation 1: Turn Off Fan When RustRide Disconnects
+
+Automatically turn off the fan if RustRide loses connection:
+
+```yaml
+automation:
+  - id: fan_safety_shutoff
+    alias: "Fan Safety Shutoff on RustRide Disconnect"
+    description: "Turn off training fan if no updates received for 5 minutes"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.rustride_connected
+        to: "off"
+        for:
+          minutes: 5
+    action:
+      - service: fan.turn_off
+        target:
+          entity_id: fan.training_room_fan
+      - service: notify.mobile_app
+        data:
+          message: "Training fan turned off - RustRide disconnected"
+```
+
+#### Automation 2: Announce Workout Zone Changes
+
+Use text-to-speech to announce when you enter harder zones:
+
+```yaml
+automation:
+  - id: announce_hard_zones
+    alias: "Announce Hard Workout Zones"
+    description: "TTS announcement when entering Zone 5+"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/percentage/set"
+    condition:
+      - condition: template
+        value_template: "{{ trigger.payload | int >= 80 }}"
+    action:
+      - service: tts.speak
+        target:
+          entity_id: tts.google_en_com
+        data:
+          message: "Great effort! Entering high intensity zone."
+          media_player_entity_id: media_player.training_room_speaker
+```
+
+#### Automation 3: Sync Multiple Fans
+
+Control multiple fans together (e.g., main fan plus a desk fan):
+
+```yaml
+automation:
+  - id: sync_training_fans
+    alias: "Sync Training Room Fans"
+    description: "Keep multiple fans in sync with RustRide commands"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/percentage/set"
+    action:
+      - service: fan.set_percentage
+        target:
+          entity_id:
+            - fan.training_room_main
+            - fan.training_room_desk
+            - fan.garage_gym_fan
+        data:
+          percentage: "{{ trigger.payload | int }}"
+```
+
+#### Automation 4: Lighting Based on Effort
+
+Change room lighting color based on training intensity:
+
+```yaml
+automation:
+  - id: training_lights_by_zone
+    alias: "Training Room Lights by Zone"
+    description: "Change light color based on training intensity"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/percentage/set"
+    action:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | int <= 20 }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.training_room
+                data:
+                  rgb_color: [0, 255, 0]  # Green - easy
+                  brightness: 128
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | int <= 60 }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.training_room
+                data:
+                  rgb_color: [255, 255, 0]  # Yellow - moderate
+                  brightness: 192
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | int <= 80 }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.training_room
+                data:
+                  rgb_color: [255, 165, 0]  # Orange - hard
+                  brightness: 255
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload | int > 80 }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.training_room
+                data:
+                  rgb_color: [255, 0, 0]  # Red - max effort
+                  brightness: 255
+```
+
+#### Automation 5: Log Workout Data
+
+Record training session data for analysis:
+
+```yaml
+automation:
+  - id: log_training_intensity
+    alias: "Log Training Intensity"
+    description: "Record fan speed changes to logbook for workout analysis"
+    trigger:
+      - platform: mqtt
+        topic: "homeassistant/fan/training_fan/percentage/set"
+    action:
+      - service: logbook.log
+        data:
+          name: "Training Intensity"
+          message: "Fan speed set to {{ trigger.payload }}%"
+          entity_id: fan.training_room_fan
+          domain: fan
+```
+
+### Creating a RustRide Status Sensor
+
+Create a sensor in Home Assistant to track RustRide connection status:
+
+```yaml
+mqtt:
+  sensor:
+    - name: "RustRide Status"
+      unique_id: rustride_status
+      state_topic: "rustride/status"
+      value_template: "{{ value_json.state | default('unknown') }}"
+      json_attributes_topic: "rustride/status"
+
+  binary_sensor:
+    - name: "RustRide Connected"
+      unique_id: rustride_connected
+      state_topic: "rustride/status"
+      value_template: "{{ value_json.state | default('disconnected') }}"
+      payload_on: "connected"
+      payload_off: "disconnected"
+      device_class: connectivity
+```
+
+### Dashboard Card Example
+
+Add a RustRide control card to your Home Assistant dashboard:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: entities
+    title: RustRide Training
+    entities:
+      - entity: binary_sensor.rustride_connected
+        name: Connection Status
+      - entity: fan.training_room_fan
+        name: Training Fan
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Fan Off
+        icon: mdi:fan-off
+        tap_action:
+          action: call-service
+          service: fan.turn_off
+          target:
+            entity_id: fan.training_room_fan
+      - type: button
+        name: 25%
+        icon: mdi:fan-speed-1
+        tap_action:
+          action: call-service
+          service: fan.set_percentage
+          target:
+            entity_id: fan.training_room_fan
+          data:
+            percentage: 25
+      - type: button
+        name: 50%
+        icon: mdi:fan-speed-2
+        tap_action:
+          action: call-service
+          service: fan.set_percentage
+          target:
+            entity_id: fan.training_room_fan
+          data:
+            percentage: 50
+      - type: button
+        name: Max
+        icon: mdi:fan-speed-3
+        tap_action:
+          action: call-service
+          service: fan.set_percentage
+          target:
+            entity_id: fan.training_room_fan
+          data:
+            percentage: 100
+```
+
+### Troubleshooting Home Assistant Integration
+
+#### Fan Not Responding to RustRide Commands
+
+1. **Verify MQTT messages are being received:**
+   - Install the MQTT Explorer add-on or use MQTT.fx
+   - Subscribe to `homeassistant/fan/#` to see all messages
+   - Start a ride in RustRide and check for messages
+
+2. **Check automation traces:**
+   - Go to **Settings** > **Automations**
+   - Click on your RustRide automation
+   - Click **Traces** to see execution history
+
+3. **Verify topic matches:**
+   - RustRide topic must exactly match the trigger topic in your automation
+   - Check for typos in topic names
+
+#### Home Assistant User Authentication Issues
+
+1. **Create a dedicated MQTT user:**
+   - Go to **Settings** > **People** > **Users**
+   - Create a user specifically for RustRide
+   - Do not use an admin account
+
+2. **Check Mosquitto add-on logs:**
+   - Go to **Settings** > **Add-ons** > **Mosquitto broker**
+   - Click on **Log** tab
+   - Look for authentication failures
+
+#### Payload Format Mismatches
+
+If your fan expects JSON but receives plain numbers (or vice versa):
+
+1. In RustRide, try different **Payload Format** options
+2. Use MQTT Explorer to see what format RustRide is sending
+3. Adjust your Home Assistant automation to parse the correct format:
+
+```yaml
+# For JSON payloads like {"speed": 75}
+value_template: "{{ trigger.payload | from_json | selectattr('speed') | map(attribute='speed') | first | default(0) }}"
+
+# For plain number payloads like 75
+value_template: "{{ trigger.payload | int }}"
+```
+
+---
+
 ## Advanced: Custom Fan Devices
 
 ### DIY ESP8266/ESP32 Fan Controller
