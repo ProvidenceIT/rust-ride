@@ -38,6 +38,33 @@ pub mod frequencies {
     pub const COUNTDOWN_2: f32 = 523.25; // C5
     /// Final countdown 1 second - urgent (D5)
     pub const COUNTDOWN_1: f32 = 587.33; // D5
+
+    // Achievement-specific frequencies for tiered celebration
+    // Each tier uses progressively higher and richer frequency combinations
+    /// Bronze achievement base tone (E4) - simple, modest
+    pub const ACHIEVEMENT_BRONZE: f32 = 329.63; // E4
+    /// Silver achievement base tone (G4) - brighter
+    pub const ACHIEVEMENT_SILVER_BASE: f32 = 392.00; // G4
+    /// Silver achievement higher tone (B4)
+    pub const ACHIEVEMENT_SILVER_HIGH: f32 = 493.88; // B4
+    /// Gold achievement base tone (C5) - triumphant
+    pub const ACHIEVEMENT_GOLD_BASE: f32 = 523.25; // C5
+    /// Gold achievement mid tone (E5)
+    pub const ACHIEVEMENT_GOLD_MID: f32 = 659.25; // E5
+    /// Gold achievement high tone (G5) - fanfare peak
+    pub const ACHIEVEMENT_GOLD_HIGH: f32 = 783.99; // G5
+    /// Platinum achievement base tone (G5) - epic
+    pub const ACHIEVEMENT_PLATINUM_BASE: f32 = 783.99; // G5
+    /// Platinum achievement high tone (B5)
+    pub const ACHIEVEMENT_PLATINUM_HIGH: f32 = 987.77; // B5
+    /// Platinum achievement peak tone (D6) - soaring celebration
+    pub const ACHIEVEMENT_PLATINUM_PEAK: f32 = 1174.66; // D6
+    /// Level-up base tone (D5)
+    pub const LEVEL_UP_BASE: f32 = 587.33; // D5
+    /// Level-up mid tone (F#5)
+    pub const LEVEL_UP_MID: f32 = 739.99; // F#5
+    /// Level-up high tone (A5) - ascending progression
+    pub const LEVEL_UP_HIGH: f32 = 880.00; // A5
 }
 
 /// T078: Standard tone durations in milliseconds.
@@ -64,6 +91,31 @@ pub mod durations {
     pub const COUNTDOWN_FINAL_2: u64 = 120;
     /// Final countdown 1 second - most impactful (150ms)
     pub const COUNTDOWN_FINAL_1: u64 = 150;
+
+    // Achievement-specific durations (progressively longer for higher tiers)
+    // These are designed to be satisfying but not annoying on repeated plays
+    /// Bronze achievement tone duration (150ms) - simple chime
+    pub const ACHIEVEMENT_BRONZE: u64 = 150;
+    /// Silver achievement note duration (120ms) - two-note harmony
+    pub const ACHIEVEMENT_SILVER_NOTE: u64 = 120;
+    /// Gold achievement note duration (100ms) - three-note fanfare
+    pub const ACHIEVEMENT_GOLD_NOTE: u64 = 100;
+    /// Gold achievement final note duration (250ms) - triumphant ending
+    pub const ACHIEVEMENT_GOLD_FINAL: u64 = 250;
+    /// Platinum achievement note duration (80ms) - rapid epic celebration
+    pub const ACHIEVEMENT_PLATINUM_NOTE: u64 = 80;
+    /// Platinum achievement sustain duration (150ms) - harmonic sustain
+    pub const ACHIEVEMENT_PLATINUM_SUSTAIN: u64 = 150;
+    /// Platinum achievement finale duration (350ms) - epic conclusion
+    pub const ACHIEVEMENT_PLATINUM_FINALE: u64 = 350;
+    /// Level-up note duration (100ms)
+    pub const LEVEL_UP_NOTE: u64 = 100;
+    /// Level-up final note duration (200ms) - ascending completion
+    pub const LEVEL_UP_FINAL: u64 = 200;
+    /// Standard pause between achievement notes (40ms)
+    pub const ACHIEVEMENT_PAUSE: u64 = 40;
+    /// Short pause between quick notes (25ms)
+    pub const ACHIEVEMENT_PAUSE_SHORT: u64 = 25;
 }
 
 /// T078: Predefined cue patterns.
@@ -101,6 +153,18 @@ pub enum CuePattern {
     CountdownFinal2,
     /// Final countdown 1 second - imminent transition
     CountdownFinal1,
+
+    // Achievement patterns by tier - progressively more impressive
+    /// Bronze achievement - simple chime (single tone)
+    AchievementBronze,
+    /// Silver achievement - richer harmony (two-tone ascending)
+    AchievementSilver,
+    /// Gold achievement - triumphant fanfare (three-tone ascending progression)
+    AchievementGold,
+    /// Platinum achievement - epic celebration (multi-note with harmonic buildup)
+    AchievementPlatinum,
+    /// Level-up notification - distinct ascending progression
+    LevelUp,
 }
 
 impl CuePattern {
@@ -193,6 +257,77 @@ impl CuePattern {
                 Tone::pause(15),
                 Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
             ],
+
+            // Achievement patterns by tier - progressively more impressive sounds
+            // Bronze: Simple, modest single-tone chime - satisfying but understated
+            CuePattern::AchievementBronze => vec![
+                Tone::new(frequencies::ACHIEVEMENT_BRONZE, durations::ACHIEVEMENT_BRONZE),
+            ],
+
+            // Silver: Two-tone ascending harmony - brighter and more rewarding
+            CuePattern::AchievementSilver => vec![
+                Tone::new(
+                    frequencies::ACHIEVEMENT_SILVER_BASE,
+                    durations::ACHIEVEMENT_SILVER_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_SILVER_HIGH,
+                    durations::ACHIEVEMENT_SILVER_NOTE + 30, // Slightly longer second note
+                ),
+            ],
+
+            // Gold: Triumphant three-note fanfare - ascending progression with emphasis
+            CuePattern::AchievementGold => vec![
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_BASE,
+                    durations::ACHIEVEMENT_GOLD_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_MID,
+                    durations::ACHIEVEMENT_GOLD_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_HIGH,
+                    durations::ACHIEVEMENT_GOLD_FINAL,
+                ),
+            ],
+
+            // Platinum: Epic celebration - rapid buildup followed by harmonic sustain
+            CuePattern::AchievementPlatinum => vec![
+                // Quick ascending buildup (three rapid notes)
+                Tone::new(
+                    frequencies::ACHIEVEMENT_GOLD_BASE, // Start from lower
+                    durations::ACHIEVEMENT_PLATINUM_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_BASE,
+                    durations::ACHIEVEMENT_PLATINUM_NOTE,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_HIGH,
+                    durations::ACHIEVEMENT_PLATINUM_SUSTAIN,
+                ),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE),
+                // Epic finale - highest note with sustained celebration
+                Tone::new(
+                    frequencies::ACHIEVEMENT_PLATINUM_PEAK,
+                    durations::ACHIEVEMENT_PLATINUM_FINALE,
+                ),
+            ],
+
+            // Level-up: Distinct ascending progression - celebratory but different from achievements
+            CuePattern::LevelUp => vec![
+                Tone::new(frequencies::LEVEL_UP_BASE, durations::LEVEL_UP_NOTE),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(frequencies::LEVEL_UP_MID, durations::LEVEL_UP_NOTE),
+                Tone::pause(durations::ACHIEVEMENT_PAUSE_SHORT),
+                Tone::new(frequencies::LEVEL_UP_HIGH, durations::LEVEL_UP_FINAL),
+            ],
         }
     }
 
@@ -246,6 +381,87 @@ impl CuePattern {
             self,
             CuePattern::CountdownFinal3 | CuePattern::CountdownFinal2 | CuePattern::CountdownFinal1
         )
+    }
+
+    /// Get the appropriate achievement pattern for a given tier.
+    ///
+    /// Returns `Some(CuePattern)` for valid tier names (case-insensitive),
+    /// or `None` for unrecognized tiers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert_eq!(CuePattern::for_achievement_tier("bronze"), Some(CuePattern::AchievementBronze));
+    /// assert_eq!(CuePattern::for_achievement_tier("Silver"), Some(CuePattern::AchievementSilver));
+    /// assert_eq!(CuePattern::for_achievement_tier("GOLD"), Some(CuePattern::AchievementGold));
+    /// assert_eq!(CuePattern::for_achievement_tier("platinum"), Some(CuePattern::AchievementPlatinum));
+    /// assert_eq!(CuePattern::for_achievement_tier("unknown"), None);
+    /// ```
+    pub fn for_achievement_tier(tier: &str) -> Option<Self> {
+        match tier.to_lowercase().as_str() {
+            "bronze" => Some(CuePattern::AchievementBronze),
+            "silver" => Some(CuePattern::AchievementSilver),
+            "gold" => Some(CuePattern::AchievementGold),
+            "platinum" => Some(CuePattern::AchievementPlatinum),
+            _ => None,
+        }
+    }
+
+    /// Check if this is an achievement-related pattern.
+    pub fn is_achievement_pattern(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::AchievementBronze
+                | CuePattern::AchievementSilver
+                | CuePattern::AchievementGold
+                | CuePattern::AchievementPlatinum
+        )
+    }
+
+    /// Check if this is a celebration pattern (achievement or level-up).
+    ///
+    /// Celebration patterns are those that are used for positive feedback
+    /// events like achievements, level-ups, and milestones.
+    pub fn is_celebration_pattern(&self) -> bool {
+        self.is_achievement_pattern() || matches!(self, CuePattern::LevelUp | CuePattern::Success)
+    }
+
+    /// Get the tier level for achievement patterns (1=Bronze, 2=Silver, 3=Gold, 4=Platinum).
+    ///
+    /// Returns `None` for non-achievement patterns.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert_eq!(CuePattern::AchievementBronze.achievement_tier_level(), Some(1));
+    /// assert_eq!(CuePattern::AchievementPlatinum.achievement_tier_level(), Some(4));
+    /// assert_eq!(CuePattern::SingleBeep.achievement_tier_level(), None);
+    /// ```
+    pub fn achievement_tier_level(&self) -> Option<u8> {
+        match self {
+            CuePattern::AchievementBronze => Some(1),
+            CuePattern::AchievementSilver => Some(2),
+            CuePattern::AchievementGold => Some(3),
+            CuePattern::AchievementPlatinum => Some(4),
+            _ => None,
+        }
+    }
+
+    /// Get the name of the achievement tier for achievement patterns.
+    ///
+    /// Returns `None` for non-achievement patterns.
+    pub fn achievement_tier_name(&self) -> Option<&'static str> {
+        match self {
+            CuePattern::AchievementBronze => Some("Bronze"),
+            CuePattern::AchievementSilver => Some("Silver"),
+            CuePattern::AchievementGold => Some("Gold"),
+            CuePattern::AchievementPlatinum => Some("Platinum"),
+            _ => None,
+        }
     }
 }
 
@@ -778,6 +994,326 @@ mod tests {
                     patterns[i], patterns[j]
                 );
             }
+        }
+    }
+
+    // ============= Achievement Pattern Tests =============
+
+    #[test]
+    fn test_achievement_pattern_for_tier() {
+        // Test that we get the correct pattern for each tier
+        assert_eq!(
+            CuePattern::for_achievement_tier("bronze"),
+            Some(CuePattern::AchievementBronze)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("silver"),
+            Some(CuePattern::AchievementSilver)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("gold"),
+            Some(CuePattern::AchievementGold)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("platinum"),
+            Some(CuePattern::AchievementPlatinum)
+        );
+
+        // Test case insensitivity
+        assert_eq!(
+            CuePattern::for_achievement_tier("BRONZE"),
+            Some(CuePattern::AchievementBronze)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("Silver"),
+            Some(CuePattern::AchievementSilver)
+        );
+        assert_eq!(
+            CuePattern::for_achievement_tier("GoLd"),
+            Some(CuePattern::AchievementGold)
+        );
+
+        // Test unknown tier returns None
+        assert_eq!(CuePattern::for_achievement_tier("unknown"), None);
+        assert_eq!(CuePattern::for_achievement_tier("diamond"), None);
+        assert_eq!(CuePattern::for_achievement_tier(""), None);
+    }
+
+    #[test]
+    fn test_is_achievement_pattern() {
+        // Test positive cases
+        assert!(CuePattern::AchievementBronze.is_achievement_pattern());
+        assert!(CuePattern::AchievementSilver.is_achievement_pattern());
+        assert!(CuePattern::AchievementGold.is_achievement_pattern());
+        assert!(CuePattern::AchievementPlatinum.is_achievement_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::LevelUp.is_achievement_pattern());
+        assert!(!CuePattern::SingleBeep.is_achievement_pattern());
+        assert!(!CuePattern::Success.is_achievement_pattern());
+        assert!(!CuePattern::CountdownTick10.is_achievement_pattern());
+    }
+
+    #[test]
+    fn test_is_celebration_pattern() {
+        // Test positive cases - achievements
+        assert!(CuePattern::AchievementBronze.is_celebration_pattern());
+        assert!(CuePattern::AchievementSilver.is_celebration_pattern());
+        assert!(CuePattern::AchievementGold.is_celebration_pattern());
+        assert!(CuePattern::AchievementPlatinum.is_celebration_pattern());
+
+        // Test positive cases - other celebrations
+        assert!(CuePattern::LevelUp.is_celebration_pattern());
+        assert!(CuePattern::Success.is_celebration_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::SingleBeep.is_celebration_pattern());
+        assert!(!CuePattern::Alert.is_celebration_pattern());
+        assert!(!CuePattern::Error.is_celebration_pattern());
+        assert!(!CuePattern::CountdownTick10.is_celebration_pattern());
+    }
+
+    #[test]
+    fn test_achievement_tier_level() {
+        assert_eq!(CuePattern::AchievementBronze.achievement_tier_level(), Some(1));
+        assert_eq!(CuePattern::AchievementSilver.achievement_tier_level(), Some(2));
+        assert_eq!(CuePattern::AchievementGold.achievement_tier_level(), Some(3));
+        assert_eq!(
+            CuePattern::AchievementPlatinum.achievement_tier_level(),
+            Some(4)
+        );
+
+        // Non-achievement patterns return None
+        assert_eq!(CuePattern::LevelUp.achievement_tier_level(), None);
+        assert_eq!(CuePattern::SingleBeep.achievement_tier_level(), None);
+    }
+
+    #[test]
+    fn test_achievement_tier_name() {
+        assert_eq!(
+            CuePattern::AchievementBronze.achievement_tier_name(),
+            Some("Bronze")
+        );
+        assert_eq!(
+            CuePattern::AchievementSilver.achievement_tier_name(),
+            Some("Silver")
+        );
+        assert_eq!(
+            CuePattern::AchievementGold.achievement_tier_name(),
+            Some("Gold")
+        );
+        assert_eq!(
+            CuePattern::AchievementPlatinum.achievement_tier_name(),
+            Some("Platinum")
+        );
+
+        // Non-achievement patterns return None
+        assert_eq!(CuePattern::LevelUp.achievement_tier_name(), None);
+        assert_eq!(CuePattern::SingleBeep.achievement_tier_name(), None);
+    }
+
+    #[test]
+    fn test_achievement_patterns_progressively_more_impressive() {
+        // Each higher tier should have more tones and/or longer total duration
+        let bronze_tones = CuePattern::AchievementBronze.tones();
+        let silver_tones = CuePattern::AchievementSilver.tones();
+        let gold_tones = CuePattern::AchievementGold.tones();
+        let platinum_tones = CuePattern::AchievementPlatinum.tones();
+
+        // Bronze is simplest (1 tone)
+        assert_eq!(bronze_tones.len(), 1, "Bronze should be a simple single-tone chime");
+
+        // Silver has more tones than bronze
+        assert!(
+            silver_tones.len() > bronze_tones.len(),
+            "Silver should have more tones than Bronze"
+        );
+
+        // Gold has more tones than silver
+        assert!(
+            gold_tones.len() > silver_tones.len(),
+            "Gold should have more tones than Silver"
+        );
+
+        // Platinum has more tones than gold
+        assert!(
+            platinum_tones.len() > gold_tones.len(),
+            "Platinum should have more tones than Gold"
+        );
+
+        // Verify increasing total durations
+        let bronze_duration = CuePattern::AchievementBronze.total_duration_ms();
+        let silver_duration = CuePattern::AchievementSilver.total_duration_ms();
+        let gold_duration = CuePattern::AchievementGold.total_duration_ms();
+        let platinum_duration = CuePattern::AchievementPlatinum.total_duration_ms();
+
+        assert!(
+            silver_duration > bronze_duration,
+            "Silver duration ({}) should be > Bronze duration ({})",
+            silver_duration,
+            bronze_duration
+        );
+        assert!(
+            gold_duration > silver_duration,
+            "Gold duration ({}) should be > Silver duration ({})",
+            gold_duration,
+            silver_duration
+        );
+        assert!(
+            platinum_duration > gold_duration,
+            "Platinum duration ({}) should be > Gold duration ({})",
+            platinum_duration,
+            gold_duration
+        );
+    }
+
+    #[test]
+    fn test_achievement_patterns_have_distinct_sounds() {
+        // Verify each achievement pattern produces different tones
+        let patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+            CuePattern::LevelUp,
+        ];
+
+        for i in 0..patterns.len() {
+            for j in (i + 1)..patterns.len() {
+                let tones_i = patterns[i].tones();
+                let tones_j = patterns[j].tones();
+
+                // They should differ in either frequency, duration, or number of tones
+                let different = tones_i.len() != tones_j.len()
+                    || tones_i.iter().zip(tones_j.iter()).any(|(a, b)| {
+                        (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                            || a.duration_ms != b.duration_ms
+                    });
+
+                assert!(
+                    different,
+                    "{:?} and {:?} should have distinct sounds",
+                    patterns[i], patterns[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_level_up_pattern_exists_and_is_distinct() {
+        let level_up = CuePattern::LevelUp;
+        let tones = level_up.tones();
+
+        // Level-up should have multiple tones (ascending progression)
+        assert!(
+            tones.len() > 1,
+            "LevelUp should have multiple tones for ascending progression"
+        );
+
+        // Verify it has positive duration
+        let duration = level_up.total_duration_ms();
+        assert!(duration > 0, "LevelUp should have positive duration");
+
+        // Verify it's not the same as any achievement pattern
+        let achievement_patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+        ];
+
+        for pattern in achievement_patterns {
+            let pattern_tones = pattern.tones();
+            let different = tones.len() != pattern_tones.len()
+                || tones.iter().zip(pattern_tones.iter()).any(|(a, b)| {
+                    (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                        || a.duration_ms != b.duration_ms
+                });
+
+            assert!(
+                different,
+                "LevelUp should be distinct from {:?}",
+                pattern
+            );
+        }
+    }
+
+    #[test]
+    fn test_achievement_patterns_not_annoying_duration() {
+        // Achievement sounds should be satisfying but not too long
+        // Max duration: 1000ms (1 second) for even the most epic celebration
+        let patterns = [
+            CuePattern::AchievementBronze,
+            CuePattern::AchievementSilver,
+            CuePattern::AchievementGold,
+            CuePattern::AchievementPlatinum,
+            CuePattern::LevelUp,
+        ];
+
+        for pattern in patterns {
+            let duration = pattern.total_duration_ms();
+            assert!(
+                duration <= 1000,
+                "{:?} has duration {}ms which is > 1000ms (too long)",
+                pattern,
+                duration
+            );
+
+            // But they should also be long enough to be noticeable (>100ms)
+            assert!(
+                duration >= 100,
+                "{:?} has duration {}ms which is < 100ms (too short)",
+                pattern,
+                duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_achievement_frequencies_are_ascending() {
+        // For multi-tone achievements, the frequencies should generally ascend (celebratory)
+        let silver_tones: Vec<_> = CuePattern::AchievementSilver
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+        let gold_tones: Vec<_> = CuePattern::AchievementGold
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+        let platinum_tones: Vec<_> = CuePattern::AchievementPlatinum
+            .tones()
+            .into_iter()
+            .filter(|t| !t.is_pause())
+            .collect();
+
+        // Silver: Second tone should be higher than first
+        if silver_tones.len() >= 2 {
+            assert!(
+                silver_tones[1].frequency_hz > silver_tones[0].frequency_hz,
+                "Silver achievement should have ascending frequencies"
+            );
+        }
+
+        // Gold: Overall ascending trend
+        if gold_tones.len() >= 2 {
+            let first = gold_tones[0].frequency_hz;
+            let last = gold_tones[gold_tones.len() - 1].frequency_hz;
+            assert!(
+                last > first,
+                "Gold achievement should end higher than it starts"
+            );
+        }
+
+        // Platinum: Overall ascending trend ending at peak
+        if platinum_tones.len() >= 2 {
+            let first = platinum_tones[0].frequency_hz;
+            let last = platinum_tones[platinum_tones.len() - 1].frequency_hz;
+            assert!(
+                last > first,
+                "Platinum achievement should end higher than it starts"
+            );
         }
     }
 }
