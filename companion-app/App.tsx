@@ -8,24 +8,19 @@
  */
 
 import React from 'react';
-import { StatusBar, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar, useColorScheme } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NavigationContainer } from '@react-navigation/native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { AppNavigator, linking } from '@/navigation';
 
 // Color palette matching the RustRide desktop app
 const Colors = {
   light: {
     background: '#FFFFFF',
-    surface: '#F5F5F5',
-    primary: '#007AFF',
-    text: '#1C1C1E',
-    textSecondary: '#8E8E93',
   },
   dark: {
     background: '#000000',
-    surface: '#1C1C1E',
-    primary: '#0A84FF',
-    text: '#FFFFFF',
-    textSecondary: '#8E8E93',
   },
 };
 
@@ -34,55 +29,49 @@ function App(): React.JSX.Element {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   return (
-    <SafeAreaProvider>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={colors.background}
-      />
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.content}>
-          <Text style={[styles.title, { color: colors.text }]}>RustRide Companion</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Connect to your desktop app to control workouts and view metrics
-          </Text>
-          <View style={[styles.statusCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statusText, { color: colors.textSecondary }]}>Not connected</Text>
-          </View>
-        </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar
+          barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <NavigationContainer
+          linking={linking}
+          theme={{
+            dark: isDarkMode,
+            colors: {
+              primary: isDarkMode ? '#0A84FF' : '#007AFF',
+              background: isDarkMode ? '#000000' : '#FFFFFF',
+              card: isDarkMode ? '#1C1C1E' : '#FFFFFF',
+              text: isDarkMode ? '#FFFFFF' : '#1C1C1E',
+              border: isDarkMode ? '#38383A' : '#E5E5EA',
+              notification: isDarkMode ? '#FF453A' : '#FF3B30',
+            },
+            fonts: {
+              regular: {
+                fontFamily: 'System',
+                fontWeight: '400',
+              },
+              medium: {
+                fontFamily: 'System',
+                fontWeight: '500',
+              },
+              bold: {
+                fontFamily: 'System',
+                fontWeight: '700',
+              },
+              heavy: {
+                fontFamily: 'System',
+                fontWeight: '900',
+              },
+            },
+          }}
+        >
+          <AppNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 40,
-    paddingHorizontal: 20,
-  },
-  statusCard: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 14,
-  },
-});
 
 export default App;

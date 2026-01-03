@@ -1,0 +1,10 @@
+/**
+ * Jest Setup
+ *
+ * Global mocks and setup for Jest tests.
+ */
+
+import 'react-native-gesture-handler/jestSetup';
+
+// Mock react-native-vector-icons
+jest.mock('react-native-vector-icons/Ionicons', () => 'Icon');

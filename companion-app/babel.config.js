@@ -10,6 +10,7 @@ module.exports = {
           '@': './src',
           '@components': './src/components',
           '@screens': './src/screens',
+          '@navigation': './src/navigation',
           '@services': './src/services',
           '@stores': './src/stores',
           '@utils': './src/utils',
