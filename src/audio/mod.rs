@@ -26,7 +26,10 @@ pub use alerts::{
     AlertCategory, AlertConfig, AlertContext, AlertData, AlertManager, AlertType,
     DefaultAlertManager,
 };
-pub use backend::{BackendError, BackendState, CachedSound, RodioAudioBackend};
+pub use backend::{
+    AudioDeviceError, AudioDeviceStatus, BackendError, BackendState, CachedSound, HotPlugConfig,
+    Platform, RodioAudioBackend,
+};
 pub use cues::{CueBuilder, CueTemplate};
 pub use engine::{AudioEngine, DefaultAudioEngine};
 pub use tones::{

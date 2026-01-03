@@ -13,7 +13,7 @@
 //! - `Normal` - Standard priority, queued normally
 //! - `Low` - Can be skipped if queue is full
 
-use super::backend::RodioAudioBackend;
+use super::backend::{AudioDeviceStatus, HotPlugConfig, Platform, RodioAudioBackend};
 use super::tts::TtsProvider;
 use super::{
     AudioCategory, AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
@@ -132,6 +132,50 @@ pub trait AudioEngine: Send + Sync {
     ///
     /// Returns a snapshot of the mute state for UI display.
     fn get_mute_state(&self) -> MuteState;
+
+    // ========== Device Status Methods ==========
+
+    /// Get the current audio device status
+    ///
+    /// Returns information about device availability, platform, and any errors.
+    /// Useful for displaying audio device status in the UI.
+    fn get_device_status(&self) -> AudioDeviceStatus;
+
+    /// Get the detected platform
+    ///
+    /// Returns the platform (Windows, macOS, Linux) being used for audio.
+    fn get_platform(&self) -> Platform;
+
+    /// Check if audio device is currently available
+    ///
+    /// Returns true if the audio backend is ready for playback.
+    fn is_device_available(&self) -> bool;
+
+    /// Attempt to recover the audio device
+    ///
+    /// Call this when the audio device becomes unavailable and you want to
+    /// try to reconnect. Uses hot-plug configuration for backoff and retry limits.
+    ///
+    /// Returns true if recovery was attempted (regardless of success).
+    fn try_device_recovery(&self) -> bool;
+
+    /// Reset device recovery state
+    ///
+    /// Resets the failed attempt counter and allows new recovery attempts.
+    /// Call this after a user manually connects an audio device.
+    fn reset_device_recovery(&self);
+
+    /// Get hot-plug configuration
+    fn get_hot_plug_config(&self) -> HotPlugConfig;
+
+    /// Update hot-plug configuration
+    fn set_hot_plug_config(&self, config: HotPlugConfig);
+
+    /// Get platform-specific troubleshooting hints
+    ///
+    /// Returns a list of troubleshooting steps for the current platform
+    /// that can help users resolve audio device issues.
+    fn get_troubleshooting_hints(&self) -> Vec<&'static str>;
 }
 
 /// Queue entry with priority ordering
@@ -923,6 +967,40 @@ impl AudioEngine for DefaultAudioEngine {
         let config = self.config.lock().unwrap();
         MuteState::from_config(&config)
     }
+
+    // ========== Device Status Methods ==========
+
+    fn get_device_status(&self) -> AudioDeviceStatus {
+        self.audio_backend.get_device_status()
+    }
+
+    fn get_platform(&self) -> Platform {
+        self.audio_backend.platform()
+    }
+
+    fn is_device_available(&self) -> bool {
+        self.audio_backend.is_ready()
+    }
+
+    fn try_device_recovery(&self) -> bool {
+        self.audio_backend.try_recovery()
+    }
+
+    fn reset_device_recovery(&self) {
+        self.audio_backend.reset_recovery();
+    }
+
+    fn get_hot_plug_config(&self) -> HotPlugConfig {
+        self.audio_backend.hot_plug_config()
+    }
+
+    fn set_hot_plug_config(&self, config: HotPlugConfig) {
+        self.audio_backend.set_hot_plug_config(config);
+    }
+
+    fn get_troubleshooting_hints(&self) -> Vec<&'static str> {
+        self.audio_backend.get_troubleshooting_hints()
+    }
 }
 
 #[cfg(test)]
@@ -1575,5 +1653,109 @@ mod tests {
         let state = engine.get_mute_state();
         assert_eq!(state.display_string(), "All Audio Muted");
         assert_eq!(state.icon_hint(), "volume_off");
+    }
+
+    // ========== Device Status Tests ==========
+
+    #[test]
+    fn test_get_device_status() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        let status = engine.get_device_status();
+
+        // Initially not available (backend not initialized)
+        assert!(!status.available);
+        assert_eq!(status.recovery_count, 0);
+        assert_eq!(status.failed_attempts, 0);
+    }
+
+    #[test]
+    fn test_get_platform() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        let platform = engine.get_platform();
+
+        // Should be a valid platform
+        assert!(matches!(
+            platform,
+            Platform::Windows | Platform::MacOS | Platform::Linux | Platform::Unknown
+        ));
+    }
+
+    #[test]
+    fn test_is_device_available() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Not available until initialized
+        assert!(!engine.is_device_available());
+    }
+
+    #[test]
+    fn test_get_troubleshooting_hints() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        let hints = engine.get_troubleshooting_hints();
+
+        // Should have at least some hints
+        assert!(!hints.is_empty());
+    }
+
+    #[test]
+    fn test_hot_plug_config_access() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Get default config
+        let hot_plug_config = engine.get_hot_plug_config();
+        assert!(hot_plug_config.enabled);
+
+        // Update config
+        let new_config = HotPlugConfig {
+            enabled: false,
+            retry_interval: Duration::from_secs(20),
+            max_consecutive_failures: 5,
+            backoff_multiplier: 2.0,
+            max_backoff: Duration::from_secs(180),
+        };
+        engine.set_hot_plug_config(new_config);
+
+        // Verify update
+        let updated_config = engine.get_hot_plug_config();
+        assert!(!updated_config.enabled);
+        assert_eq!(updated_config.retry_interval, Duration::from_secs(20));
+    }
+
+    #[test]
+    fn test_reset_device_recovery() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Reset should not panic on fresh engine
+        engine.reset_device_recovery();
+
+        // Device status should reflect reset
+        let status = engine.get_device_status();
+        assert_eq!(status.failed_attempts, 0);
+    }
+
+    #[test]
+    fn test_try_device_recovery_when_not_needed() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Manually mark backend as ready
+        // (In real use, this would happen through initialization)
+        // Since we can't set the state directly, we test the behavior
+        // when the engine is in initial (uninitialized) state
+
+        // Try recovery - should attempt since backend is uninitialized
+        // (will fail because no audio device in test environment typically)
+        // But the important thing is it doesn't panic
+        let _attempted = engine.try_device_recovery();
+        // Result depends on environment - just verify no panic
     }
 }
