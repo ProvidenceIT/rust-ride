@@ -1,0 +1,45 @@
+{
+  "discovered_files": {
+    "src/recording/exporter_fit.rs": {
+      "description": "Added export_fit_with_workout() function for workout-aware FIT export. Takes optional Workout and uses segment durations as lap boundaries. Also added extract_workout_segment_durations() helper. Both functions are exported via recording/mod.rs.",
+      "category": "feature",
+      "discovered_at": "2026-01-02T21:26:54.176946+00:00"
+    },
+    "src/ui/screens/ride_summary.rs": {
+      "description": "Export dialog (lines 430-487) only shows TCX and CSV options. Need to add FIT as third radio option. Uses ExportFormat from recording::types which already includes Fit variant.",
+      "category": "gap",
+      "discovered_at": "2026-01-02T20:58:31.848748+00:00"
+    },
+    "src/ui/screens/ride_detail.rs": {
+      "description": "Has duplicate local ExportFormat enum (lines 31-38) with only Tcx and Csv. Should use crate::recording::types::ExportFormat instead to get FIT support.",
+      "category": "gap",
+      "discovered_at": "2026-01-02T20:58:31.931542+00:00"
+    },
+    "src/daemon/handler.rs": {
+      "description": "Updated handle_ride_export function to properly validate and route FIT/TCX/CSV export requests. Uses ExportFormat enum for type-safe format handling. Defaults to FIT format. Database integration for actual export is pending (marked with TODO).",
+      "category": "export_handler",
+      "discovered_at": "2026-01-02T21:12:08.276438+00:00"
+    },
+    "src/ipc/messages.rs": {
+      "description": "Added InvalidFormat error code to ErrorCode enum for handling invalid export format requests. Used when user specifies a format other than fit, tcx, or csv.",
+      "category": "ipc_protocol",
+      "discovered_at": "2026-01-02T21:12:08.392513+00:00"
+    },
+    "tests/unit/fit_export_test.rs": {
+      "description": "Added 26 comprehensive multi-interval workout lap marker roundtrip tests. Tests cover: lap count verification (2, 5, 20 intervals), lap timestamps sequential ordering, session num_laps field matching, lap field presence (avg_power, avg_heart_rate, total_elapsed_time), lap event type validation, short/long interval boundaries, samples shorter/longer than workout duration, explicit lap boundaries, LapData computation accuracy, and segment duration boundary alignment. Uses fitparser crate to validate exported FIT files are parseable and contain expected data.",
+      "category": "testing",
+      "discovered_at": "2026-01-02T21:45:54.041981+00:00"
+    },
+    "tests/integration/fit_validation_test.rs": {
+      "description": "Comprehensive FIT validation integration tests using fitparser crate. Validates: FIT header (size, protocol version, signature), CRC verification (header and file), required message types (FileId, Session, Lap, Activity, Record, Event), data integrity fields, multi-lap exports, cycling dynamics, large rides (up to 2 hours), and edge cases. Equivalent to Garmin FIT SDK validation.",
+      "category": "testing",
+      "discovered_at": "2026-01-02T21:53:34.407327+00:00"
+    },
+    "scripts/validate_fit.sh": {
+      "description": "Shell script for manual FIT file validation. Supports validating individual FIT files or running full test suite with --all flag. Uses fitparser via integration tests for validation.",
+      "category": "tooling",
+      "discovered_at": "2026-01-02T21:53:34.528936+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T21:53:34.528936+00:00"
+}
