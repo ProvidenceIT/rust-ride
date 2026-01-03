@@ -27,6 +27,7 @@ pub use hardware_store::{
 pub use sync_store::{
     delete_fit_from_queue, get_upload_queue_dir, load_fit_from_queue, save_fit_for_queue,
     StoredSyncRecord, StoredUploadQueueEntry, SyncRecordStatus, SyncStore,
+    TrainingPeaksWorkoutSyncConfig, TrainingPeaksWorkoutSyncEntry, TrainingPeaksWorkoutSyncSummary,
 };
 pub use ml_store::{CachedPrediction, FatigueStateRecord, MlStore, WorkoutRecommendationRecord};
 pub use social_store::{
