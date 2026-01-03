@@ -1,10 +1,10 @@
 {
   "discovered_files": {
     "src/metrics/zones.rs": {
-      "description": "Added CADENCE_ZONE_COLORS: [Color; 5] constant after HR_ZONE_COLORS at line 368-376. Uses cyan/teal to magenta progression for visual distinction from power/HR colors.",
-      "category": "implementation",
-      "discovered_at": "2026-01-03T05:21:06.049353+00:00"
+      "description": "Added CadenceZones struct at lines 378-393 with 5 zones (z1_low, z2_economy, z3_natural, z4_fast, z5_sprint) and custom flag. Follows HRZones pattern. Zone boundaries: Z1 (0-75), Z2 (76-85), Z3 (86-95), Z4 (96-105), Z5 (106+).",
+      "category": "struct_definition",
+      "discovered_at": "2026-01-03T05:23:03.023948+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:21:06.049353+00:00"
+  "last_updated": "2026-01-03T05:23:03.023948+00:00"
 }

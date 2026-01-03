@@ -377,6 +377,7 @@ pub const CADENCE_ZONE_COLORS: [Color; 5] = [
 
 /// 5-zone cadence zones for tracking optimal cadence ranges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CadenceZones {
     /// Zone 1: Low (recovery/climbing, 0-75 RPM)
     pub z1_low: CadenceZoneRange,
@@ -390,6 +391,49 @@ pub struct CadenceZones {
     pub z5_sprint: CadenceZoneRange,
     /// Whether zones are user-customized
     pub custom: bool,
+}
+
+impl Default for CadenceZones {
+    fn default() -> Self {
+        Self {
+            z1_low: CadenceZoneRange {
+                zone: 1,
+                min_rpm: 0,
+                max_rpm: 75,
+                color: CADENCE_ZONE_COLORS[0],
+                name: "Low".to_string(),
+            },
+            z2_economy: CadenceZoneRange {
+                zone: 2,
+                min_rpm: 76,
+                max_rpm: 85,
+                color: CADENCE_ZONE_COLORS[1],
+                name: "Economy".to_string(),
+            },
+            z3_natural: CadenceZoneRange {
+                zone: 3,
+                min_rpm: 86,
+                max_rpm: 95,
+                color: CADENCE_ZONE_COLORS[2],
+                name: "Natural".to_string(),
+            },
+            z4_fast: CadenceZoneRange {
+                zone: 4,
+                min_rpm: 96,
+                max_rpm: 105,
+                color: CADENCE_ZONE_COLORS[3],
+                name: "Fast".to_string(),
+            },
+            z5_sprint: CadenceZoneRange {
+                zone: 5,
+                min_rpm: 106,
+                max_rpm: 255, // u8::MAX for no upper limit
+                color: CADENCE_ZONE_COLORS[4],
+                name: "Sprint".to_string(),
+            },
+            custom: false,
+        }
+    }
 }
 
 /// Events emitted when zones change.
