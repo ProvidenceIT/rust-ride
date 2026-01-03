@@ -236,14 +236,28 @@ pub struct SensorInfo {
     pub name: String,
     /// Type of sensor
     pub sensor_type: SensorType,
+    /// Protocol used (BLE or ANT+)
+    pub protocol: SensorProtocol,
     /// Connection status
     pub connection_status: ConnectionStatus,
     /// Signal strength in dBm
-    pub signal_strength_dbm: Option<i8>,
+    pub signal_strength_dbm: Option<i16>,
     /// Battery level percentage
     pub battery_percent: Option<u8>,
     /// Last time data was received
     pub last_seen: DateTime<Utc>,
+}
+
+/// Communication protocol for sensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SensorProtocol {
+    /// Bluetooth Low Energy
+    Ble,
+    /// ANT+ wireless
+    AntPlus,
+    /// Unknown or not determined
+    Unknown,
 }
 
 /// Types of sensors
@@ -319,9 +333,24 @@ impl SensorInfo {
             id: state.device_id.clone(),
             name: state.name.clone(),
             sensor_type: state.sensor_type.into(),
+            protocol: SensorProtocol::Ble,
             connection_status: state.connection_state.into(),
-            signal_strength_dbm: state.signal_strength.map(|s| s as i8),
+            signal_strength_dbm: state.signal_strength,
             battery_percent: state.battery_level,
+            last_seen: Utc::now(),
+        }
+    }
+
+    /// Create SensorInfo from ANT+ sensor
+    pub fn from_ant_sensor(device_id: String, name: String, sensor_type: SensorType) -> Self {
+        SensorInfo {
+            id: device_id,
+            name,
+            sensor_type,
+            protocol: SensorProtocol::AntPlus,
+            connection_status: ConnectionStatus::Discovered,
+            signal_strength_dbm: None,
+            battery_percent: None,
             last_seen: Utc::now(),
         }
     }

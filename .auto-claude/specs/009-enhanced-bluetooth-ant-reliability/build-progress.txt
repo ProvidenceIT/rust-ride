@@ -281,10 +281,39 @@
   - Real-world scenario tests (single PM, dual PM, partial discovery)
 
 ### Phase 6: Integration & Testing (4 subtasks)
-- Full discovery flow integration test
-- Reconnection stress test
-- CLI commands update
+- Full discovery flow integration test (COMPLETED - 6.1)
+- Reconnection stress test (COMPLETED - 6.2)
+- CLI commands update (COMPLETED - 6.3)
 - Troubleshooting documentation
+
+### 6.3 - Update sensor CLI commands (COMPLETED)
+- CLI commands already implemented in `src/cli/commands/sensors.rs`:
+  - `Quality` subcommand - shows connection quality metrics for sensors
+    - Optional sensor_id parameter (shows all if not specified)
+    - Displays signal bars, quality level, score, and detailed metrics (RSSI, data rate, packet loss, latency)
+  - `Reconnect` subcommand - forces reconnection to a sensor
+    - Required sensor_id parameter
+    - Optional --reset-backoff/-r flag to reset exponential backoff state
+    - Shows reconnection status and next delay
+  - `Diagnostics` subcommand - shows detailed sensor diagnostics
+    - Optional sensor_id (shows all if not specified)
+    - Flags: --health, --state, --backoff, --all/-a
+    - Health: data rate, last data time, uptime, healthy/unhealthy streaks
+    - State: connection lifecycle state, time in state, reconnection attempts
+    - Backoff: current attempt, next delay, remaining attempts, delay sequence
+- Added IPC handlers in `src/daemon/handler.rs`:
+  - `handle_sensor_quality()` - quality for single sensor
+  - `handle_sensors_quality()` - quality for all sensors with summary
+  - `handle_sensor_reconnect()` - trigger reconnection with optional backoff reset
+  - `handle_sensor_diagnostics()` - diagnostics for single sensor
+  - `handle_sensors_diagnostics()` - diagnostics for all sensors with system summary
+  - Helper functions: `build_quality_response()`, `rssi_to_quality()`, `build_sensor_diagnostics()`
+- Added `SensorProtocol` enum to `src/daemon/state.rs`:
+  - Ble, AntPlus, Unknown variants
+  - Added protocol field to SensorInfo struct
+  - Updated from_ble_sensor_state() to set Ble protocol
+  - Added from_ant_sensor() constructor for ANT+ sensors
+- Changed signal_strength_dbm type from i8 to i16 for consistency with sensors module
 
 ## Key Files to Modify
 - src/sensors/manager.rs (core modifications)

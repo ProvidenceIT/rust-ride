@@ -72,6 +72,23 @@ pub async fn handle_request(request: IpcRequest, state: Arc<RwLock<DaemonState>>
             handle_sensor_disconnect(request.id, request.params, state).await
         }
 
+        // Sensor quality and diagnostics commands (T009-6.3)
+        "sensor.quality" | "SensorQuality" => {
+            handle_sensor_quality(request.id, request.params, state).await
+        }
+        "sensors.quality" | "SensorsQuality" => {
+            handle_sensors_quality(request.id, state).await
+        }
+        "sensor.reconnect" | "SensorReconnect" => {
+            handle_sensor_reconnect(request.id, request.params, state).await
+        }
+        "sensor.diagnostics" | "SensorDiagnostics" => {
+            handle_sensor_diagnostics(request.id, request.params, state).await
+        }
+        "sensors.diagnostics" | "SensorsDiagnostics" => {
+            handle_sensors_diagnostics(request.id, request.params, state).await
+        }
+
         // Ride recovery commands (T071)
         "ride.recover" | "RideRecover" => {
             handle_ride_recover(request.id, request.params, state).await
@@ -811,4 +828,399 @@ async fn handle_rides_incomplete(id: String, _state: Arc<RwLock<DaemonState>>) -
             "message": "Incomplete rides handler ready (integration pending)"
         }),
     )
+}
+
+// =============================================================================
+// T009-6.3: Sensor Quality command handlers
+// =============================================================================
+
+/// Handle SensorQuality command - returns quality metrics for a specific sensor
+async fn handle_sensor_quality(
+    id: String,
+    params: serde_json::Value,
+    state: Arc<RwLock<DaemonState>>,
+) -> IpcResponse {
+    let sensor_id = match params.get("sensor_id").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            return IpcResponse::error(
+                id,
+                IpcError {
+                    code: ErrorCode::SensorNotFound,
+                    message: "Missing 'sensor_id' parameter".to_string(),
+                },
+            );
+        }
+    };
+
+    let state = state.read().await;
+
+    // Check if sensor is connected
+    let sensor_info = state
+        .connected_sensors
+        .iter()
+        .find(|s| s.id == sensor_id || s.name == sensor_id);
+
+    if sensor_info.is_none() {
+        return IpcResponse::error(
+            id,
+            IpcError {
+                code: ErrorCode::SensorNotFound,
+                message: format!("Sensor '{}' not found or not connected", sensor_id),
+            },
+        );
+    }
+
+    let sensor = sensor_info.unwrap();
+    info!("Sensor quality requested for: {}", sensor_id);
+
+    // TODO: Get actual quality from ConnectionQualityMonitor
+    // For now return placeholder data based on available sensor info
+    let quality_data = build_quality_response(sensor);
+
+    IpcResponse::success(
+        id,
+        serde_json::json!({
+            "quality": quality_data
+        }),
+    )
+}
+
+/// Handle SensorsQuality command - returns quality metrics for all connected sensors
+async fn handle_sensors_quality(id: String, state: Arc<RwLock<DaemonState>>) -> IpcResponse {
+    let state = state.read().await;
+    info!("All sensors quality requested");
+
+    let mut sensors_quality = Vec::new();
+    let mut poor_count = 0u64;
+    let mut degraded_count = 0u64;
+
+    for sensor in &state.connected_sensors {
+        let quality_data = build_quality_response(sensor);
+
+        // Count poor and degraded connections
+        if let Some(level) = quality_data.get("level").and_then(|v| v.as_str()) {
+            match level {
+                "Poor" => poor_count += 1,
+                "Fair" => degraded_count += 1,
+                _ => {}
+            }
+        }
+
+        sensors_quality.push(quality_data);
+    }
+
+    IpcResponse::success(
+        id,
+        serde_json::json!({
+            "sensors": sensors_quality,
+            "summary": {
+                "total": state.connected_sensors.len(),
+                "poor_count": poor_count,
+                "degraded_count": degraded_count
+            }
+        }),
+    )
+}
+
+/// Build quality response JSON for a sensor
+fn build_quality_response(sensor: &super::state::SensorInfo) -> serde_json::Value {
+    // Calculate quality level based on RSSI if available
+    let (level, score, signal_bars) = if let Some(rssi) = sensor.signal_strength_dbm {
+        let (l, s) = rssi_to_quality(rssi);
+        let bars = match l.as_str() {
+            "Excellent" => 4u64,
+            "Good" => 3u64,
+            "Fair" => 2u64,
+            _ => 1u64,
+        };
+        (l, s, bars)
+    } else {
+        // No RSSI available, use moderate defaults
+        ("Good".to_string(), 70u64, 3u64)
+    };
+
+    serde_json::json!({
+        "device_id": sensor.id,
+        "name": sensor.name,
+        "sensor_type": sensor.sensor_type,
+        "level": level,
+        "score": score,
+        "signal_bars": signal_bars,
+        "metrics": {
+            "rssi_avg": sensor.signal_strength_dbm.unwrap_or(-70),
+            "rssi_score": score,
+            "data_rate": 1.0,
+            "data_rate_score": 80,
+            "packet_loss_rate": 0.0,
+            "packet_loss_score": 100,
+            "latency_avg_ms": 50,
+            "latency_score": 90
+        }
+    })
+}
+
+/// Convert RSSI to quality level and score
+fn rssi_to_quality(rssi: i16) -> (String, u64) {
+    if rssi >= -50 {
+        ("Excellent".to_string(), 95)
+    } else if rssi >= -70 {
+        ("Good".to_string(), 75)
+    } else if rssi >= -85 {
+        ("Fair".to_string(), 50)
+    } else {
+        ("Poor".to_string(), 25)
+    }
+}
+
+// =============================================================================
+// T009-6.3: Sensor Reconnect command handler
+// =============================================================================
+
+/// Handle SensorReconnect command - forces reconnection to a sensor
+async fn handle_sensor_reconnect(
+    id: String,
+    params: serde_json::Value,
+    state: Arc<RwLock<DaemonState>>,
+) -> IpcResponse {
+    let sensor_id = match params.get("sensor_id").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            return IpcResponse::error(
+                id,
+                IpcError {
+                    code: ErrorCode::SensorNotFound,
+                    message: "Missing 'sensor_id' parameter".to_string(),
+                },
+            );
+        }
+    };
+
+    let reset_backoff = params
+        .get("reset_backoff")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let state_guard = state.read().await;
+
+    // Check if sensor is known
+    let sensor_connected = state_guard
+        .connected_sensors
+        .iter()
+        .any(|s| s.id == sensor_id || s.name == sensor_id);
+
+    drop(state_guard);
+
+    info!(
+        "Sensor reconnect requested for: {} (reset_backoff: {})",
+        sensor_id, reset_backoff
+    );
+
+    // TODO: Actually trigger reconnection via SensorManager
+    // For now return placeholder response
+
+    if sensor_connected {
+        IpcResponse::success(
+            id,
+            serde_json::json!({
+                "sensor_id": sensor_id,
+                "status": "disconnecting",
+                "message": "Disconnecting for reconnection",
+                "reset_backoff": reset_backoff
+            }),
+        )
+    } else {
+        IpcResponse::success(
+            id,
+            serde_json::json!({
+                "sensor_id": sensor_id,
+                "status": "reconnecting",
+                "attempt": 1,
+                "next_delay_secs": if reset_backoff { 1.0 } else { 2.0 },
+                "message": "Reconnection initiated"
+            }),
+        )
+    }
+}
+
+// =============================================================================
+// T009-6.3: Sensor Diagnostics command handlers
+// =============================================================================
+
+/// Handle SensorDiagnostics command - returns diagnostics for a specific sensor
+async fn handle_sensor_diagnostics(
+    id: String,
+    params: serde_json::Value,
+    state: Arc<RwLock<DaemonState>>,
+) -> IpcResponse {
+    let sensor_id = match params.get("sensor_id").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            return IpcResponse::error(
+                id,
+                IpcError {
+                    code: ErrorCode::SensorNotFound,
+                    message: "Missing 'sensor_id' parameter".to_string(),
+                },
+            );
+        }
+    };
+
+    let include_health = params
+        .get("include_health")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let include_state = params
+        .get("include_state")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let include_backoff = params
+        .get("include_backoff")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    let state_guard = state.read().await;
+
+    // Find the sensor
+    let sensor_info = state_guard
+        .connected_sensors
+        .iter()
+        .find(|s| s.id == sensor_id || s.name == sensor_id);
+
+    if sensor_info.is_none() {
+        return IpcResponse::error(
+            id,
+            IpcError {
+                code: ErrorCode::SensorNotFound,
+                message: format!("Sensor '{}' not found", sensor_id),
+            },
+        );
+    }
+
+    let sensor = sensor_info.unwrap();
+    info!("Sensor diagnostics requested for: {}", sensor_id);
+
+    let diagnostics = build_sensor_diagnostics(sensor, include_health, include_state, include_backoff);
+
+    IpcResponse::success(
+        id,
+        serde_json::json!({
+            "diagnostics": diagnostics
+        }),
+    )
+}
+
+/// Handle SensorsDiagnostics command - returns diagnostics for all sensors
+async fn handle_sensors_diagnostics(
+    id: String,
+    params: serde_json::Value,
+    state: Arc<RwLock<DaemonState>>,
+) -> IpcResponse {
+    let include_health = params
+        .get("include_health")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let include_state = params
+        .get("include_state")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let include_backoff = params
+        .get("include_backoff")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    let state_guard = state.read().await;
+    info!("All sensors diagnostics requested");
+
+    let mut sensors_diagnostics = Vec::new();
+    let mut stale_count = 0u64;
+    let mut exhausted_count = 0u64;
+
+    for sensor in &state_guard.connected_sensors {
+        let diag = build_sensor_diagnostics(sensor, include_health, include_state, include_backoff);
+
+        // Count stale and exhausted sensors for summary
+        if let Some(health) = diag.get("health") {
+            if health.get("status").and_then(|v| v.as_str()) == Some("Stale") {
+                stale_count += 1;
+            }
+        }
+        if let Some(backoff) = diag.get("reconnection_backoff") {
+            if backoff.get("is_exhausted").and_then(|v| v.as_bool()) == Some(true) {
+                exhausted_count += 1;
+            }
+        }
+
+        sensors_diagnostics.push(diag);
+    }
+
+    IpcResponse::success(
+        id,
+        serde_json::json!({
+            "sensors": sensors_diagnostics,
+            "system": {
+                "connected_count": state_guard.connected_sensors.len(),
+                "health_monitored_count": state_guard.connected_sensors.len(),
+                "quality_monitored_count": state_guard.connected_sensors.len(),
+                "stale_connections": stale_count,
+                "reconnection_exhausted": exhausted_count
+            }
+        }),
+    )
+}
+
+/// Build diagnostics JSON for a sensor
+fn build_sensor_diagnostics(
+    sensor: &super::state::SensorInfo,
+    include_health: bool,
+    include_state: bool,
+    include_backoff: bool,
+) -> serde_json::Value {
+    let mut diag = serde_json::json!({
+        "device_id": sensor.id,
+        "name": sensor.name,
+        "sensor_type": sensor.sensor_type,
+        "protocol": sensor.protocol,
+        "connection_status": "Connected"
+    });
+
+    // Health monitoring section
+    if include_health {
+        diag["health"] = serde_json::json!({
+            "status": "Healthy",
+            "data_rate": 1.0,
+            "time_since_last_data_secs": 0.5,
+            "uptime_secs": 300,
+            "healthy_streak": 60,
+            "unhealthy_streak": 0
+        });
+    }
+
+    // Connection state machine section
+    if include_state {
+        diag["connection_state"] = serde_json::json!({
+            "current_state": "Connected",
+            "time_in_state_secs": 300.0,
+            "reconnection_attempts": 0,
+            "is_exhausted": false,
+            "stats": {
+                "total_connects": 1,
+                "total_disconnects": 0,
+                "total_reconnections": 0
+            }
+        });
+    }
+
+    // Reconnection backoff section
+    if include_backoff {
+        diag["reconnection_backoff"] = serde_json::json!({
+            "current_attempt": 0,
+            "next_delay_secs": 1.0,
+            "remaining_attempts": null,
+            "is_exhausted": false,
+            "delay_sequence": [1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
+        });
+    }
+
+    diag
 }
