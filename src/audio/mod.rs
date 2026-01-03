@@ -7,6 +7,7 @@
 //! T081: Zone change cues
 //! T082: ZoneChangeDetector with debouncing
 
+pub mod achievement_bridge;
 pub mod alerts;
 pub mod backend;
 pub mod cues;
@@ -33,6 +34,7 @@ pub use tones::{
 pub use tts::{DefaultTtsProvider, ThreadSafeTtsProvider, TtsProvider, VoiceInfo};
 pub use sounds::{SoundAsset, SoundCatalog, SoundCategory, SoundDefinition};
 pub use workout_bridge::{WorkoutAudioBridge, WorkoutAudioBridgeConfig};
+pub use achievement_bridge::{AchievementAudioBridge, AchievementAudioBridgeConfig};
 
 /// Errors that can occur during audio operations
 #[derive(Debug, Error)]
