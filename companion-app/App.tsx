@@ -14,8 +14,19 @@ import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppNavigator, linking } from '@/navigation';
 import { AutoReconnectProvider } from '@/providers';
-import { ToastProvider } from '@/hooks';
+import { ToastProvider, useKeepAwake } from '@/hooks';
 import { ToastContainer } from '@/components';
+
+/**
+ * KeepAwakeManager Component
+ *
+ * Manages screen wake lock based on session state and user settings.
+ * Must be rendered inside providers that give access to stores.
+ */
+function KeepAwakeManager(): null {
+  useKeepAwake();
+  return null;
+}
 
 // Color palette matching the RustRide desktop app
 const Colors = {
@@ -40,6 +51,7 @@ function App(): React.JSX.Element {
         />
         <ToastProvider>
           <AutoReconnectProvider>
+            <KeepAwakeManager />
             <NavigationContainer
               linking={linking}
               theme={{

@@ -9,6 +9,22 @@ import 'react-native-gesture-handler/jestSetup';
 // Mock react-native-vector-icons
 jest.mock('react-native-vector-icons/Ionicons', () => 'Icon');
 
+// Mock react-native-keep-awake
+jest.mock(
+  'react-native-keep-awake',
+  () => ({
+    __esModule: true,
+    default: {
+      activate: jest.fn(),
+      deactivate: jest.fn(),
+    },
+    activate: jest.fn(),
+    deactivate: jest.fn(),
+    useKeepAwake: jest.fn(),
+  }),
+  { virtual: true },
+);
+
 // Mock Vibration API - directly on the react-native module
 const ReactNative = require('react-native');
 ReactNative.Vibration = {

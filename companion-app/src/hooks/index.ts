@@ -21,3 +21,6 @@ export type { ToastProviderProps, ToastContextValue, ShowToastOptions } from './
 
 export { useResistanceControl } from './useResistanceControl';
 export type { UseResistanceControlReturn } from './useResistanceControl';
+
+export { useKeepAwake } from './useKeepAwake';
+export type { UseKeepAwakeReturn, KeepAwakeWrapperProps } from './useKeepAwake';
