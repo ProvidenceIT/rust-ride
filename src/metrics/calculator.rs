@@ -194,6 +194,11 @@ impl MetricsCalculator {
         // Process cadence
         if let Some(cadence) = reading.cadence_rpm {
             self.current_metrics.cadence = Some(cadence);
+
+            // Calculate cadence zone
+            if let Some(zones) = &self.cadence_zones {
+                self.current_metrics.cadence_zone = Some(zones.get_zone(cadence));
+            }
         }
 
         // Process speed
