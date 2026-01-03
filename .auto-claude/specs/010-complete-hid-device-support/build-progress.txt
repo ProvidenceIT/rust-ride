@@ -155,3 +155,73 @@ Manual verification needed (cargo not available in sandbox)
 
 ### Verification Required:
 Manual verification needed (cargo not available in sandbox)
+
+## 2026-01-03 - Subtask 2.3 Complete: Generic USB Button Controller Support
+
+### Completed:
+- Created new `src/hid/generic.rs` module with comprehensive support for generic USB button controllers
+- Implemented `GenericReportFormat` enum with five format types:
+  - `Bitmap`: Each bit represents a button (gamepad style)
+  - `BytePerButton`: Each byte represents a button
+  - `KeyboardScanCode`: Standard HID keyboard reports
+  - `ConsumerControl`: Media key style reports
+  - `Unknown`: Auto-detect fallback
+- Created `GenericDeviceConfig` struct with builder methods:
+  - `gamepad(button_count)` - Bitmap format
+  - `gamepad_with_report_id(button_count, report_id)` - Bitmap with ID prefix
+  - `keyboard()` - Keyboard scan code format
+  - `byte_per_button(button_count)` - Byte per button format
+- Implemented `GenericHidParser` struct with:
+  - Stateful parsing with press/release detection
+  - Support for all report format types
+  - Button state tracking across reports
+  - Human-readable button labels
+- Implemented report parsing methods:
+  - `parse_bitmap_report()` - Bit-per-button parsing
+  - `parse_byte_per_button_report()` - Byte-per-button parsing
+  - `parse_keyboard_report()` - HID keyboard with modifiers (128-135) and key codes
+  - `parse_consumer_report()` - Media keys (Play/Pause, Volume, etc.)
+- Added `detect_report_format()` function for auto-detection based on report structure
+- Defined `KNOWN_GENERIC_DEVICES` array with profiles for common foot pedals:
+  - Microdia USB Foot Pedal (VID: 0x0C45, PID: 0x7403)
+  - VEC USB Foot Pedal (VID: 0x05F3, PID: 0x00FF)
+  - Olympus RS Foot Control (VID: 0x07B4, PID: 0x0218)
+- Added `keyboard_scancode_name()` function for human-readable key names
+- Comprehensive unit tests for all parsing functions
+
+### Updated input.rs Integration:
+- Added imports for generic module types
+- Extended `OpenDeviceInfo` with:
+  - `generic_config: Option<GenericDeviceConfig>` - Device configuration
+  - `detected_format: Option<GenericReportFormat>` - Cached auto-detected format
+- Added builder methods:
+  - `with_generic_config()` - Set custom configuration
+  - `with_detected_format()` - Set detected format
+- Updated `parse_generic_report()` to:
+  - Use device configuration or auto-detect format
+  - Dispatch to appropriate parser based on format
+  - Cache detected format for subsequent reports
+- Added separate functions for each format:
+  - `parse_generic_bitmap()` - Bitmap parsing
+  - `parse_generic_byte_per_button()` - Byte per button parsing
+  - Keyboard and consumer use `GenericHidParser` directly
+- Added unit tests for generic device handling
+
+### Exports Added to mod.rs:
+- `GenericDeviceConfig`
+- `GenericDeviceProfile`
+- `GenericHidParser`
+- `GenericReportFormat`
+- `detect_report_format`
+- `find_generic_device_profile`
+- `KNOWN_GENERIC_DEVICES`
+
+### Files Created:
+- `src/hid/generic.rs` - New module with ~700 lines of code
+
+### Files Modified:
+- `src/hid/mod.rs` - Added generic module and re-exports
+- `src/hid/input.rs` - Integrated generic module, extended OpenDeviceInfo
+
+### Verification Required:
+Manual verification needed (cargo not available in sandbox)

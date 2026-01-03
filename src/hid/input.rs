@@ -3,6 +3,10 @@
 //! Background task for reading input reports from HID devices
 //! and translating them to button events.
 
+use super::generic::{
+    detect_report_format, find_generic_device_profile, GenericDeviceConfig, GenericHidParser,
+    GenericReportFormat,
+};
 use super::mapping::RawButtonEvent;
 use super::streamdeck::{StreamDeckModel, StreamDeckParser};
 use super::{find_known_device, HidDeviceEvent, HidError};
@@ -65,6 +69,10 @@ pub struct OpenDeviceInfo {
     pub previous_states: Vec<bool>,
     /// Stream Deck model (if this is a Stream Deck device)
     pub stream_deck_model: Option<StreamDeckModel>,
+    /// Generic device configuration (if this is a generic device)
+    pub generic_config: Option<GenericDeviceConfig>,
+    /// Cached report format for auto-detection
+    pub detected_format: Option<GenericReportFormat>,
 }
 
 impl OpenDeviceInfo {
@@ -76,11 +84,24 @@ impl OpenDeviceInfo {
         let stream_deck_model = StreamDeckModel::from_product_id(product_id)
             .filter(|_| vendor_id == super::streamdeck::ELGATO_VENDOR_ID);
 
-        // Get button count from Stream Deck model or known devices
+        // Try to find known generic device profile
+        let generic_profile = find_generic_device_profile(vendor_id, product_id);
+
+        // Get button count from Stream Deck model, known generic profile, or known devices
         let button_count = stream_deck_model
             .map(|m| m.button_count())
+            .or_else(|| generic_profile.map(|p| p.config.button_count))
             .or_else(|| find_known_device(vendor_id, product_id).map(|d| d.button_count))
             .unwrap_or(32); // Default to 32 buttons for unknown devices
+
+        // Get generic device configuration if available
+        let generic_config = if device_type == HidDeviceType::Generic {
+            generic_profile
+                .map(|p| p.config.clone())
+                .or_else(|| Some(GenericDeviceConfig::gamepad(button_count)))
+        } else {
+            None
+        };
 
         Self {
             id,
@@ -90,7 +111,26 @@ impl OpenDeviceInfo {
             button_count,
             previous_states: vec![false; button_count as usize],
             stream_deck_model,
+            generic_config,
+            detected_format: None,
         }
+    }
+
+    /// Set a custom generic device configuration
+    pub fn with_generic_config(mut self, config: GenericDeviceConfig) -> Self {
+        self.generic_config = Some(config);
+        self.button_count = config.button_count;
+        self.previous_states = vec![false; config.button_count as usize];
+        self
+    }
+
+    /// Set the detected report format
+    pub fn with_detected_format(mut self, format: GenericReportFormat) -> Self {
+        self.detected_format = Some(format);
+        if let Some(ref mut config) = self.generic_config {
+            config.format = format;
+        }
+        self
     }
 }
 
@@ -466,17 +506,90 @@ fn parse_pedal_report(
 
 /// Parse generic HID button report
 ///
-/// Handles common HID gamepad/button formats using bitmap encoding.
+/// Handles common HID gamepad/button formats including:
+/// - Bitmap encoding (gamepad style)
+/// - Byte-per-button encoding
+/// - Keyboard scan codes
+/// - Consumer control (media keys)
 fn parse_generic_report(
     device_id: &Uuid,
     report: &[u8],
     device_info: &mut OpenDeviceInfo,
     timestamp: Instant,
 ) -> Vec<RawButtonEvent> {
-    let mut events = Vec::new();
+    // Get or create parser configuration
+    let config = device_info
+        .generic_config
+        .clone()
+        .unwrap_or_else(|| GenericDeviceConfig::gamepad(device_info.button_count));
 
-    // Many generic button devices use bitmap encoding
-    // Each bit represents a button state
+    // Auto-detect format if not yet determined and first report received
+    let format = if device_info.detected_format.is_none() && !report.is_empty() {
+        let detected = detect_report_format(report);
+        if detected != GenericReportFormat::Unknown {
+            tracing::debug!(
+                "Auto-detected report format for device {:04X}:{:04X}: {:?}",
+                device_info.vendor_id,
+                device_info.product_id,
+                detected
+            );
+            device_info.detected_format = Some(detected);
+            detected
+        } else {
+            config.format
+        }
+    } else {
+        device_info.detected_format.unwrap_or(config.format)
+    };
+
+    // Use the detected format for parsing
+    let effective_config = GenericDeviceConfig {
+        format,
+        button_count: device_info.button_count,
+        button_data_offset: config.button_data_offset,
+        has_report_id: config.has_report_id,
+        expected_report_id: config.expected_report_id,
+    };
+
+    // Create a temporary parser with the device's previous state
+    let mut parser = GenericHidParser::new(effective_config);
+
+    // Restore previous key states for keyboard mode
+    // For other modes, we track state via device_info.previous_states
+
+    // Parse the report
+    let events = match format {
+        GenericReportFormat::Bitmap => {
+            parse_generic_bitmap(device_id, report, device_info, timestamp)
+        }
+        GenericReportFormat::BytePerButton => {
+            parse_generic_byte_per_button(device_id, report, device_info, timestamp)
+        }
+        GenericReportFormat::KeyboardScanCode => {
+            parser.parse_report(device_id, report, timestamp)
+        }
+        GenericReportFormat::ConsumerControl => {
+            parser.parse_report(device_id, report, timestamp)
+        }
+        GenericReportFormat::Unknown => {
+            // Fall back to bitmap parsing
+            parse_generic_bitmap(device_id, report, device_info, timestamp)
+        }
+    };
+
+    events
+}
+
+/// Parse bitmap-encoded button report
+///
+/// Each bit represents a button state.
+fn parse_generic_bitmap(
+    device_id: &Uuid,
+    report: &[u8],
+    device_info: &mut OpenDeviceInfo,
+    timestamp: Instant,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
     let mut button_index = 0;
 
     for &byte in report.iter() {
@@ -512,6 +625,53 @@ fn parse_generic_report(
             }
 
             button_index += 1;
+        }
+    }
+
+    events
+}
+
+/// Parse byte-per-button report
+///
+/// Each byte represents a button: 0 = released, non-zero = pressed
+fn parse_generic_byte_per_button(
+    device_id: &Uuid,
+    report: &[u8],
+    device_info: &mut OpenDeviceInfo,
+    timestamp: Instant,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
+
+    for (index, &button_byte) in report.iter().enumerate() {
+        if index >= device_info.button_count as usize {
+            break;
+        }
+
+        let is_pressed = button_byte != 0;
+        let was_pressed = device_info
+            .previous_states
+            .get(index)
+            .copied()
+            .unwrap_or(false);
+
+        if is_pressed != was_pressed {
+            events.push(RawButtonEvent {
+                device_id: *device_id,
+                button_code: index as u8,
+                pressed: is_pressed,
+                timestamp,
+            });
+
+            tracing::debug!(
+                "Generic button {} {} (value: {})",
+                index,
+                if is_pressed { "pressed" } else { "released" },
+                button_byte
+            );
+        }
+
+        if index < device_info.previous_states.len() {
+            device_info.previous_states[index] = is_pressed;
         }
     }
 
@@ -809,5 +969,113 @@ mod tests {
         let short_report = [0x01]; // Only report ID
         let events = parse_streamdeck_report(&device_id, &short_report, &mut device_info, timestamp);
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_generic_device_info_creation() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x1234, 0x5678);
+
+        assert_eq!(info.device_type, HidDeviceType::Generic);
+        assert_eq!(info.button_count, 32); // Default
+        assert!(info.generic_config.is_some());
+        assert!(info.stream_deck_model.is_none());
+        assert!(info.detected_format.is_none());
+    }
+
+    #[test]
+    fn test_known_generic_device_profile() {
+        let id = Uuid::new_v4();
+        // VEC USB Foot Pedal (known generic device)
+        let info = OpenDeviceInfo::new(id, 0x05F3, 0x00FF);
+
+        assert_eq!(info.device_type, HidDeviceType::Generic);
+        assert_eq!(info.button_count, 3);
+        assert!(info.generic_config.is_some());
+        assert_eq!(
+            info.generic_config.as_ref().unwrap().format,
+            GenericReportFormat::KeyboardScanCode
+        );
+    }
+
+    #[test]
+    fn test_with_generic_config() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x1234, 0x5678)
+            .with_generic_config(GenericDeviceConfig::keyboard());
+
+        assert_eq!(info.button_count, 128);
+        assert_eq!(
+            info.generic_config.as_ref().unwrap().format,
+            GenericReportFormat::KeyboardScanCode
+        );
+    }
+
+    #[test]
+    fn test_with_detected_format() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x1234, 0x5678)
+            .with_detected_format(GenericReportFormat::BytePerButton);
+
+        assert_eq!(info.detected_format, Some(GenericReportFormat::BytePerButton));
+        assert_eq!(
+            info.generic_config.as_ref().unwrap().format,
+            GenericReportFormat::BytePerButton
+        );
+    }
+
+    #[test]
+    fn test_generic_bitmap_parsing() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x1234, 0x5678);
+        device_info.button_count = 8; // Limit to 8 buttons for this test
+        device_info.previous_states = vec![false; 8];
+        let timestamp = Instant::now();
+
+        // Buttons 0 and 2 pressed (binary: 00000101 = 0x05)
+        let report = [0x05];
+
+        let events = parse_generic_bitmap(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 2);
+        let codes: Vec<u8> = events.iter().map(|e| e.button_code).collect();
+        assert!(codes.contains(&0));
+        assert!(codes.contains(&2));
+    }
+
+    #[test]
+    fn test_generic_byte_per_button_parsing() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x1234, 0x5678);
+        device_info.button_count = 4;
+        device_info.previous_states = vec![false; 4];
+        let timestamp = Instant::now();
+
+        // Buttons 0 and 2 pressed
+        let report = [0x01, 0x00, 0x01, 0x00];
+
+        let events = parse_generic_byte_per_button(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 2);
+        let codes: Vec<u8> = events.iter().map(|e| e.button_code).collect();
+        assert!(codes.contains(&0));
+        assert!(codes.contains(&2));
+    }
+
+    #[test]
+    fn test_generic_report_auto_detect() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x1234, 0x5678);
+        let timestamp = Instant::now();
+
+        // Start with no detected format
+        assert!(device_info.detected_format.is_none());
+
+        // Send a bitmap-style report
+        let report = [0x05, 0x00];
+        let _ = parse_generic_report(&device_id, &report, &mut device_info, timestamp);
+
+        // Format should now be detected
+        assert!(device_info.detected_format.is_some());
     }
 }

@@ -72,7 +72,7 @@
           "id": "1.4",
           "title": "Add auto-reconnect logic for disconnected devices",
           "description": "Implement automatic reconnection when a previously connected device is unplugged and replugged. Track devices by serial number or VID:PID for identification.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "files": [
             "src/hid/device.rs",
@@ -85,7 +85,8 @@
             "DeviceOpened event emitted on successful reconnect",
             "Configurable reconnect delay (default 1 second)"
           ],
-          "notes": "Essential for user experience during workouts when cables may get jostled."
+          "notes": "Implemented auto-reconnect logic for HID devices. Added auto_reconnect and reconnect_delay_ms config options. Track opened devices by identity key. When device reconnects, auto-reopen after configurable delay (default 1s). Emit DeviceReconnected event on success. Remove from tracking when explicitly closed. Added unit tests for tracking and config.",
+          "updated_at": "2026-01-03T05:53:59.605883+00:00"
         }
       ]
     },
@@ -99,7 +100,7 @@
           "id": "2.1",
           "title": "Implement HID input reading task",
           "description": "Create a background task that reads input reports from open HID devices and translates them to RawButtonEvent structs.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "high",
           "files": [
             "src/hid/device.rs",
@@ -112,13 +113,14 @@
             "RawButtonEvent emitted for each button press/release",
             "Handles multiple devices concurrently"
           ],
-          "notes": "Stream Deck uses a specific report format - need to handle different device types."
+          "notes": "Implemented HidInputReader with background task that reads input reports from open HID devices. Uses non-blocking read_timeout() with 50ms timeout for responsive multi-device polling. Created HidDeviceType enum for device categorization (StreamDeck, StreamDeckPedal, Generic). Implemented report parsing for all three device types with state tracking to emit only press/release transitions. Added comprehensive unit tests for parsing logic. Exports HidInputReader, HidDeviceType, OpenDeviceInfo, RawButtonEvent from mod.rs.",
+          "updated_at": "2026-01-03T05:59:20.373413+00:00"
         },
         {
           "id": "2.2",
           "title": "Add Stream Deck protocol support",
           "description": "Implement Stream Deck-specific input report parsing. Stream Deck devices use a custom protocol for button state reporting.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "files": [
             "src/hid/streamdeck.rs",
@@ -131,13 +133,14 @@
             "Support all Stream Deck variants (6, 15, 32 buttons)",
             "Proper button index mapping for each model"
           ],
-          "notes": "Stream Deck report format: [0x01, button_states...] where each bit represents a button."
+          "notes": "Implemented Stream Deck-specific input report parsing with comprehensive support for all models:\n\n- Created new streamdeck.rs module with:\n  - StreamDeckModel enum for all variants (Original, Mini, XL, MK.2, Pedal)\n  - StreamDeckParser struct for stateful parsing with press/release detection\n  - Model-specific button data offset handling (1-byte header for Original/Mini, 4-byte for MK.2/XL)\n  - Grid coordinate conversion utilities (button_to_grid, grid_to_button)\n  - Human-readable button labels\n\n- Updated input.rs:\n  - Added stream_deck_model field to OpenDeviceInfo\n  - Automatic model detection from VID/PID\n  - Updated parse_streamdeck_report to handle all formats correctly\n  \n- Added comprehensive unit tests for all Stream Deck models and report formats\n\nExported StreamDeckModel and StreamDeckParser from mod.rs.",
+          "updated_at": "2026-01-03T06:06:23.432040+00:00"
         },
         {
           "id": "2.3",
           "title": "Add generic USB button controller support",
           "description": "Implement support for generic USB button controllers that send standard HID gamepad/keyboard reports.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "files": [
             "src/hid/generic.rs",
@@ -150,7 +153,8 @@
             "Auto-detect report format based on usage page",
             "Map generic button indices to internal codes"
           ],
-          "notes": "Many USB foot pedals and button boxes use standard HID gamepad or keyboard protocols."
+          "notes": "Created generic.rs module with GenericHidParser supporting four report formats (Bitmap, BytePerButton, KeyboardScanCode, ConsumerControl). Added auto-detection, known device profiles for common foot pedals, and integration with input.rs. Extended OpenDeviceInfo with generic_config and detected_format fields. Comprehensive unit tests included.",
+          "updated_at": "2026-01-03T06:14:28.384203+00:00"
         },
         {
           "id": "2.4",
@@ -454,5 +458,5 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T05:47:19.611307+00:00"
+  "last_updated": "2026-01-03T06:14:28.384203+00:00"
 }

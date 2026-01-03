@@ -4,6 +4,7 @@
 
 pub mod actions;
 pub mod device;
+pub mod generic;
 pub mod input;
 pub mod mapping;
 pub mod streamdeck;
@@ -15,6 +16,10 @@ use uuid::Uuid;
 // Re-export main types
 pub use actions::{ActionExecutor, ButtonAction};
 pub use device::{DefaultHidDeviceManager, HidDevice, HidDeviceManager, HidDeviceStatus};
+pub use generic::{
+    detect_report_format, find_generic_device_profile, GenericDeviceConfig, GenericDeviceProfile,
+    GenericHidParser, GenericReportFormat, KNOWN_GENERIC_DEVICES,
+};
 pub use input::{HidDeviceType, HidInputReader, OpenDeviceInfo};
 pub use mapping::{ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler, RawButtonEvent};
 pub use streamdeck::{StreamDeckModel, StreamDeckParser};
