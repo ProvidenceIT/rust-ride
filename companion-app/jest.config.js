@@ -11,6 +11,7 @@ module.exports = {
     '^@navigation/(.*)$': '<rootDir>/src/navigation/$1',
     '^@services/(.*)$': '<rootDir>/src/services/$1',
     '^@stores/(.*)$': '<rootDir>/src/stores/$1',
+    '^@hooks/(.*)$': '<rootDir>/src/hooks/$1',
     '^@theme$': '<rootDir>/src/theme/index',
     '^@theme/(.*)$': '<rootDir>/src/theme/$1',
     '^@utils/(.*)$': '<rootDir>/src/utils/$1',

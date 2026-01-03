@@ -328,6 +328,84 @@ describe('ConnectionService', () => {
     });
   });
 
+  describe('authenticate', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should send auth message with PIN', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // Start authenticate
+      const authPromise = service.authenticate('123456');
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'auth', pin: '123456' }));
+
+      // Simulate successful auth
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_ok', session_id: 'test-session' }));
+
+      await authPromise;
+      expect(useConnectionStore.getState().isAuthenticated).toBe(true);
+    });
+
+    it('should throw on auth failure', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // Start authenticate
+      const authPromise = service.authenticate('000000');
+
+      // Simulate failed auth
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_failed', reason: 'Invalid PIN' }));
+
+      await expect(authPromise).rejects.toThrow('Invalid PIN');
+    });
+
+    it('should auto-subscribe to metrics after auth_ok', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // Clear previous calls
+      ws?.send.mockClear();
+
+      // Simulate auth_ok response directly (not through authenticate())
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_ok', session_id: 'test-session' }));
+
+      // Should have sent subscribe_metrics and get_session_status
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'subscribe_metrics' }));
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'get_session_status' }));
+    });
+
+    it('should call onAuthFailed callback on auth failure', async () => {
+      const ws = MockWebSocket.getLastInstance();
+      const onAuthFailed = jest.fn();
+
+      service.setCallbacks({ onAuthFailed });
+
+      // Simulate auth failed response
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_failed', reason: 'Wrong PIN' }));
+
+      expect(onAuthFailed).toHaveBeenCalledWith('Wrong PIN');
+    });
+
+    it('should update connection store to authenticated status', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // Start authenticate
+      const authPromise = service.authenticate('123456');
+
+      // Simulate successful auth
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_ok', session_id: 'test-session' }));
+
+      await authPromise;
+
+      const state = useConnectionStore.getState();
+      expect(state.status).toBe('authenticated');
+      expect(state.isAuthenticated).toBe(true);
+    });
+  });
+
   describe('helper methods', () => {
     it('isConnected should return correct state', async () => {
       expect(service.isConnected()).toBe(false);

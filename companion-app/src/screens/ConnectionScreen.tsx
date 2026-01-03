@@ -7,6 +7,7 @@
  * - Pull to refresh
  * - Manual IP:port entry
  * - Connection status indicator
+ * - PIN authentication flow
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -27,6 +28,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ServerListItem } from '@/components/ServerListItem';
 import { ManualEntryModal } from '@/components/ManualEntryModal';
 import { QRScannerModal } from '@/components/QRScannerModal';
+import { PinEntryModal } from '@/components/PinEntryModal';
 import {
   useConnectionStore,
   selectDiscoveredServers,
@@ -36,6 +38,7 @@ import {
 } from '@/stores/connectionStore';
 import { getDiscoveryService } from '@/services/DiscoveryService';
 import { getConnectionService } from '@/services/ConnectionService';
+import { useAuthentication } from '@/hooks/useAuthentication';
 import type { DiscoveredServer, QrConnectionData } from '@/types';
 import { parseWebSocketUrl } from '@/types';
 
@@ -55,6 +58,9 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
   const isScanning = useConnectionStore(selectIsScanning);
   const connectionStatus = useConnectionStore(selectConnectionStatus);
   const connectionError = useConnectionStore(selectConnectionError);
+
+  // Authentication hook
+  const { state: authState, actions: authActions } = useAuthentication();
 
   // Local state
   const [isManualEntryVisible, setIsManualEntryVisible] = useState(false);
@@ -163,12 +169,6 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         version: qrData.version,
       };
 
-      // Store the PIN if provided (will be used for authentication)
-      if (qrData.pin) {
-        // Store PIN in connection store for automatic authentication
-        useConnectionStore.getState().savePin(qrData.pin);
-      }
-
       setConnectingServer(server);
       setIsQRScannerVisible(false);
 
@@ -176,15 +176,14 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         // Connect using the URL from QR code
         await connectionService.connect(qrData.url);
 
-        // If we have a PIN, authenticate automatically
+        // If we have a PIN from QR code, authenticate automatically
         if (qrData.pin) {
-          try {
-            await connectionService.authenticate(qrData.pin);
-          } catch (authError) {
-            // Auth failed, but connection might still be open
-            // User may need to enter PIN manually
-          }
+          // Store PIN for potential reconnection
+          useConnectionStore.getState().savePin(qrData.pin);
+          // Authenticate with the PIN
+          await authActions.submitPin(qrData.pin);
         }
+        // If no PIN provided, wait for server to request auth (handled by useAuthentication hook)
       } catch {
         setConnectingServer(null);
         Alert.alert(
@@ -194,7 +193,7 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         );
       }
     },
-    [connectionService]
+    [connectionService, authActions]
   );
 
   const handleManualEntrySubmit = useCallback(
@@ -404,6 +403,16 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         onClose={handleQRScannerClose}
         onScan={handleQRCodeScanned}
         isConnecting={isConnecting}
+      />
+
+      {/* PIN entry modal */}
+      <PinEntryModal
+        visible={authState.showPinModal}
+        onClose={authActions.closePinModal}
+        onSubmit={authActions.submitPin}
+        isAuthenticating={authState.isAuthenticating}
+        error={authState.authError}
+        serverName={connectingServer?.name ?? authState.serverName ?? undefined}
       />
     </SafeAreaView>
   );

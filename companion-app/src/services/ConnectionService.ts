@@ -228,7 +228,8 @@ export class ConnectionService {
 
     // Calculate backoff delay
     const delay = Math.min(
-      this.backoffConfig.initialDelayMs * Math.pow(this.backoffConfig.multiplier, this.reconnectAttempt),
+      this.backoffConfig.initialDelayMs *
+        Math.pow(this.backoffConfig.multiplier, this.reconnectAttempt),
       this.backoffConfig.maxDelayMs,
     );
 
@@ -440,7 +441,7 @@ export class ConnectionService {
         clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(pendingKey);
         pending.resolve(response);
-        return;
+        // Note: Don't return early - we still need to process state updates for auth responses
       }
     }
 
@@ -579,9 +580,7 @@ export class ConnectionService {
   /**
    * Handle ride_history response
    */
-  private handleRideHistory(
-    response: Extract<CompanionResponse, { type: 'ride_history' }>,
-  ): void {
+  private handleRideHistory(response: Extract<CompanionResponse, { type: 'ride_history' }>): void {
     const historyStore = useHistoryStore.getState();
 
     // Map server RideSummary to client RideSummary format
@@ -603,9 +602,7 @@ export class ConnectionService {
   /**
    * Handle ride_details response
    */
-  private handleRideDetails(
-    response: Extract<CompanionResponse, { type: 'ride_details' }>,
-  ): void {
+  private handleRideDetails(response: Extract<CompanionResponse, { type: 'ride_details' }>): void {
     const historyStore = useHistoryStore.getState();
     const detail: RideDetailInfo = response.ride;
     historyStore.setCurrentRideDetail(detail);
