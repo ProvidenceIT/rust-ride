@@ -1,11 +1,14 @@
-//! Integration tests for profile export workflow
+//! Integration tests for profile export and import workflow
 //!
 //! T023: Test full export: create profile in DB, export to JSON, verify all fields present.
+//! T024: Test import scenarios: empty DB import, conflict detection, merge strategy, replace strategy.
 //! Uses test database.
 
 use chrono::{TimeZone, Utc};
 use rusqlite::params;
-use rustride::social::{ProfileExport, ProfileExporter};
+use rustride::social::{
+    ConflictResolution, ProfileConflict, ProfileData, ProfileExport, ProfileExporter,
+};
 use rustride::storage::database::Database;
 use rustride::storage::social_store::{Rider, SocialStore};
 use rustride::world::avatar::{AvatarConfig, BikeStyle};
@@ -675,4 +678,1017 @@ fn test_build_export_returns_struct() {
     assert!(!export.profile.sharing_enabled);
     assert!(export.ftp_history.is_empty());
     assert!(export.avatar.is_none());
+}
+
+// =============================================================================
+// Import Workflow Integration Tests (T024)
+// =============================================================================
+
+/// Helper to create an export JSON string for testing imports.
+fn create_test_export_json(
+    rider_id: Uuid,
+    display_name: &str,
+    ftp: Option<u16>,
+    ftp_history: Vec<(&str, u16, &str, &str, bool)>, // (date, watts, method, confidence, accepted)
+    avatar: Option<(&str, &str, Option<&str>, Option<&str>)>, // (jersey, bike_style, secondary, helmet)
+) -> String {
+    let ftp_entries: String = ftp_history
+        .iter()
+        .map(|(date, watts, method, confidence, accepted)| {
+            format!(
+                r#"{{"ftp_watts":{},"method":"{}","confidence":"{}","detected_at":"{}","accepted":{}}}"#,
+                watts, method, confidence, date, accepted
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let avatar_json = match avatar {
+        Some((jersey, bike_style, secondary, helmet)) => {
+            let sec = match secondary {
+                Some(s) => format!("\"{}\"", s),
+                None => "null".to_string(),
+            };
+            let helm = match helmet {
+                Some(h) => format!("\"{}\"", h),
+                None => "null".to_string(),
+            };
+            format!(
+                r#"{{"jersey_color":"{}","bike_style":"{}","jersey_secondary":{},"helmet_color":{}}}"#,
+                jersey, bike_style, sec, helm
+            )
+        }
+        None => "null".to_string(),
+    };
+
+    let ftp_json = match ftp {
+        Some(f) => f.to_string(),
+        None => "null".to_string(),
+    };
+
+    format!(
+        r#"{{
+  "export_version": "1.0",
+  "exported_at": "2024-06-15T12:00:00Z",
+  "rider_id": "{}",
+  "profile": {{
+    "display_name": "{}",
+    "bio": null,
+    "ftp": {},
+    "total_distance_km": 500.0,
+    "total_time_hours": 25.0,
+    "sharing_enabled": true
+  }},
+  "ftp_history": [{}],
+  "avatar": {}
+}}"#,
+        rider_id, display_name, ftp_json, ftp_entries, avatar_json
+    )
+}
+
+/// Helper to query profile from database.
+fn query_profile_from_db(db: &Database, rider_id: Uuid) -> Option<(String, Option<u16>, bool)> {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare("SELECT display_name, ftp, sharing_enabled FROM riders WHERE id = ?1")
+        .ok()?;
+
+    stmt.query_row([rider_id.to_string()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<u16>>(1)?,
+            row.get::<_, bool>(2)?,
+        ))
+    })
+    .ok()
+}
+
+/// Helper to count FTP history entries in database.
+fn count_ftp_entries(db: &Database, rider_id: Uuid) -> usize {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare("SELECT COUNT(*) FROM ftp_estimates WHERE user_id = ?1")
+        .expect("Prepare statement");
+    stmt.query_row([rider_id.to_string()], |row| row.get::<_, i64>(0))
+        .unwrap_or(0) as usize
+}
+
+/// Helper to query avatar from database.
+fn query_avatar_from_db(db: &Database, rider_id: Uuid) -> Option<(String, String)> {
+    let conn = db.connection();
+    let mut stmt = conn
+        .prepare("SELECT jersey_color, bike_style FROM avatars WHERE user_id = ?1")
+        .ok()?;
+
+    stmt.query_row([rider_id.to_string()], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })
+    .ok()
+}
+
+// =============================================================================
+// Empty DB Import Tests
+// =============================================================================
+
+/// Test import to empty database: profile is created successfully.
+#[test]
+fn test_import_to_empty_db_creates_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    let json = create_test_export_json(rider_id, "NewRider", Some(275), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success, "Import should succeed");
+    assert!(result.profile_updated, "Profile should be created");
+
+    // Verify profile was inserted
+    let profile = query_profile_from_db(&db, rider_id);
+    assert!(profile.is_some(), "Profile should exist in database");
+    let (name, ftp, sharing) = profile.unwrap();
+    assert_eq!(name, "NewRider");
+    assert_eq!(ftp, Some(275));
+    assert!(sharing);
+}
+
+/// Test import to empty database with FTP history: all entries imported.
+#[test]
+fn test_import_to_empty_db_with_ftp_history() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    let ftp_history = vec![
+        ("2024-01-15T10:00:00Z", 250u16, "ramp_test", "high", true),
+        ("2024-03-20T14:30:00Z", 265, "20min_test", "high", true),
+        ("2024-06-10T08:00:00Z", 280, "manual", "medium", false),
+    ];
+
+    let json = create_test_export_json(rider_id, "FTPRider", Some(280), ftp_history, None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert_eq!(result.ftp_entries_imported, 3, "All 3 FTP entries should be imported");
+    assert_eq!(result.ftp_entries_skipped, 0, "No entries should be skipped");
+
+    // Verify FTP entries in database
+    let count = count_ftp_entries(&db, rider_id);
+    assert_eq!(count, 3, "Database should have 3 FTP entries");
+}
+
+/// Test import to empty database with avatar: avatar is created.
+#[test]
+fn test_import_to_empty_db_with_avatar() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    let avatar = ("#FF0000", "road_bike", Some("#FFFFFF"), Some("#000000"));
+    let json = create_test_export_json(rider_id, "AvatarRider", None, vec![], Some(avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.avatar_updated, "Avatar should be created");
+
+    // Verify avatar in database
+    let avatar_data = query_avatar_from_db(&db, rider_id);
+    assert!(avatar_data.is_some(), "Avatar should exist in database");
+    let (jersey, bike) = avatar_data.unwrap();
+    assert_eq!(jersey, "#FF0000");
+    assert_eq!(bike, "road_bike");
+}
+
+/// Test import to empty database with complete data: all data imported.
+#[test]
+fn test_import_to_empty_db_complete_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    let ftp_history = vec![
+        ("2024-01-01T12:00:00Z", 260u16, "ramp_test", "high", true),
+        ("2024-06-01T12:00:00Z", 280, "20min_test", "high", true),
+    ];
+    let avatar = ("#00FF00", "tt_bike", None, Some("#888888"));
+    let json = create_test_export_json(rider_id, "CompleteImport", Some(280), ftp_history, Some(avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert!(result.avatar_updated);
+    assert_eq!(result.ftp_entries_imported, 2);
+
+    // Verify all data
+    let profile = query_profile_from_db(&db, rider_id);
+    assert!(profile.is_some());
+    let avatar_data = query_avatar_from_db(&db, rider_id);
+    assert!(avatar_data.is_some());
+    let ftp_count = count_ftp_entries(&db, rider_id);
+    assert_eq!(ftp_count, 2);
+}
+
+// =============================================================================
+// Conflict Detection Tests
+// =============================================================================
+
+/// Test conflict detection: existing profile triggers ExistingProfile conflict.
+#[test]
+fn test_detect_conflicts_existing_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "ExistingRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create import with same rider_id but different name
+    let json = create_test_export_json(rider_id, "DifferentName", Some(275), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    // Should detect ExistingProfile conflict
+    assert!(!conflicts.is_empty(), "Should detect conflicts");
+    let has_existing = conflicts.iter().any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
+    assert!(has_existing, "Should have ExistingProfile conflict");
+}
+
+/// Test conflict detection: display name mismatch detected.
+#[test]
+fn test_detect_conflicts_display_name_mismatch() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "OldName".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create import with different display name
+    let json = create_test_export_json(rider_id, "NewName", Some(250), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    // Should detect DisplayNameMismatch
+    let has_name_mismatch = conflicts.iter().any(|c| {
+        matches!(c, ProfileConflict::DisplayNameMismatch {
+            imported_name,
+            existing_name
+        } if imported_name == "NewName" && existing_name == "OldName")
+    });
+    assert!(has_name_mismatch, "Should detect DisplayNameMismatch conflict");
+}
+
+/// Test conflict detection: FTP mismatch detected.
+#[test]
+fn test_detect_conflicts_ftp_mismatch() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile with FTP 250
+    let rider = Rider {
+        id: rider_id,
+        display_name: "FTPRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create import with different FTP (300)
+    let json = create_test_export_json(rider_id, "FTPRider", Some(300), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    // Should detect FtpMismatch
+    let has_ftp_mismatch = conflicts.iter().any(|c| {
+        matches!(c, ProfileConflict::FtpMismatch {
+            imported_ftp: Some(300),
+            existing_ftp: Some(250)
+        })
+    });
+    assert!(has_ftp_mismatch, "Should detect FtpMismatch conflict");
+}
+
+/// Test conflict detection: avatar mismatch when import has avatar but existing doesn't.
+#[test]
+fn test_detect_conflicts_avatar_mismatch() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile without avatar
+    let rider = Rider {
+        id: rider_id,
+        display_name: "NoAvatarRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create import WITH avatar
+    let avatar = ("#FF0000", "road_bike", None, None);
+    let json = create_test_export_json(rider_id, "NoAvatarRider", Some(250), vec![], Some(avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    // Should detect AvatarMismatch
+    let has_avatar_mismatch = conflicts.iter().any(|c| {
+        matches!(c, ProfileConflict::AvatarMismatch {
+            import_has_avatar: true,
+            existing_has_avatar: false
+        })
+    });
+    assert!(has_avatar_mismatch, "Should detect AvatarMismatch conflict");
+}
+
+/// Test conflict detection: no conflicts when values match.
+#[test]
+fn test_detect_conflicts_no_conflict_when_matching() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "MatchingRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(275),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create import with matching name and FTP (no avatar on either side)
+    let json = create_test_export_json(rider_id, "MatchingRider", Some(275), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    // Should still have ExistingProfile conflict (profile exists)
+    let has_existing = conflicts.iter().any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
+    assert!(has_existing, "Should have ExistingProfile conflict");
+
+    // But should NOT have name/FTP/avatar mismatches
+    let has_name_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::DisplayNameMismatch { .. }));
+    let has_ftp_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::FtpMismatch { .. }));
+    let has_avatar_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::AvatarMismatch { .. }));
+
+    assert!(!has_name_mismatch, "Should not have DisplayNameMismatch");
+    assert!(!has_ftp_mismatch, "Should not have FtpMismatch");
+    assert!(!has_avatar_mismatch, "Should not have AvatarMismatch");
+}
+
+/// Test conflict detection: no conflicts for new profile (empty DB).
+#[test]
+fn test_detect_conflicts_no_conflict_for_new_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    // No existing profile - import to empty DB
+    let json = create_test_export_json(rider_id, "BrandNewRider", Some(280), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+
+    assert!(conflicts.is_empty(), "Should have no conflicts for new profile");
+}
+
+// =============================================================================
+// Merge Strategy Tests
+// =============================================================================
+
+/// Test merge strategy: updates existing profile data.
+#[test]
+fn test_merge_strategy_updates_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "OldName".to_string(),
+        avatar_id: None,
+        bio: Some("Old bio".to_string()),
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Import with Merge strategy - updates profile
+    let json = create_test_export_json(rider_id, "NewName", Some(300), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+
+    // Verify profile was updated
+    let profile = query_profile_from_db(&db, rider_id);
+    let (name, ftp, sharing) = profile.unwrap();
+    assert_eq!(name, "NewName", "Name should be updated");
+    assert_eq!(ftp, Some(300), "FTP should be updated");
+    assert!(sharing, "Sharing should be updated to true");
+}
+
+/// Test merge strategy: combines FTP history without duplicates.
+#[test]
+fn test_merge_strategy_combines_ftp_history() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "FTPRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(265),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Add existing FTP history (2 entries)
+    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-15T10:00:00Z", true);
+    insert_test_ftp_estimate(&db, rider_id, 265, "20min_test", "high", "2024-03-20T14:30:00Z", true);
+
+    // Import with additional FTP history (1 new, 1 duplicate timestamp)
+    let ftp_history = vec![
+        ("2024-03-20T14:30:00Z", 265u16, "20min_test", "high", true), // Duplicate
+        ("2024-06-10T08:00:00Z", 280, "manual", "medium", false), // New
+    ];
+    let json = create_test_export_json(rider_id, "FTPRider", Some(280), ftp_history, None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert_eq!(result.ftp_entries_imported, 1, "Should import 1 new entry");
+    assert_eq!(result.ftp_entries_skipped, 1, "Should skip 1 duplicate");
+
+    // Verify total FTP entries (2 existing + 1 new = 3)
+    let count = count_ftp_entries(&db, rider_id);
+    assert_eq!(count, 3, "Should have 3 total FTP entries after merge");
+}
+
+/// Test merge strategy: adds avatar to profile without one.
+#[test]
+fn test_merge_strategy_adds_avatar() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile without avatar
+    let rider = Rider {
+        id: rider_id,
+        display_name: "NoAvatarRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(260),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Verify no avatar exists
+    assert!(query_avatar_from_db(&db, rider_id).is_none());
+
+    // Import with avatar using Merge
+    let avatar = ("#0000FF", "gravel", Some("#FFFF00"), None);
+    let json = create_test_export_json(rider_id, "NoAvatarRider", Some(260), vec![], Some(avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.avatar_updated, "Avatar should be added");
+
+    // Verify avatar was created
+    let avatar_data = query_avatar_from_db(&db, rider_id);
+    assert!(avatar_data.is_some(), "Avatar should exist now");
+    let (jersey, bike) = avatar_data.unwrap();
+    assert_eq!(jersey, "#0000FF");
+    assert_eq!(bike, "gravel");
+}
+
+/// Test merge strategy: updates existing avatar.
+#[test]
+fn test_merge_strategy_updates_existing_avatar() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile with avatar
+    let rider = Rider {
+        id: rider_id,
+        display_name: "AvatarRider".to_string(),
+        avatar_id: Some("avatar_id".to_string()),
+        bio: None,
+        ftp: Some(270),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create existing avatar
+    let existing_avatar = AvatarConfig {
+        jersey_color: [255, 0, 0], // Red
+        bike_style: BikeStyle::Road,
+        jersey_secondary: None,
+        helmet_color: None,
+    };
+    insert_test_avatar(&db, rider_id, &existing_avatar);
+
+    // Verify existing avatar
+    let (jersey, _) = query_avatar_from_db(&db, rider_id).unwrap();
+    assert!(jersey.contains("FF") || jersey.contains("ff"), "Should have red jersey");
+
+    // Import with different avatar using Merge
+    let new_avatar = ("#00FF00", "tt_bike", Some("#000000"), Some("#FFFFFF")); // Green TT bike
+    let json = create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Merge)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.avatar_updated, "Avatar should be updated");
+
+    // Verify avatar was updated to green
+    let (jersey, bike) = query_avatar_from_db(&db, rider_id).unwrap();
+    assert_eq!(jersey, "#00FF00", "Jersey should be updated to green");
+    assert_eq!(bike, "tt_bike", "Bike style should be updated");
+}
+
+// =============================================================================
+// Replace Strategy Tests
+// =============================================================================
+
+/// Test replace strategy: overwrites existing profile completely.
+#[test]
+fn test_replace_strategy_overwrites_profile() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "OldProfile".to_string(),
+        avatar_id: None,
+        bio: Some("Old bio that should be replaced".to_string()),
+        ftp: Some(220),
+        total_distance_km: 5000.0,
+        total_time_hours: 250.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Import with Replace strategy
+    let json = create_test_export_json(rider_id, "NewProfile", Some(310), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Replace)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+
+    // Verify profile was completely replaced
+    let profile = query_profile_from_db(&db, rider_id);
+    let (name, ftp, sharing) = profile.unwrap();
+    assert_eq!(name, "NewProfile", "Name should be replaced");
+    assert_eq!(ftp, Some(310), "FTP should be replaced");
+    assert!(sharing, "Sharing should be replaced (now true)");
+}
+
+/// Test replace strategy: deletes all existing FTP history and imports new.
+#[test]
+fn test_replace_strategy_replaces_ftp_history() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "FTPRider".to_string(),
+        avatar_id: None,
+        bio: None,
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Add existing FTP history (3 entries)
+    insert_test_ftp_estimate(&db, rider_id, 230, "ramp_test", "high", "2023-06-01T12:00:00Z", true);
+    insert_test_ftp_estimate(&db, rider_id, 240, "20min_test", "high", "2023-09-15T12:00:00Z", true);
+    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-10T12:00:00Z", true);
+
+    // Verify existing count
+    assert_eq!(count_ftp_entries(&db, rider_id), 3);
+
+    // Import with Replace strategy (only 2 new entries)
+    let ftp_history = vec![
+        ("2024-06-01T12:00:00Z", 290u16, "20min_test", "high", true),
+        ("2024-07-15T12:00:00Z", 300, "manual", "medium", false),
+    ];
+    let json = create_test_export_json(rider_id, "FTPRider", Some(300), ftp_history, None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Replace)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert_eq!(result.ftp_entries_imported, 2, "Should import 2 new entries");
+    assert_eq!(result.ftp_entries_skipped, 0, "No entries skipped in Replace");
+
+    // Verify only new FTP entries exist (old ones deleted)
+    let count = count_ftp_entries(&db, rider_id);
+    assert_eq!(count, 2, "Should have only 2 FTP entries after replace");
+}
+
+/// Test replace strategy: replaces avatar completely.
+#[test]
+fn test_replace_strategy_replaces_avatar() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile with avatar
+    let rider = Rider {
+        id: rider_id,
+        display_name: "AvatarRider".to_string(),
+        avatar_id: Some("old_avatar".to_string()),
+        bio: None,
+        ftp: Some(270),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create existing avatar (red road bike)
+    let existing_avatar = AvatarConfig {
+        jersey_color: [255, 0, 0],
+        bike_style: BikeStyle::Road,
+        jersey_secondary: Some([255, 255, 255]),
+        helmet_color: Some([0, 0, 0]),
+    };
+    insert_test_avatar(&db, rider_id, &existing_avatar);
+
+    // Import with Replace strategy and different avatar
+    let new_avatar = ("#00FF00", "tt_bike", None, Some("#888888")); // Green TT bike
+    let json = create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Replace)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    assert!(result.avatar_updated);
+
+    // Verify avatar was replaced
+    let (jersey, bike) = query_avatar_from_db(&db, rider_id).unwrap();
+    assert_eq!(jersey, "#00FF00", "Avatar jersey should be replaced to green");
+    assert_eq!(bike, "tt_bike", "Avatar bike style should be replaced");
+}
+
+/// Test replace strategy: removes avatar when import has none.
+#[test]
+fn test_replace_strategy_removes_avatar_when_import_has_none() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile with avatar
+    let rider = Rider {
+        id: rider_id,
+        display_name: "AvatarRider".to_string(),
+        avatar_id: Some("old_avatar".to_string()),
+        bio: None,
+        ftp: Some(270),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: true,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Create existing avatar
+    let existing_avatar = AvatarConfig {
+        jersey_color: [255, 0, 0],
+        bike_style: BikeStyle::Road,
+        jersey_secondary: None,
+        helmet_color: None,
+    };
+    insert_test_avatar(&db, rider_id, &existing_avatar);
+
+    // Verify avatar exists
+    assert!(query_avatar_from_db(&db, rider_id).is_some());
+
+    // Import with Replace strategy but NO avatar
+    let json = create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], None);
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Replace)
+        .expect("Import should succeed");
+
+    assert!(result.success);
+    // avatar_updated is false since we didn't add a new one
+    assert!(!result.avatar_updated);
+
+    // Avatar should be deleted
+    assert!(
+        query_avatar_from_db(&db, rider_id).is_none(),
+        "Avatar should be removed after replace with no avatar"
+    );
+}
+
+// =============================================================================
+// Skip Strategy Tests
+// =============================================================================
+
+/// Test skip strategy: no changes made to database.
+#[test]
+fn test_skip_strategy_makes_no_changes() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Create existing profile
+    let rider = Rider {
+        id: rider_id,
+        display_name: "OriginalRider".to_string(),
+        avatar_id: None,
+        bio: Some("Original bio".to_string()),
+        ftp: Some(250),
+        total_distance_km: 1000.0,
+        total_time_hours: 50.0,
+        sharing_enabled: false,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_test_rider(&db, &rider);
+
+    // Add existing FTP history
+    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-15T10:00:00Z", true);
+
+    // Import with Skip strategy (completely different data)
+    let ftp_history = vec![("2024-06-01T12:00:00Z", 350u16, "manual", "low", false)];
+    let avatar = ("#FF0000", "road_bike", None, None);
+    let json = create_test_export_json(rider_id, "DifferentName", Some(350), ftp_history, Some(avatar));
+
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let export = exporter.parse_import(&json).expect("Parse should succeed");
+    let result = exporter
+        .import_profile(&export, ConflictResolution::Skip)
+        .expect("Import should succeed");
+
+    assert!(result.success, "Skip should succeed");
+    assert!(!result.profile_updated, "Profile should not be updated");
+    assert!(!result.avatar_updated, "Avatar should not be updated");
+    assert_eq!(result.ftp_entries_imported, 0, "No FTP entries should be imported");
+    assert_eq!(result.ftp_entries_skipped, 0, "No FTP entries tracked as skipped");
+
+    // Verify original data unchanged
+    let profile = query_profile_from_db(&db, rider_id);
+    let (name, ftp, sharing) = profile.unwrap();
+    assert_eq!(name, "OriginalRider", "Name should be unchanged");
+    assert_eq!(ftp, Some(250), "FTP should be unchanged");
+    assert!(!sharing, "Sharing should be unchanged");
+
+    // Verify FTP history unchanged
+    let count = count_ftp_entries(&db, rider_id);
+    assert_eq!(count, 1, "FTP history should be unchanged");
+
+    // Verify no avatar was added
+    assert!(query_avatar_from_db(&db, rider_id).is_none(), "No avatar should exist");
+}
+
+// =============================================================================
+// Import from File Tests
+// =============================================================================
+
+/// Test import_from_file with valid JSON file.
+#[test]
+fn test_import_from_file_valid_json() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    // Create temp file with valid export JSON
+    let temp_dir = std::env::temp_dir().join(format!("import_test_{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).expect("Create temp dir");
+    let import_path = temp_dir.join("import_test.json");
+
+    let ftp_history = vec![("2024-06-01T12:00:00Z", 275u16, "ramp_test", "high", true)];
+    let json = create_test_export_json(rider_id, "FileImportRider", Some(275), ftp_history, None);
+    std::fs::write(&import_path, &json).expect("Write test file");
+
+    // Import from file
+    let exporter = ProfileExporter::new(Arc::new(db.clone()));
+    let result = exporter
+        .import_from_file(&import_path, ConflictResolution::Merge)
+        .expect("Import from file should succeed");
+
+    assert!(result.success);
+    assert!(result.profile_updated);
+    assert_eq!(result.ftp_entries_imported, 1);
+
+    // Verify data was imported
+    let profile = query_profile_from_db(&db, rider_id);
+    assert!(profile.is_some());
+    let (name, _, _) = profile.unwrap();
+    assert_eq!(name, "FileImportRider");
+
+    // Cleanup
+    std::fs::remove_dir_all(&temp_dir).ok();
+}
+
+/// Test import_from_file with non-existent file returns error.
+#[test]
+fn test_import_from_file_nonexistent() {
+    let db = create_test_database();
+    let exporter = ProfileExporter::new(Arc::new(db));
+
+    let result = exporter.import_from_file("/nonexistent/path/import.json", ConflictResolution::Merge);
+
+    assert!(result.is_err(), "Import from non-existent file should fail");
+    let error = format!("{:?}", result.unwrap_err());
+    assert!(error.contains("IoError"), "Error should be IoError");
+}
+
+/// Test import_from_file with invalid JSON returns parse error.
+#[test]
+fn test_import_from_file_invalid_json() {
+    let db = create_test_database();
+
+    // Create temp file with invalid JSON
+    let temp_dir = std::env::temp_dir().join(format!("import_invalid_{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).expect("Create temp dir");
+    let import_path = temp_dir.join("invalid.json");
+    std::fs::write(&import_path, "{ invalid json }").expect("Write test file");
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let result = exporter.import_from_file(&import_path, ConflictResolution::Merge);
+
+    assert!(result.is_err(), "Import of invalid JSON should fail");
+    let error = format!("{:?}", result.unwrap_err());
+    assert!(error.contains("ParseError"), "Error should be ParseError");
+
+    // Cleanup
+    std::fs::remove_dir_all(&temp_dir).ok();
+}
+
+/// Test import_from_file with wrong version returns version error.
+#[test]
+fn test_import_from_file_wrong_version() {
+    let db = create_test_database();
+    let rider_id = Uuid::new_v4();
+
+    // Create temp file with wrong version
+    let temp_dir = std::env::temp_dir().join(format!("import_version_{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).expect("Create temp dir");
+    let import_path = temp_dir.join("wrong_version.json");
+
+    let json = format!(
+        r#"{{
+  "export_version": "99.0",
+  "exported_at": "2024-06-15T12:00:00Z",
+  "rider_id": "{}",
+  "profile": {{
+    "display_name": "VersionTest",
+    "bio": null,
+    "ftp": null,
+    "total_distance_km": 0.0,
+    "total_time_hours": 0.0,
+    "sharing_enabled": true
+  }},
+  "ftp_history": [],
+  "avatar": null
+}}"#,
+        rider_id
+    );
+    std::fs::write(&import_path, &json).expect("Write test file");
+
+    let exporter = ProfileExporter::new(Arc::new(db));
+    let result = exporter.import_from_file(&import_path, ConflictResolution::Merge);
+
+    assert!(result.is_err(), "Import with wrong version should fail");
+    let error = format!("{:?}", result.unwrap_err());
+    assert!(error.contains("InvalidVersion"), "Error should be InvalidVersion");
+
+    // Cleanup
+    std::fs::remove_dir_all(&temp_dir).ok();
 }
