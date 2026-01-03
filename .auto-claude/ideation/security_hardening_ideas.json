@@ -1,0 +1,123 @@
+{
+  "security_hardening": [
+    {
+      "id": "sec-001",
+      "type": "security_hardening",
+      "title": "Replace Weak Random Number Generation with Cryptographically Secure RNG",
+      "description": "The OAuth state generation in `src/integrations/sync/oauth.rs` (line 138-147) and PIN generation in `src/integrations/streaming/pin.rs` (line 51-63) both use `SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).as_nanos()` as a seed for generating security-critical tokens. This is highly predictable as an attacker can estimate the nanosecond timestamp, allowing them to predict OAuth states (CSRF bypass) or streaming PINs.",
+      "rationale": "Predictable random values in security contexts enable attackers to bypass authentication. OAuth state prediction allows CSRF attacks during the OAuth flow, while PIN prediction could grant unauthorized access to the streaming dashboard. The current implementation comments acknowledge this issue ('In production, use a proper random source').",
+      "category": "authentication",
+      "severity": "high",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/integrations/streaming/pin.rs"
+      ],
+      "vulnerability": "CWE-330: Use of Insufficiently Random Values",
+      "currentRisk": "Attacker can predict OAuth states enabling CSRF attacks during authorization, or predict streaming PINs within seconds of generation",
+      "remediation": "Replace time-based random generation with the `rand` crate using `OsRng` or `thread_rng()` with `ChaCha20Rng`. For OAuth states, use `uuid::Uuid::new_v4().to_string()` which already uses cryptographically secure randomness. For PINs: `use rand::Rng; rand::thread_rng().gen_range(0..1_000_000)` formatted as 6 digits.",
+      "references": [
+        "https://owasp.org/www-community/vulnerabilities/Insufficient_Entropy",
+        "https://cwe.mitre.org/data/definitions/330.html",
+        "https://docs.rs/rand/latest/rand/"
+      ],
+      "compliance": ["OWASP-A07"]
+    },
+    {
+      "id": "sec-002",
+      "type": "security_hardening",
+      "title": "Implement Secure Credential Storage with Keyring Integration",
+      "description": "The `KeyringCredentialStore` in `src/integrations/sync/oauth.rs` (lines 303-375) has placeholder implementations with TODO comments for all methods. OAuth tokens are currently stored only in memory via `DefaultOAuthHandler.tokens` HashMap, which means credentials are lost on restart and there's no secure persistent storage. The database schema shows `access_token_encrypted` and `refresh_token_encrypted` columns in `platform_syncs` table, but encryption implementation appears to be missing.",
+      "rationale": "OAuth access tokens and refresh tokens are sensitive credentials that grant access to user fitness data on external platforms (Strava, Garmin, TrainingPeaks). Storing them without encryption or secure storage exposes users to credential theft if their system is compromised or the database file is accessed.",
+      "category": "secrets_management",
+      "severity": "high",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/storage/hardware_store.rs"
+      ],
+      "vulnerability": "CWE-312: Cleartext Storage of Sensitive Information",
+      "currentRisk": "OAuth tokens stored in plaintext in memory or database can be extracted by malware or through database file access, granting attackers access to user's Strava/Garmin accounts",
+      "remediation": "Complete the `KeyringCredentialStore` implementation using the `keyring` crate (already in Cargo.toml). For database storage, implement encryption using platform-specific secure storage: Windows DPAPI via `keyring`, macOS Keychain, or Linux Secret Service. Alternatively, use `ring` or `aes-gcm` crates for encryption with a key derived from keyring-stored master secret.",
+      "references": [
+        "https://docs.rs/keyring/latest/keyring/",
+        "https://owasp.org/www-project-cheat-sheets/cheatsheets/Secrets_Management_Cheat_Sheet.html",
+        "https://cwe.mitre.org/data/definitions/312.html"
+      ],
+      "compliance": ["SOC2", "OWASP-A02"]
+    },
+    {
+      "id": "sec-003",
+      "type": "security_hardening",
+      "title": "Add Rate Limiting and Brute Force Protection for Streaming PIN Authentication",
+      "description": "The PIN authenticator in `src/integrations/streaming/pin.rs` implements a basic lockout after 5 failed attempts (lines 82-86), but lacks several important protections: no lockout duration (once locked, stays locked until PIN regeneration), no per-IP rate limiting, no exponential backoff between attempts, and the lockout counter resets immediately on successful authentication (line 99). The 6-digit PIN has only 1,000,000 possible combinations.",
+      "rationale": "Without proper rate limiting, an attacker with network access to the streaming WebSocket server could attempt rapid brute-force attacks. While 5 attempts is low, the lack of time-based lockout, exponential backoff, and IP-based limiting makes the system vulnerable to distributed attacks or session-based attacks.",
+      "category": "authentication",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/integrations/streaming/pin.rs",
+        "src/integrations/streaming/server.rs"
+      ],
+      "vulnerability": "CWE-307: Improper Restriction of Excessive Authentication Attempts",
+      "currentRisk": "Attacker with local network access can attempt brute-force attacks against the streaming PIN, potentially gaining access to real-time ride data",
+      "remediation": "Implement time-based lockout (e.g., 15 minutes after 5 failures), exponential backoff between attempts, and consider IP-based rate limiting. Add audit logging for failed authentication attempts. Consider increasing PIN length to 8 digits or using alphanumeric codes for increased entropy.",
+      "references": [
+        "https://owasp.org/www-community/controls/Blocking_Brute_Force_Attacks",
+        "https://cwe.mitre.org/data/definitions/307.html"
+      ],
+      "compliance": ["OWASP-A07"]
+    },
+    {
+      "id": "sec-004",
+      "type": "security_hardening",
+      "title": "Add HTTPS/TLS Support for Local Streaming Server",
+      "description": "The OAuth callback server in `src/integrations/sync/oauth.rs` (lines 403-567) and the streaming WebSocket server bind to localhost using plain HTTP (`http://localhost:{port}`). While localhost traffic is generally considered safe, sensitive data including OAuth authorization codes and real-time fitness metrics are transmitted in plaintext. The PIN is also transmitted over unencrypted WebSocket connections.",
+      "rationale": "Even on localhost, other applications or malware could potentially intercept unencrypted traffic. When the streaming server is accessed over the local network (for external displays), data travels unencrypted. OAuth best practices require HTTPS for redirect URIs to prevent authorization code interception.",
+      "category": "data_protection",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/integrations/sync/oauth.rs",
+        "src/integrations/streaming/server.rs"
+      ],
+      "vulnerability": "CWE-319: Cleartext Transmission of Sensitive Information",
+      "currentRisk": "OAuth authorization codes and streaming data (including PIN, heart rate, power data) transmitted in cleartext can be intercepted on shared networks",
+      "remediation": "Implement optional TLS support using `rustls` (already available through `reqwest`'s rustls-tls feature). Generate self-signed certificates for local use or use `rcgen` crate for certificate generation. For OAuth callbacks, consider using the loopback interface exemption in OAuth 2.0 spec while documenting the security implications.",
+      "references": [
+        "https://tools.ietf.org/html/rfc8252#section-8.3",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+        "https://cwe.mitre.org/data/definitions/319.html"
+      ],
+      "compliance": ["OWASP-A02"]
+    },
+    {
+      "id": "sec-005",
+      "type": "security_hardening",
+      "title": "Secure ML API Key Storage and Transmission Logging",
+      "description": "The ML client in `src/ml/client.rs` stores the API key as a plain `String` field (line 34) passed directly to the constructor. The API key is used in Authorization headers (lines 124, 220) which could be logged in debug output. There's no validation of the API key format, no secure memory handling (key remains in memory until client is dropped), and the key source (environment variable, config file) isn't enforced to be secure.",
+      "rationale": "API keys provide access to cloud ML services and could incur costs or expose user data if compromised. Debug logging of HTTP requests could inadvertently expose the Bearer token. The API key should be securely sourced and protected from memory dumps.",
+      "category": "secrets_management",
+      "severity": "medium",
+      "affectedFiles": [
+        "src/ml/client.rs"
+      ],
+      "vulnerability": "CWE-522: Insufficiently Protected Credentials",
+      "currentRisk": "ML API key could be exposed through debug logs, memory dumps, or insecure configuration storage, allowing unauthorized API access",
+      "remediation": "Use the `secrecy` crate to wrap the API key in `SecretString` which implements `Zeroize` for secure memory clearing and prevents accidental logging via `Debug` trait. Ensure the key is loaded from keyring or secure environment variables. Add explicit logging filters to prevent Authorization headers from appearing in traces.",
+      "references": [
+        "https://docs.rs/secrecy/latest/secrecy/",
+        "https://owasp.org/www-project-cheat-sheets/cheatsheets/Secrets_Management_Cheat_Sheet.html",
+        "https://cwe.mitre.org/data/definitions/522.html"
+      ],
+      "compliance": ["SOC2", "OWASP-A07"]
+    }
+  ],
+  "metadata": {
+    "dependenciesScanned": 65,
+    "knownVulnerabilities": 0,
+    "filesAnalyzed": 156,
+    "criticalIssues": 0,
+    "highIssues": 2,
+    "mediumIssues": 3,
+    "lowIssues": 0,
+    "generatedAt": "2026-01-02T22:15:00Z",
+    "notes": "Dependency vulnerability scan could not be completed (cargo audit unavailable). SQL injection risk is low as rusqlite is used with parameterized queries throughout. The .gitignore properly excludes .env files but the .auto-claude directory contains environment files with tokens that should be handled with care."
+  }
+}

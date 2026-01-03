@@ -1,0 +1,91 @@
+{
+  "documentation_gaps": [
+    {
+      "id": "doc-001",
+      "type": "documentation_gaps",
+      "title": "Create Sensor Compatibility Guide with Troubleshooting",
+      "description": "RustRide supports BLE FTMS trainers, power meters, heart rate monitors, and ANT+ devices via sensors/manager.rs and sensors/ftms.rs, but there's no documentation listing compatible devices or troubleshooting common connection issues. The SensorError, ConnectionState, and Protocol types define many failure modes that users can't interpret.",
+      "rationale": "Sensor connectivity is the critical first step for any user. Connection issues are the #1 pain point for indoor cycling apps. A compatibility guide would reduce support burden and improve onboarding success rate. The sensor module has 13+ files with complex state machines that users need simplified guidance for.",
+      "category": "troubleshooting",
+      "targetAudience": "users",
+      "affectedAreas": ["docs/SENSOR_GUIDE.md (new)", "src/sensors/manager.rs", "src/sensors/ftms.rs", "src/sensors/ant/", "src/sensors/types.rs"],
+      "currentDocumentation": "README mentions 'Bluetooth Smart Trainer Support' and 'FTMS-compatible' but no device list, platform-specific setup, or troubleshooting",
+      "proposedContent": "Create docs/SENSOR_GUIDE.md with: 1) List of tested compatible trainers/sensors by brand (Wahoo, Tacx, Elite, etc.), 2) BLE vs ANT+ protocol comparison and when to use each, 3) Platform-specific BLE setup (Windows drivers, Linux BlueZ 5.x config, macOS permissions), 4) Common error states and solutions ('sensor not found', 'disconnections during ride', 'no power data'), 5) ANT+ USB dongle requirements, 6) Debug logging (RUST_LOG=debug)",
+      "priority": "high",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-002",
+      "type": "documentation_gaps",
+      "title": "Create Comprehensive Configuration Reference",
+      "description": "The app has 1000+ lines of configuration options in storage/config.rs including SensorSettings, RecordingSettings, UiSettings, DaemonSettings, AccessibilitySettings, AudioCueSettings, and LocaleSettings. Users have no reference for available options or valid values beyond reading source code.",
+      "rationale": "Power users and those running headless/daemon mode need to customize behavior via config.toml. Options like autosave_interval_secs (5-300), max_power_filter (noise filtering), discovery_timeout_secs, and flow_mode settings are undiscoverable. The example_daemon_config() function exists but isn't user-facing.",
+      "category": "readme",
+      "targetAudience": "developers",
+      "affectedAreas": ["docs/CONFIGURATION.md (new)", "README.md", "src/storage/config.rs"],
+      "currentDocumentation": "README shows data storage paths (~/.rustride/) but no config options documentation",
+      "proposedContent": "Create docs/CONFIGURATION.md with: 1) Full config.toml schema with all sections (sensors, recording, ui, daemon, accessibility, audio), 2) Default values and valid ranges for each option, 3) Power/HR zone configuration (7-zone Coggan model), 4) Display modes (Normal, TvMode, FlowMode) and customization, 5) Example configurations for common use cases (minimal, headless server, TV mode, accessibility), 6) Daemon-specific settings for Linux headless operation",
+      "priority": "high",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-003",
+      "type": "documentation_gaps",
+      "title": "Add Training Analytics Concepts Documentation",
+      "description": "The analytics module (src/metrics/analytics/) implements advanced training science: Power Duration Curve, Critical Power (W' model), FTP auto-detection, ATL/CTL/TSB training load (7/42 day EWMA), VO2max estimation, ACWR injury risk, and rider type classification. These have technical doc comments but no user-facing explanation.",
+      "rationale": "Users see metrics like 'TSS: 87', 'CTL: 45', 'ACWR: 1.2' (with color indicators) without understanding what they mean. The app targets 'serious indoor cyclists' who would benefit greatly from understanding the training science. The Acwr::recommendation() method provides advice but users don't know why.",
+      "category": "examples",
+      "targetAudience": "users",
+      "affectedAreas": ["docs/TRAINING_METRICS.md (new)", "src/metrics/analytics/training_load.rs", "src/metrics/analytics/critical_power.rs", "src/metrics/analytics/vo2max.rs", "src/metrics/analytics/ftp_detection.rs", "src/metrics/analytics/rider_type.rs"],
+      "currentDocumentation": "Module doc comments like 'ATL: 7-day exponentially weighted moving average' are technical; no practical interpretation guide exists",
+      "proposedContent": "Create docs/TRAINING_METRICS.md explaining: 1) TSS/IF/NP calculation and what values mean for training stress, 2) Understanding CTL/ATL/TSB (fitness/fatigue/form) with practical examples, 3) Interpreting ACWR status colors (Undertrained/Optimal/Caution/HighRisk thresholds), 4) How FTP auto-detection works (FtpMethod options), 5) Rider type classification interpretation, 6) VO2max estimation methodology, 7) Recommended training load ranges by experience level",
+      "priority": "medium",
+      "estimatedEffort": "medium"
+    },
+    {
+      "id": "doc-004",
+      "type": "documentation_gaps",
+      "title": "Create CONTRIBUTING.md with Developer Onboarding",
+      "description": "RustRide is MIT-licensed open-source but has no CONTRIBUTING.md. The README has basic cargo commands but no guidance on code style, PR process, testing requirements, or how the specs/ directory workflow operates. The project has GitHub Actions CI but no contributor documentation.",
+      "rationale": "The project has 304 source files, 20+ modules, and detailed feature specs in specs/ indicating active development, but external contributors have no onboarding path. This limits community growth and increases maintainer burden for code review.",
+      "category": "readme",
+      "targetAudience": "contributors",
+      "affectedAreas": ["CONTRIBUTING.md (new)", "README.md", ".github/"],
+      "currentDocumentation": "README has 'Development' section with cargo test/fmt/clippy commands only",
+      "proposedContent": "Create CONTRIBUTING.md with: 1) Development environment setup (Rust 1.75+, platform dependencies for BLE/audio), 2) Project structure walkthrough (sensors/, metrics/, workouts/, storage/, ui/), 3) Code style (rustfmt config, clippy rules, doc comment conventions), 4) Testing requirements and how to run tests, 5) PR process and review expectations, 6) How feature specs work (specs/ directory structure), 7) Issue labels and priority system",
+      "priority": "medium",
+      "estimatedEffort": "low"
+    },
+    {
+      "id": "doc-005",
+      "type": "documentation_gaps",
+      "title": "Document Workout File Formats with Examples",
+      "description": "The workouts module (parser_zwo.rs, parser_mrc.rs) supports ZWO and MRC/ERG formats with comprehensive parsing but users have no reference for creating custom workouts. The README mentions format support briefly but doesn't document the syntax, segment types (SteadyState, Ramp, Interval, Warmup, Cooldown), or power target syntax.",
+      "rationale": "Workout customization is essential for structured training. The WorkoutSegment and PowerTarget types support rich functionality (% FTP vs absolute watts, cadence targets, text_event instructions) that users can't discover. The built-in WorkoutLibrary has categories and difficulty tiers but no documentation.",
+      "category": "examples",
+      "targetAudience": "users",
+      "affectedAreas": ["docs/WORKOUT_FORMATS.md (new)", "README.md", "src/workouts/parser_zwo.rs", "src/workouts/parser_mrc.rs", "src/workouts/types.rs", "src/workouts/library.rs"],
+      "currentDocumentation": "README has 6-line overview mentioning 'Steady-state intervals, Ramps, Free ride sections' without syntax details",
+      "proposedContent": "Create docs/WORKOUT_FORMATS.md with: 1) Complete ZWO XML schema with all elements (SteadyState, Ramp, IntervalsT, FreeRide, Warmup, Cooldown), 2) PowerTarget syntax (percentage FTP: OnPower='0.75' vs absolute: PowerHigh='200'), 3) Cadence targets and text_event for on-screen instructions, 4) MRC/ERG text format specification with [COURSE HEADER] sections, 5) Sample workout files for common patterns (sweet spot, VO2max, threshold), 6) How to organize files in ~/.rustride/workouts/, 7) WorkoutCategory and DifficultyTier organization",
+      "priority": "medium",
+      "estimatedEffort": "low"
+    }
+  ],
+  "metadata": {
+    "filesAnalyzed": 304,
+    "documentedFunctions": 2917,
+    "undocumentedFunctions": 45,
+    "readmeLastUpdated": "Unknown",
+    "generatedAt": "2026-01-02T22:15:00Z",
+    "projectType": "Rust",
+    "primaryFramework": "eframe/egui",
+    "existingDocs": ["README.md", "specs/ (72 feature specification files)", "docs/specs/new_features.md"],
+    "missingDocs": ["CONTRIBUTING.md", "SENSOR_GUIDE.md", "CONFIGURATION.md", "TRAINING_METRICS.md", "WORKOUT_FORMATS.md"],
+    "hasContributing": false,
+    "hasChangelog": false,
+    "hasTroubleshooting": false,
+    "todoComments": 30,
+    "moduleCount": 20,
+    "configOptionsCount": 50
+  }
+}

@@ -1,0 +1,731 @@
+{
+  "id": "roadmap-2026-01-02T120000Z",
+  "project_name": "RustRide",
+  "version": "1.0",
+  "vision": "Open-source, self-hosted indoor cycling training application - a lightweight Zwift alternative without the subscription",
+  "target_audience": {
+    "primary": "Serious indoor cyclists who want structured training with their smart trainer without monthly subscription fees",
+    "secondary": [
+      "Privacy-conscious cyclists who prefer self-hosted solutions over cloud-based platforms",
+      "Budget-conscious cyclists avoiding Zwift's EUR17.99/month subscription",
+      "Tech-savvy developers who appreciate open-source fitness software",
+      "Linux/cross-platform users who need native non-Windows cycling software"
+    ]
+  },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Core Completion",
+      "description": "Complete existing functionality gaps and technical debt to ensure a polished, fully-functional MVP that delivers on core promises",
+      "order": 1,
+      "status": "planned",
+      "features": [
+        "feature-1",
+        "feature-2",
+        "feature-3",
+        "feature-4",
+        "feature-5",
+        "feature-6",
+        "feature-7"
+      ],
+      "milestones": [
+        {
+          "id": "milestone-1-1",
+          "title": "Export & Sync Complete",
+          "description": "Users can export rides to FIT format and sync automatically to Strava",
+          "features": [
+            "feature-1",
+            "feature-2"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-1-2",
+          "title": "Audio System Complete",
+          "description": "Full TTS audio cues and sound effects working during workouts",
+          "features": [
+            "feature-3",
+            "feature-4"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-1-3",
+          "title": "Integrations Complete",
+          "description": "MQTT smart fan and weather integration fully operational",
+          "features": [
+            "feature-5",
+            "feature-6",
+            "feature-7"
+          ],
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Platform Sync & Integration",
+      "description": "Expand fitness platform integrations to enable seamless data flow to popular training ecosystems",
+      "order": 2,
+      "status": "planned",
+      "features": [
+        "feature-8",
+        "feature-9",
+        "feature-10",
+        "feature-11"
+      ],
+      "milestones": [
+        {
+          "id": "milestone-2-1",
+          "title": "Multi-Platform Sync",
+          "description": "Users can sync rides to TrainingPeaks and Garmin Connect in addition to Strava",
+          "features": [
+            "feature-8",
+            "feature-9"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-2-2",
+          "title": "Enhanced Interactivity",
+          "description": "Voice control and improved HID device support for hands-free training",
+          "features": [
+            "feature-10",
+            "feature-11"
+          ],
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Platform Expansion",
+      "description": "Expand RustRide beyond desktop to mobile and TV platforms for broader accessibility",
+      "order": 3,
+      "status": "planned",
+      "features": [
+        "feature-12",
+        "feature-13",
+        "feature-14",
+        "feature-15"
+      ],
+      "milestones": [
+        {
+          "id": "milestone-3-1",
+          "title": "Mobile Companion Available",
+          "description": "Companion app for iOS/Android provides remote control and ride monitoring",
+          "features": [
+            "feature-12"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-3-2",
+          "title": "Multi-Platform Access",
+          "description": "Users can access RustRide from TV apps and web dashboards",
+          "features": [
+            "feature-13",
+            "feature-14",
+            "feature-15"
+          ],
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Advanced Features & Extensibility",
+      "description": "Add advanced training features, extensibility architecture, and enhanced visual experiences",
+      "order": 4,
+      "status": "planned",
+      "features": [
+        "feature-16",
+        "feature-17",
+        "feature-18",
+        "feature-19",
+        "feature-20"
+      ],
+      "milestones": [
+        {
+          "id": "milestone-4-1",
+          "title": "Plugin Ecosystem Launch",
+          "description": "Third-party developers can create and distribute RustRide plugins",
+          "features": [
+            "feature-16"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-4-2",
+          "title": "Enhanced Training Intelligence",
+          "description": "Cloud-connected ML provides advanced personalized training recommendations",
+          "features": [
+            "feature-17",
+            "feature-18"
+          ],
+          "status": "planned"
+        },
+        {
+          "id": "milestone-4-3",
+          "title": "Premium Visual Experiences",
+          "description": "Real-world video routes and additional 3D environments available",
+          "features": [
+            "feature-19",
+            "feature-20"
+          ],
+          "status": "planned"
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "feature-1",
+      "title": "Complete Strava OAuth Sync",
+      "description": "Finish the Strava OAuth integration to automatically upload completed rides to Strava. This includes proper token refresh handling, background sync, and upload status feedback.",
+      "rationale": "Users want to share rides with their existing Strava community and maintain their activity history. This directly addresses the data lock-in pain point from competitors like Zwift and TrainerRoad where export options are limited.",
+      "priority": "must",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "User can connect Strava account via OAuth flow",
+        "Rides automatically upload to Strava after completion",
+        "OAuth tokens refresh automatically when expired",
+        "Upload status is shown in ride history",
+        "Failed uploads can be retried manually"
+      ],
+      "user_stories": [
+        "As a cyclist, I want my rides to automatically sync to Strava so that I can share my activities with my community",
+        "As a user, I want to see upload status so that I know my ride was successfully synced"
+      ],
+      "linked_spec_id": "001-complete-strava-oauth-sync",
+      "competitor_insight_ids": [
+        "pain-1-6",
+        "pain-2-5"
+      ]
+    },
+    {
+      "id": "feature-2",
+      "title": "FIT File Export",
+      "description": "Add FIT file format export alongside existing TCX and CSV formats. FIT is the industry standard for Garmin devices and provides better compatibility with fitness platforms.",
+      "rationale": "FIT format is the gold standard for fitness data interchange. Adding this export option ensures maximum compatibility with Garmin Connect, TrainingPeaks, and other platforms, reinforcing RustRide's data portability advantage over locked-in competitors.",
+      "priority": "must",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "Export menu includes FIT format option",
+        "FIT files contain all ride data (power, HR, cadence, GPS if available)",
+        "Exported FIT files validate with Garmin's FIT SDK validator",
+        "FIT files upload successfully to Garmin Connect",
+        "Lap markers and workout structure preserved in FIT export"
+      ],
+      "user_stories": [
+        "As a Garmin user, I want to export my rides as FIT files so that I can upload them to Garmin Connect",
+        "As a coach, I want FIT exports so that I can analyze rides in professional analysis software"
+      ],
+      "linked_spec_id": "002-fit-file-export",
+      "competitor_insight_ids": [
+        "pain-1-6",
+        "gap-4"
+      ]
+    },
+    {
+      "id": "feature-3",
+      "title": "Complete Text-to-Speech Integration",
+      "description": "Finish the TTS module implementation to provide voice announcements during workouts. This includes interval changes, target power callouts, motivational cues, and customizable voice settings.",
+      "rationale": "Audio cues are essential for focused training where looking at the screen isn't practical. This is a core feature for serious training that competitors charge subscription fees for.",
+      "priority": "must",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "TTS announces interval changes during workouts",
+        "Target power/cadence callouts work correctly",
+        "User can select from available system voices",
+        "Speech rate and volume are configurable",
+        "TTS works on Windows, macOS, and Linux"
+      ],
+      "user_stories": [
+        "As a cyclist doing intervals, I want voice callouts so that I know when to increase or decrease effort without looking at the screen",
+        "As a user, I want to customize the voice settings so that the announcements suit my preferences"
+      ],
+      "linked_spec_id": "003-complete-text-to-speech-integration",
+      "competitor_insight_ids": []
+    },
+    {
+      "id": "feature-4",
+      "title": "Complete Audio Engine",
+      "description": "Finish the audio engine implementation using rodio for sound effects, audio cues, and background audio during rides. Includes countdown sounds, achievement chimes, and optional workout music playback.",
+      "rationale": "Audio feedback enhances the training experience and provides important cues during intense efforts. A polished audio experience differentiates RustRide as a complete training solution.",
+      "priority": "should",
+      "complexity": "medium",
+      "impact": "medium",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "Countdown sounds play before interval changes",
+        "Achievement and milestone chimes work",
+        "Audio volume controls function correctly",
+        "Audio engine initializes reliably on all platforms",
+        "No audio lag or synchronization issues"
+      ],
+      "user_stories": [
+        "As a cyclist, I want audio countdown before intervals so that I can prepare for effort changes",
+        "As a user, I want sound effects for achievements so that my accomplishments feel rewarding"
+      ],
+      "competitor_insight_ids": [],
+      "linked_spec_id": "011-complete-audio-engine"
+    },
+    {
+      "id": "feature-5",
+      "title": "Complete MQTT Smart Fan Control",
+      "description": "Finish the MQTT client implementation for smart fan integration. Fans should automatically adjust speed based on power output, heart rate, or manual control.",
+      "rationale": "Smart fan integration improves training comfort and is a differentiating feature for a comprehensive training setup. Most competitors don't offer this level of home automation integration.",
+      "priority": "should",
+      "complexity": "low",
+      "impact": "medium",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "MQTT connection to broker works reliably",
+        "Fan speed adjusts based on configured trigger (power/HR)",
+        "Manual fan control override available",
+        "Reconnection on connection loss",
+        "Clear setup documentation for common smart fan setups"
+      ],
+      "user_stories": [
+        "As a cyclist, I want my smart fan to speed up when I'm working hard so that I stay cool without manual adjustment",
+        "As a user with home automation, I want MQTT integration so that RustRide works with my existing setup"
+      ],
+      "competitor_insight_ids": [],
+      "linked_spec_id": "012-complete-mqtt-smart-fan-control"
+    },
+    {
+      "id": "feature-6",
+      "title": "Weather API Integration",
+      "description": "Complete the weather provider HTTP implementation to fetch real weather data for dynamic weather effects in the 3D world. Weather should match local conditions or be configurable.",
+      "rationale": "Dynamic weather adds immersion to the 3D riding experience. This visual polish differentiates RustRide from bare-bones training apps like TrainerRoad.",
+      "priority": "could",
+      "complexity": "low",
+      "impact": "low",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Weather data fetches from OpenWeatherMap API",
+        "3D world weather matches fetched conditions",
+        "Fallback to default weather if API unavailable",
+        "Weather can be manually overridden",
+        "Minimal battery/data impact from weather requests"
+      ],
+      "user_stories": [
+        "As a cyclist, I want the virtual world weather to match my local conditions so that training feels more connected to reality",
+        "As a user without internet, I want weather to default gracefully so that my training isn't interrupted"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-2"
+      ]
+    },
+    {
+      "id": "feature-7",
+      "title": "Complete HID Device Support",
+      "description": "Finish HID device enumeration and control for Stream Deck and USB button controllers. Enable configurable button mappings for workout control without touching keyboard/mouse.",
+      "rationale": "HID device support enables hands-free training control, improving the workout experience especially during intense intervals when reaching for controls is impractical.",
+      "priority": "should",
+      "complexity": "medium",
+      "impact": "medium",
+      "phase_id": "phase-1",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "Stream Deck devices are detected and connected",
+        "Button presses trigger configured actions (pause, lap, skip interval)",
+        "Button mappings are user-configurable",
+        "Works with common USB button controllers",
+        "Device reconnects automatically if unplugged/replugged"
+      ],
+      "user_stories": [
+        "As a cyclist with a Stream Deck, I want to control my workout with physical buttons so that I don't need to reach for my computer",
+        "As a user, I want to customize button mappings so that they match my preferred workflow"
+      ],
+      "competitor_insight_ids": [],
+      "linked_spec_id": "010-complete-hid-device-support"
+    },
+    {
+      "id": "feature-8",
+      "title": "TrainingPeaks Sync",
+      "description": "Add TrainingPeaks OAuth integration for uploading completed rides and downloading structured workout plans. Support both manual and automatic sync options.",
+      "rationale": "TrainingPeaks is widely used by coached athletes and provides advanced training analytics. Supporting TrainingPeaks sync makes RustRide viable for serious athletes working with coaches, competing directly with TrainerRoad's value proposition.",
+      "priority": "should",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-2",
+      "dependencies": [
+        "feature-1"
+      ],
+      "status": "planned",
+      "acceptance_criteria": [
+        "User can connect TrainingPeaks account via OAuth",
+        "Completed rides upload to TrainingPeaks",
+        "Workout plans can be downloaded from TrainingPeaks",
+        "Downloaded workouts appear in workout library",
+        "Sync status shown in UI"
+      ],
+      "user_stories": [
+        "As a coached athlete, I want my rides to sync to TrainingPeaks so that my coach can see my training",
+        "As a TrainingPeaks user, I want to download my workout plans so that I can execute them in RustRide"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-1",
+        "pain-2-3"
+      ],
+      "linked_spec_id": "013-trainingpeaks-sync"
+    },
+    {
+      "id": "feature-9",
+      "title": "Garmin Connect Sync",
+      "description": "Add Garmin Connect API integration for uploading completed rides. Support automatic background sync to ensure rides are always backed up to Garmin's ecosystem.",
+      "rationale": "Garmin has a massive ecosystem of users who track all activities in Garmin Connect. Native sync makes RustRide seamlessly integrate into their existing training workflow.",
+      "priority": "should",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-2",
+      "dependencies": [
+        "feature-2"
+      ],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "User can connect Garmin Connect account",
+        "Rides upload to Garmin Connect automatically",
+        "FIT files upload correctly with all data preserved",
+        "Connection status visible in settings",
+        "Failed uploads queue for retry"
+      ],
+      "user_stories": [
+        "As a Garmin user, I want my indoor rides in Garmin Connect alongside my outdoor rides so that my training history is complete",
+        "As a cyclist, I want automatic sync so that I don't have to manually export and upload files"
+      ],
+      "competitor_insight_ids": [
+        "pain-1-6",
+        "gap-4"
+      ]
+    },
+    {
+      "id": "feature-10",
+      "title": "Voice Control",
+      "description": "Implement voice control using Vosk speech recognition for hands-free workout control. Support commands like 'pause', 'resume', 'skip interval', 'end workout', and 'take lap'.",
+      "rationale": "Voice control enables completely hands-free training, improving safety and convenience during intense efforts. This advanced feature isn't commonly available in competitor products.",
+      "priority": "could",
+      "complexity": "high",
+      "impact": "medium",
+      "phase_id": "phase-2",
+      "dependencies": [
+        "feature-3"
+      ],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Vosk speech model downloads and initializes",
+        "Basic workout commands recognized accurately",
+        "Wake word or push-to-talk activation",
+        "Works offline without cloud processing",
+        "Voice command feedback confirms recognition"
+      ],
+      "user_stories": [
+        "As a cyclist mid-workout, I want to control my session with voice so that I don't have to stop pedaling to reach controls",
+        "As a privacy-conscious user, I want voice recognition to work offline so that my speech isn't sent to the cloud"
+      ],
+      "competitor_insight_ids": [
+        "pain-1-3",
+        "gap-3"
+      ]
+    },
+    {
+      "id": "feature-11",
+      "title": "Enhanced Bluetooth/ANT+ Reliability",
+      "description": "Improve sensor connection reliability with automatic reconnection, connection quality monitoring, and multi-sensor management. Reduce sensor discovery time and handle disconnections gracefully.",
+      "rationale": "Reliable sensor connectivity is fundamental to a good training experience. Connection issues are frustrating and can ruin a workout. Improvement here directly supports the success metric of connecting in under 30 seconds.",
+      "priority": "should",
+      "complexity": "medium",
+      "impact": "high",
+      "phase_id": "phase-2",
+      "dependencies": [],
+      "status": "planned",
+      "acceptance_criteria": [
+        "Sensor discovery completes in under 30 seconds",
+        "Automatic reconnection on temporary disconnection",
+        "Connection quality indicator in UI",
+        "Graceful handling of sensor conflicts",
+        "Improved power meter pairing consistency"
+      ],
+      "user_stories": [
+        "As a cyclist, I want my sensors to connect quickly so that I can start my workout without delays",
+        "As a user with multiple sensors, I want reliable connections so that I don't lose data mid-ride"
+      ],
+      "linked_spec_id": "009-enhanced-bluetooth-ant-reliability",
+      "competitor_insight_ids": []
+    },
+    {
+      "id": "feature-12",
+      "title": "Mobile Companion App",
+      "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+      "rationale": "A mobile companion enables users to mount their phone near the trainer for easy control while keeping the main app on a separate screen. This addresses the gap of no mobile app and improves the overall training experience.",
+      "priority": "should",
+      "complexity": "high",
+      "impact": "high",
+      "phase_id": "phase-3",
+      "dependencies": [
+        "feature-1"
+      ],
+      "status": "planned",
+      "acceptance_criteria": [
+        "Mobile app connects to desktop app over LAN",
+        "Real-time metrics display (power, HR, cadence)",
+        "Basic workout controls (pause, resume, skip)",
+        "View ride history and statistics",
+        "Works on iOS and Android"
+      ],
+      "user_stories": [
+        "As a cyclist, I want to control my workout from my phone so that I have easy access to controls",
+        "As a user with a TV display, I want to use my phone for control while the main screen shows the 3D world"
+      ],
+      "competitor_insight_ids": [],
+      "linked_spec_id": "014-mobile-companion-app"
+    },
+    {
+      "id": "feature-13",
+      "title": "Apple TV App",
+      "description": "Develop an Apple TV app for big-screen training experience. Connect to sensors directly or pair with desktop/mobile as a remote display.",
+      "rationale": "Apple TV is popular for indoor training setups. Having a native app enables users to train on their TV without needing a computer. This directly addresses the known gap and competes with Zwift's Apple TV presence.",
+      "priority": "could",
+      "complexity": "high",
+      "impact": "medium",
+      "phase_id": "phase-3",
+      "dependencies": [
+        "feature-12"
+      ],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Apple TV app available on App Store",
+        "Connects to BLE sensors directly",
+        "Full workout execution capability",
+        "3D world rendering at 1080p/4K",
+        "Siri Remote controls for basic navigation"
+      ],
+      "user_stories": [
+        "As a cyclist with an Apple TV, I want to train on my big screen so that I have an immersive experience",
+        "As a user without a dedicated training PC, I want to use my Apple TV so that I don't need extra hardware"
+      ],
+      "competitor_insight_ids": []
+    },
+    {
+      "id": "feature-14",
+      "title": "Web Dashboard",
+      "description": "Create a web-based dashboard for viewing training statistics, ride history, and progress charts. Runs locally on the same machine or network.",
+      "rationale": "A web dashboard enables viewing training data from any device on the network. This is valuable for post-ride analysis and sharing progress, maintaining the self-hosted philosophy.",
+      "priority": "could",
+      "complexity": "medium",
+      "impact": "medium",
+      "phase_id": "phase-3",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Web server runs locally on configurable port",
+        "Dashboard shows ride history and statistics",
+        "Power Duration Curve and fitness charts",
+        "Responsive design for mobile/tablet access",
+        "Optional authentication for network access"
+      ],
+      "user_stories": [
+        "As a cyclist, I want to view my training stats on my tablet so that I can analyze my progress anywhere",
+        "As a power user, I want a web interface so that I can access data without launching the full app"
+      ],
+      "competitor_insight_ids": [
+        "gap-3"
+      ]
+    },
+    {
+      "id": "feature-15",
+      "title": "Workout Library Expansion",
+      "description": "Expand the built-in workout library with a comprehensive collection of structured workouts for various training goals: endurance, threshold, VO2max, sprint, recovery, and complete training plans.",
+      "rationale": "A rich workout library is essential for users without coaching or TrainingPeaks subscriptions. This provides out-of-the-box value and reduces the need for third-party workout plans.",
+      "priority": "should",
+      "complexity": "low",
+      "impact": "high",
+      "phase_id": "phase-3",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "At least 50 built-in workouts across categories",
+        "Workouts organized by type and difficulty",
+        "Complete 8-week training plans available",
+        "Workout descriptions explain purpose and benefits",
+        "Easy filtering and search in workout browser"
+      ],
+      "user_stories": [
+        "As a new cyclist, I want built-in workouts so that I can start structured training immediately",
+        "As a self-coached athlete, I want training plans so that I can follow a progression without paying for coaching"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-1",
+        "pain-3-1"
+      ]
+    },
+    {
+      "id": "feature-16",
+      "title": "Plugin/Extension Architecture",
+      "description": "Design and implement a plugin system allowing third-party extensions. Support hooks for sensor integrations, export formats, training metrics, and UI customizations.",
+      "rationale": "An extension architecture enables community contributions and specialized integrations without bloating the core application. This differentiates RustRide as an open, extensible platform.",
+      "priority": "should",
+      "complexity": "high",
+      "impact": "high",
+      "phase_id": "phase-4",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Plugin API documented and stable",
+        "Plugins can add custom export formats",
+        "Plugins can add new sensor protocols",
+        "Plugin manager for install/enable/disable",
+        "Example plugins demonstrate capabilities"
+      ],
+      "user_stories": [
+        "As a developer, I want to create plugins so that I can add features specific to my needs",
+        "As a user with niche hardware, I want plugin support so that community developers can add compatibility"
+      ],
+      "competitor_insight_ids": [
+        "gap-1",
+        "gap-6"
+      ]
+    },
+    {
+      "id": "feature-17",
+      "title": "Cloud ML API Integration",
+      "description": "Complete the cloud ML API backend for enhanced training recommendations. Optionally upload anonymized training data for improved fatigue detection and workout suggestions.",
+      "rationale": "Cloud ML can provide more sophisticated training recommendations than local inference alone. This is opt-in to respect privacy while offering advanced features for users who want them.",
+      "priority": "could",
+      "complexity": "high",
+      "impact": "medium",
+      "phase_id": "phase-4",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Cloud API endpoint configurable (self-hosted option)",
+        "Anonymized data upload with user consent",
+        "Enhanced workout recommendations from ML models",
+        "Fallback to local inference if cloud unavailable",
+        "Clear privacy policy and data handling documentation"
+      ],
+      "user_stories": [
+        "As a data-positive athlete, I want cloud ML analysis so that I get the best possible training recommendations",
+        "As a privacy-conscious user, I want this to be optional so that I can choose local-only processing"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-5"
+      ]
+    },
+    {
+      "id": "feature-18",
+      "title": "Advanced Training Analytics",
+      "description": "Add advanced analytics including Polarized Training Index, Training Readiness Score, long-term periodization tracking, and comparison with historical seasons.",
+      "rationale": "Advanced analytics help serious athletes optimize their training and track long-term progress. These features compete with TrainingPeaks and WKO5 premium analytics.",
+      "priority": "could",
+      "complexity": "medium",
+      "impact": "medium",
+      "phase_id": "phase-4",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Polarized Training Index calculated and displayed",
+        "Training Readiness Score based on recent load",
+        "Season comparison charts",
+        "Periodization calendar with planned phases",
+        "Export analytics to PDF reports"
+      ],
+      "user_stories": [
+        "As a serious athlete, I want advanced analytics so that I can optimize my training periodization",
+        "As a self-coached cyclist, I want readiness scores so that I know when to push or recover"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-1"
+      ]
+    },
+    {
+      "id": "feature-19",
+      "title": "Real-World Route Video Playback",
+      "description": "Add support for playing synced real-world route videos during rides. Match video playback speed to cycling speed and support common video formats.",
+      "rationale": "Route videos provide an alternative visual experience to 3D worlds. This feature competes with Rouvy and Fulgaz while supporting user-sourced content.",
+      "priority": "could",
+      "complexity": "high",
+      "impact": "medium",
+      "phase_id": "phase-4",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "Import route videos with GPX sync points",
+        "Video speed matches cycling speed",
+        "Support for common formats (MP4, MKV)",
+        "Gradient data extracted from video metadata",
+        "Smooth video playback without stuttering"
+      ],
+      "user_stories": [
+        "As a cyclist, I want to ride route videos so that I can experience famous climbs virtually",
+        "As a user with my own video content, I want to import it so that I can relive past rides"
+      ],
+      "competitor_insight_ids": [
+        "pain-4-2",
+        "pain-5-2"
+      ]
+    },
+    {
+      "id": "feature-20",
+      "title": "Additional 3D Environments",
+      "description": "Create additional 3D world environments beyond the current coastal, countryside, and mountain themes. Add urban, desert, forest, and fantasy environments.",
+      "rationale": "Environment variety keeps training engaging over time. New environments provide reasons to return and explore, enhancing the visual experience that differentiates RustRide from bare-bones trainers.",
+      "priority": "could",
+      "complexity": "medium",
+      "impact": "low",
+      "phase_id": "phase-4",
+      "dependencies": [],
+      "status": "under_review",
+      "acceptance_criteria": [
+        "At least 3 new environment themes available",
+        "Each environment has unique visual style and landmarks",
+        "Performance remains within target (<200MB, <10% CPU)",
+        "Environment selection in ride setup screen",
+        "Procedural variations for each environment type"
+      ],
+      "user_stories": [
+        "As a cyclist, I want different environments so that training stays visually interesting",
+        "As a long-term user, I want new content so that the experience stays fresh"
+      ],
+      "competitor_insight_ids": [
+        "pain-2-2"
+      ]
+    }
+  ],
+  "metadata": {
+    "created_at": "2026-01-02T12:00:00Z",
+    "updated_at": "2026-01-03T05:14:33.317Z",
+    "generated_by": "roadmap_features agent",
+    "prioritization_framework": "MoSCoW",
+    "competitor_analysis_used": true,
+    "total_features": 20,
+    "priority_breakdown": {
+      "must": 3,
+      "should": 9,
+      "could": 8,
+      "wont": 0
+    },
+    "features_with_competitor_insights": 12
+  }
+}

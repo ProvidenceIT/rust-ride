@@ -1,0 +1,87 @@
+{
+  "ui_ux_improvements": [
+    {
+      "id": "uiux-001",
+      "type": "ui_ux_improvements",
+      "title": "Home screen buttons should use AccessibleButton widget",
+      "description": "Replace standard egui::Button components on the home screen with the AccessibleButton widget to ensure consistent 44x44 minimum touch targets and accessibility features",
+      "rationale": "The codebase has a well-designed AccessibleButton widget (accessible_button.rs) that provides WCAG 2.1 compliant touch targets, focus indicators, and screen reader support. However, the home screen (home.rs) uses regular egui::Button instead, creating inconsistent accessibility support. Touch targets on the home screen may be too small for comfortable use, especially on touchscreens.",
+      "category": "accessibility",
+      "affected_components": ["src/ui/screens/home.rs", "src/ui/widgets/accessible_button.rs"],
+      "screenshots": [],
+      "current_state": "HomeScreen uses egui::Button::new() with add_sized() for button sizing. This approach doesn't guarantee WCAG-compliant touch targets or provide consistent focus indicators, touch feedback (ripple effects), or screen reader labels.",
+      "proposed_change": "Replace all egui::Button calls in HomeScreen::show() with AccessibleButton::new().primary() for main action buttons and AccessibleButton::new().secondary() for secondary buttons. Add accessible_label() calls for screen reader support. Example: `AccessibleButton::new(\"Start Free Ride\").primary().accessible_label(\"Start a free ride session\").min_size(Vec2::new(280.0, 60.0))`",
+      "user_benefit": "Users get consistent touch targets meeting WCAG 2.1 guidelines (44x44 minimum), proper focus indicators for keyboard navigation, touch feedback effects, and screen reader support for accessibility",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-002",
+      "type": "ui_ux_improvements",
+      "title": "Add empty state handling to RideHistoryScreen",
+      "description": "Implement a user-friendly empty state for the ride history screen when no rides exist, with a call-to-action to start riding",
+      "rationale": "The upcoming_workouts widget has a well-designed empty state pattern with icon, message, and guidance text. However, the ride history screen (ride_history.rs) lacks empty state handling, which would leave users confused when they have no ride data. Good empty states reduce user confusion and encourage next steps.",
+      "category": "usability",
+      "affected_components": ["src/ui/screens/ride_history.rs"],
+      "screenshots": [],
+      "current_state": "RideHistoryScreen displays rides in a list but has no handling for when the rides Vec is empty. Users would see a blank screen with filter controls but no content explanation.",
+      "proposed_change": "Add a show_empty_state() method similar to UpcomingWorkoutsWidget pattern. Display a cycling icon (emoji), 'No rides recorded yet' heading, 'Start your first ride to see your history here' subtext, and a 'Start Riding' button that navigates to Screen::Ride. Place the check after filter application: `if filtered_rides.is_empty() { self.show_empty_state(ui); } else { /* render list */ }`",
+      "user_benefit": "New users understand the screen's purpose and are guided to take action (start their first ride) rather than seeing a confusing blank screen",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-003",
+      "type": "ui_ux_improvements",
+      "title": "Replace hardcoded colors with theme system colors in widgets",
+      "description": "Update the UpcomingWorkoutsWidget and similar widgets to use DarkTheme/LightTheme color constants instead of hardcoded RGB values",
+      "rationale": "The theme.rs defines a comprehensive color system (DarkTheme::PANEL_BG, DarkTheme::CARD_BG, etc.) and supports both dark and light modes. However, upcoming_workouts.rs and other widgets use hardcoded colors like Color32::from_rgb(30, 30, 40) and Color32::from_rgb(35, 35, 45). This means widgets won't respond to theme changes and may have inconsistent colors.",
+      "category": "visual",
+      "affected_components": ["src/ui/widgets/upcoming_workouts.rs", "src/ui/theme.rs"],
+      "screenshots": [],
+      "current_state": "UpcomingWorkoutsWidget uses hardcoded colors: Frame.fill(Color32::from_rgb(30, 30, 40)) for container, Color32::from_rgb(35, 35, 45) for rows, Color32::from_rgb(40, 60, 80) for 'today' highlight, Color32::from_gray(120/150) for text. These don't match the defined theme colors or respond to theme changes.",
+      "proposed_change": "Refactor to accept a Theme parameter or use ui.visuals() colors. Replace: Color32::from_rgb(30, 30, 40) -> DarkTheme::PANEL_BG or ui.visuals().faint_bg_color; Color32::from_rgb(35, 35, 45) -> DarkTheme::CARD_BG or ui.visuals().widgets.inactive.bg_fill; Color32::from_gray(120) -> DarkTheme::TEXT_MUTED. Consider adding a WidgetColors struct that resolves based on current theme.",
+      "user_benefit": "Visual consistency across the app, proper light mode support when users switch themes, and easier future color adjustments via the centralized theme system",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-004",
+      "type": "ui_ux_improvements",
+      "title": "Add tooltips to icon-only buttons and complex controls in Settings",
+      "description": "Add descriptive tooltips to icon buttons, toggles, and complex settings controls to improve discoverability",
+      "rationale": "The settings screen (settings.rs) has 53 tooltip usages but many icon-only buttons and toggle switches lack explanatory tooltips. While the AccessibleButton widget adds hover text by default, standard egui controls used in Settings may lack context. Tooltips are especially important for accessibility and for users unfamiliar with cycling training terminology.",
+      "category": "usability",
+      "affected_components": ["src/ui/screens/settings.rs"],
+      "screenshots": [],
+      "current_state": "Settings screen has some tooltips but lacks them on many controls. For example, FTP confidence display, rider type classification, zone color selectors, and MQTT settings may not have sufficient context for users to understand their purpose or expected values.",
+      "proposed_change": "Audit all interactive elements in settings.rs and add .on_hover_text() with helpful descriptions. Examples: FTP input -> 'Functional Threshold Power - the highest power you can sustain for 1 hour'; Zone auto-calculate toggle -> 'When enabled, zones are automatically calculated from your FTP. Disable to customize zones manually.'; MQTT broker -> 'Address of your MQTT server for smart fan control'. Use consistent tooltip style with concise explanations.",
+      "user_benefit": "Users can understand complex training concepts and settings without leaving the app. Reduces confusion and support requests for terms like FTP, TSS, power zones",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    },
+    {
+      "id": "uiux-005",
+      "type": "ui_ux_improvements",
+      "title": "Add consistent loading skeleton placeholders for data-fetching screens",
+      "description": "Implement skeleton loading placeholders for screens that fetch data asynchronously (sensor scanning, route import, analytics)",
+      "rationale": "Currently loading states are inconsistent: weather_widget.rs has a proper loading placeholder, sensor_setup.rs uses a simple spinner, and route_import.rs also uses spinner. Skeleton screens provide better perceived performance than spinners by showing the layout users will see, reducing layout shift and improving perceived speed.",
+      "category": "performance",
+      "affected_components": ["src/ui/screens/sensor_setup.rs", "src/ui/screens/route_import.rs", "src/ui/screens/analytics.rs"],
+      "screenshots": [],
+      "current_state": "SensorSetupScreen shows ui.spinner() while scanning for devices. RouteImportScreen shows spinner during file processing. AnalyticsScreen likely loads data asynchronously. These use simple spinners that don't preview the expected content layout.",
+      "proposed_change": "Create a SkeletonLoader widget module with common patterns: SkeletonCard (rectangular placeholder with animation), SkeletonList (multiple rows of varying widths), SkeletonChart (placeholder for graphs). Apply in sensor_setup: show skeleton cards where device tiles will appear; route_import: show skeleton representing the route preview; analytics: show skeleton charts matching the actual chart dimensions. Use subtle pulsing animation via ui.ctx().request_repaint().",
+      "user_benefit": "Faster perceived loading times, users understand what content is coming, reduced jarring layout shifts when data loads, more polished professional appearance",
+      "status": "draft",
+      "created_at": "2026-01-02T22:10:00.000Z"
+    }
+  ],
+  "metadata": {
+    "generated_by": "ui_ux_ideation_agent",
+    "generated_at": "2026-01-02T22:10:00.000Z",
+    "project_type": "Rust desktop application with egui GUI",
+    "tech_stack": ["Rust", "egui", "eframe", "wgpu"],
+    "analysis_method": "Static code analysis (desktop app, no browser automation)",
+    "total_ideas": 5
+  }
+}

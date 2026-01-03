@@ -1,0 +1,148 @@
+{
+  "code_quality": [
+    {
+      "id": "cq-001",
+      "type": "code_quality",
+      "title": "Refactor RustRideApp 'god object' into modular subsystems",
+      "description": "The app.rs file (1119 lines) contains a RustRideApp struct with 35+ fields handling UI state, sensor management, audio, streaming, MQTT, HID devices, achievements, and more. This 'god object' anti-pattern makes the code difficult to maintain, test, and extend.",
+      "rationale": "Large monolithic structs with many responsibilities violate the Single Responsibility Principle. They create tight coupling, make unit testing difficult, and increase cognitive load for developers. Splitting into focused subsystems enables independent testing and parallel development.",
+      "category": "code_smells",
+      "severity": "major",
+      "affectedFiles": ["src/app.rs"],
+      "currentState": "Single 1119-line file with RustRideApp struct containing 35+ fields managing disparate concerns: UI screens, sensor fusion, audio engine, MQTT client, streaming server, HID devices, achievement tracking, gradient control, etc.",
+      "proposedChange": "Extract into focused manager structs: 1) AppState (core UI navigation), 2) HardwareIntegration (sensors, MQTT, streaming, HID), 3) GameplayServices (achievements, career, gradient), 4) AudioServices (engine, TTS). Use a facade pattern in RustRideApp that delegates to these subsystems.",
+      "codeExample": "// Current:\npub struct RustRideApp {\n    current_screen: Screen,\n    _sensor_manager: SensorManager,\n    _audio_engine: Arc<DefaultAudioEngine>,\n    mqtt_client: Arc<DefaultMqttClient>,\n    fan_controller: Arc<DefaultFanController<DefaultMqttClient>>,\n    streaming_server: Arc<DefaultStreamingServer>,\n    achievement_tracker: DefaultAchievementTracker,\n    // ... 30+ more fields\n}\n\n// Proposed:\npub struct RustRideApp {\n    ui: UiManager,\n    hardware: HardwareServices,\n    gameplay: GameplayServices,\n    audio: AudioServices,\n}",
+      "bestPractice": "Single Responsibility Principle and Facade Pattern - each module should have one reason to change",
+      "metrics": {
+        "lineCount": 1119,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "large",
+      "breakingChange": false,
+      "prerequisites": ["Add integration tests for current behavior before refactoring"]
+    },
+    {
+      "id": "cq-002",
+      "type": "code_quality",
+      "title": "Split RideScreen into composable UI components",
+      "description": "The ride.rs file (1443 lines) handles multiple concerns: ride state management, workout rendering, full-screen mode, dynamics panel, video panel, weather widget, SmO2 display, and metric rendering. The file contains extensive UI rendering logic that could be extracted into reusable components.",
+      "rationale": "Large UI files with mixed concerns are hard to maintain and test. Extracting focused components enables reuse, simplifies testing, and makes the codebase more navigable.",
+      "category": "large_files",
+      "severity": "major",
+      "affectedFiles": ["src/ui/screens/ride.rs"],
+      "currentState": "1443-line file with RideScreen struct handling ride modes, workout progress, full-screen rendering, dynamics panel, video panel, weather display, SmO2, and 13 different metric types via render_metric()",
+      "proposedChange": "Split into: 1) ride/mod.rs (core RideScreen state), 2) ride/workout_panel.rs (workout progress UI), 3) ride/fullscreen.rs (full-screen mode), 4) ride/dynamics.rs (cycling dynamics panel), 5) ride/video.rs (video sync panel). Extract render_metric() patterns into a MetricRenderer component.",
+      "codeExample": "// Current ride.rs:\nimpl RideScreen {\n    fn render_workout_progress(&self, ui: &mut Ui) { /* 90 lines */ }\n    fn render_dynamics_panel(&self, ui: &mut Ui) { /* 90 lines */ }\n    fn render_video_panel(&mut self, ui: &mut Ui) { /* 80 lines */ }\n    fn render_full_screen_mode(&mut self, ui: &mut Ui) { /* 140 lines */ }\n}\n\n// Proposed:\nmod ride {\n    mod workout_panel;\n    mod dynamics_panel;\n    mod video_panel;\n    mod fullscreen;\n}",
+      "bestPractice": "Component-based UI architecture - each component should be self-contained and reusable",
+      "metrics": {
+        "lineCount": 1443,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": null
+    },
+    {
+      "id": "cq-003",
+      "type": "code_quality",
+      "title": "Replace unwrap() calls with proper error handling",
+      "description": "The codebase contains 573 uses of unwrap() across 94 files. While some are in tests or infallible contexts, many are in production code paths that could panic on unexpected input, causing application crashes during rides.",
+      "rationale": "Using unwrap() in production code can cause panics that crash the application at runtime. For a cycling training app, mid-ride crashes due to sensor data edge cases or configuration issues would create a poor user experience and could lose ride data.",
+      "category": "code_smells",
+      "severity": "major",
+      "affectedFiles": [
+        "src/storage/database.rs",
+        "src/workouts/engine.rs",
+        "src/networking/session.rs",
+        "src/ml/cache.rs",
+        "src/achievements/checks/career.rs"
+      ],
+      "currentState": "573 unwrap() calls across 94 source files. High-risk areas include: database.rs (44 calls), workouts/engine.rs (34 calls), networking/session.rs (22 calls), ml/cache.rs (20 calls)",
+      "proposedChange": "Audit unwrap() calls and replace with: 1) ? operator for propagating errors, 2) unwrap_or_default() for safe defaults, 3) expect() with descriptive messages for truly infallible cases, 4) match/if-let for graceful degradation. Prioritize sensor data paths and ride recording code.",
+      "codeExample": "// Current (risky):\nlet value = map.get(key).unwrap();\nlet result = operation().unwrap();\n\n// Proposed (safe):\nlet value = map.get(key).ok_or(ConfigError::MissingKey(key))?;\nlet result = operation().unwrap_or_else(|e| {\n    tracing::warn!(\"Operation failed: {}, using default\", e);\n    Default::default()\n});",
+      "bestPractice": "Rust error handling best practices - use Result types and the ? operator for recoverable errors",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "large",
+      "breakingChange": false,
+      "prerequisites": ["Identify which unwrap() calls are truly infallible vs risky"]
+    },
+    {
+      "id": "cq-004",
+      "type": "code_quality",
+      "title": "Remove or implement dead code marked with #[allow(dead_code)]",
+      "description": "The codebase contains 63 #[allow(dead_code)] annotations across 33 files. This indicates either incomplete feature implementations or code that was written but never integrated, creating maintenance burden and confusion.",
+      "rationale": "Dead code increases cognitive load, can lead to confusion about what's implemented vs planned, and may contain outdated logic that diverges from current patterns. Cleaning up dead code improves codebase clarity.",
+      "category": "dead_code",
+      "severity": "minor",
+      "affectedFiles": [
+        "src/sensors/manager.rs",
+        "src/integrations/weather/provider.rs",
+        "src/app.rs",
+        "src/training_plans/scheduler.rs",
+        "src/integrations/sync/oauth.rs"
+      ],
+      "currentState": "63 #[allow(dead_code)] annotations, many on handler functions for ANT+ events, OAuth flows, and weather provider callbacks that appear to be planned but not yet integrated",
+      "proposedChange": "Audit each dead_code annotation: 1) If code is for upcoming features, move to a 'pending' branch or add TODO with issue reference, 2) If code is obsolete, remove it, 3) If code should be used, integrate it properly. Focus on sensors/manager.rs (7 annotations) and integrations/ (12 annotations).",
+      "codeExample": "// Current (sensors/manager.rs):\n#[allow(dead_code)]\nfn handle_ant_heart_rate_data(&self, device_number: u16, heart_rate_bpm: u8) { ... }\n#[allow(dead_code)]\nfn handle_ant_power_data(&self, device_number: u16, power_watts: u16, ...) { ... }\n\n// Proposed: Either wire up ANT+ data handling or remove until ANT+ feature is prioritized",
+      "bestPractice": "YAGNI (You Aren't Gonna Need It) - remove code that isn't currently used",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": ["Review planned features roadmap to determine what's still needed"]
+    },
+    {
+      "id": "cq-005",
+      "type": "code_quality",
+      "title": "Address TODO/FIXME comments with placeholder implementations",
+      "description": "The codebase contains 30+ TODO comments indicating unfinished functionality, particularly in audio engine, daemon handlers, TTS integration, and ML cloud API calls. Many of these are in code paths that could be reached during normal use.",
+      "rationale": "TODO comments indicate technical debt and incomplete features. When users encounter these code paths, they may experience unexpected behavior or missing functionality. Converting TODOs to tracked issues ensures they're not forgotten.",
+      "category": "dead_code",
+      "severity": "minor",
+      "affectedFiles": [
+        "src/audio/engine.rs",
+        "src/audio/tts.rs",
+        "src/daemon/handler.rs",
+        "src/app.rs",
+        "src/ml/adaptation.rs"
+      ],
+      "currentState": "30+ TODO comments including: 'TODO: Actually play the sound using rodio', 'TODO: Actually speak using TTS', 'TODO: Actually export the ride from database', 'TODO: Implement cloud API call when backend is ready'",
+      "proposedChange": "1) Convert each TODO to a GitHub issue for tracking, 2) Add proper error handling or user-facing messages when unimplemented features are invoked, 3) For audio/TTS TODOs, implement basic rodio/tts integration or disable the feature flags, 4) For ML cloud TODOs, add graceful fallback to local-only mode.",
+      "codeExample": "// Current (audio/engine.rs):\npub fn play_sound(&self, sound: &AudioEvent) -> Result<(), AudioError> {\n    // TODO: Actually play the sound using rodio\n    Ok(())\n}\n\n// Proposed:\npub fn play_sound(&self, sound: &AudioEvent) -> Result<(), AudioError> {\n    if !self.initialized {\n        return Err(AudioError::NotInitialized);\n    }\n    self.sink.append(sound.to_source()?);\n    Ok(())\n}",
+      "bestPractice": "Technical debt tracking - convert inline TODOs to tracked issues with clear acceptance criteria",
+      "metrics": {
+        "lineCount": null,
+        "complexity": null,
+        "duplicateLines": null,
+        "testCoverage": null
+      },
+      "estimatedEffort": "medium",
+      "breakingChange": false,
+      "prerequisites": ["Set up issue tracking labels for technical debt"]
+    }
+  ],
+  "metadata": {
+    "filesAnalyzed": 180,
+    "largeFilesFound": 4,
+    "duplicateBlocksFound": 0,
+    "lintingConfigured": true,
+    "testsPresent": true,
+    "deadCodeAnnotations": 63,
+    "unwrapUsages": 573,
+    "todoComments": 30,
+    "generatedAt": "2026-01-02T22:10:00Z"
+  }
+}
