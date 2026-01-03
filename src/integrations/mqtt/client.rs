@@ -3,6 +3,7 @@
 //! Provides MQTT broker connection using rumqttc.
 
 use super::{MqttConfig, MqttError, MqttEvent, QoS};
+use rumqttc::{AsyncClient, EventLoop, MqttOptions};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
@@ -61,6 +62,11 @@ pub struct DefaultMqttClient {
     state: Arc<RwLock<ConnectionState>>,
     config: Arc<RwLock<Option<MqttConfig>>>,
     event_tx: broadcast::Sender<MqttEvent>,
+    /// The rumqttc async client for publishing and subscribing
+    client: Arc<RwLock<Option<AsyncClient>>>,
+    /// The event loop handle (stored so we can spawn it in a task)
+    #[allow(dead_code)]
+    event_loop: Arc<RwLock<Option<EventLoop>>>,
 }
 
 impl Default for DefaultMqttClient {
@@ -78,6 +84,8 @@ impl DefaultMqttClient {
             state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
             config: Arc::new(RwLock::new(None)),
             event_tx,
+            client: Arc::new(RwLock::new(None)),
+            event_loop: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -137,27 +145,28 @@ impl MqttClient for DefaultMqttClient {
             config.broker_port
         );
 
-        // TODO: Actual connection using rumqttc
-        // let mut mqtt_options = MqttOptions::new(
-        //     &config.client_id,
-        //     &config.broker_host,
-        //     config.broker_port,
-        // );
-        // mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
-        //
-        // if let Some(username) = &config.username {
-        //     // Get password from keyring
-        //     mqtt_options.set_credentials(username, password);
-        // }
-        //
-        // if config.use_tls {
-        //     // Set up TLS
-        // }
-        //
-        // let (client, eventloop) = AsyncClient::new(mqtt_options, 10);
+        // Create MQTT options with broker configuration
+        let mut mqtt_options = MqttOptions::new(
+            &config.client_id,
+            &config.broker_host,
+            config.broker_port,
+        );
+        mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
 
-        // Simulate successful connection
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
+        // TODO (subtask 3.2): Add credentials from keyring when username is set
+
+        // Create the AsyncClient and EventLoop
+        // Buffer size of 10 is sufficient for fan control operations
+        let (client, eventloop) = AsyncClient::new(mqtt_options, 10);
+
+        // Store the client and event loop for later use
+        *self.client.write().await = Some(client);
+        *self.event_loop.write().await = Some(eventloop);
+
+        // TODO (subtask 1.2): Spawn event loop task to poll for events
+        // For now, mark as connected since the client is created
+        // The actual connection happens when the event loop is polled
 
         *self.state.write().await = ConnectionState::Connected;
         let _ = self.event_tx.send(MqttEvent::Connected);
@@ -168,6 +177,10 @@ impl MqttClient for DefaultMqttClient {
     }
 
     async fn disconnect(&self) -> Result<(), MqttError> {
+        // Clear the client and event loop
+        *self.client.write().await = None;
+        *self.event_loop.write().await = None;
+
         *self.state.write().await = ConnectionState::Disconnected;
         *self.config.write().await = None;
 
