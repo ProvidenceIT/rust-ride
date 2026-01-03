@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Text } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import {
   MetricCard,
   Button,
@@ -15,6 +15,8 @@ import {
   LoadingSpinner,
   FullScreenLoader,
   InlineLoader,
+  ServerListItem,
+  ManualEntryModal,
 } from '../../src/components';
 import { ThemeProvider } from '../../src/theme';
 
@@ -279,5 +281,209 @@ describe('InlineLoader', () => {
     const { UNSAFE_getByType } = renderWithTheme(<InlineLoader />);
 
     expect(UNSAFE_getByType(require('react-native').ActivityIndicator)).toBeTruthy();
+  });
+});
+
+describe('ServerListItem', () => {
+  const mockServer = {
+    name: 'RustRide-PC',
+    host: '192.168.1.100',
+    port: 9876,
+    version: '1.0',
+  };
+
+  const mockOnPress = jest.fn();
+
+  beforeEach(() => {
+    mockOnPress.mockClear();
+  });
+
+  it('renders server name', () => {
+    const { getByText } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} />,
+    );
+
+    expect(getByText('RustRide-PC')).toBeTruthy();
+  });
+
+  it('renders host and port', () => {
+    const { getByText } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} />,
+    );
+
+    expect(getByText('192.168.1.100:9876')).toBeTruthy();
+  });
+
+  it('renders version badge when version is provided', () => {
+    const { getByText } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} />,
+    );
+
+    expect(getByText('v1.0')).toBeTruthy();
+  });
+
+  it('does not render version badge when version is not provided', () => {
+    const serverWithoutVersion = { ...mockServer, version: undefined };
+    const { queryByText } = renderWithTheme(
+      <ServerListItem server={serverWithoutVersion} onPress={mockOnPress} />,
+    );
+
+    expect(queryByText(/^v/)).toBeNull();
+  });
+
+  it('calls onPress when pressed', () => {
+    const { getByRole } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} />,
+    );
+
+    const button = getByRole('button');
+    fireEvent.press(button);
+
+    expect(mockOnPress).toHaveBeenCalledWith(mockServer);
+  });
+
+  it('does not call onPress when connecting', () => {
+    const { getByRole } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} isConnecting />,
+    );
+
+    const button = getByRole('button');
+    fireEvent.press(button);
+
+    expect(mockOnPress).not.toHaveBeenCalled();
+  });
+
+  it('shows connecting text when isConnecting is true', () => {
+    const { getByText } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} isConnecting />,
+    );
+
+    expect(getByText('Connecting...')).toBeTruthy();
+  });
+
+  it('has correct accessibility label', () => {
+    const { getByLabelText } = renderWithTheme(
+      <ServerListItem server={mockServer} onPress={mockOnPress} />,
+    );
+
+    expect(getByLabelText('Connect to RustRide-PC at 192.168.1.100:9876')).toBeTruthy();
+  });
+});
+
+describe('ManualEntryModal', () => {
+  const mockOnClose = jest.fn();
+  const mockOnSubmit = jest.fn();
+
+  beforeEach(() => {
+    mockOnClose.mockClear();
+    mockOnSubmit.mockClear();
+  });
+
+  it('renders when visible', () => {
+    const { getByText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText('Manual Connection')).toBeTruthy();
+  });
+
+  it('does not render when not visible', () => {
+    const { queryByText } = renderWithTheme(
+      <ManualEntryModal visible={false} onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(queryByText('Manual Connection')).toBeNull();
+  });
+
+  it('renders IP address and port input fields', () => {
+    const { getByText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText('IP Address or Hostname')).toBeTruthy();
+    expect(getByText('Port')).toBeTruthy();
+  });
+
+  it('renders connect and cancel buttons', () => {
+    const { getByText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText('Connect')).toBeTruthy();
+    expect(getByText('Cancel')).toBeTruthy();
+  });
+
+  it('calls onClose when cancel is pressed', () => {
+    const { getByText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.press(getByText('Cancel'));
+
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('shows error for empty IP address on submit', () => {
+    const { getByText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.press(getByText('Connect'));
+
+    expect(getByText('IP address is required')).toBeTruthy();
+  });
+
+  it('shows error for invalid IP address on submit', () => {
+    const { getByText, getByPlaceholderText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.changeText(getByPlaceholderText('192.168.1.100'), 'invalid..ip');
+    fireEvent.press(getByText('Connect'));
+
+    expect(getByText('Invalid IP address or hostname')).toBeTruthy();
+  });
+
+  it('calls onSubmit with valid server data', () => {
+    const { getByText, getByPlaceholderText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.changeText(getByPlaceholderText('192.168.1.100'), '192.168.1.50');
+    fireEvent.changeText(getByPlaceholderText('9876'), '8080');
+    fireEvent.press(getByText('Connect'));
+
+    expect(mockOnSubmit).toHaveBeenCalledWith({
+      name: 'Manual (192.168.1.50)',
+      host: '192.168.1.50',
+      port: 8080,
+    });
+  });
+
+  it('accepts valid hostname', () => {
+    const { getByText, getByPlaceholderText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.changeText(getByPlaceholderText('192.168.1.100'), 'my-computer.local');
+    fireEvent.press(getByText('Connect'));
+
+    expect(mockOnSubmit).toHaveBeenCalledWith({
+      name: 'Manual (my-computer.local)',
+      host: 'my-computer.local',
+      port: 9876,
+    });
+  });
+
+  it('shows error for invalid port', () => {
+    const { getByText, getByPlaceholderText } = renderWithTheme(
+      <ManualEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.changeText(getByPlaceholderText('192.168.1.100'), '192.168.1.50');
+    fireEvent.changeText(getByPlaceholderText('9876'), '99999');
+    fireEvent.press(getByText('Connect'));
+
+    expect(getByText('Invalid port (1-65535)')).toBeTruthy();
   });
 });

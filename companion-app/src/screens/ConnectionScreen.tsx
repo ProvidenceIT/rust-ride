@@ -2,121 +2,340 @@
  * Connection Screen
  *
  * Shows discovered servers and allows connection to RustRide desktop app.
- * Includes QR code scanning and manual entry options.
+ * Features:
+ * - Automatic mDNS server discovery
+ * - Pull to refresh
+ * - Manual IP:port entry
+ * - Connection status indicator
  */
 
-import React from 'react';
-import { StyleSheet, Text, View, useColorScheme, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  RefreshControl,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackScreenProps } from '@/navigation/types';
-
-const Colors = {
-  light: {
-    background: '#FFFFFF',
-    surface: '#F5F5F5',
-    primary: '#007AFF',
-    text: '#1C1C1E',
-    textSecondary: '#8E8E93',
-    border: '#E5E5EA',
-  },
-  dark: {
-    background: '#000000',
-    surface: '#1C1C1E',
-    primary: '#0A84FF',
-    text: '#FFFFFF',
-    textSecondary: '#8E8E93',
-    border: '#38383A',
-  },
-};
+import { useTheme } from '@/theme';
+import { Button } from '@/components/Button';
+import { ConnectionStatus } from '@/components/ConnectionStatus';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { ServerListItem } from '@/components/ServerListItem';
+import { ManualEntryModal } from '@/components/ManualEntryModal';
+import {
+  useConnectionStore,
+  selectDiscoveredServers,
+  selectIsScanning,
+  selectConnectionStatus,
+  selectConnectionError,
+} from '@/stores/connectionStore';
+import { getDiscoveryService } from '@/services/DiscoveryService';
+import { getConnectionService } from '@/services/ConnectionService';
+import type { DiscoveredServer } from '@/types';
 
 type Props = RootStackScreenProps<'Connection'>;
 
+/**
+ * ConnectionScreen Component
+ *
+ * Main screen for discovering and connecting to RustRide servers on the local network.
+ */
 export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  const colors = isDarkMode ? Colors.dark : Colors.light;
-  const [isScanning, setIsScanning] = React.useState(true);
+  const { colors, spacing, typography, borderRadius } = useTheme();
+  const { textStyles } = typography;
 
-  // Simulate scanning for servers
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsScanning(false);
-    }, 2000);
-    return () => clearTimeout(timer);
+  // Store state
+  const discoveredServers = useConnectionStore(selectDiscoveredServers);
+  const isScanning = useConnectionStore(selectIsScanning);
+  const connectionStatus = useConnectionStore(selectConnectionStatus);
+  const connectionError = useConnectionStore(selectConnectionError);
+
+  // Local state
+  const [isManualEntryVisible, setIsManualEntryVisible] = useState(false);
+  const [connectingServer, setConnectingServer] = useState<DiscoveredServer | null>(null);
+
+  // Get services
+  const discoveryService = getDiscoveryService();
+  const connectionService = getConnectionService();
+
+  // Start discovery on mount
+  useEffect(() => {
+    discoveryService.startScan().catch(() => {
+      // Discovery may not be available on all devices
+    });
+
+    // Cleanup on unmount
+    return () => {
+      discoveryService.stopScan();
+    };
+  }, [discoveryService]);
+
+  // Handle connection success/failure
+  useEffect(() => {
+    if (connectionStatus === 'authenticated' || connectionStatus === 'connected') {
+      // Connection successful, navigate back
+      setConnectingServer(null);
+      navigation.goBack();
+    } else if (connectionError && connectingServer) {
+      // Connection failed
+      setConnectingServer(null);
+      Alert.alert(
+        'Connection Failed',
+        connectionError.message || 'Could not connect to the server. Please try again.',
+        [{ text: 'OK' }]
+      );
+      useConnectionStore.getState().clearError();
+    }
+  }, [connectionStatus, connectionError, connectingServer, navigation]);
+
+  // Handle pull to refresh
+  const handleRefresh = useCallback(async () => {
+    try {
+      await discoveryService.refresh();
+    } catch {
+      // Refresh failed, user can try again
+    }
+  }, [discoveryService]);
+
+  // Handle server selection
+  const handleServerPress = useCallback(
+    async (server: DiscoveredServer) => {
+      setConnectingServer(server);
+
+      const serverUrl = discoveryService.buildServerUrl(server);
+
+      try {
+        await connectionService.connect(serverUrl);
+        // Connection initiated, auth may be required
+        // Navigation happens in the useEffect when status changes
+      } catch {
+        setConnectingServer(null);
+        Alert.alert(
+          'Connection Failed',
+          `Could not connect to ${server.name}. Please check the server is running and try again.`,
+          [{ text: 'OK' }]
+        );
+      }
+    },
+    [connectionService, discoveryService]
+  );
+
+  // Handle manual entry
+  const handleManualEntry = useCallback(() => {
+    setIsManualEntryVisible(true);
   }, []);
 
-  const handleScanQR = () => {
-    // TODO: Open QR scanner
-  };
+  const handleManualEntryClose = useCallback(() => {
+    setIsManualEntryVisible(false);
+  }, []);
 
-  const handleManualEntry = () => {
-    // TODO: Open manual entry dialog
-  };
+  const handleManualEntrySubmit = useCallback(
+    async (server: DiscoveredServer) => {
+      // Add to discovered servers list
+      discoveryService.addManualServer(server);
+      setIsManualEntryVisible(false);
 
-  const handleCancel = () => {
+      // Connect to the server
+      await handleServerPress(server);
+    },
+    [discoveryService, handleServerPress]
+  );
+
+  // Handle cancel
+  const handleCancel = useCallback(() => {
+    connectionService.disconnect();
     navigation.goBack();
-  };
+  }, [connectionService, navigation]);
+
+  // Render server list item
+  const renderServerItem = useCallback(
+    ({ item }: { item: DiscoveredServer }) => (
+      <ServerListItem
+        server={item}
+        isConnecting={connectingServer?.host === item.host && connectingServer?.port === item.port}
+        onPress={handleServerPress}
+        style={{ marginBottom: spacing.sm }}
+      />
+    ),
+    [connectingServer, handleServerPress, spacing.sm]
+  );
+
+  // Render empty state
+  const renderEmptyState = useCallback(() => {
+    if (isScanning) {
+      return (
+        <View style={styles.emptyState}>
+          <LoadingSpinner size="medium" message="Searching for RustRide servers..." />
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyState}>
+        <View
+          style={[
+            styles.emptyIconContainer,
+            {
+              backgroundColor: colors.surface,
+              borderRadius: borderRadius.full,
+              width: 80,
+              height: 80,
+            },
+          ]}
+        >
+          <Text style={[styles.emptyIcon, { color: colors.textMuted }]}>?</Text>
+        </View>
+        <Text
+          style={[
+            styles.emptyTitle,
+            textStyles.sectionTitle,
+            { color: colors.textPrimary, marginTop: spacing.lg },
+          ]}
+        >
+          No Servers Found
+        </Text>
+        <Text
+          style={[
+            styles.emptyDescription,
+            textStyles.body,
+            { color: colors.textSecondary, marginTop: spacing.sm },
+          ]}
+        >
+          Make sure RustRide is running on your computer and the companion server is enabled.
+        </Text>
+        <Button
+          title="Retry Scan"
+          variant="outline"
+          onPress={handleRefresh}
+          style={{ marginTop: spacing.lg }}
+        />
+      </View>
+    );
+  }, [isScanning, colors, borderRadius, textStyles, spacing, handleRefresh]);
+
+  // Key extractor for FlatList
+  const keyExtractor = useCallback(
+    (item: DiscoveredServer) => `${item.host}:${item.port}`,
+    []
+  );
+
+  const isConnecting = connectionStatus === 'connecting';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Connect to RustRide</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Searching for RustRide on your local network
+      {/* Header */}
+      <View style={[styles.header, { padding: spacing.lg }]}>
+        <Text style={[styles.title, textStyles.screenTitle, { color: colors.textPrimary }]}>
+          Connect to RustRide
         </Text>
+        <Text
+          style={[
+            styles.subtitle,
+            textStyles.body,
+            { color: colors.textSecondary, marginTop: spacing.xs },
+          ]}
+        >
+          {isScanning
+            ? 'Searching for RustRide on your local network...'
+            : discoveredServers.length > 0
+              ? 'Select a server to connect'
+              : 'No servers found on your network'}
+        </Text>
+
+        {/* Connection status indicator */}
+        {(isConnecting || connectionStatus === 'connected') && (
+          <ConnectionStatus
+            status={connectionStatus}
+            variant="badge"
+            style={{ marginTop: spacing.md }}
+          />
+        )}
       </View>
 
-      <View style={styles.content}>
-        {/* Server discovery section */}
-        <View style={[styles.discoverySection, { backgroundColor: colors.surface }]}>
-          <View style={styles.discoverySectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Available Servers</Text>
-            {isScanning && <ActivityIndicator size="small" color={colors.primary} />}
+      {/* Server list */}
+      <View style={[styles.content, { paddingHorizontal: spacing.md }]}>
+        <View
+          style={[
+            styles.listContainer,
+            {
+              backgroundColor: colors.surface,
+              borderRadius: borderRadius.lg,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <View style={[styles.listHeader, { marginBottom: spacing.md }]}>
+            <Text style={[styles.sectionTitle, textStyles.sectionTitle, { color: colors.textPrimary }]}>
+              Available Servers
+            </Text>
+            {isScanning && (
+              <LoadingSpinner size="small" centered={false} />
+            )}
           </View>
 
-          {isScanning ? (
-            <View style={styles.scanningState}>
-              <Text style={[styles.scanningText, { color: colors.textSecondary }]}>
-                Scanning...
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-                No servers found on this network
-              </Text>
-              <TouchableOpacity
-                style={[styles.retryButton, { borderColor: colors.border }]}
-                onPress={() => setIsScanning(true)}
-              >
-                <Text style={[styles.retryButtonText, { color: colors.primary }]}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Alternative connection methods */}
-        <View style={styles.alternativeMethods}>
-          <TouchableOpacity
-            style={[styles.methodButton, { backgroundColor: colors.primary }]}
-            onPress={handleScanQR}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.methodButtonText}>Scan QR Code</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.methodButton, styles.methodButtonSecondary, { borderColor: colors.border }]}
-            onPress={handleManualEntry}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.methodButtonText, { color: colors.text }]}>Enter IP Manually</Text>
-          </TouchableOpacity>
+          <FlatList
+            data={discoveredServers}
+            renderItem={renderServerItem}
+            keyExtractor={keyExtractor}
+            ListEmptyComponent={renderEmptyState}
+            refreshControl={
+              <RefreshControl
+                refreshing={isScanning && discoveredServers.length > 0}
+                onRefresh={handleRefresh}
+                tintColor={colors.accent}
+                colors={[colors.accent]}
+              />
+            }
+            contentContainerStyle={
+              discoveredServers.length === 0 ? styles.emptyListContent : undefined
+            }
+            showsVerticalScrollIndicator={false}
+          />
         </View>
       </View>
 
-      <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} activeOpacity={0.7}>
-        <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
-      </TouchableOpacity>
+      {/* Alternative connection methods */}
+      <View style={[styles.footer, { padding: spacing.md }]}>
+        <Button
+          title="Scan QR Code"
+          variant="primary"
+          onPress={() => {
+            // TODO: Implement QR scanning (T019)
+            Alert.alert('Coming Soon', 'QR code scanning will be available in a future update.');
+          }}
+          fullWidth
+          disabled={isConnecting}
+          style={{ marginBottom: spacing.sm }}
+        />
+
+        <Button
+          title="Enter IP Manually"
+          variant="secondary"
+          onPress={handleManualEntry}
+          fullWidth
+          disabled={isConnecting}
+          style={{ marginBottom: spacing.md }}
+        />
+
+        <Button
+          title="Cancel"
+          variant="ghost"
+          onPress={handleCancel}
+          fullWidth
+        />
+      </View>
+
+      {/* Manual entry modal */}
+      <ManualEntryModal
+        visible={isManualEntryVisible}
+        onClose={handleManualEntryClose}
+        onSubmit={handleManualEntrySubmit}
+        isConnecting={isConnecting}
+      />
     </SafeAreaView>
   );
 }
@@ -126,85 +345,52 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: 24,
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
     textAlign: 'center',
   },
   content: {
     flex: 1,
-    padding: 16,
   },
-  discoverySection: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
+  listContainer: {
+    flex: 1,
   },
-  discoverySectionHeader: {
+  listHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    // Typography from theme
   },
-  scanningState: {
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  scanningText: {
-    fontSize: 14,
+  emptyListContent: {
+    flexGrow: 1,
   },
   emptyState: {
-    paddingVertical: 24,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyIconContainer: {
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyStateText: {
-    fontSize: 14,
+  emptyIcon: {
+    fontSize: 40,
+    fontWeight: 'bold',
+  },
+  emptyTitle: {
     textAlign: 'center',
-    marginBottom: 16,
   },
-  retryButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    borderWidth: 1,
+  emptyDescription: {
+    textAlign: 'center',
   },
-  retryButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  alternativeMethods: {
-    gap: 12,
-  },
-  methodButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  methodButtonSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-  },
-  methodButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  cancelButton: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
+  footer: {
+    // Spacing applied inline
   },
 });

@@ -24,3 +24,11 @@ export type { ConnectionStatusProps, ConnectionStatusVariant } from './Connectio
 // LoadingSpinner - loading indicators
 export { LoadingSpinner, FullScreenLoader, InlineLoader } from './LoadingSpinner';
 export type { LoadingSpinnerProps, LoadingSpinnerSize } from './LoadingSpinner';
+
+// ServerListItem - displays discovered server in a list
+export { ServerListItem } from './ServerListItem';
+export type { ServerListItemProps } from './ServerListItem';
+
+// ManualEntryModal - modal for manual IP:port entry
+export { ManualEntryModal } from './ManualEntryModal';
+export type { ManualEntryModalProps } from './ManualEntryModal';
