@@ -17,8 +17,8 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 ## Phase 2: Activity Upload Implementation (7.5 hours)
 - [x] T006: Implement FIT file upload to TrainingPeaks (3h) ✅
 - [x] T007: Add upload status checking (1.5h) ✅
-- [ ] T008: Integrate TrainingPeaks with SyncService (2h)
-- [ ] T009: Add duplicate activity detection (1h)
+- [x] T008: Integrate TrainingPeaks with SyncService (2h) ✅
+- [x] T009: Add duplicate activity detection (1h) ✅
 
 ## Phase 3: Workout Plan Download (12 hours)
 - [ ] T010: Define TrainingPeaks workout API types (2h)
@@ -191,3 +191,40 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
     test_check_upload_status_not_found
 - No new code commit needed - functionality already in T001 commit
 - Manual verification complete: implementation matches Strava pattern exactly
+
+### 2026-01-03 - T008: SyncService Integration (Already Complete)
+- Verified that TrainingPeaks SyncService integration was already implemented
+- Implementation in src/integrations/sync/service.rs:
+  - Added TrainingPeaks variant to PlatformClient enum (line 447)
+  - TrainingPeaksClient initialized in spawn_with_db (lines 480-483)
+  - TrainingPeaks upload handling in process_single_upload (lines 899-912)
+  - Token refresh handling in check_and_refresh_token (lines 1377-1379)
+  - Disconnect/deauthorize handling in handle_disconnect (lines 1540-1545)
+  - TrainingPeaks included in load_stored_credentials loop (line 1475)
+- Tests already present:
+  - test_get_trainingpeaks_status_not_connected
+  - test_queue_trainingpeaks_upload_requires_connection
+  - test_update_trainingpeaks_config
+  - test_trainingpeaks_sync_event_debug
+  - test_platform_client_enum_trainingpeaks
+- No new commit needed - functionality added in previous session
+
+### 2026-01-03 - T009: Duplicate Activity Detection (Already Complete)
+- Verified that duplicate detection was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - is_duplicate_error() helper function (lines 315-320)
+    - Detects "duplicate", "already exists", "already uploaded" strings
+  - upload_activity() returns SyncError::DuplicateActivity (lines 454-458)
+  - check_upload_status() returns UploadStatus::Duplicate (lines 619-626)
+  - UploadStatus::Duplicate enum variant defined (line 846)
+- Integration in src/integrations/sync/service.rs:
+  - process_single_upload() handles DuplicateActivity specially (lines 974-991)
+  - Marks upload as completed (not failed) since activity exists
+  - is_retryable_error() marks DuplicateActivity as non-retryable (line 1073)
+  - User-friendly error message in get_user_friendly_error_message() (lines 1082-1086)
+- Tests already present:
+  - test_is_duplicate_error_detection
+  - test_upload_status_duplicate_variant
+  - HTTP mocked: test_upload_activity_duplicate_detection, test_check_upload_status_duplicate
+- No new code commit needed - functionality already in T001 commit
+- **Phase 2 Complete!** All activity upload subtasks (T006-T009) are now done

@@ -127,27 +127,31 @@
           "id": "T008",
           "title": "Integrate TrainingPeaks with SyncService",
           "description": "Update SyncService to support TrainingPeaks uploads alongside Strava. Add TrainingPeaks to the platform upload queue handling.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T007"
           ],
           "estimated_hours": 2,
           "files": [
             "src/integrations/sync/service.rs"
-          ]
+          ],
+          "notes": "Integrated TrainingPeaks into SyncService for upload queue handling. Changes include: Added TrainingPeaks variant to PlatformClient enum, initialized TrainingPeaksClient in spawn_with_db, added TrainingPeaks upload handling in process_single_upload, updated token refresh and disconnect handlers, included TrainingPeaks in credential loading on startup, made error messages platform-agnostic, and added TrainingPeaks-specific unit tests.",
+          "updated_at": "2026-01-03T14:08:39.186715+00:00"
         },
         {
           "id": "T009",
           "title": "Add duplicate activity detection",
           "description": "Implement detection and handling of duplicate activity uploads, returning appropriate DuplicateActivity error.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T006"
           ],
           "estimated_hours": 1,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Duplicate activity detection was already implemented as part of T001. Implementation includes: is_duplicate_error() helper function detecting \"duplicate\", \"already exists\", \"already uploaded\" strings; upload_activity() returns SyncError::DuplicateActivity; check_upload_status() returns UploadStatus::Duplicate; SyncService handles duplicates specially by marking as completed (not failed) since activity exists on platform. User-friendly error message provided. Comprehensive tests present: test_is_duplicate_error_detection, test_upload_status_duplicate_variant, HTTP mocked test_upload_activity_duplicate_detection, test_check_upload_status_duplicate. Phase 2 complete!",
+          "updated_at": "2026-01-03T14:11:24.537565+00:00"
         }
       ]
     },
@@ -497,5 +501,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T14:02:33.719721+00:00"
+  "last_updated": "2026-01-03T14:11:24.537565+00:00"
 }
