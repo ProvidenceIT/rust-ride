@@ -27,3 +27,5 @@ export type { UseKeepAwakeReturn, KeepAwakeWrapperProps } from './useKeepAwake';
 
 export { useIntervalChangeHaptics } from './useIntervalChangeHaptics';
 export type { UseIntervalChangeHapticsOptions, UseIntervalChangeHapticsReturn } from './useIntervalChangeHaptics';
+
+export { useThemeSync, useIsDarkMode } from './useThemeSync';
