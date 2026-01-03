@@ -1,0 +1,30 @@
+{
+  "discovered_files": {
+    "src/leaderboards/export.rs": {
+      "description": "LeaderboardExporter provides the pattern for export/import: versioned export structs (LeaderboardExport), ImportResult with conflict detection (NameConflict), ConflictResolution enum, and ExportError for error handling. Uses Arc<Database> for db access.",
+      "category": "patterns",
+      "discovered_at": "2026-01-02T22:57:23.681069+00:00"
+    },
+    "src/storage/schema.rs": {
+      "description": "Database tables for profile export: 'riders' (display_name, avatar_id, bio, ftp, stats), 'avatars' (jersey_color, bike_style, helmet_color), 'ftp_estimates' (ftp_watts, method, confidence, detected_at, accepted).",
+      "category": "data_model",
+      "discovered_at": "2026-01-02T22:57:23.736524+00:00"
+    },
+    "src/world/avatar.rs": {
+      "description": "AvatarConfig struct with jersey_color ([u8;3]), bike_style (BikeStyle enum), jersey_secondary (Option), helmet_color (Option). Already has Serialize/Deserialize derives.",
+      "category": "data_model",
+      "discovered_at": "2026-01-02T22:57:23.784051+00:00"
+    },
+    "src/social/export.rs": {
+      "description": "ProfileExporter.import_from_file(path, resolution) reads JSON export file, parses it with version validation, and imports profile data using the specified conflict resolution strategy. Returns ProfileImportResult with counts of imported/skipped FTP entries and update flags for profile/avatar.",
+      "category": "import",
+      "discovered_at": "2026-01-02T23:40:43.972474+00:00"
+    },
+    "src/ui/screens/rider_profile.rs": {
+      "description": "RiderProfileAction enum now includes ImportProfile variant. Import button triggers file picker via parent component (same pattern as LeaderboardScreen.ImportJson and RouteImportScreen.BrowseFiles). UI screens return actions, parent handles file dialogs.",
+      "category": "ui_pattern",
+      "discovered_at": "2026-01-02T23:49:08.646384+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T23:49:08.646384+00:00"
+}

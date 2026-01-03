@@ -1,0 +1,225 @@
+{
+  "subtasks": {
+    "T001": {
+      "attempts": [
+        {
+          "session": 2,
+          "timestamp": "2026-01-03T00:00:08.358369",
+          "approach": "Implemented: Create the main export container with export_version, exported_at timestamp, and profile data. Follo",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T002": {
+      "attempts": [
+        {
+          "session": 3,
+          "timestamp": "2026-01-03T00:02:18.811491",
+          "approach": "Implemented: Define ProfileData struct containing display_name, bio, ftp, total_distance_km, total_time_hours, sh",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T003": {
+      "attempts": [
+        {
+          "session": 4,
+          "timestamp": "2026-01-03T00:03:42.623488",
+          "approach": "Implemented: Define FtpHistoryEntry with ftp_watts, method, confidence, detected_at, accepted fields. Match the f",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T004": {
+      "attempts": [
+        {
+          "session": 5,
+          "timestamp": "2026-01-03T00:05:46.282733",
+          "approach": "Implemented: Define AvatarExport with jersey_color, bike_style, jersey_secondary, helmet_color. Compatible with e",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T005": {
+      "attempts": [
+        {
+          "session": 6,
+          "timestamp": "2026-01-03T00:08:22.488502",
+          "approach": "Implemented: Define ImportResult with success status, conflicts list. Create ProfileConflict enum for handling ex",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T006": {
+      "attempts": [
+        {
+          "session": 7,
+          "timestamp": "2026-01-03T00:11:28.931433",
+          "approach": "Implemented: Define error types for export operations: DatabaseError, SerializationFailed, ParseError, ProfileNot",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T007": {
+      "attempts": [
+        {
+          "session": 8,
+          "timestamp": "2026-01-03T00:13:22.448896",
+          "approach": "Implemented: Create ProfileExporter struct holding Arc<Database>, matching the pattern from LeaderboardExporter.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T008": {
+      "attempts": [
+        {
+          "session": 9,
+          "timestamp": "2026-01-03T00:17:21.000955",
+          "approach": "Implemented: Query riders table for profile data, ftp_estimates for FTP history, and avatars table for avatar con",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T009": {
+      "attempts": [
+        {
+          "session": 10,
+          "timestamp": "2026-01-03T00:20:54.288969",
+          "approach": "Implemented: Serialize ProfileExport to pretty-printed JSON string. Handle serialization errors appropriately.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T010": {
+      "attempts": [
+        {
+          "session": 11,
+          "timestamp": "2026-01-03T00:23:45.578559",
+          "approach": "Implemented: Write exported JSON to a file at specified path. Create parent directories if needed. Return path on",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T011": {
+      "attempts": [
+        {
+          "session": 12,
+          "timestamp": "2026-01-03T00:25:59.498079",
+          "approach": "Implemented: Add pub mod export; to social/mod.rs and re-export key types (ProfileExporter, ProfileExport, etc.).",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T012": {
+      "attempts": [
+        {
+          "session": 13,
+          "timestamp": "2026-01-03T00:28:54.197370",
+          "approach": "Implemented: Parse JSON string to ProfileExport struct. Validate export_version compatibility. Return structured ",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T013": {
+      "attempts": [
+        {
+          "session": 14,
+          "timestamp": "2026-01-03T00:32:16.267940",
+          "approach": "Implemented: Check if imported profile conflicts with existing profile (same rider_id, display_name collision). R",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T014": {
+      "attempts": [
+        {
+          "session": 15,
+          "timestamp": "2026-01-03T00:37:06.888254",
+          "approach": "Implemented: Import profile data to database. Support strategies: Replace (overwrite), Merge (combine FTP history",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T015": {
+      "attempts": [
+        {
+          "session": 16,
+          "timestamp": "2026-01-03T00:40:56.236496",
+          "approach": "Implemented: Read file contents, parse JSON, and import with specified conflict resolution. Return ImportResult w",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T016": {
+      "attempts": [
+        {
+          "session": 17,
+          "timestamp": "2026-01-03T00:43:51.643962",
+          "approach": "Implemented: When importing FTP history, skip duplicate entries based on detected_at timestamp. Track imported vs",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T017": {
+      "attempts": [
+        {
+          "session": 18,
+          "timestamp": "2026-01-03T00:47:00.867271",
+          "approach": "Implemented: Add 'Export Profile' button to RiderProfileScreen. On click, trigger export and show success/error m",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T018": {
+      "attempts": [
+        {
+          "session": 19,
+          "timestamp": "2026-01-03T00:49:19.678171",
+          "approach": "Implemented: Add 'Import Profile' button to RiderProfileScreen. Open file picker for JSON selection.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    }
+  },
+  "stuck_subtasks": [],
+  "metadata": {
+    "created_at": "2026-01-02T23:53:06.450074",
+    "last_updated": "2026-01-03T00:49:19.678171"
+  }
+}
