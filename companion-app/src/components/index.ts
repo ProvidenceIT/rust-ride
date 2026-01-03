@@ -32,3 +32,7 @@ export type { ServerListItemProps } from './ServerListItem';
 // ManualEntryModal - modal for manual IP:port entry
 export { ManualEntryModal } from './ManualEntryModal';
 export type { ManualEntryModalProps } from './ManualEntryModal';
+
+// QRScannerModal - modal for QR code scanning
+export { QRScannerModal } from './QRScannerModal';
+export type { QRScannerModalProps } from './QRScannerModal';

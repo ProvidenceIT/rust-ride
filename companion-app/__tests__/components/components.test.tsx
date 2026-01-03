@@ -17,7 +17,16 @@ import {
   InlineLoader,
   ServerListItem,
   ManualEntryModal,
+  QRScannerModal,
 } from '../../src/components';
+import {
+  parseQrConnectionData,
+  parseWebSocketUrl,
+} from '../../src/types';
+import {
+  setMockPermissionStatus,
+  resetMocks as resetCameraMocks,
+} from '../../__mocks__/react-native-camera-kit';
 import { ThemeProvider } from '../../src/theme';
 
 // Helper to render with theme
@@ -485,5 +494,245 @@ describe('ManualEntryModal', () => {
     fireEvent.press(getByText('Connect'));
 
     expect(getByText('Invalid port (1-65535)')).toBeTruthy();
+  });
+});
+
+describe('parseQrConnectionData', () => {
+  it('parses valid QR code with PIN', () => {
+    const qrData = JSON.stringify({
+      url: 'ws://192.168.1.100:9876',
+      pin: '123456',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toEqual({
+      url: 'ws://192.168.1.100:9876',
+      pin: '123456',
+      version: '1',
+    });
+  });
+
+  it('parses valid QR code without PIN', () => {
+    const qrData = JSON.stringify({
+      url: 'ws://192.168.1.100:9876',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toEqual({
+      url: 'ws://192.168.1.100:9876',
+      pin: undefined,
+      version: '1',
+    });
+  });
+
+  it('parses wss:// URL', () => {
+    const qrData = JSON.stringify({
+      url: 'wss://example.com:443',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).not.toBeNull();
+    expect(result?.url).toBe('wss://example.com:443');
+  });
+
+  it('returns null for invalid JSON', () => {
+    const result = parseQrConnectionData('not valid json');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for missing URL', () => {
+    const qrData = JSON.stringify({
+      pin: '123456',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for missing version', () => {
+    const qrData = JSON.stringify({
+      url: 'ws://192.168.1.100:9876',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for invalid URL scheme', () => {
+    const qrData = JSON.stringify({
+      url: 'http://192.168.1.100:9876',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for invalid PIN format (too short)', () => {
+    const qrData = JSON.stringify({
+      url: 'ws://192.168.1.100:9876',
+      pin: '123',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for invalid PIN format (non-numeric)', () => {
+    const qrData = JSON.stringify({
+      url: 'ws://192.168.1.100:9876',
+      pin: 'abcdef',
+      version: '1',
+    });
+
+    const result = parseQrConnectionData(qrData);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('parseWebSocketUrl', () => {
+  it('parses URL with port', () => {
+    const result = parseWebSocketUrl('ws://192.168.1.100:9876');
+
+    expect(result).toEqual({
+      host: '192.168.1.100',
+      port: 9876,
+    });
+  });
+
+  it('parses URL without port (uses default)', () => {
+    const result = parseWebSocketUrl('ws://192.168.1.100');
+
+    expect(result).toEqual({
+      host: '192.168.1.100',
+      port: 9876,
+    });
+  });
+
+  it('parses URL with hostname', () => {
+    const result = parseWebSocketUrl('ws://my-computer.local:8080');
+
+    expect(result).toEqual({
+      host: 'my-computer.local',
+      port: 8080,
+    });
+  });
+
+  it('parses wss:// URL', () => {
+    const result = parseWebSocketUrl('wss://example.com:443');
+
+    expect(result).toEqual({
+      host: 'example.com',
+      port: 443,
+    });
+  });
+
+  it('returns null for invalid URL', () => {
+    const result = parseWebSocketUrl('not a valid url');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    const result = parseWebSocketUrl('');
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('QRScannerModal', () => {
+  const mockOnClose = jest.fn();
+  const mockOnScan = jest.fn();
+
+  // Helper to wait for async operations
+  const wait = (ms: number): Promise<void> =>
+    new Promise<void>(resolve => setTimeout(resolve, ms));
+
+  beforeEach(() => {
+    mockOnClose.mockClear();
+    mockOnScan.mockClear();
+    resetCameraMocks();
+    setMockPermissionStatus(true);
+  });
+
+  it('renders when visible with camera permission granted', async () => {
+    const { getByText } = renderWithTheme(
+      <QRScannerModal visible onClose={mockOnClose} onScan={mockOnScan} />,
+    );
+
+    // Wait for permission check
+    await wait(100);
+
+    expect(getByText('Scan QR Code')).toBeTruthy();
+  });
+
+  it('does not render content when not visible', () => {
+    const { queryByText } = renderWithTheme(
+      <QRScannerModal visible={false} onClose={mockOnClose} onScan={mockOnScan} />,
+    );
+
+    expect(queryByText('Scan QR Code')).toBeNull();
+  });
+
+  it('shows permission denied message when camera access denied', async () => {
+    setMockPermissionStatus(false);
+
+    const { getByText } = renderWithTheme(
+      <QRScannerModal visible onClose={mockOnClose} onScan={mockOnScan} />,
+    );
+
+    // Wait for permission check
+    await wait(100);
+
+    expect(getByText('Camera Access Required')).toBeTruthy();
+  });
+
+  it('calls onClose when cancel is pressed', async () => {
+    const { getByText } = renderWithTheme(
+      <QRScannerModal visible onClose={mockOnClose} onScan={mockOnScan} />,
+    );
+
+    // Wait for permission check
+    await wait(100);
+
+    fireEvent.press(getByText('Cancel'));
+
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('renders instructions text', async () => {
+    const { getByText } = renderWithTheme(
+      <QRScannerModal visible onClose={mockOnClose} onScan={mockOnScan} />,
+    );
+
+    // Wait for permission check
+    await wait(100);
+
+    expect(getByText(/Point your camera at the QR code/)).toBeTruthy();
+  });
+
+  it('shows connecting state when isConnecting is true', async () => {
+    const { getByText } = renderWithTheme(
+      <QRScannerModal visible onClose={mockOnClose} onScan={mockOnScan} isConnecting />,
+    );
+
+    // Wait for permission check
+    await wait(100);
+
+    expect(getByText('Connecting...')).toBeTruthy();
   });
 });

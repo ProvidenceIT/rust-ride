@@ -2,7 +2,7 @@ module.exports = {
   preset: 'react-native',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|react-native-vector-icons|@react-navigation|react-native-screens|react-native-safe-area-context|react-native-gesture-handler)/)',
+    'node_modules/(?!(react-native|@react-native|react-native-vector-icons|@react-navigation|react-native-screens|react-native-safe-area-context|react-native-gesture-handler|react-native-camera-kit|react-native-permissions)/)',
   ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
@@ -17,5 +17,7 @@ module.exports = {
     '^@types/(.*)$': '<rootDir>/src/types/$1',
     // Mock for react-native-zeroconf (not installed, using manual mock)
     '^react-native-zeroconf$': '<rootDir>/__mocks__/react-native-zeroconf.ts',
+    // Mock for react-native-camera-kit (uses native modules)
+    '^react-native-camera-kit$': '<rootDir>/__mocks__/react-native-camera-kit.tsx',
   },
 };

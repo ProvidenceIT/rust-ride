@@ -26,6 +26,7 @@ import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ServerListItem } from '@/components/ServerListItem';
 import { ManualEntryModal } from '@/components/ManualEntryModal';
+import { QRScannerModal } from '@/components/QRScannerModal';
 import {
   useConnectionStore,
   selectDiscoveredServers,
@@ -35,7 +36,8 @@ import {
 } from '@/stores/connectionStore';
 import { getDiscoveryService } from '@/services/DiscoveryService';
 import { getConnectionService } from '@/services/ConnectionService';
-import type { DiscoveredServer } from '@/types';
+import type { DiscoveredServer, QrConnectionData } from '@/types';
+import { parseWebSocketUrl } from '@/types';
 
 type Props = RootStackScreenProps<'Connection'>;
 
@@ -56,6 +58,7 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
 
   // Local state
   const [isManualEntryVisible, setIsManualEntryVisible] = useState(false);
+  const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [connectingServer, setConnectingServer] = useState<DiscoveredServer | null>(null);
 
   // Get services
@@ -132,6 +135,67 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
   const handleManualEntryClose = useCallback(() => {
     setIsManualEntryVisible(false);
   }, []);
+
+  // Handle QR scanner
+  const handleQRScan = useCallback(() => {
+    setIsQRScannerVisible(true);
+  }, []);
+
+  const handleQRScannerClose = useCallback(() => {
+    setIsQRScannerVisible(false);
+  }, []);
+
+  const handleQRCodeScanned = useCallback(
+    async (qrData: QrConnectionData) => {
+      // Parse the WebSocket URL to get host and port
+      const urlParts = parseWebSocketUrl(qrData.url);
+      if (!urlParts) {
+        Alert.alert('Invalid QR Code', 'The QR code contains an invalid connection URL.');
+        setIsQRScannerVisible(false);
+        return;
+      }
+
+      // Create a server object from QR data
+      const server: DiscoveredServer = {
+        name: `RustRide (${urlParts.host})`,
+        host: urlParts.host,
+        port: urlParts.port,
+        version: qrData.version,
+      };
+
+      // Store the PIN if provided (will be used for authentication)
+      if (qrData.pin) {
+        // Store PIN in connection store for automatic authentication
+        useConnectionStore.getState().savePin(qrData.pin);
+      }
+
+      setConnectingServer(server);
+      setIsQRScannerVisible(false);
+
+      try {
+        // Connect using the URL from QR code
+        await connectionService.connect(qrData.url);
+
+        // If we have a PIN, authenticate automatically
+        if (qrData.pin) {
+          try {
+            await connectionService.authenticate(qrData.pin);
+          } catch (authError) {
+            // Auth failed, but connection might still be open
+            // User may need to enter PIN manually
+          }
+        }
+      } catch {
+        setConnectingServer(null);
+        Alert.alert(
+          'Connection Failed',
+          `Could not connect to ${server.name}. Please check the server is running and try again.`,
+          [{ text: 'OK' }]
+        );
+      }
+    },
+    [connectionService]
+  );
 
   const handleManualEntrySubmit = useCallback(
     async (server: DiscoveredServer) => {
@@ -303,10 +367,7 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         <Button
           title="Scan QR Code"
           variant="primary"
-          onPress={() => {
-            // TODO: Implement QR scanning (T019)
-            Alert.alert('Coming Soon', 'QR code scanning will be available in a future update.');
-          }}
+          onPress={handleQRScan}
           fullWidth
           disabled={isConnecting}
           style={{ marginBottom: spacing.sm }}
@@ -334,6 +395,14 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
         visible={isManualEntryVisible}
         onClose={handleManualEntryClose}
         onSubmit={handleManualEntrySubmit}
+        isConnecting={isConnecting}
+      />
+
+      {/* QR scanner modal */}
+      <QRScannerModal
+        visible={isQRScannerVisible}
+        onClose={handleQRScannerClose}
+        onScan={handleQRCodeScanned}
         isConnecting={isConnecting}
       />
     </SafeAreaView>
