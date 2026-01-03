@@ -52,6 +52,23 @@ jest.mock('../../src/services/ConnectionService', () => ({
   },
 }));
 
+// Mock RideCacheService to prevent AsyncStorage side effects in tests
+jest.mock('../../src/services/RideCacheService', () => ({
+  getRideCacheService: jest.fn(() => ({
+    getCachedRideSummaries: jest.fn().mockResolvedValue([]),
+    getCachedRideDetail: jest.fn().mockResolvedValue(null),
+    getLastSync: jest.fn().mockResolvedValue(null),
+    cacheRideSummaries: jest.fn().mockResolvedValue(undefined),
+    cacheRideDetail: jest.fn().mockResolvedValue(undefined),
+    updateLastSync: jest.fn().mockResolvedValue(undefined),
+    clearCache: jest.fn().mockResolvedValue(undefined),
+    hasCachedSummaries: jest.fn().mockResolvedValue(false),
+  })),
+  RideCacheService: {
+    getInstance: jest.fn(),
+  },
+}));
+
 // Sample ride data
 const mockRides: RideSummary[] = [
   {
@@ -113,20 +130,23 @@ describe('HistoryScreen', () => {
   });
 
   describe('Not Connected State', () => {
-    it('shows not connected message when disconnected', () => {
-      const { getByText } = renderWithProviders();
-      expect(getByText('Not Connected')).toBeTruthy();
-      expect(getByText('Connect to your desktop app to view ride history')).toBeTruthy();
+    it('shows no cached rides message when disconnected with empty cache', async () => {
+      // When offline with no cache, show "No Cached Rides" after loading from cache
+      const { findByText } = renderWithProviders();
+      expect(await findByText('No Cached Rides')).toBeTruthy();
+      expect(
+        await findByText('Connect while online to cache your ride history for offline viewing')
+      ).toBeTruthy();
     });
 
-    it('shows Connect button when disconnected', () => {
-      const { getByText } = renderWithProviders();
-      expect(getByText('Connect')).toBeTruthy();
+    it('shows Connect button when disconnected with empty cache', async () => {
+      const { findByText } = renderWithProviders();
+      expect(await findByText('Connect')).toBeTruthy();
     });
 
-    it('has accessible connect button', () => {
-      const { getByLabelText } = renderWithProviders();
-      expect(getByLabelText('Connect to desktop app')).toBeTruthy();
+    it('has accessible connect button', async () => {
+      const { findByLabelText } = renderWithProviders();
+      expect(await findByLabelText('Connect to desktop app')).toBeTruthy();
     });
   });
 

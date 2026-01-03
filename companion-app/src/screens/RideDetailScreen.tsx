@@ -14,7 +14,7 @@
  * - Loading and error states
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -32,6 +32,7 @@ import {
   selectCurrentRideDetail,
   selectIsLoadingDetail,
   selectError,
+  selectIsShowingCached,
 } from '@/stores/historyStore';
 import {
   useConnectionStore,
@@ -161,10 +162,15 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
   const { colors, spacing } = useTheme();
   const { rideId } = route.params;
 
+  // Local state for tracking cached view
+  const [isViewingCached, setIsViewingCached] = useState(false);
+
   // Store selectors
   const rideDetail = useHistoryStore(selectCurrentRideDetail);
   const isLoadingDetail = useHistoryStore(selectIsLoadingDetail);
   const error = useHistoryStore(selectError);
+  const isShowingCached = useHistoryStore(selectIsShowingCached);
+  const loadRideDetailFromCache = useHistoryStore(state => state.loadRideDetailFromCache);
   const isConnected = useConnectionStore(selectIsConnected);
   const units = useSettingsStore(selectUnits);
   const loadSettings = useSettingsStore(state => state.loadSettings);
@@ -174,13 +180,23 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
     loadSettings();
   }, [loadSettings]);
 
-  // Fetch ride details when screen loads
+  // Fetch ride details when screen loads (or from cache if offline)
   useEffect(() => {
-    if (isConnected) {
-      const connectionService = getConnectionService();
-      connectionService.fetchRideDetails(rideId);
-    }
-  }, [rideId, isConnected]);
+    const fetchData = async () => {
+      if (isConnected) {
+        // Try to fetch from server
+        setIsViewingCached(false);
+        const connectionService = getConnectionService();
+        connectionService.fetchRideDetails(rideId);
+      } else {
+        // Try to load from offline cache
+        const cachedDetail = await loadRideDetailFromCache(rideId);
+        setIsViewingCached(cachedDetail !== null);
+      }
+    };
+
+    fetchData();
+  }, [rideId, isConnected, loadRideDetailFromCache]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -234,8 +250,8 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
     );
   }
 
-  // Render not connected state
-  if (!isConnected && !rideDetail) {
+  // Render not connected state (only if no cached data available)
+  if (!isConnected && !rideDetail && !isViewingCached) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -248,9 +264,9 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
             color={colors.textSecondary}
             style={styles.errorIcon}
           />
-          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>Not Connected</Text>
+          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>Not Available Offline</Text>
           <Text style={[styles.errorText, { color: colors.textSecondary }]}>
-            Connect to your desktop app to view ride details
+            This ride was not cached for offline viewing. Connect to your desktop app to see details.
           </Text>
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.accent }]}
@@ -313,6 +329,20 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
           />
         }
       >
+        {/* Offline cache banner */}
+        {(isViewingCached || isShowingCached) && (
+          <View
+            style={[styles.cachedBanner, { backgroundColor: colors.warning + '20' }]}
+            accessibilityRole="alert"
+            accessibilityLabel="Viewing cached ride data"
+          >
+            <Icon name="cloud-offline-outline" size={16} color={colors.warning} />
+            <Text style={[styles.cachedBannerText, { color: colors.textPrimary }]}>
+              Viewing Cached Data
+            </Text>
+          </View>
+        )}
+
         {/* Header with date and time */}
         <View style={[styles.header, { backgroundColor: colors.surface }]}>
           <View style={styles.headerDateContainer}>
@@ -581,5 +611,17 @@ const styles = StyleSheet.create({
   },
   footer: {
     height: 40,
+  },
+  cachedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  cachedBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

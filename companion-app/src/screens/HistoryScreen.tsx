@@ -45,6 +45,8 @@ import {
   selectPagination,
   selectFilters,
   selectHasFiltersApplied,
+  selectIsShowingCached,
+  selectLastSyncAt,
   getFilterDateRange,
 } from '@/stores/historyStore';
 import {
@@ -95,6 +97,11 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   const filters = useHistoryStore(selectFilters);
   const hasFiltersApplied = useHistoryStore(selectHasFiltersApplied);
   const setDateRangeFilter = useHistoryStore(state => state.setDateRangeFilter);
+
+  // Offline cache state
+  const isShowingCached = useHistoryStore(selectIsShowingCached);
+  const lastSyncAt = useHistoryStore(selectLastSyncAt);
+  const loadFromOfflineCache = useHistoryStore(state => state.loadFromOfflineCache);
 
   // Settings state
   const units = useSettingsStore(selectUnits);
@@ -163,13 +170,17 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
     loadSettings();
   }, [loadSettings]);
 
-  // Load initial rides when connected
+  // Load initial rides when connected, or from cache when offline
   useEffect(() => {
     if (isConnected && !hasLoadedRef.current && rides.length === 0) {
       hasLoadedRef.current = true;
       loadRides();
+    } else if (!isConnected && !hasLoadedRef.current && rides.length === 0) {
+      // Try loading from offline cache when not connected
+      hasLoadedRef.current = true;
+      loadFromOfflineCache();
     }
-  }, [isConnected, rides.length, loadRides]);
+  }, [isConnected, rides.length, loadRides, loadFromOfflineCache]);
 
   // Reset load flag when disconnected
   useEffect(() => {
@@ -223,6 +234,24 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
     },
     [setDateRangeFilter]
   );
+
+  /**
+   * Format last sync time for display
+   */
+  const formatLastSync = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never synced';
+
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
 
   /**
    * Format date for display
@@ -378,8 +407,8 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
       );
     }
 
-    // Show disconnected state
-    if (!isConnected) {
+    // Show disconnected state (only if no cached rides)
+    if (!isConnected && !isShowingCached) {
       return (
         <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
           <Icon
@@ -391,6 +420,32 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
           <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>Not Connected</Text>
           <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
             Connect to your desktop app to view ride history
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+            onPress={handleConnectPress}
+            accessibilityRole="button"
+            accessibilityLabel="Connect to desktop app"
+          >
+            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Connect</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Show offline empty state when showing cached but no cached rides
+    if (!isConnected && isShowingCached) {
+      return (
+        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
+          <Icon
+            name="cloud-offline-outline"
+            size={48}
+            color={colors.textSecondary}
+            style={styles.emptyIcon}
+          />
+          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>No Cached Rides</Text>
+          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+            Connect while online to cache your ride history for offline viewing
           </Text>
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.accent }]}
@@ -482,8 +537,25 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
         <ConnectionStatus status={connectionStatus} variant="badge" animated />
       </View>
 
-      {/* Filter bar - only show when connected and has rides */}
-      {isConnected && rides.length > 0 && (
+      {/* Offline cache banner */}
+      {isShowingCached && rides.length > 0 && (
+        <View
+          style={[styles.cachedBanner, { backgroundColor: colors.warning + '20' }]}
+          accessibilityRole="alert"
+          accessibilityLabel={`Viewing cached rides. Last synced ${formatLastSync(lastSyncAt)}`}
+        >
+          <Icon name="cloud-offline-outline" size={16} color={colors.warning} />
+          <Text style={[styles.cachedBannerText, { color: colors.textPrimary }]}>
+            Offline Mode
+          </Text>
+          <Text style={[styles.cachedBannerSubtext, { color: colors.textSecondary }]}>
+            Last synced: {formatLastSync(lastSyncAt)}
+          </Text>
+        </View>
+      )}
+
+      {/* Filter bar - only show when connected or has cached rides */}
+      {(isConnected || isShowingCached) && rides.length > 0 && (
         <HistoryFilterBar
           onCustomDatePress={() => setShowDatePicker(true)}
         />
@@ -675,5 +747,20 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
+  },
+  cachedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  cachedBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cachedBannerSubtext: {
+    fontSize: 12,
+    marginLeft: 'auto',
   },
 });

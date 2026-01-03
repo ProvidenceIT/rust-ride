@@ -12,6 +12,7 @@ import { useConnectionStore } from '@/stores/connectionStore';
 import { useMetricsStore } from '@/stores/metricsStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useHistoryStore } from '@/stores/historyStore';
+import { getRideCacheService } from '@/services/RideCacheService';
 import type {
   CompanionRequest,
   CompanionResponse,
@@ -533,6 +534,10 @@ export class ConnectionService {
     const connectionStore = useConnectionStore.getState();
     connectionStore.setAuthenticated();
 
+    // Clear offline mode flag - we're back online
+    const historyStore = useHistoryStore.getState();
+    historyStore.setShowingCached(false);
+
     // Auto-subscribe to metrics after authentication
     this.send({ type: 'subscribe_metrics' }).catch(() => {
       // Subscription failed, will retry on user action
@@ -597,6 +602,14 @@ export class ConnectionService {
     // Check if this is appending (loading more) or replacing
     const isAppending = historyStore.isLoadingMore;
     historyStore.setRides(rides, response.total, isAppending);
+
+    // Cache to AsyncStorage for offline access
+    const cacheService = getRideCacheService();
+    cacheService.cacheRideSummaries(rides).then(() => {
+      cacheService.updateLastSync();
+    }).catch(() => {
+      // Ignore cache errors
+    });
   }
 
   /**
@@ -606,6 +619,12 @@ export class ConnectionService {
     const historyStore = useHistoryStore.getState();
     const detail: RideDetailInfo = response.ride;
     historyStore.setCurrentRideDetail(detail);
+
+    // Cache to AsyncStorage for offline access
+    const cacheService = getRideCacheService();
+    cacheService.cacheRideDetail(detail).catch(() => {
+      // Ignore cache errors
+    });
   }
 
   /**

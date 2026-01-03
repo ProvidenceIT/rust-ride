@@ -3,10 +3,12 @@
  *
  * Manages ride history state with pagination, caching, and filtering.
  * Fetches ride data from the RustRide desktop app via WebSocket.
+ * Supports offline mode with AsyncStorage caching.
  */
 
 import { create } from 'zustand';
 import type { RideSummary, RideDetailInfo } from '@/types';
+import { getRideCacheService } from '@/services/RideCacheService';
 
 /**
  * Date range filter options
@@ -61,6 +63,11 @@ interface HistoryState {
 
   // Last fetch timestamp for cache invalidation
   lastFetchedAt: number | null;
+
+  // Offline mode state
+  isShowingCached: boolean;
+  cachedRidesCount: number;
+  lastSyncAt: number | null;
 }
 
 /**
@@ -94,6 +101,13 @@ interface HistoryActions {
   // Cache management
   clearCache: () => void;
   updateLastFetchedAt: () => void;
+
+  // Offline/AsyncStorage cache
+  loadFromOfflineCache: () => Promise<void>;
+  loadRideDetailFromCache: (rideId: string) => Promise<RideDetailInfo | null>;
+  syncToOfflineCache: () => Promise<void>;
+  setShowingCached: (isShowingCached: boolean) => void;
+  clearOfflineCache: () => Promise<void>;
 
   // Reset store
   reset: () => void;
@@ -138,6 +152,10 @@ const initialState: HistoryState = {
   currentRideDetail: null,
   isLoadingDetail: false,
   lastFetchedAt: null,
+  // Offline mode
+  isShowingCached: false,
+  cachedRidesCount: 0,
+  lastSyncAt: null,
 };
 
 /**
@@ -292,6 +310,119 @@ export const useHistoryStore = create<HistoryState & HistoryActions>()((set, get
     set({ lastFetchedAt: Date.now() });
   },
 
+  // Offline/AsyncStorage cache
+  loadFromOfflineCache: async () => {
+    try {
+      set({ isLoading: true });
+      const cacheService = getRideCacheService();
+      const cachedRides = await cacheService.getCachedRideSummaries();
+      const lastSync = await cacheService.getLastSync();
+
+      if (cachedRides.length > 0) {
+        // Convert CachedRideSummary to RideSummary (strip cachedAt)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const rides: RideSummary[] = cachedRides.map(({ cachedAt, ...ride }) => ride);
+
+        set({
+          rides,
+          pagination: {
+            offset: rides.length,
+            limit: PAGE_SIZE,
+            total: rides.length,
+            hasMore: false, // No more pages available offline
+          },
+          isLoading: false,
+          isShowingCached: true,
+          cachedRidesCount: rides.length,
+          lastSyncAt: lastSync,
+          error: null,
+        });
+      } else {
+        set({
+          isLoading: false,
+          isShowingCached: true,
+          cachedRidesCount: 0,
+        });
+      }
+    } catch {
+      set({
+        isLoading: false,
+        error: 'Failed to load cached rides',
+      });
+    }
+  },
+
+  loadRideDetailFromCache: async (rideId: string): Promise<RideDetailInfo | null> => {
+    try {
+      const cacheService = getRideCacheService();
+      const cachedDetail = await cacheService.getCachedRideDetail(rideId);
+
+      if (cachedDetail) {
+        // Strip cachedAt and return as RideDetailInfo
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { cachedAt, ...detail } = cachedDetail;
+        set({ currentRideDetail: detail, isLoadingDetail: false });
+        return detail;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  syncToOfflineCache: async () => {
+    try {
+      const state = get();
+      const cacheService = getRideCacheService();
+
+      // Cache ride summaries
+      if (state.rides.length > 0) {
+        await cacheService.cacheRideSummaries(state.rides);
+      }
+
+      // Cache ride details from memory cache
+      for (const [, detail] of state.rideDetailsCache) {
+        await cacheService.cacheRideDetail(detail);
+      }
+
+      // Cache current ride detail if set
+      if (state.currentRideDetail) {
+        await cacheService.cacheRideDetail(state.currentRideDetail);
+      }
+
+      // Update sync timestamp
+      await cacheService.updateLastSync();
+      const lastSync = await cacheService.getLastSync();
+
+      set({
+        isShowingCached: false,
+        lastSyncAt: lastSync,
+        cachedRidesCount: state.rides.length,
+      });
+    } catch {
+      // Ignore sync errors - cache is best effort
+    }
+  },
+
+  setShowingCached: (isShowingCached: boolean) => {
+    set({ isShowingCached });
+  },
+
+  clearOfflineCache: async () => {
+    try {
+      const cacheService = getRideCacheService();
+      await cacheService.clearCache();
+      set({
+        isShowingCached: false,
+        cachedRidesCount: 0,
+        lastSyncAt: null,
+      });
+    } catch {
+      // Ignore clear errors
+    }
+  },
+
   // Reset store
   reset: () => {
     set({
@@ -331,6 +462,14 @@ export const selectIsEmpty = (state: HistoryState & HistoryActions) =>
 
 export const selectHasFiltersApplied = (state: HistoryState & HistoryActions): boolean =>
   state.filters.dateRange !== 'all' || state.filters.rideType !== 'all';
+
+export const selectIsShowingCached = (state: HistoryState & HistoryActions) =>
+  state.isShowingCached;
+
+export const selectCachedRidesCount = (state: HistoryState & HistoryActions) =>
+  state.cachedRidesCount;
+
+export const selectLastSyncAt = (state: HistoryState & HistoryActions) => state.lastSyncAt;
 
 /**
  * Get date range for filter

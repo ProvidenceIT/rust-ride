@@ -51,6 +51,22 @@ jest.mock('../../src/services/ConnectionService', () => ({
   },
 }));
 
+// Mock RideCacheService to prevent AsyncStorage side effects in tests
+jest.mock('../../src/services/RideCacheService', () => ({
+  getRideCacheService: jest.fn(() => ({
+    getCachedRideSummaries: jest.fn().mockResolvedValue([]),
+    getCachedRideDetail: jest.fn().mockResolvedValue(null),
+    getLastSync: jest.fn().mockResolvedValue(null),
+    cacheRideSummaries: jest.fn().mockResolvedValue(undefined),
+    cacheRideDetail: jest.fn().mockResolvedValue(undefined),
+    updateLastSync: jest.fn().mockResolvedValue(undefined),
+    clearCache: jest.fn().mockResolvedValue(undefined),
+  })),
+  RideCacheService: {
+    getInstance: jest.fn(),
+  },
+}));
+
 // Sample ride detail data
 const mockRideDetail: RideDetailInfo = {
   ride_id: 'ride-123',
