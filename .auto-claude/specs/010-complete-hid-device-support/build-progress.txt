@@ -285,3 +285,74 @@ integration is working correctly.
 
 ### Verification Required:
 Manual verification needed (cargo not available in sandbox)
+
+## 2026-01-03 - Subtask 4.1 Complete: Wire HID Config Persistence to Database
+
+### Summary:
+Connected the existing HardwareStore HID methods to the app config loading/saving flow.
+HID device configurations and button mappings are now loaded from the database on startup
+and saved when settings are changed.
+
+### Implementation Details:
+
+#### New Module Created: `src/hid/persistence.rs`
+Conversion functions between runtime HID types and database storage types:
+- `stored_device_to_config()` - Convert StoredHidDevice to HidDeviceConfig
+- `config_to_stored_device()` - Convert HidDeviceConfig to StoredHidDevice
+- `stored_mapping_to_config()` - Convert StoredButtonMapping to ButtonMappingConfig
+- `config_to_stored_mapping()` - Convert ButtonMappingConfig to StoredButtonMapping
+- `parse_button_action()` - Deserialize ButtonAction from action_type + JSON params
+- `serialize_button_action()` - Serialize ButtonAction to action_type + JSON params
+- `load_hid_config_from_db()` - Load all HID devices and mappings for a user
+- `save_hid_config_to_db()` - Save all HID devices and mappings for a user
+
+#### App Startup Changes (`src/app.rs`)
+1. Added Database field to RustRideApp struct
+2. Database opened at startup using `get_data_dir().join("rustride.db")`
+3. HID config loaded from database via `load_hid_config_from_db()`
+4. Loaded mappings registered with `ButtonInputHandler.register_mappings()`
+5. Settings screen initialized with loaded HID config
+
+#### Settings Save Changes (`src/app.rs`)
+1. On SettingsAction::Save, HID config retrieved from settings screen
+2. Config saved to database via `save_hid_config_to_db()`
+3. Button mappings in handler updated:
+   - Existing mappings cleared for each device
+   - New mappings registered if device is enabled
+
+#### Module Exports (`src/hid/mod.rs`)
+Added exports for persistence module functions:
+- `load_hid_config_from_db`
+- `save_hid_config_to_db`
+- `stored_device_to_config`
+- `stored_mapping_to_config`
+- `config_to_stored_device`
+- `config_to_stored_mapping`
+
+### Acceptance Criteria Met:
+- [x] HID devices loaded from database on app startup
+- [x] Button mappings loaded for each enabled device
+- [x] Changes from settings screen saved to database
+- [x] Config survives app restart (persisted to SQLite)
+
+### Files Created:
+- `src/hid/persistence.rs` - ~400 lines with comprehensive unit tests
+
+### Files Modified:
+- `src/hid/mod.rs` - Added persistence module and exports
+- `src/app.rs` - Added Database field, startup loading, and save handling
+- `src/ui/screens/settings.rs` - Fixed HidSettings.to_config() to include all fields
+
+### Unit Tests Added:
+- test_parse_simple_action
+- test_parse_action_with_params
+- test_serialize_simple_action
+- test_serialize_action_with_params
+- test_roundtrip_actions (all 20 action types)
+- test_stored_device_to_config
+- test_config_to_stored_device
+- test_stored_mapping_to_config
+- test_config_to_stored_mapping
+
+### Verification Required:
+Manual verification needed (cargo not available in sandbox)

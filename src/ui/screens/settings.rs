@@ -338,6 +338,8 @@ impl HidSettings {
         HidConfig {
             enabled: self.enabled,
             devices: self.device_configs.clone(),
+            reconnect_delay_ms: 1000,
+            auto_reconnect: true,
         }
     }
 }

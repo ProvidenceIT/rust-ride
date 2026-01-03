@@ -16,6 +16,7 @@ use rustride::achievements::{
 };
 use rustride::audio::{AudioEngine, DefaultAudioEngine};
 use rustride::hid::{
+    load_hid_config_from_db, save_hid_config_to_db, ButtonInputHandler, ButtonMapping,
     DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
 };
 use rustride::integrations::mqtt::{
@@ -33,7 +34,8 @@ use rustride::sensors::{
     CadenceFusion, DefaultInclineController, FusionMode, InclineConfig, InclineController,
     SensorFusion, SensorFusionConfig, SensorManager,
 };
-use rustride::storage::config::{AppConfig, UserProfile};
+use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
+use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
     AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, RideView, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
@@ -157,6 +159,8 @@ pub struct RustRideApp {
     cumulative_stats: CumulativeStats,
     /// T043: User ID for achievement tracking
     user_id: Uuid,
+    /// T091: Database connection for persistent storage
+    database: Option<Database>,
 }
 
 impl RustRideApp {
@@ -261,10 +265,49 @@ impl RustRideApp {
         ));
         let streaming_server = Arc::new(DefaultStreamingServer::new(pin_auth));
 
+        // T091: Initialize database for HID config persistence
+        let db_path = get_data_dir().join("rustride.db");
+        let database = match Database::open(&db_path) {
+            Ok(db) => {
+                tracing::info!("Opened database at {:?}", db_path);
+                Some(db)
+            }
+            Err(e) => {
+                tracing::error!("Failed to open database: {}. HID config will not persist.", e);
+                None
+            }
+        };
+
         // T091: Initialize HID device manager and button input handler
-        let hid_config = HidConfig::default();
-        let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config));
+        // Load HID config from database if available
+        let hid_config = if let Some(ref db) = database {
+            let store = HardwareStore::new(db.connection());
+            load_hid_config_from_db(&store, &user_id)
+        } else {
+            HidConfig::default()
+        };
+
+        let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config.clone()));
         let button_input_handler = Arc::new(DefaultButtonInputHandler::new());
+
+        // T091: Register loaded button mappings with the handler
+        for device_config in &hid_config.devices {
+            if device_config.enabled {
+                let mappings: Vec<ButtonMapping> = device_config
+                    .mappings
+                    .iter()
+                    .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
+                    .collect();
+                if !mappings.is_empty() {
+                    button_input_handler.register_mappings(&device_config.device_id, mappings);
+                    tracing::info!(
+                        "Loaded {} button mappings for device {}",
+                        device_config.mappings.len(),
+                        device_config.name
+                    );
+                }
+            }
+        }
 
         // T091: Create executor event channel for UI navigation actions
         // The executor_event_rx will be set when the action executor is created
@@ -294,9 +337,10 @@ impl RustRideApp {
             Screen::Home
         };
 
-        // Initialize settings screen with profile
+        // Initialize settings screen with profile and HID config
         let mut settings_screen = SettingsScreen::new(profile.clone());
         settings_screen.set_incline_config(incline_config);
+        settings_screen.set_hid_config(hid_config);
 
         Self {
             current_screen: start_screen,
@@ -342,6 +386,7 @@ impl RustRideApp {
             achievement_checker: AllCheckers::new(),
             cumulative_stats: CumulativeStats::default(),
             user_id,
+            database,
         }
     }
 
@@ -1109,6 +1154,33 @@ impl eframe::App for RustRideApp {
                                 0.3, // smoothing
                                 0.5, // update interval
                             );
+
+                            // T091: Save HID config to database
+                            let hid_config = self.settings_screen.get_hid_config();
+                            if let Some(ref db) = self.database {
+                                let store = HardwareStore::new(db.connection());
+                                if let Err(e) = save_hid_config_to_db(&store, &self.user_id, &hid_config) {
+                                    tracing::error!("Failed to save HID config to database: {}", e);
+                                } else {
+                                    tracing::info!("HID config saved to database");
+                                }
+
+                                // Update button mappings in the handler
+                                for device_config in &hid_config.devices {
+                                    // Clear existing mappings for this device
+                                    self.button_input_handler.clear_mappings(&device_config.device_id);
+
+                                    // Register new mappings if device is enabled
+                                    if device_config.enabled && !device_config.mappings.is_empty() {
+                                        let mappings: Vec<ButtonMapping> = device_config
+                                            .mappings
+                                            .iter()
+                                            .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
+                                            .collect();
+                                        self.button_input_handler.register_mappings(&device_config.device_id, mappings);
+                                    }
+                                }
+                            }
 
                             tracing::info!(
                                 "Settings saved. Incline mode: {}",

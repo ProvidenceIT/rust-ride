@@ -8,6 +8,7 @@ pub mod executor;
 pub mod generic;
 pub mod input;
 pub mod mapping;
+pub mod persistence;
 pub mod streamdeck;
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,10 @@ pub use input::{HidDeviceType, HidInputReader, OpenDeviceInfo};
 pub use mapping::{
     ButtonActionEvent, ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler,
     RawButtonEvent,
+};
+pub use persistence::{
+    config_to_stored_device, config_to_stored_mapping, load_hid_config_from_db,
+    save_hid_config_to_db, stored_device_to_config, stored_mapping_to_config,
 };
 pub use streamdeck::{StreamDeckModel, StreamDeckParser};
 

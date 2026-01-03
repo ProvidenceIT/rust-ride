@@ -228,7 +228,7 @@
           "id": "3.3",
           "title": "Integrate with audio and fan systems",
           "description": "Wire up audio control actions (volume, mute) and fan control actions (speed, toggle) to their respective subsystems.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "files": [
             "src/hid/executor.rs"
@@ -240,13 +240,14 @@
             "FanToggle toggles fan on/off",
             "Graceful handling when MQTT not connected"
           ],
-          "notes": "Audio and fan controller already have these methods exposed."
+          "notes": "Verified and enhanced audio control actions (volume, mute) and fan control actions (speed, toggle) integration with their respective subsystems. The wiring was already implemented in subtask 3.1, but this task added comprehensive tests to verify the integration is working correctly.\n\nAcceptance criteria met:\n- VolumeUp/Down adjusts audio engine master volume (via set_volume)\n- MuteToggle toggles audio mute state (sets to 0 on mute, restores on unmute)\n- FanSpeedUp/Down adjusts fan controller speed (via set_speed)\n- FanToggle toggles fan on/off (speed 0 = off, current speed = on)\n- Graceful handling when MQTT not connected (MqttError -> ActionError::ExecutionFailed)\n\nAdded 16 new integration tests with MockAudioEngine and MockFanController implementations:\n- test_volume_up_calls_audio_engine\n- test_volume_down_calls_audio_engine\n- test_mute_toggle_calls_audio_engine\n- test_volume_clamped_at_100/0\n- test_fan_speed_up/down_calls_controller\n- test_fan_toggle_calls_controller\n- test_fan_action_without_controller/profile (graceful error handling)\n- test_fan_action_mqtt_error_handling\n- test_fan_speed_clamped_at_100/0\n- test_fan_speed_up_turns_fan_on",
+          "updated_at": "2026-01-03T06:42:46.608986+00:00"
         },
         {
           "id": "3.4",
           "title": "Integrate with UI navigation",
           "description": "Wire up UI navigation actions (show metrics, map, workout view, fullscreen toggle) to the app's screen management.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "files": [
             "src/hid/executor.rs",
@@ -259,7 +260,8 @@
             "ToggleFullscreen toggles full-screen mode",
             "View changes are reflected immediately in UI"
           ],
-          "notes": "May need to add event channel for UI state changes."
+          "notes": "Wired up UI navigation actions to screen management:\n\n- Added RideView enum (Metrics, Map, Workout) for view switching within ride screen\n- Added current_view field to RideScreen with Default set to Metrics\n- Added view switching methods: set_view(), show_metrics_view(), show_map_view(), show_workout_view(), toggle_fullscreen()\n- Added executor_event_rx field to RustRideApp for receiving ExecutorEvents\n- Added process_executor_events() method to handle navigation events in app update loop\n- Wired ExecutorEvent::NavigationRequest to switch ride screen views\n- Wired ExecutorEvent::FullscreenToggle to toggle fullscreen mode\n- Exported RideView from ui/screens/mod.rs\n\nAcceptance criteria met:\n- ShowMetrics switches ride screen to metrics view \u2713\n- ShowMap switches ride screen to map view \u2713\n- ShowWorkout switches ride screen to workout view \u2713\n- ToggleFullscreen toggles full-screen mode \u2713\n- View changes are reflected immediately in UI \u2713",
+          "updated_at": "2026-01-03T06:48:31.118101+00:00"
         }
       ]
     },
@@ -273,7 +275,7 @@
           "id": "4.1",
           "title": "Wire HID config persistence to database",
           "description": "Connect the existing HardwareStore HID methods to the app config loading/saving flow. Load mappings on startup and save on changes.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "files": [
             "src/app.rs",
@@ -285,7 +287,8 @@
             "Changes from settings screen saved to database",
             "Config survives app restart"
           ],
-          "notes": "HardwareStore already has save/load methods - need to wire them up."
+          "notes": "Created src/hid/persistence.rs with conversion functions between HID runtime types and database storage types. Updated app.rs to load HID config from database on startup and save on settings changes. Added database field to RustRideApp. Registered loaded button mappings with ButtonInputHandler.",
+          "updated_at": "2026-01-03T06:57:19.107692+00:00"
         },
         {
           "id": "4.2",
@@ -461,5 +464,5 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T06:36:01.557389+00:00"
+  "last_updated": "2026-01-03T06:57:19.107692+00:00"
 }
