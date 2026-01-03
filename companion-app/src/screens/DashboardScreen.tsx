@@ -33,6 +33,7 @@ import {
   DistanceDisplay,
   ElapsedTimeDisplay,
   CaloriesDisplay,
+  WorkoutIntervalDisplay,
 } from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
@@ -50,7 +51,14 @@ import {
   getPowerZone,
   getHeartRateZone,
 } from '@/stores/metricsStore';
-import { useSessionStore, selectIsSessionActive } from '@/stores/sessionStore';
+import {
+  useSessionStore,
+  selectIsSessionActive,
+  selectCurrentInterval,
+  selectIsPaused,
+  selectIsWorkout,
+  selectTargetPower as selectSessionTargetPower,
+} from '@/stores/sessionStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 /**
@@ -114,6 +122,10 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
   // Session state
   const isSessionActive = useSessionStore(selectIsSessionActive);
   const elapsedSecs = useSessionStore(state => state.elapsedSecs);
+  const currentInterval = useSessionStore(selectCurrentInterval);
+  const isPaused = useSessionStore(selectIsPaused);
+  const isWorkout = useSessionStore(selectIsWorkout);
+  const sessionTargetPower = useSessionStore(selectSessionTargetPower);
 
   // Settings state - load settings on mount
   const loadSettings = useSettingsStore(state => state.loadSettings);
@@ -216,6 +228,18 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
             showMetrics={showMetrics}
             style={{ width: powerCardWidth }}
           />
+
+          {/* Workout Interval Display - only shown during structured workouts */}
+          {isWorkout && currentInterval && (
+            <WorkoutIntervalDisplay
+              currentInterval={currentInterval}
+              targetPower={sessionTargetPower}
+              ftp={DEFAULT_FTP}
+              isPaused={isPaused}
+              showMetrics={showMetrics}
+              style={{ width: powerCardWidth }}
+            />
+          )}
 
           {/* Heart Rate Display - with zone indicator and pulse animation */}
           <HeartRateDisplay

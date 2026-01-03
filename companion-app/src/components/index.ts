@@ -66,3 +66,11 @@ export type {
   ElapsedTimeDisplayProps,
   CaloriesDisplayProps,
 } from './SecondaryMetrics';
+
+// WorkoutIntervalDisplay - shows workout interval info, time remaining, and progress
+export { WorkoutIntervalDisplay } from './WorkoutIntervalDisplay';
+export type {
+  WorkoutIntervalDisplayProps,
+  IntervalInfo,
+  NextIntervalInfo,
+} from './WorkoutIntervalDisplay';
