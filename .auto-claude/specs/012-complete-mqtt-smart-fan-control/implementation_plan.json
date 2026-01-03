@@ -1,8 +1,397 @@
 {
+  "spec_id": "012-complete-mqtt-smart-fan-control",
   "feature": "Complete MQTT Smart Fan Control",
-  "description": "# Complete MQTT Smart Fan Control\n\nFinish the MQTT client implementation for smart fan integration. Fans should automatically adjust speed based on power output, heart rate, or manual control.\n\n## Rationale\nSmart fan integration improves training comfort and is a differentiating feature for a comprehensive training setup. Most competitors don't offer this level of home automation integration.\n\n## User Stories\n- As a cyclist, I want my smart fan to speed up when I'm working hard so that I stay cool without manual adjustment\n- As a user with home automation, I want MQTT integration so that RustRide works with my existing setup\n\n## Acceptance Criteria\n- [ ] MQTT connection to broker works reliably\n- [ ] Fan speed adjusts based on configured trigger (power/HR)\n- [ ] Manual fan control override available\n- [ ] Reconnection on connection loss\n- [ ] Clear setup documentation for common smart fan setups\n",
+  "description": "Finish the MQTT client implementation for smart fan integration. Fans should automatically adjust speed based on power output, heart rate, or manual control.",
   "created_at": "2026-01-03T05:14:14.624Z",
-  "updated_at": "2026-01-03T05:14:14.624Z",
-  "status": "pending",
-  "phases": []
+  "updated_at": "2026-01-03T13:31:09.077Z",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "acceptance_criteria": [
+    "MQTT connection to broker works reliably",
+    "Fan speed adjusts based on configured trigger (power/HR)",
+    "Manual fan control override available",
+    "Reconnection on connection loss",
+    "Clear setup documentation for common smart fan setups"
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Core MQTT Implementation with rumqttc",
+      "description": "Replace simulated MQTT client with actual rumqttc implementation",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Implement actual rumqttc connection",
+          "description": "Replace the simulated connect() in DefaultMqttClient with actual rumqttc AsyncClient connection. Create MqttOptions with host, port, client_id, and keep_alive settings.",
+          "status": "completed",
+          "estimated_minutes": 30,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Replaced simulated connect() with actual rumqttc AsyncClient connection. Added MqttOptions with host, port, client_id, and keep_alive settings. Stored AsyncClient and EventLoop in struct fields for use by subsequent operations.",
+          "updated_at": "2026-01-03T13:39:39.294715+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Store AsyncClient and spawn event loop",
+          "description": "Store the rumqttc AsyncClient in the struct and spawn an async task to poll the event loop. Handle connection events and store them in state.",
+          "status": "completed",
+          "estimated_minutes": 45,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Spawned async task to poll rumqttc EventLoop. Added spawn_event_loop_task(), handle_event(), and handle_incoming() methods to process MQTT events. Handles ConnAck (connection confirmed), Publish (incoming messages), Disconnect, PingResp, and errors. Task handle stored for aborting on disconnect. Commit: f499fa8",
+          "updated_at": "2026-01-03T13:44:17.452940+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Implement actual publish operation",
+          "description": "Replace the simulated publish() with actual rumqttc client.publish() call. Convert QoS enum to rumqttc QoS.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Replaced simulated publish() with actual rumqttc client.publish() call. Added qos_to_rumqttc() helper function to convert our QoS enum to rumqttc's QoS. The publish method now acquires a read lock on the AsyncClient and calls client.publish() with proper QoS conversion and error handling. Added test for QoS conversion. Commit: b38e47e",
+          "updated_at": "2026-01-03T13:47:57.007592+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Implement actual subscribe/unsubscribe operations",
+          "description": "Replace simulated subscribe() and unsubscribe() with actual rumqttc calls.",
+          "status": "completed",
+          "estimated_minutes": 20,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Replaced simulated subscribe() and unsubscribe() with actual rumqttc calls. Both methods now acquire a read lock on the AsyncClient and call the respective rumqttc methods (client.subscribe() and client.unsubscribe()). QoS conversion is done via qos_to_rumqttc() helper for subscribe. Error handling uses MqttError::SubscribeFailed. Added unit tests for not-connected scenarios. Commit: ec59d78",
+          "updated_at": "2026-01-03T13:50:30.771552+00:00"
+        },
+        {
+          "id": "1.5",
+          "title": "Handle incoming messages via event loop",
+          "description": "Process Incoming::Publish events from the event loop and dispatch to subscribed topic handlers via MqttEvent::MessageReceived.",
+          "status": "completed",
+          "estimated_minutes": 30,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Verified that Incoming::Publish handling is already fully implemented in handle_incoming() method (added in subtask 1.2). The method extracts topic and payload from the Publish packet, logs the message for debugging, and dispatches via event_tx.send(MqttEvent::MessageReceived { topic, payload }). Subscribers can receive messages via subscribe_events() which returns a broadcast::Receiver<MqttEvent>. No additional code changes needed.",
+          "updated_at": "2026-01-03T13:52:02.736320+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Reconnection & Reliability",
+      "description": "Implement automatic reconnection and connection monitoring",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Handle disconnect events in event loop",
+          "description": "Detect ConnectionError and Disconnect events from the event loop and update connection state accordingly.",
+          "status": "completed",
+          "estimated_minutes": 25,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Added ConnectionLost state and event for recoverable disconnections. Implemented handle_connection_error() to categorize connection errors and is_recoverable_error() to distinguish recoverable vs non-recoverable errors. Updated Incoming::Disconnect handling to trigger reconnection flow. Added connection_state() method to MqttClient trait. Exported ConnectionState type from mqtt module. Added tests for connection state and error recovery logic. Commit: be65058",
+          "updated_at": "2026-01-03T13:55:28.964753+00:00"
+        },
+        {
+          "id": "2.2",
+          "title": "Implement automatic reconnection loop",
+          "description": "When disconnected, automatically attempt reconnection using the configured reconnect_interval_secs. Emit Reconnecting events.",
+          "status": "completed",
+          "estimated_minutes": 40,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Implemented automatic reconnection loop. Added reconnect_enabled AtomicBool flag to control auto-reconnection behavior. Modified spawn_event_loop_task() to detect recoverable errors and trigger spawn_reconnection_task(). The reconnection task waits for configured reconnect_interval_secs, emits MqttEvent::Reconnecting { attempt }, then creates a new AsyncClient and EventLoop. connect() enables auto-reconnection, disconnect() disables it. Added tests for reconnect flag behavior. Commit: 10d6e78",
+          "updated_at": "2026-01-03T14:00:39.006238+00:00"
+        },
+        {
+          "id": "2.3",
+          "title": "Add connection monitoring and timeout handling",
+          "description": "Handle connection timeouts gracefully. Add configurable max reconnection attempts before giving up.",
+          "status": "completed",
+          "estimated_minutes": 25,
+          "files": [
+            "src/integrations/mqtt/client.rs",
+            "src/integrations/mqtt/mod.rs"
+          ],
+          "notes": "Added connection_timeout_secs and max_reconnect_attempts to MqttConfig. Connection timeout is applied to MqttOptions in both connect() and reconnection task. Shared reconnect_attempt counter tracks attempts across tasks, resets on ConnAck. When max_reconnect_attempts is exceeded, emits ReconnectionFailed event and stops reconnection. Added comprehensive tests. Commit: bdf957e",
+          "updated_at": "2026-01-03T14:07:15.412138+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "TLS and Authentication Support",
+      "description": "Add secure connection and authentication capabilities",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Add TLS configuration to MqttOptions",
+          "description": "When use_tls is enabled, configure rumqttc with TLS settings using the rustls feature.",
+          "status": "completed",
+          "estimated_minutes": 35,
+          "files": [
+            "src/integrations/mqtt/client.rs"
+          ],
+          "notes": "Implemented TLS configuration for MQTT client. Added TlsConfiguration and Transport imports from rumqttc. Created configure_tls() helper function that uses TlsConfiguration::default() with system CA certificates. Applied TLS configuration in both connect() method and spawn_reconnection_task(). Added unit tests for TLS config defaults and configure_tls function. Commit: 0bf8b19",
+          "updated_at": "2026-01-03T14:12:18.477742+00:00"
+        },
+        {
+          "id": "3.2",
+          "title": "Integrate keyring for password storage",
+          "description": "Use the keyring crate (already in dependencies) to securely store and retrieve MQTT broker password.",
+          "status": "completed",
+          "estimated_minutes": 30,
+          "files": [
+            "src/integrations/mqtt/client.rs",
+            "src/integrations/mqtt/mod.rs"
+          ],
+          "notes": "Implemented MqttCredentialStore using keyring crate for secure MQTT password storage. Added store_password(), get_password(), and delete_password() methods. Updated DefaultMqttClient with credential_store field and configure_credentials() helper. Both connect() and spawn_reconnection_task() now retrieve passwords from the OS keyring when username is set. Added comprehensive unit tests. Commit: ca7092d",
+          "updated_at": "2026-01-03T14:20:39.126092+00:00"
+        },
+        {
+          "id": "3.3",
+          "title": "Add password field to settings UI",
+          "description": "Add a secure password input field to the MQTT settings section that saves to keyring.",
+          "status": "completed",
+          "estimated_minutes": 25,
+          "files": [
+            "src/ui/screens/settings.rs"
+          ],
+          "notes": "Added secure password input field to MQTT settings UI. Implemented MqttCredentialStore integration in SettingsScreen with: mqtt_password_input buffer for password entry, set_mqtt_config() method that loads password from keyring on init, password field appears only when username is set, password masked with password(true), saves to keyring on focus lost, empty password deletes from keyring, username change clears password. Commit: 4f157d2",
+          "updated_at": "2026-01-03T14:26:08.678609+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "App Integration",
+      "description": "Integrate MQTT client lifecycle with application",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Start MQTT connection when ride begins",
+          "description": "When a ride starts and MQTT is enabled, connect to the broker and start the fan controller.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "files": [
+            "src/app.rs"
+          ]
+        },
+        {
+          "id": "4.2",
+          "title": "Stop MQTT connection when ride ends",
+          "description": "When a ride ends, stop the fan controller (turn off fans) and disconnect from the broker.",
+          "status": "pending",
+          "estimated_minutes": 20,
+          "files": [
+            "src/app.rs"
+          ]
+        },
+        {
+          "id": "4.3",
+          "title": "Implement connection test button",
+          "description": "Make the 'Test Connection' button in settings actually test the MQTT broker connection and display results.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "files": [
+            "src/ui/screens/settings.rs",
+            "src/app.rs"
+          ]
+        },
+        {
+          "id": "4.4",
+          "title": "Add MQTT status indicator to UI",
+          "description": "Show MQTT connection status (connected/disconnected/reconnecting) in the ride screen or status bar.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "files": [
+            "src/ui/screens/ride.rs",
+            "src/app.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Settings Persistence",
+      "description": "Save and load MQTT configuration and fan profiles",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Add MQTT config to AppConfig",
+          "description": "Add MqttConfig to the AppConfig struct for persistence in the config file.",
+          "status": "pending",
+          "estimated_minutes": 20,
+          "files": [
+            "src/storage/config.rs"
+          ]
+        },
+        {
+          "id": "5.2",
+          "title": "Save/load fan profiles from database",
+          "description": "Use the existing HardwareStore fan_profiles table to persist fan profiles. Convert between StoredFanProfile and FanProfile.",
+          "status": "pending",
+          "estimated_minutes": 35,
+          "files": [
+            "src/integrations/mqtt/fan.rs",
+            "src/app.rs"
+          ]
+        },
+        {
+          "id": "5.3",
+          "title": "Load MQTT config and fan profiles on startup",
+          "description": "In RustRideApp::new(), load MQTT config from AppConfig and fan profiles from database.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "files": [
+            "src/app.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Manual Fan Control",
+      "description": "Add UI for manual fan speed override",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Add manual fan control widget to ride screen",
+          "description": "Add a collapsible fan control panel to the ride screen showing current speed and manual override slider.",
+          "status": "pending",
+          "estimated_minutes": 35,
+          "files": [
+            "src/ui/screens/ride.rs"
+          ]
+        },
+        {
+          "id": "6.2",
+          "title": "Implement auto/manual mode toggle",
+          "description": "Add toggle to switch between automatic zone-based control and manual speed control.",
+          "status": "pending",
+          "estimated_minutes": 20,
+          "files": [
+            "src/ui/screens/ride.rs",
+            "src/integrations/mqtt/fan.rs"
+          ]
+        },
+        {
+          "id": "6.3",
+          "title": "Add fan test button to settings",
+          "description": "Allow users to test their fan by cycling through speeds from the settings screen.",
+          "status": "pending",
+          "estimated_minutes": 20,
+          "files": [
+            "src/ui/screens/settings.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Documentation",
+      "description": "Create setup documentation for common smart fan setups",
+      "subtasks": [
+        {
+          "id": "7.1",
+          "title": "Create MQTT setup guide",
+          "description": "Document how to set up RustRide with common MQTT brokers (Mosquitto, Home Assistant MQTT).",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "files": [
+            "docs/mqtt-setup.md"
+          ]
+        },
+        {
+          "id": "7.2",
+          "title": "Document Home Assistant integration",
+          "description": "Provide step-by-step guide for integrating smart fans via Home Assistant with example automations.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "files": [
+            "docs/mqtt-setup.md"
+          ]
+        },
+        {
+          "id": "7.3",
+          "title": "Document Tasmota/smart plug integration",
+          "description": "Document how to use Tasmota-flashed devices or other smart plugs for fan control.",
+          "status": "pending",
+          "estimated_minutes": 25,
+          "files": [
+            "docs/mqtt-setup.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "name": "Testing & Verification",
+      "description": "Verify all acceptance criteria are met",
+      "subtasks": [
+        {
+          "id": "8.1",
+          "title": "Add integration tests for actual MQTT operations",
+          "description": "Extend existing tests to cover actual rumqttc operations using mock broker or test broker.",
+          "status": "pending",
+          "estimated_minutes": 40,
+          "files": [
+            "tests/integration/mqtt_fan_test.rs"
+          ]
+        },
+        {
+          "id": "8.2",
+          "title": "Test reconnection scenarios",
+          "description": "Test that reconnection works correctly when broker becomes unavailable and comes back.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "files": [
+            "tests/integration/mqtt_fan_test.rs"
+          ]
+        },
+        {
+          "id": "8.3",
+          "title": "Verify all acceptance criteria",
+          "description": "Manual verification that all acceptance criteria are met: reliable connection, zone-based speed, manual override, reconnection, documentation.",
+          "status": "pending",
+          "estimated_minutes": 30,
+          "files": []
+        }
+      ]
+    }
+  ],
+  "total_estimated_minutes": 745,
+  "priority": "medium",
+  "dependencies": [
+    "rumqttc 0.24 (already in Cargo.toml)",
+    "keyring 2.0 (already in Cargo.toml)"
+  ],
+  "existing_code_analysis": {
+    "mqtt_module": "src/integrations/mqtt/ - Contains client.rs, fan.rs, mod.rs with complete types and traits but simulated implementation",
+    "fan_controller": "FanController trait and DefaultFanController are complete with zone-based speed logic",
+    "settings_ui": "MQTT config and fan profile UI is complete in src/ui/screens/settings.rs",
+    "app_integration": "mqtt_client and fan_controller are initialized in app.rs, update_fan_controller() is called during ride",
+    "tests": "Integration tests exist in tests/integration/mqtt_fan_test.rs",
+    "database": "Fan profiles table exists in HardwareStore (src/storage/hardware_store.rs)"
+  },
+  "notes": [
+    "rumqttc 0.24 is already in Cargo.toml dependencies",
+    "The existing code has TODO markers indicating where actual rumqttc calls should be made",
+    "Connection currently simulates success after 100ms delay",
+    "Publish/subscribe currently just log the operation",
+    "keyring crate is already available for secure password storage"
+  ],
+  "qa_signoff": {
+    "status": "pending",
+    "tests_passed": "",
+    "issues": ""
+  },
+  "last_updated": "2026-01-03T14:26:08.678609+00:00"
 }

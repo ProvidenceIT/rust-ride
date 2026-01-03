@@ -1,0 +1,25 @@
+{
+  "discovered_files": {
+    "src/integrations/mqtt/client.rs": {
+      "description": "TLS configuration for MQTT is implemented via configure_tls() helper function. Uses TlsConfiguration::default() which leverages system CA certificates via rustls-native-certs. Applied in both connect() and spawn_reconnection_task() to ensure TLS works for initial connections and reconnections.",
+      "category": "mqtt-tls",
+      "discovered_at": "2026-01-03T14:12:30.897560+00:00"
+    },
+    "src/integrations/mqtt/fan.rs": {
+      "description": "FanController is fully implemented with zone-based speed logic. DefaultFanController supports multiple fan profiles, auto/manual mode, change delay, and 4 payload formats (SpeedOnly, JsonSpeed, JsonSpeedOnOff, Percentage).",
+      "category": "existing_feature",
+      "discovered_at": "2026-01-03T13:36:03.376193+00:00"
+    },
+    "Cargo.toml": {
+      "description": "rumqttc = \"0.24\" and keyring = \"2.0\" are already in dependencies for MQTT and secure password storage.",
+      "category": "dependency",
+      "discovered_at": "2026-01-03T13:36:03.433957+00:00"
+    },
+    "src/integrations/mqtt/mod.rs": {
+      "description": "MqttCredentialStore implements secure MQTT password storage using the keyring crate. Passwords are stored in the OS keyring with key format \"username@host\" under service name \"RustRide-MQTT\". The DefaultMqttClient uses configure_credentials() helper to retrieve passwords during connect() and reconnection.",
+      "category": "architecture",
+      "discovered_at": "2026-01-03T14:20:49.174144+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T14:20:49.174144+00:00"
+}

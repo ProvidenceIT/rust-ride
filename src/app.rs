@@ -605,6 +605,44 @@ impl RustRideApp {
         }
     }
 
+    /// Start MQTT connection and fan controller when a ride begins (T071/4.1).
+    ///
+    /// If MQTT is enabled in the configuration, this method:
+    /// 1. Connects to the MQTT broker asynchronously
+    /// 2. Starts the fan controller for zone-based fan speed control
+    ///
+    /// This should be called when a ride starts (free ride or workout).
+    fn start_mqtt_fan_control(&self) {
+        if !self.mqtt_config.enabled {
+            tracing::debug!("MQTT not enabled, skipping fan control initialization");
+            return;
+        }
+
+        let mqtt_client = self.mqtt_client.clone();
+        let fan_controller = self.fan_controller.clone();
+        let mqtt_config = self.mqtt_config.clone();
+
+        self.tokio_runtime.spawn(async move {
+            // Connect to MQTT broker
+            tracing::info!("Starting MQTT connection for fan control");
+            match mqtt_client.connect(&mqtt_config).await {
+                Ok(()) => {
+                    tracing::info!("MQTT connection initiated successfully");
+
+                    // Start the fan controller
+                    if let Err(e) = fan_controller.start().await {
+                        tracing::error!("Failed to start fan controller: {}", e);
+                    } else {
+                        tracing::info!("Fan controller started");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to connect to MQTT broker: {}", e);
+                }
+            }
+        });
+    }
+
     /// Update streaming server with current metrics (T080).
     ///
     /// Broadcasts metrics to all connected external displays.
@@ -1118,6 +1156,8 @@ impl eframe::App for RustRideApp {
                         == rustride::recording::types::RecordingStatus::Idle
                     {
                         self.ride_screen.start_free_ride();
+                        // T071/4.1: Start MQTT connection and fan controller when ride begins
+                        self.start_mqtt_fan_control();
                     }
 
                     // T043: Update incline controller with current gradient in World3D mode

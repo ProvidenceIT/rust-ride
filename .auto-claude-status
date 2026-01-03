@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "010-complete-hid-device-support",
+  "spec": "012-complete-mqtt-smart-fan-control",
   "state": "building",
   "subtasks": {
-    "completed": 10,
-    "total": 20,
+    "completed": 11,
+    "total": 27,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Action Execution & Integration",
+    "current": "App Integration",
     "id": null,
-    "total": 3
+    "total": 4
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 12,
-    "started_at": "2026-01-03T06:28:10.211790"
+    "number": 13,
+    "started_at": "2026-01-03T14:31:22.768545"
   },
-  "last_update": "2026-01-03T07:36:43.442081"
+  "last_update": "2026-01-03T15:26:31.839561"
 }

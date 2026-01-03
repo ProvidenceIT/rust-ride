@@ -1,0 +1,119 @@
+# Build Progress: Complete MQTT Smart Fan Control
+
+## Spec ID: 012-complete-mqtt-smart-fan-control
+## Status: In Progress (Planning Complete)
+## Created: 2026-01-03
+
+---
+
+## Overview
+
+Completing the MQTT client implementation for smart fan control. The existing codebase has:
+- Complete types and traits (MqttClient, FanController, MqttConfig, FanProfile)
+- Settings UI for MQTT configuration and fan profiles
+- Integration tests for the interfaces
+- Database schema for fan profile storage
+
+The main work is replacing the **simulated** MQTT operations with **actual rumqttc** calls.
+
+---
+
+## Current Analysis
+
+### Existing Code:
+- `src/integrations/mqtt/client.rs` - MqttClient trait with simulated implementation
+- `src/integrations/mqtt/fan.rs` - FanController with zone-based speed logic
+- `src/integrations/mqtt/mod.rs` - MqttConfig, MqttError, MqttEvent types
+- `src/ui/screens/settings.rs` - Complete MQTT/fan profile settings UI
+- `src/app.rs` - mqtt_client and fan_controller initialized and used
+- `tests/integration/mqtt_fan_test.rs` - Comprehensive tests
+
+### Dependencies (already in Cargo.toml):
+- rumqttc = "0.24"
+- keyring = "2.0"
+
+### TODO Markers in Code:
+1. `client.rs:140` - "TODO: Actual connection using rumqttc"
+2. `client.rs:197` - "TODO: Actual publish using rumqttc"
+3. `client.rs:210` - "TODO: Actual subscribe using rumqttc"
+4. `client.rs:221` - "TODO: Actual unsubscribe"
+5. Settings UI - "TODO: Implement connection test"
+
+---
+
+## Implementation Plan Summary
+
+### Phase 1: Core MQTT Implementation (5 subtasks)
+Replace simulated client with actual rumqttc AsyncClient
+
+### Phase 2: Reconnection & Reliability (3 subtasks)
+Handle disconnects and implement auto-reconnection
+
+### Phase 3: TLS and Authentication (3 subtasks)
+Add TLS support and keyring password storage
+
+### Phase 4: App Integration (4 subtasks)
+Wire MQTT lifecycle to ride start/stop, add status indicator
+
+### Phase 5: Settings Persistence (3 subtasks)
+Save/load MQTT config and fan profiles
+
+### Phase 6: Manual Fan Control (3 subtasks)
+Add manual override UI during rides
+
+### Phase 7: Documentation (3 subtasks)
+Create setup guides for common scenarios
+
+### Phase 8: Testing & Verification (3 subtasks)
+Verify all acceptance criteria
+
+Total: 27 subtasks, ~745 estimated minutes
+
+---
+
+## Session Log
+
+### Session 1 - 2026-01-03
+- [x] Read and analyzed spec.md
+- [x] Explored existing MQTT implementation
+- [x] Identified TODO markers and gaps
+- [x] Created detailed implementation_plan.json with 8 phases and 27 subtasks
+- [x] Documented existing code analysis
+
+### Session 2 - 2026-01-03
+- [x] Subtask 1.1: Implement actual rumqttc connection
+  - Added rumqttc imports (AsyncClient, EventLoop, MqttOptions)
+  - Added client and event_loop fields to DefaultMqttClient struct
+  - Created MqttOptions with host, port, client_id, and keep_alive settings
+  - Created AsyncClient and EventLoop in connect() method
+  - Updated disconnect() to properly clear client and event_loop
+  - Committed: 2d7ad70
+
+- [x] Subtask 1.2: Spawn event loop task and handle connection events
+  - Replaced stored EventLoop with JoinHandle for spawned task
+  - Added spawn_event_loop_task() to continuously poll MQTT event loop
+  - Added handle_event() to dispatch incoming vs outgoing events
+  - Added handle_incoming() to process MQTT packets:
+    - ConnAck: Update state to Connected, emit Connected event
+    - Publish: Dispatch MessageReceived with topic/payload
+    - Disconnect: Update state, emit Disconnected event
+    - PingResp/others: Trace logging
+  - On poll errors: Emit Error event, set state to Disconnected, break loop
+  - disconnect() now aborts the event loop task before cleanup
+  - Committed: f499fa8
+
+Next Steps:
+1. Subtask 1.3: Implement actual publish operation
+2. Continue with Phase 1 implementation
+
+---
+
+## Acceptance Criteria Tracking
+
+| Criteria | Status | Notes |
+|----------|--------|-------|
+| MQTT connection to broker works reliably | ❌ Pending | Phase 1-2 |
+| Fan speed adjusts based on trigger (power/HR) | ⚠️ Partial | Logic exists, needs real MQTT |
+| Manual fan control override available | ❌ Pending | Phase 6 |
+| Reconnection on connection loss | ❌ Pending | Phase 2 |
+| Clear setup documentation | ❌ Pending | Phase 7 |
