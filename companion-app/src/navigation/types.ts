@@ -5,7 +5,7 @@
  */
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 
 /**
@@ -38,20 +38,31 @@ export type HistoryStackParamList = {
 /**
  * Root stack screen props
  */
-export type RootStackScreenProps<T extends keyof RootStackParamList> =
-  NativeStackScreenProps<RootStackParamList, T>;
+export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<
+  RootStackParamList,
+  T
+>;
+
+/**
+ * Root stack navigation prop for useNavigation hook
+ */
+export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 /**
  * Main tab screen props
  */
-export type MainTabScreenProps<T extends keyof MainTabParamList> =
-  BottomTabScreenProps<MainTabParamList, T>;
+export type MainTabScreenProps<T extends keyof MainTabParamList> = BottomTabScreenProps<
+  MainTabParamList,
+  T
+>;
 
 /**
  * History stack screen props
  */
-export type HistoryStackScreenProps<T extends keyof HistoryStackParamList> =
-  NativeStackScreenProps<HistoryStackParamList, T>;
+export type HistoryStackScreenProps<T extends keyof HistoryStackParamList> = NativeStackScreenProps<
+  HistoryStackParamList,
+  T
+>;
 
 // Extend the global navigation namespace for useNavigation hook typing
 // This is required by React Navigation for type-safe navigation

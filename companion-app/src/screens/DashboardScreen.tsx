@@ -12,7 +12,7 @@
  * - Unit preference support (metric/imperial) for speed and distance
  */
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -22,7 +22,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { MainTabScreenProps } from '@/navigation/types';
+import { useNavigation } from '@react-navigation/native';
+import type { MainTabScreenProps, RootStackNavigationProp } from '@/navigation/types';
 import { useTheme } from '@/theme';
 import {
   ConnectionStatus,
@@ -34,6 +35,7 @@ import {
   ElapsedTimeDisplay,
   CaloriesDisplay,
   WorkoutIntervalDisplay,
+  NoSessionState,
 } from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
@@ -112,12 +114,18 @@ const DEFAULT_MAX_HR = 185;
 type Props = MainTabScreenProps<'Dashboard'>;
 
 export function DashboardScreen(_props: Props): React.JSX.Element {
-  const { colors, spacing, typography, borderRadius } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const { width, height } = useWindowDimensions();
+  const navigation = useNavigation<RootStackNavigationProp>();
 
   // Connection state
   const connectionStatus = useConnectionStore(selectConnectionStatus);
   const currentServer = useConnectionStore(selectCurrentServer);
+
+  // Navigation handler for connect button in NoSessionState
+  const handleConnectPress = useCallback(() => {
+    navigation.navigate('Connection');
+  }, [navigation]);
 
   // Session state
   const isSessionActive = useSessionStore(selectIsSessionActive);
@@ -288,39 +296,14 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
           />
         </View>
 
-        {/* No Session State */}
+        {/* No Session State - shown when not connected or no active session */}
         {!showMetrics && (
-          <View
-            style={[
-              styles.emptyState,
-              {
-                backgroundColor: colors.card,
-                borderRadius: borderRadius.md,
-                padding: spacing.xl,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.emptyStateTitle,
-                typography.textStyles.sectionTitle,
-                { color: colors.textPrimary },
-              ]}
-            >
-              {!isConnected ? 'Not Connected' : 'No Active Session'}
-            </Text>
-            <Text
-              style={[
-                styles.emptyStateText,
-                typography.textStyles.body,
-                { color: colors.textSecondary },
-              ]}
-            >
-              {!isConnected
-                ? 'Connect to your RustRide desktop app to see live metrics'
-                : 'Start a workout or free ride on the desktop app to see live metrics here'}
-            </Text>
-          </View>
+          <NoSessionState
+            connectionStatus={connectionStatus}
+            serverName={serverName}
+            onConnectPress={handleConnectPress}
+            style={{ marginTop: spacing.md }}
+          />
         )}
       </ScrollView>
     </SafeAreaView>
@@ -349,17 +332,5 @@ const styles = StyleSheet.create({
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-  },
-  emptyState: {
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  emptyStateTitle: {
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyStateText: {
-    textAlign: 'center',
-    lineHeight: 20,
   },
 });

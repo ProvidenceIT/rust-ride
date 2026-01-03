@@ -74,3 +74,7 @@ export type {
   IntervalInfo,
   NextIntervalInfo,
 } from './WorkoutIntervalDisplay';
+
+// NoSessionState - shows appropriate UI when no workout/ride is active
+export { NoSessionState } from './NoSessionState';
+export type { NoSessionStateProps } from './NoSessionState';
