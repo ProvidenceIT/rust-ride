@@ -125,3 +125,7 @@ export type { DateRangePickerModalProps } from './DateRangePickerModal';
 // SelectPickerModal - generic picker modal for selecting from a list of options
 export { SelectPickerModal } from './SelectPickerModal';
 export type { SelectPickerModalProps, SelectOption } from './SelectPickerModal';
+
+// EmptyState - consistent empty state display across screens
+export { EmptyState, CompactEmptyState } from './EmptyState';
+export type { EmptyStateProps, EmptyStateVariant, CompactEmptyStateProps } from './EmptyState';

@@ -146,7 +146,8 @@ describe('HistoryScreen', () => {
 
     it('has accessible connect button', async () => {
       const { findByLabelText } = renderWithProviders();
-      expect(await findByLabelText('Connect to desktop app')).toBeTruthy();
+      // EmptyState uses accessibilityLabel="Connect" on the action button
+      expect(await findByLabelText('Connect')).toBeTruthy();
     });
   });
 
@@ -198,7 +199,8 @@ describe('HistoryScreen', () => {
 
     it('has accessible retry button', () => {
       const { getByLabelText } = renderWithProviders();
-      expect(getByLabelText('Retry loading rides')).toBeTruthy();
+      // EmptyState uses accessibilityLabel="Try Again" on the action button
+      expect(getByLabelText('Try Again')).toBeTruthy();
     });
   });
 

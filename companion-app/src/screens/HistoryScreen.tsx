@@ -33,6 +33,7 @@ import {
   LoadingSpinner,
   HistoryFilterBar,
   DateRangePickerModal,
+  EmptyState,
 } from '@/components';
 import {
   useHistoryStore,
@@ -374,6 +375,15 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   };
 
   /**
+   * Clear all filters
+   */
+  const clearFilters = useCallback(() => {
+    const historyStore = useHistoryStore.getState();
+    historyStore.setDateRangeFilter('all');
+    historyStore.setRideTypeFilter('all');
+  }, []);
+
+  /**
    * Render empty state
    */
   const renderEmptyState = () => {
@@ -389,111 +399,67 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
     // Show error state
     if (error) {
       return (
-        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
-          <Icon name="warning-outline" size={48} color={colors.error} style={styles.emptyIcon} />
-          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>
-            Failed to Load Rides
-          </Text>
-          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
-            onPress={handleRefresh}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading rides"
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          variant="loading-failed"
+          title="Failed to Load Rides"
+          description={error}
+          actionLabel="Try Again"
+          onAction={handleRefresh}
+          testID="history-error-state"
+        />
       );
     }
 
     // Show disconnected state (only if no cached rides)
     if (!isConnected && !isShowingCached) {
       return (
-        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
-          <Icon
-            name="cloud-offline-outline"
-            size={48}
-            color={colors.textSecondary}
-            style={styles.emptyIcon}
-          />
-          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>Not Connected</Text>
-          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-            Connect to your desktop app to view ride history
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
-            onPress={handleConnectPress}
-            accessibilityRole="button"
-            accessibilityLabel="Connect to desktop app"
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Connect</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          variant="no-connection"
+          title="Not Connected"
+          description="Connect to your desktop app to view ride history"
+          actionLabel="Connect"
+          onAction={handleConnectPress}
+          testID="history-disconnected-state"
+        />
       );
     }
 
     // Show offline empty state when showing cached but no cached rides
     if (!isConnected && isShowingCached) {
       return (
-        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
-          <Icon
-            name="cloud-offline-outline"
-            size={48}
-            color={colors.textSecondary}
-            style={styles.emptyIcon}
-          />
-          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>No Cached Rides</Text>
-          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-            Connect while online to cache your ride history for offline viewing
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
-            onPress={handleConnectPress}
-            accessibilityRole="button"
-            accessibilityLabel="Connect to desktop app"
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Connect</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          variant="offline"
+          title="No Cached Rides"
+          description="Connect while online to cache your ride history for offline viewing"
+          actionLabel="Connect"
+          onAction={handleConnectPress}
+          testID="history-offline-state"
+        />
       );
     }
 
     // Show filtered empty state when filters are applied but no rides match
     if (hasFiltersApplied && rides.length > 0) {
       return (
-        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
-          <Icon
-            name="filter-outline"
-            size={48}
-            color={colors.textSecondary}
-            style={styles.emptyIcon}
-          />
-          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>
-            No Matching Rides
-          </Text>
-          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-            No rides match your current filters. Try adjusting your filters or clear them to see
-            all rides.
-          </Text>
-        </View>
+        <EmptyState
+          variant="no-results"
+          title="No Matching Rides"
+          description="No rides match your current filters. Try adjusting your filters or clear them to see all rides."
+          actionLabel="Clear Filters"
+          onAction={clearFilters}
+          testID="history-no-results-state"
+        />
       );
     }
 
     // Show empty rides state
     return (
-      <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
-        <Icon
-          name="bicycle-outline"
-          size={48}
-          color={colors.textSecondary}
-          style={styles.emptyIcon}
-        />
-        <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>No Rides Yet</Text>
-        <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-          Complete a ride on your desktop app and it will appear here
-        </Text>
-      </View>
+      <EmptyState
+        variant="no-rides"
+        title="No Rides Yet"
+        description="Complete a ride on your desktop app and it will appear here"
+        testID="history-empty-state"
+      />
     );
   };
 

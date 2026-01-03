@@ -183,7 +183,8 @@ describe('RideDetailScreen', () => {
 
     it('has accessible retry button', () => {
       const { getByLabelText } = renderWithProviders();
-      expect(getByLabelText('Retry loading ride details')).toBeTruthy();
+      // EmptyState uses accessibilityLabel="Try Again" on the action button
+      expect(getByLabelText('Try Again')).toBeTruthy();
     });
   });
 
@@ -201,7 +202,8 @@ describe('RideDetailScreen', () => {
 
     it('navigates to Connection screen on Connect press', () => {
       const { getByLabelText } = renderWithProviders();
-      const connectButton = getByLabelText('Connect to desktop app');
+      // EmptyState uses accessibilityLabel="Connect" on the action button
+      const connectButton = getByLabelText('Connect');
       fireEvent.press(connectButton);
       expect(mockNavigation.navigate).toHaveBeenCalledWith('Connection');
     });
@@ -537,7 +539,8 @@ describe('RideDetailScreen', () => {
       useHistoryStore.getState().setError('Network error');
 
       const { getByLabelText } = renderWithProviders();
-      expect(getByLabelText('Retry loading ride details')).toBeTruthy();
+      // EmptyState uses accessibilityLabel="Try Again" on the action button
+      expect(getByLabelText('Try Again')).toBeTruthy();
     });
   });
 

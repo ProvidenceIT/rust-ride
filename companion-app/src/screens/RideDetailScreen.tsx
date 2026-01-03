@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useCallback, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { RootStackScreenProps } from '@/navigation/types';
@@ -26,6 +26,7 @@ import {
   ZoneDistributionBar,
   getPowerZoneData,
   getHrZoneData,
+  EmptyState,
 } from '@/components';
 import {
   useHistoryStore,
@@ -224,6 +225,11 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
     );
   }
 
+  // Handle connect button press
+  const handleConnectPress = useCallback(() => {
+    navigation.navigate('Connection');
+  }, [navigation]);
+
   // Render error state
   if (error && !rideDetail) {
     return (
@@ -232,19 +238,14 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
         edges={['bottom']}
       >
         <View style={styles.errorContainer}>
-          <Icon name="warning-outline" size={48} color={colors.error} style={styles.errorIcon} />
-          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
-            Failed to Load Ride
-          </Text>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
-            onPress={handleRefresh}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading ride details"
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Try Again</Text>
-          </TouchableOpacity>
+          <EmptyState
+            variant="loading-failed"
+            title="Failed to Load Ride"
+            description={error}
+            actionLabel="Try Again"
+            onAction={handleRefresh}
+            testID="ride-detail-error-state"
+          />
         </View>
       </SafeAreaView>
     );
@@ -258,24 +259,14 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
         edges={['bottom']}
       >
         <View style={styles.errorContainer}>
-          <Icon
-            name="cloud-offline-outline"
-            size={48}
-            color={colors.textSecondary}
-            style={styles.errorIcon}
+          <EmptyState
+            variant="offline"
+            title="Not Available Offline"
+            description="This ride was not cached for offline viewing. Connect to your desktop app to see details."
+            actionLabel="Connect"
+            onAction={handleConnectPress}
+            testID="ride-detail-offline-state"
           />
-          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>Not Available Offline</Text>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>
-            This ride was not cached for offline viewing. Connect to your desktop app to see details.
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
-            onPress={() => navigation.navigate('Connection')}
-            accessibilityRole="button"
-            accessibilityLabel="Connect to desktop app"
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Connect</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -289,11 +280,13 @@ export function RideDetailScreen({ route, navigation }: Props): React.JSX.Elemen
         edges={['bottom']}
       >
         <View style={styles.errorContainer}>
-          <Icon name="bicycle-outline" size={48} color={colors.textSecondary} />
-          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>Ride Not Found</Text>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>
-            The requested ride could not be found
-          </Text>
+          <EmptyState
+            variant="custom"
+            icon="bicycle-outline"
+            title="Ride Not Found"
+            description="The requested ride could not be found"
+            testID="ride-detail-not-found-state"
+          />
         </View>
       </SafeAreaView>
     );
