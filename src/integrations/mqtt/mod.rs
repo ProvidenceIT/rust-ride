@@ -10,7 +10,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 // Re-export main types
-pub use client::{DefaultMqttClient, MqttClient};
+pub use client::{ConnectionState, DefaultMqttClient, MqttClient};
 pub use fan::{DefaultFanController, FanController, FanProfile, FanState, PayloadFormat};
 
 /// MQTT-related errors
@@ -98,8 +98,10 @@ pub enum QoS {
 pub enum MqttEvent {
     /// Successfully connected to broker
     Connected,
-    /// Disconnected from broker
+    /// Disconnected from broker (clean disconnect, no auto-reconnect)
     Disconnected,
+    /// Connection lost unexpectedly (will trigger auto-reconnect if enabled)
+    ConnectionLost { reason: String },
     /// Attempting to reconnect
     Reconnecting { attempt: u32 },
     /// Message received on subscribed topic

@@ -23,6 +23,9 @@ pub trait MqttClient: Send + Sync {
     /// Check if connected
     fn is_connected(&self) -> bool;
 
+    /// Get the current connection state
+    fn connection_state(&self) -> ConnectionState;
+
     /// Publish a message to a topic
     fn publish(
         &self,
@@ -49,12 +52,17 @@ pub trait MqttClient: Send + Sync {
 }
 
 /// Connection state
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ConnectionState {
+pub enum ConnectionState {
+    /// Not connected and not attempting to connect
     Disconnected,
+    /// Attempting initial connection
     Connecting,
+    /// Successfully connected to broker
     Connected,
+    /// Connection was lost, preparing to reconnect
+    ConnectionLost,
+    /// Actively attempting reconnection
     Reconnecting { attempt: u32 },
 }
 
@@ -102,19 +110,81 @@ impl DefaultMqttClient {
                         Self::handle_event(event, &state, &event_tx).await;
                     }
                     Err(e) => {
-                        tracing::error!("MQTT event loop error: {:?}", e);
-                        // Update state to disconnected on error
-                        *state.write().await = ConnectionState::Disconnected;
-                        let _ = event_tx.send(MqttEvent::Error {
-                            message: format!("Connection error: {}", e),
-                        });
-                        let _ = event_tx.send(MqttEvent::Disconnected);
+                        Self::handle_connection_error(e, &state, &event_tx).await;
                         break;
                     }
                 }
             }
             tracing::debug!("MQTT event loop task ended");
         })
+    }
+
+    /// Handle connection errors from the event loop
+    ///
+    /// Distinguishes between recoverable connection errors (network issues, timeouts)
+    /// and non-recoverable errors (auth failures, protocol errors).
+    async fn handle_connection_error(
+        error: rumqttc::ConnectionError,
+        state: &Arc<RwLock<ConnectionState>>,
+        event_tx: &broadcast::Sender<MqttEvent>,
+    ) {
+        let error_message = format!("{}", error);
+        let is_recoverable = Self::is_recoverable_error(&error);
+
+        tracing::error!(
+            "MQTT connection error (recoverable={}): {:?}",
+            is_recoverable,
+            error
+        );
+
+        if is_recoverable {
+            // Connection was lost but can be recovered - trigger reconnection
+            *state.write().await = ConnectionState::ConnectionLost;
+            let _ = event_tx.send(MqttEvent::ConnectionLost {
+                reason: error_message.clone(),
+            });
+        } else {
+            // Non-recoverable error - stay disconnected
+            *state.write().await = ConnectionState::Disconnected;
+            let _ = event_tx.send(MqttEvent::Error {
+                message: error_message.clone(),
+            });
+            let _ = event_tx.send(MqttEvent::Disconnected);
+        }
+    }
+
+    /// Determine if a connection error is recoverable (can be retried)
+    fn is_recoverable_error(error: &rumqttc::ConnectionError) -> bool {
+        use rumqttc::ConnectionError;
+
+        match error {
+            // Network issues are recoverable
+            ConnectionError::Io(_) => true,
+            // Timeout is recoverable
+            ConnectionError::RequestsDone => true,
+            // TLS errors might be recoverable (transient network issues)
+            #[cfg(feature = "use-rustls")]
+            ConnectionError::Tls(_) => true,
+            // MQTT protocol errors are generally not recoverable
+            ConnectionError::MqttState(state_error) => {
+                // Most state errors indicate protocol issues, but some might be recoverable
+                tracing::debug!("MQTT state error: {:?}", state_error);
+                false
+            }
+            // Connection refused might be temporary (broker restarting)
+            ConnectionError::ConnectionRefused(_) => true,
+            // Timeout during connection is recoverable
+            ConnectionError::Timeout(_) => true,
+            // Flush timeout is recoverable
+            ConnectionError::FlushTimeout => true,
+            // Network unreachable - might become available later
+            ConnectionError::NetworkUnreachable => true,
+            // DNS resolution issues might be temporary
+            ConnectionError::Resolve(_) => true,
+            // Default to not recoverable for unknown errors
+            #[allow(unreachable_patterns)]
+            _ => false,
+        }
     }
 
     /// Handle an event from the MQTT event loop
@@ -160,9 +230,16 @@ impl DefaultMqttClient {
                 let _ = event_tx.send(MqttEvent::MessageReceived { topic, payload });
             }
             Incoming::Disconnect => {
+                // Broker-initiated disconnect is treated as connection lost (recoverable)
+                // This could happen due to:
+                // - Broker maintenance/restart
+                // - Session timeout
+                // - Duplicate client ID
                 tracing::warn!("MQTT disconnect received from broker");
-                *state.write().await = ConnectionState::Disconnected;
-                let _ = event_tx.send(MqttEvent::Disconnected);
+                *state.write().await = ConnectionState::ConnectionLost;
+                let _ = event_tx.send(MqttEvent::ConnectionLost {
+                    reason: "Broker sent disconnect".to_string(),
+                });
             }
             Incoming::PingResp => {
                 tracing::trace!("MQTT ping response received");
@@ -299,6 +376,15 @@ impl MqttClient for DefaultMqttClient {
         }
     }
 
+    fn connection_state(&self) -> ConnectionState {
+        // Use try_read to avoid blocking, default to Disconnected if lock unavailable
+        if let Ok(state) = self.state.try_read() {
+            state.clone()
+        } else {
+            ConnectionState::Disconnected
+        }
+    }
+
     async fn publish(&self, topic: &str, payload: &str, qos: QoS) -> Result<(), MqttError> {
         if !self.is_connected() {
             return Err(MqttError::NotConnected);
@@ -422,5 +508,48 @@ mod tests {
         let client = DefaultMqttClient::new();
         let result = client.unsubscribe("test/topic").await;
         assert!(matches!(result, Err(MqttError::NotConnected)));
+    }
+
+    #[test]
+    fn test_connection_state_initial() {
+        let client = DefaultMqttClient::new();
+        assert_eq!(client.connection_state(), ConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn test_connection_state_enum_equality() {
+        // Verify ConnectionState variants are distinguishable
+        assert_eq!(ConnectionState::Disconnected, ConnectionState::Disconnected);
+        assert_ne!(ConnectionState::Disconnected, ConnectionState::Connected);
+        assert_ne!(ConnectionState::Disconnected, ConnectionState::ConnectionLost);
+        assert_ne!(ConnectionState::Connected, ConnectionState::Connecting);
+        assert_eq!(
+            ConnectionState::Reconnecting { attempt: 1 },
+            ConnectionState::Reconnecting { attempt: 1 }
+        );
+        assert_ne!(
+            ConnectionState::Reconnecting { attempt: 1 },
+            ConnectionState::Reconnecting { attempt: 2 }
+        );
+    }
+
+    #[test]
+    fn test_is_recoverable_error_io() {
+        use std::io::{Error as IoError, ErrorKind};
+        let io_error = IoError::new(ErrorKind::ConnectionReset, "connection reset");
+        let error = rumqttc::ConnectionError::Io(io_error);
+        assert!(DefaultMqttClient::is_recoverable_error(&error));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_timeout() {
+        let error = rumqttc::ConnectionError::FlushTimeout;
+        assert!(DefaultMqttClient::is_recoverable_error(&error));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_network_unreachable() {
+        let error = rumqttc::ConnectionError::NetworkUnreachable;
+        assert!(DefaultMqttClient::is_recoverable_error(&error));
     }
 }
