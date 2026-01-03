@@ -16,7 +16,7 @@
 use super::backend::RodioAudioBackend;
 use super::tts::TtsProvider;
 use super::{
-    AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
+    AudioCategory, AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
     ThreadSafeTtsProvider,
 };
 use std::collections::BinaryHeap;
@@ -36,6 +36,13 @@ pub trait AudioEngine: Send + Sync {
         name: &str,
     ) -> impl std::future::Future<Output = Result<(), AudioError>> + Send;
 
+    /// Play a sound effect by name with a specific category for volume mixing
+    fn play_sound_with_category(
+        &self,
+        name: &str,
+        category: AudioCategory,
+    ) -> impl std::future::Future<Output = Result<(), AudioError>> + Send;
+
     /// Speak text using TTS
     fn speak(&self, text: &str)
         -> impl std::future::Future<Output = Result<(), AudioError>> + Send;
@@ -47,11 +54,25 @@ pub trait AudioEngine: Send + Sync {
         duration_ms: u32,
     ) -> impl std::future::Future<Output = Result<(), AudioError>> + Send;
 
+    /// Play a tone with a specific category for volume mixing
+    fn play_tone_with_category(
+        &self,
+        frequency_hz: u32,
+        duration_ms: u32,
+        category: AudioCategory,
+    ) -> impl std::future::Future<Output = Result<(), AudioError>> + Send;
+
     /// Set master volume (0-100)
     fn set_volume(&self, volume: u8);
 
-    /// Get current volume
+    /// Set volume for a specific audio category (0-100)
+    fn set_category_volume(&self, category: AudioCategory, volume: u8);
+
+    /// Get current master volume
     fn get_volume(&self) -> u8;
+
+    /// Get volume for a specific audio category (0-100)
+    fn get_category_volume(&self, category: AudioCategory) -> u8;
 
     /// Queue an audio item
     fn queue(&self, item: AudioItem);
@@ -285,6 +306,9 @@ impl DefaultAudioEngine {
     /// This method processes queued audio items in priority order. Higher-priority
     /// items are played first, and if a high-priority item is queued while a
     /// lower-priority item is playing, the current item will be interrupted.
+    ///
+    /// Each audio item is played with its category-specific volume, which combines
+    /// the master volume with the category volume.
     pub async fn process_queue(&self) {
         // Clear any stale interrupt flag
         self.clear_interrupt();
@@ -297,16 +321,40 @@ impl DefaultAudioEngine {
                 continue;
             }
 
+            // Check if this audio item is enabled in the config
+            {
+                let config = self.config.lock().unwrap();
+                if !item.is_enabled(&config) {
+                    tracing::debug!(
+                        "Skipping disabled audio item: {:?} (category: {:?})",
+                        item.audio_type,
+                        item.category
+                    );
+                    continue;
+                }
+            }
+
+            // Calculate the effective volume for this item
+            let effective_volume = {
+                let config = self.config.lock().unwrap();
+                item.effective_volume(&config)
+            };
+
             // Set current priority before playing
             *self.current_priority.lock().unwrap() = Some(item.priority);
 
             let result: Result<(), AudioError> = match &item.audio_type {
                 AudioType::Speech { text } => self.speak_with_interrupt_check(text).await,
-                AudioType::SoundEffect { name } => self.play_sound(name).await,
+                AudioType::SoundEffect { name } => {
+                    self.play_sound_with_volume(name, effective_volume).await
+                }
                 AudioType::Tone {
                     frequency_hz,
                     duration_ms,
-                } => self.play_tone(*frequency_hz, *duration_ms).await,
+                } => {
+                    self.play_tone_with_volume(*frequency_hz, *duration_ms, effective_volume)
+                        .await
+                }
             };
 
             // Clear current priority after playing
@@ -361,6 +409,96 @@ impl DefaultAudioEngine {
         }
 
         result
+    }
+
+    /// Play a sound effect with a specific volume (0.0 - 1.0)
+    ///
+    /// This is an internal helper method used by process_queue to apply
+    /// category-specific volumes.
+    async fn play_sound_with_volume(&self, name: &str, volume: f32) -> Result<(), AudioError> {
+        {
+            let config = self.config.lock().unwrap();
+            if !config.enabled {
+                return Ok(());
+            }
+        }
+
+        *self.is_playing.lock().unwrap() = true;
+
+        let _ = self.event_tx.send(AudioEvent::SoundPlayed {
+            name: name.to_string(),
+        });
+
+        // Play the sound using the rodio audio backend with the specified volume
+        let backend = Arc::clone(&self.audio_backend);
+        let sound_name = name.to_string();
+        let clamped_volume = volume.clamp(0.0, 1.0);
+
+        let result = tokio::task::spawn_blocking(move || {
+            backend.play_sound_with_volume(&sound_name, Some(clamped_volume))
+        })
+        .await
+        .map_err(|e| AudioError::PlaybackFailed(format!("Task join error: {}", e)))?;
+
+        // Handle the result - log warnings for missing sounds but don't crash
+        match result {
+            Ok(duration) => {
+                // Wait for the sound to finish playing
+                if !duration.is_zero() {
+                    tokio::time::sleep(duration).await;
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Sound playback failed for '{}': {}", name, e);
+            }
+        }
+
+        *self.is_playing.lock().unwrap() = false;
+
+        Ok(())
+    }
+
+    /// Play a tone with a specific volume (0.0 - 1.0)
+    ///
+    /// This is an internal helper method used by process_queue to apply
+    /// category-specific volumes.
+    async fn play_tone_with_volume(
+        &self,
+        frequency_hz: u32,
+        duration_ms: u32,
+        volume: f32,
+    ) -> Result<(), AudioError> {
+        {
+            let config = self.config.lock().unwrap();
+            if !config.enabled {
+                return Ok(());
+            }
+        }
+
+        *self.is_playing.lock().unwrap() = true;
+
+        // Play the tone using the rodio audio backend with the specified volume
+        let duration = Duration::from_millis(duration_ms as u64);
+        let frequency = frequency_hz as f32;
+        let clamped_volume = volume.clamp(0.0, 1.0);
+
+        let backend = Arc::clone(&self.audio_backend);
+        let result = tokio::task::spawn_blocking(move || {
+            backend.play_tone_with_volume(frequency, duration, Some(clamped_volume))
+        })
+        .await
+        .map_err(|e| AudioError::PlaybackFailed(format!("Task join error: {}", e)))?;
+
+        if let Err(e) = result {
+            tracing::debug!("Tone playback failed: {}", e);
+        }
+
+        // Wait for the tone duration to complete
+        tokio::time::sleep(duration).await;
+
+        *self.is_playing.lock().unwrap() = false;
+
+        Ok(())
     }
 }
 
@@ -439,6 +577,22 @@ impl AudioEngine for DefaultAudioEngine {
         Ok(())
     }
 
+    async fn play_sound_with_category(
+        &self,
+        name: &str,
+        category: AudioCategory,
+    ) -> Result<(), AudioError> {
+        let effective_volume = {
+            let config = self.config.lock().unwrap();
+            if !config.enabled || !category.is_enabled(&config) {
+                return Ok(());
+            }
+            category.effective_volume(&config)
+        };
+
+        self.play_sound_with_volume(name, effective_volume).await
+    }
+
     async fn speak(&self, text: &str) -> Result<(), AudioError> {
         {
             let config = self.config.lock().unwrap();
@@ -504,6 +658,24 @@ impl AudioEngine for DefaultAudioEngine {
         Ok(())
     }
 
+    async fn play_tone_with_category(
+        &self,
+        frequency_hz: u32,
+        duration_ms: u32,
+        category: AudioCategory,
+    ) -> Result<(), AudioError> {
+        let effective_volume = {
+            let config = self.config.lock().unwrap();
+            if !config.enabled || !category.is_enabled(&config) {
+                return Ok(());
+            }
+            category.effective_volume(&config)
+        };
+
+        self.play_tone_with_volume(frequency_hz, duration_ms, effective_volume)
+            .await
+    }
+
     fn set_volume(&self, volume: u8) {
         let clamped_volume = volume.min(100);
         {
@@ -514,8 +686,30 @@ impl AudioEngine for DefaultAudioEngine {
         self.audio_backend.set_volume(clamped_volume as f32 / 100.0);
     }
 
+    fn set_category_volume(&self, category: AudioCategory, volume: u8) {
+        let clamped_volume = volume.min(100);
+        let mut config = self.config.lock().unwrap();
+        match category {
+            AudioCategory::Voice => {
+                config.voice_volume = clamped_volume;
+                // Also update TTS provider volume
+                drop(config);
+                self.update_tts_settings();
+            }
+            AudioCategory::SoundEffect => config.sound_effects_volume = clamped_volume,
+            AudioCategory::Countdown => config.countdown_volume = clamped_volume,
+            AudioCategory::Achievement => config.achievement_volume = clamped_volume,
+            AudioCategory::Milestone => config.milestone_volume = clamped_volume,
+        }
+    }
+
     fn get_volume(&self) -> u8 {
         self.config.lock().unwrap().volume
+    }
+
+    fn get_category_volume(&self, category: AudioCategory) -> u8 {
+        let config = self.config.lock().unwrap();
+        category.volume_from_config(&config)
     }
 
     fn queue(&self, item: AudioItem) {
@@ -876,6 +1070,7 @@ mod tests {
             priority: AudioPriority::Normal,
             queued_at: std::time::Instant::now(),
             max_queue_time: Duration::from_secs(5),
+            category: None, // Generic tones have no category
         };
 
         match item.audio_type {
@@ -936,5 +1131,76 @@ mod tests {
         // Initially no sounds are cached
         assert_eq!(backend.cache_size(), 0);
         assert!(!backend.is_cached("test_sound"));
+    }
+
+    // ========== Category Volume Tests ==========
+
+    #[test]
+    fn test_set_category_volume() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Set countdown volume to 50%
+        engine.set_category_volume(AudioCategory::Countdown, 50);
+        assert_eq!(engine.get_category_volume(AudioCategory::Countdown), 50);
+
+        // Set achievement volume to 75%
+        engine.set_category_volume(AudioCategory::Achievement, 75);
+        assert_eq!(engine.get_category_volume(AudioCategory::Achievement), 75);
+
+        // Verify other volumes unchanged
+        assert_eq!(engine.get_category_volume(AudioCategory::Voice), 100);
+    }
+
+    #[test]
+    fn test_set_category_volume_clamping() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Setting volume above 100 should clamp to 100
+        engine.set_category_volume(AudioCategory::SoundEffect, 150);
+        assert_eq!(engine.get_category_volume(AudioCategory::SoundEffect), 100);
+    }
+
+    #[test]
+    fn test_get_category_volume_all_categories() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Verify default volumes match config defaults
+        assert_eq!(engine.get_category_volume(AudioCategory::Voice), 100);
+        assert_eq!(engine.get_category_volume(AudioCategory::SoundEffect), 80);
+        assert_eq!(engine.get_category_volume(AudioCategory::Countdown), 100);
+        assert_eq!(engine.get_category_volume(AudioCategory::Achievement), 100);
+        assert_eq!(engine.get_category_volume(AudioCategory::Milestone), 70);
+    }
+
+    #[test]
+    fn test_voice_category_updates_tts() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Set voice volume - this should update the TTS provider
+        engine.set_category_volume(AudioCategory::Voice, 60);
+        assert_eq!(engine.get_category_volume(AudioCategory::Voice), 60);
+
+        // Verify the config was updated
+        let current_config = engine.config.lock().unwrap();
+        assert_eq!(current_config.voice_volume, 60);
+    }
+
+    #[test]
+    fn test_audio_item_category_in_queue() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Queue items with different categories
+        engine.queue(AudioItem::countdown_tone(440, 100));
+        engine.queue(AudioItem::achievement_sound("chime"));
+        engine.queue(AudioItem::milestone_tone(330, 200));
+
+        // Verify queue has 3 items
+        let queue = engine.queue.lock().unwrap();
+        assert_eq!(queue.len(), 3);
     }
 }

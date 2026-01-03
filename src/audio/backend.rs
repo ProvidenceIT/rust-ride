@@ -269,6 +269,18 @@ impl RodioAudioBackend {
     /// Returns immediately - playback happens on a separate thread.
     /// Returns the approximate duration of the sound if successful.
     pub fn play_sound(&self, name: &str) -> Result<Duration, BackendError> {
+        self.play_sound_with_volume(name, None)
+    }
+
+    /// Play a sound by name with a specific volume override
+    ///
+    /// If volume_override is Some, uses that volume instead of the global master volume.
+    /// Volume is in the range 0.0 - 1.0.
+    pub fn play_sound_with_volume(
+        &self,
+        name: &str,
+        volume_override: Option<f32>,
+    ) -> Result<Duration, BackendError> {
         if self.is_muted() {
             return Ok(Duration::ZERO);
         }
@@ -288,13 +300,24 @@ impl RodioAudioBackend {
         let cached = self.load_sound(name)?;
         let duration = cached.duration();
 
-        self.play_cached_sound(&cached)?;
+        self.play_cached_sound_with_volume(&cached, volume_override)?;
 
         Ok(duration)
     }
 
-    /// Play a cached sound
+    /// Play a cached sound using the default master volume
     fn play_cached_sound(&self, cached: &CachedSound) -> Result<(), BackendError> {
+        self.play_cached_sound_with_volume(cached, None)
+    }
+
+    /// Play a cached sound with optional volume override
+    ///
+    /// If volume_override is Some, uses that volume instead of the global master volume.
+    fn play_cached_sound_with_volume(
+        &self,
+        cached: &CachedSound,
+        volume_override: Option<f32>,
+    ) -> Result<(), BackendError> {
         let handle_guard = self.stream_handle.read().unwrap();
         let handle = handle_guard
             .as_ref()
@@ -305,7 +328,7 @@ impl RodioAudioBackend {
 
         // Create a source from the cached samples
         let source = CachedSoundSource::new(cached.clone());
-        let volume = self.volume();
+        let volume = volume_override.unwrap_or_else(|| self.volume());
 
         sink.append(source.amplify(volume));
 
@@ -347,6 +370,19 @@ impl RodioAudioBackend {
     ///
     /// Returns immediately - playback happens on a separate thread.
     pub fn play_tone(&self, frequency_hz: f32, duration: Duration) -> Result<(), BackendError> {
+        self.play_tone_with_volume(frequency_hz, duration, None)
+    }
+
+    /// Play a tone (sine wave) with a specific volume override
+    ///
+    /// If volume_override is Some, uses that volume instead of the global master volume.
+    /// Volume is in the range 0.0 - 1.0.
+    pub fn play_tone_with_volume(
+        &self,
+        frequency_hz: f32,
+        duration: Duration,
+        volume_override: Option<f32>,
+    ) -> Result<(), BackendError> {
         if self.is_muted() || frequency_hz <= 0.0 {
             return Ok(());
         }
@@ -371,9 +407,10 @@ impl RodioAudioBackend {
         let sink = Sink::try_new(handle)
             .map_err(|e| BackendError::PlaybackFailed(e.to_string()))?;
 
+        let volume = volume_override.unwrap_or_else(|| self.volume());
         let source = SineWave::new(frequency_hz)
             .take_duration(duration)
-            .amplify(self.volume());
+            .amplify(volume);
 
         sink.append(source);
 
