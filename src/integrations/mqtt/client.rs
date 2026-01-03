@@ -2,7 +2,7 @@
 //!
 //! Provides MQTT broker connection using rumqttc.
 
-use super::{MqttConfig, MqttError, MqttEvent, QoS};
+use super::{MqttConfig, MqttCredentialStore, MqttError, MqttEvent, QoS};
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS as RumqttcQoS, TlsConfiguration, Transport};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -80,6 +80,8 @@ pub struct DefaultMqttClient {
     reconnect_enabled: Arc<AtomicBool>,
     /// Current reconnection attempt counter (shared across reconnection tasks)
     reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
+    /// Credential store for securely retrieving MQTT passwords from OS keyring
+    credential_store: Arc<MqttCredentialStore>,
 }
 
 impl Default for DefaultMqttClient {
@@ -91,6 +93,12 @@ impl Default for DefaultMqttClient {
 impl DefaultMqttClient {
     /// Create a new MQTT client
     pub fn new() -> Self {
+        Self::with_credential_store(MqttCredentialStore::new())
+    }
+
+    /// Create a new MQTT client with a custom credential store.
+    /// Useful for testing or custom keyring service names.
+    pub fn with_credential_store(credential_store: MqttCredentialStore) -> Self {
         let (event_tx, _) = broadcast::channel(100);
 
         Self {
@@ -101,7 +109,14 @@ impl DefaultMqttClient {
             event_loop_handle: Arc::new(RwLock::new(None)),
             reconnect_enabled: Arc::new(AtomicBool::new(false)),
             reconnect_attempt: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            credential_store: Arc::new(credential_store),
         }
+    }
+
+    /// Get a reference to the credential store for password management.
+    /// Use this to store or delete passwords in the OS keyring.
+    pub fn credential_store(&self) -> &MqttCredentialStore {
+        &self.credential_store
     }
 
     /// Spawn a task to poll the event loop and handle MQTT events.
@@ -116,6 +131,7 @@ impl DefaultMqttClient {
         event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
         reconnect_enabled: Arc<AtomicBool>,
         reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
+        credential_store: Arc<MqttCredentialStore>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
@@ -141,6 +157,7 @@ impl DefaultMqttClient {
                                 Arc::clone(&event_loop_handle),
                                 Arc::clone(&reconnect_enabled),
                                 Arc::clone(&reconnect_attempt),
+                                Arc::clone(&credential_store),
                             );
                         }
                         break;
@@ -294,6 +311,7 @@ impl DefaultMqttClient {
         event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
         reconnect_enabled: Arc<AtomicBool>,
         reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
+        credential_store: Arc<MqttCredentialStore>,
     ) {
         tokio::spawn(async move {
             loop {
@@ -380,7 +398,8 @@ impl DefaultMqttClient {
                 // Configure TLS when enabled (subtask 3.1)
                 configure_tls(&mut mqtt_options, cfg.use_tls);
 
-                // TODO (subtask 3.2): Add credentials from keyring when username is set
+                // Configure credentials from keyring when username is set (subtask 3.2)
+                configure_credentials(&mut mqtt_options, &cfg, &credential_store);
 
                 // Create new AsyncClient and EventLoop
                 let (new_client, eventloop) = AsyncClient::new(mqtt_options, 10);
@@ -401,6 +420,7 @@ impl DefaultMqttClient {
                     Arc::clone(&event_loop_handle),
                     Arc::clone(&reconnect_enabled),
                     Arc::clone(&reconnect_attempt),
+                    Arc::clone(&credential_store),
                 );
                 *event_loop_handle.write().await = Some(handle);
 
@@ -438,6 +458,48 @@ fn configure_tls(mqtt_options: &mut MqttOptions, use_tls: bool) {
     }
 }
 
+/// Configure credentials on MqttOptions when username is set.
+///
+/// Retrieves the password from the OS keyring for the given username and host.
+/// If no password is stored or username is not set, no credentials are configured.
+fn configure_credentials(
+    mqtt_options: &mut MqttOptions,
+    config: &MqttConfig,
+    credential_store: &MqttCredentialStore,
+) {
+    if let Some(username) = &config.username {
+        if username.is_empty() {
+            return;
+        }
+
+        match credential_store.get_password(username, &config.broker_host) {
+            Ok(Some(password)) => {
+                mqtt_options.set_credentials(username, &password);
+                tracing::debug!(
+                    "Set MQTT credentials for user '{}' on broker '{}'",
+                    username,
+                    config.broker_host
+                );
+            }
+            Ok(None) => {
+                // No password stored - set username only (some brokers allow this)
+                tracing::warn!(
+                    "No password found in keyring for MQTT user '{}@{}', connecting without password",
+                    username,
+                    config.broker_host
+                );
+            }
+            Err(e) => {
+                // Log the error but don't fail - try to connect without credentials
+                tracing::error!(
+                    "Failed to retrieve MQTT password from keyring: {}. Connecting without credentials.",
+                    e
+                );
+            }
+        }
+    }
+}
+
 impl MqttClient for DefaultMqttClient {
     async fn connect(&self, config: &MqttConfig) -> Result<(), MqttError> {
         if !config.enabled {
@@ -469,7 +531,8 @@ impl MqttClient for DefaultMqttClient {
         // Configure TLS when enabled (subtask 3.1)
         configure_tls(&mut mqtt_options, config.use_tls);
 
-        // TODO (subtask 3.2): Add credentials from keyring when username is set
+        // Configure credentials from keyring when username is set (subtask 3.2)
+        configure_credentials(&mut mqtt_options, config, &self.credential_store);
 
         // Create the AsyncClient and EventLoop
         // Buffer size of 10 is sufficient for fan control operations
@@ -489,6 +552,7 @@ impl MqttClient for DefaultMqttClient {
             Arc::clone(&self.event_loop_handle),
             Arc::clone(&self.reconnect_enabled),
             Arc::clone(&self.reconnect_attempt),
+            Arc::clone(&self.credential_store),
         );
         *self.event_loop_handle.write().await = Some(handle);
 
@@ -789,5 +853,69 @@ mod tests {
         configure_tls(&mut mqtt_options, true);
         // No panic or error means the function works correctly when TLS is enabled
         // The actual TLS connection would be tested in integration tests
+    }
+
+    #[test]
+    fn test_client_has_credential_store() {
+        let client = DefaultMqttClient::new();
+        // Client should have a credential store accessible
+        let store = client.credential_store();
+        // Just verify we can access it (the store itself is tested in mod.rs)
+        assert_eq!(store.service_name, "RustRide-MQTT");
+    }
+
+    #[test]
+    fn test_client_with_custom_credential_store() {
+        let custom_store = MqttCredentialStore::with_service_name("CustomService");
+        let client = DefaultMqttClient::with_credential_store(custom_store);
+        assert_eq!(client.credential_store().service_name, "CustomService");
+    }
+
+    #[test]
+    fn test_configure_credentials_no_username() {
+        // When no username is set, credentials should not be configured
+        let mut mqtt_options = MqttOptions::new("test-client", "localhost", 1883);
+        let config = MqttConfig {
+            username: None,
+            ..Default::default()
+        };
+        let store = MqttCredentialStore::new();
+
+        // Should not panic when no username is set
+        configure_credentials(&mut mqtt_options, &config, &store);
+        // Function completes without error
+    }
+
+    #[test]
+    fn test_configure_credentials_empty_username() {
+        // When username is empty, credentials should not be configured
+        let mut mqtt_options = MqttOptions::new("test-client", "localhost", 1883);
+        let config = MqttConfig {
+            username: Some("".to_string()),
+            ..Default::default()
+        };
+        let store = MqttCredentialStore::new();
+
+        // Should not panic with empty username
+        configure_credentials(&mut mqtt_options, &config, &store);
+        // Function completes without error
+    }
+
+    #[test]
+    fn test_configure_credentials_no_password_stored() {
+        // When username is set but no password is stored, should log warning but not panic
+        let mut mqtt_options = MqttOptions::new("test-client", "localhost", 1883);
+        let config = MqttConfig {
+            username: Some("testuser".to_string()),
+            broker_host: "test-broker.local".to_string(),
+            ..Default::default()
+        };
+        // Use a unique service name to avoid actual keyring access affecting other tests
+        let store = MqttCredentialStore::with_service_name("RustRide-Test-NoPassword");
+
+        // Should not panic when no password is stored
+        // The function logs a warning but continues
+        configure_credentials(&mut mqtt_options, &config, &store);
+        // Function completes without error
     }
 }
