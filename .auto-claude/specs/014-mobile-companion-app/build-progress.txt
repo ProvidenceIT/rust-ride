@@ -111,10 +111,27 @@ Date: 2026-01-03
 - [x] Spec read and analyzed
 - [x] Existing codebase explored
 - [x] Implementation plan created
-- [ ] Phase 1 not started
+- [x] T001: Create companion module structure - COMPLETED (fd8ff10)
+- [x] T002: Define companion API types - COMPLETED (68c5771)
+- [ ] Phase 1 in progress (2/10 subtasks)
 - [ ] Phase 2 not started
 
+## Completed Subtasks
+
+### T001: Create companion module structure
+- Created `src/companion/` module with mod.rs, types.rs, server.rs, handlers.rs
+- Added module export to lib.rs
+- Commit: fd8ff10
+
+### T002: Define companion API types
+- Verified comprehensive types already in types.rs from T001
+- CompanionRequest: 12 command variants (Auth, GetSessionStatus, SubscribeMetrics, etc.)
+- CompanionResponse: 11 response variants (AuthOk, AuthFailed, SessionStatus, etc.)
+- CompanionEvent: 4 event types (Metrics, SessionStateChanged, IntervalChanged, Disconnecting)
+- All types have Serde serialization with tag-based JSON encoding
+- Commit: 68c5771
+
 ## Next Steps
-1. Begin Phase 1: Create companion module structure (T001)
-2. Define companion API types (T002)
-3. Implement WebSocket server (T003)
+1. Implement WebSocket server (T003)
+2. Implement mDNS service advertisement (T004)
+3. Implement metrics streaming handler (T005)
