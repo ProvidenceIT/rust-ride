@@ -2,9 +2,9 @@
   "feature": "Rider Profile Export/Import",
   "description": "Add export and import functionality for rider profiles including settings, FTP history, and avatar configuration. Enables profile backup and transfer between installations.",
   "created_at": "2026-01-02T22:52:59.047Z",
-  "updated_at": "2026-01-02T23:58:00.000Z",
+  "updated_at": "2026-01-03T09:31:45.937Z",
   "status": "in_progress",
-  "planStatus": "complete",
+  "planStatus": "in_progress",
   "workflow_type": "development",
   "spec_file": "spec.md",
   "phases": [
@@ -218,17 +218,21 @@
           "id": "T019",
           "title": "Create import confirmation dialog",
           "description": "When conflicts detected, show dialog with options: Replace existing, Merge data, Cancel. Display what will be changed.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 35,
-          "file_path": "src/ui/screens/rider_profile.rs"
+          "file_path": "src/ui/screens/rider_profile.rs",
+          "notes": "Import conflict resolution dialog was already implemented and committed at 971c666. The dialog shows conflicts detected during import with options: Replace existing (overwrite with imported data), Merge data (combine FTP history, keep existing profile), and Cancel. Displays what will be changed including: existing profile conflicts, name changes, FTP mismatches, avatar changes, and FTP history entry counts. Uses egui::Window with radio buttons for resolution selection and action buttons.",
+          "updated_at": "2026-01-03T10:01:19.887166+00:00"
         },
         {
           "id": "T020",
           "title": "Add import/export status feedback",
           "description": "Show progress indicator during export/import. Display success toast with summary (e.g., 'Imported 5 FTP records'). Show error details on failure.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 25,
-          "file_path": "src/ui/screens/rider_profile.rs"
+          "file_path": "src/ui/screens/rider_profile.rs",
+          "notes": "Already implemented and committed at a6847f5. Added ProfileOperationStatus enum with Idle, Exporting, Importing, ExportSuccess, ImportSuccess, and Error states. Progress indicator with spinner, success toasts with path/summary, and error toasts with details. Auto-dismiss after 5 seconds with progress bar. Unit tests included.",
+          "updated_at": "2026-01-03T10:01:48.418853+00:00"
         }
       ]
     },
@@ -241,41 +245,51 @@
           "id": "T021",
           "title": "Add unit tests for ProfileExport serialization",
           "description": "Test that ProfileExport serializes to valid JSON and deserializes back correctly. Test version field presence.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 25,
-          "file_path": "tests/unit/profile_export_tests.rs"
+          "file_path": "tests/unit/profile_export_tests.rs",
+          "notes": "Already implemented and committed at 1d2677c. Unit tests for ProfileExport serialization added.",
+          "updated_at": "2026-01-03T10:01:48.634032+00:00"
         },
         {
           "id": "T022",
           "title": "Add unit tests for import parsing",
           "description": "Test parsing valid exports, invalid JSON, incompatible versions, missing required fields.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 25,
-          "file_path": "tests/unit/profile_export_tests.rs"
+          "file_path": "tests/unit/profile_export_tests.rs",
+          "notes": "Already implemented and committed at 80d96ce. Unit tests for import parsing including valid exports, invalid JSON, incompatible versions, missing required fields.",
+          "updated_at": "2026-01-03T10:01:48.813835+00:00"
         },
         {
           "id": "T023",
           "title": "Add integration tests for export workflow",
           "description": "Test full export: create profile in DB, export to JSON, verify all fields present. Use test database.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 30,
-          "file_path": "tests/integration/profile_export_integration.rs"
+          "file_path": "tests/integration/profile_export_integration.rs",
+          "notes": "Already implemented and committed at de2f823. Integration tests for export workflow with test database.",
+          "updated_at": "2026-01-03T10:01:48.922807+00:00"
         },
         {
           "id": "T024",
           "title": "Add integration tests for import workflow",
           "description": "Test import scenarios: empty DB import, conflict detection, merge strategy, replace strategy.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 35,
-          "file_path": "tests/integration/profile_export_integration.rs"
+          "file_path": "tests/integration/profile_export_integration.rs",
+          "notes": "Already implemented and committed at bad9bb6. Integration tests for import scenarios: empty DB import, conflict detection, merge strategy, replace strategy.",
+          "updated_at": "2026-01-03T10:01:49.012740+00:00"
         },
         {
           "id": "T025",
           "title": "Add round-trip test for export/import",
           "description": "Export a profile, import it to fresh DB, verify all data matches original. Test FTP history ordering preserved.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 25,
-          "file_path": "tests/integration/profile_export_integration.rs"
+          "file_path": "tests/integration/profile_export_integration.rs",
+          "notes": "Already implemented and committed at 802d471. Round-trip tests for export/import verifying all data matches original and FTP history ordering preserved.",
+          "updated_at": "2026-01-03T10:01:49.115962+00:00"
         }
       ]
     },
@@ -288,17 +302,21 @@
           "id": "T026",
           "title": "Add module-level documentation for export.rs",
           "description": "Document the export module with examples, format specification, and usage patterns.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 20,
-          "file_path": "src/social/export.rs"
+          "file_path": "src/social/export.rs",
+          "notes": "Already implemented and committed at 20d683d. Module-level documentation for export.rs with examples, format specification, and usage patterns.",
+          "updated_at": "2026-01-03T10:01:49.224089+00:00"
         },
         {
           "id": "T027",
           "title": "Add export format documentation",
           "description": "Create JSON schema documentation for the export format. Include version compatibility notes.",
-          "status": "pending",
+          "status": "completed",
           "estimated_minutes": 15,
-          "file_path": "docs/profile-export-format.md"
+          "file_path": "docs/profile-export-format.md",
+          "notes": "Already implemented and committed at 5006e27. JSON schema documentation for the export format with version compatibility notes.",
+          "updated_at": "2026-01-03T10:01:49.340901+00:00"
         }
       ]
     }
@@ -330,5 +348,6 @@
     "tests_passed": null,
     "issues": null
   },
-  "last_updated": "2026-01-02T23:49:02.766584+00:00"
+  "last_updated": "2026-01-03T10:01:49.340901+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:45.655Z"
 }
