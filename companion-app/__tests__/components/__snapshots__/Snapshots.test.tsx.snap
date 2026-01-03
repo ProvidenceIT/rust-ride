@@ -1,0 +1,7159 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Button Snapshots renders danger button correctly 1`] = `
+<View
+  accessibilityLabel="Stop Session"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#C83228",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Stop Session
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders disabled button correctly 1`] = `
+<View
+  accessibilityHint="Button is disabled"
+  accessibilityLabel="Disabled"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": true,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 0.5,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Disabled
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders full width button correctly 1`] = `
+<View
+  accessibilityLabel="Full Width"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "width": "100%",
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Full Width
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders ghost button correctly 1`] = `
+<View
+  accessibilityLabel="Skip"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "transparent",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#202028",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Skip
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders large button correctly 1`] = `
+<View
+  accessibilityLabel="Large Action"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 20,
+        "paddingVertical": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 18,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Large Action
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders loading button correctly 1`] = `
+<View
+  accessibilityHint="Button is loading"
+  accessibilityLabel="Loading"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": true,
+      "checked": undefined,
+      "disabled": true,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 0.5,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <ActivityIndicator
+    color="#FFFFFF"
+    size="small"
+    style={
+      {
+        "marginVertical": 2,
+      }
+    }
+  />
+</View>
+`;
+
+exports[`Button Snapshots renders outline button correctly 1`] = `
+<View
+  accessibilityLabel="Learn More"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "transparent",
+        "borderColor": "#1A73E8",
+        "borderRadius": 4,
+        "borderWidth": 1,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#1A73E8",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Learn More
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders primary button correctly 1`] = `
+<View
+  accessibilityLabel="Start Workout"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Start Workout
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders secondary button correctly 1`] = `
+<View
+  accessibilityLabel="Cancel"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#FFFFFF",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 16,
+          "fontWeight": "600",
+          "letterSpacing": 0.5,
+          "lineHeight": 17.6,
+        },
+        {
+          "color": "#202028",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Cancel
+  </Text>
+</View>
+`;
+
+exports[`Button Snapshots renders small button correctly 1`] = `
+<View
+  accessibilityLabel="Small"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderColor": undefined,
+        "borderRadius": 4,
+        "borderWidth": 0,
+        "flexDirection": "row",
+        "justifyContent": "center",
+        "opacity": 1,
+        "paddingHorizontal": 12,
+        "paddingVertical": 8,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 12,
+          "fontWeight": "500",
+          "letterSpacing": 0.5,
+          "lineHeight": 13.200000000000001,
+        },
+        {
+          "color": "#FFFFFF",
+        },
+        undefined,
+        undefined,
+        undefined,
+      ]
+    }
+  >
+    Small
+  </Text>
+</View>
+`;
+
+exports[`CadenceDisplay Snapshots renders high cadence warning correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: 105 revolutions per minute, Target: 90 RPM, Status: Slow Down"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#EAA000",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      CADENCE
+    </Text>
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#EAA000",
+          "borderRadius": 12,
+          "paddingHorizontal": 10,
+          "paddingVertical": 4,
+          "transform": [
+            {
+              "scale": 1,
+            },
+          ],
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Slow Down
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#EAA000",
+          },
+        ]
+      }
+    >
+      105
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+  <View
+    style={
+      [
+        {},
+        {
+          "borderTopColor": "#DADAE0",
+          "borderTopWidth": 0.5,
+          "marginTop": 12,
+          "paddingTop": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={{}}
+      >
+        <Text
+          style={
+            [
+              {},
+              {
+                "fontSize": 10,
+                "fontWeight": "500",
+                "letterSpacing": 1.5,
+                "lineHeight": 14,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+          TARGET
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "baseline",
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "fontSize": 24,
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+                "fontWeight": "600",
+              },
+              {
+                "color": "#606068",
+              },
+            ]
+          }
+        >
+          90
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "fontSize": 12,
+                "fontWeight": "400",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+           
+          rpm
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "marginTop": 8,
+        }
+      }
+    >
+      <View
+        style={
+          [
+            {
+              "borderRadius": 8,
+              "marginRight": 8,
+              "paddingHorizontal": 8,
+              "paddingVertical": 3,
+            },
+            {
+              "backgroundColor": "#EAA000",
+            },
+          ]
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FFFFFF",
+              "fontSize": 12,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "700",
+            }
+          }
+        >
+          +
+          15
+           rpm
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 12,
+              "fontWeight": "500",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+        Slow Down
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#EAA000",
+          },
+        ]
+      }
+    >
+      ↻
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`CadenceDisplay Snapshots renders low cadence warning correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: 75 revolutions per minute, Target: 90 RPM, Status: Spin Faster"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#C83228",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      CADENCE
+    </Text>
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#C83228",
+          "borderRadius": 12,
+          "paddingHorizontal": 10,
+          "paddingVertical": 4,
+          "transform": [
+            {
+              "scale": 1,
+            },
+          ],
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Spin Faster
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#C83228",
+          },
+        ]
+      }
+    >
+      75
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+  <View
+    style={
+      [
+        {},
+        {
+          "borderTopColor": "#DADAE0",
+          "borderTopWidth": 0.5,
+          "marginTop": 12,
+          "paddingTop": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={{}}
+      >
+        <Text
+          style={
+            [
+              {},
+              {
+                "fontSize": 10,
+                "fontWeight": "500",
+                "letterSpacing": 1.5,
+                "lineHeight": 14,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+          TARGET
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "baseline",
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "fontSize": 24,
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+                "fontWeight": "600",
+              },
+              {
+                "color": "#606068",
+              },
+            ]
+          }
+        >
+          90
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "fontSize": 12,
+                "fontWeight": "400",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+           
+          rpm
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "marginTop": 8,
+        }
+      }
+    >
+      <View
+        style={
+          [
+            {
+              "borderRadius": 8,
+              "marginRight": 8,
+              "paddingHorizontal": 8,
+              "paddingVertical": 3,
+            },
+            {
+              "backgroundColor": "#C83228",
+            },
+          ]
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FFFFFF",
+              "fontSize": 12,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "700",
+            }
+          }
+        >
+          -15
+           rpm
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 12,
+              "fontWeight": "500",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+        Spin Faster
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#C83228",
+          },
+        ]
+      }
+    >
+      ↻
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`CadenceDisplay Snapshots renders with cadence data correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: 92 revolutions per minute"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#1A73E8",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      CADENCE
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#1A73E8",
+          },
+        ]
+      }
+    >
+      92
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 8,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 13,
+            "fontWeight": "400",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      No target set
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#1A73E8",
+          },
+        ]
+      }
+    >
+      ↻
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`CadenceDisplay Snapshots renders with target cadence correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: 88 revolutions per minute, Target: 90 RPM, Status: On Target"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#188038",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      CADENCE
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#188038",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        On Target
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#188038",
+          },
+        ]
+      }
+    >
+      88
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+  <View
+    style={
+      [
+        {},
+        {
+          "borderTopColor": "#DADAE0",
+          "borderTopWidth": 0.5,
+          "marginTop": 12,
+          "paddingTop": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={{}}
+      >
+        <Text
+          style={
+            [
+              {},
+              {
+                "fontSize": 10,
+                "fontWeight": "500",
+                "letterSpacing": 1.5,
+                "lineHeight": 14,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+          TARGET
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "baseline",
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "fontSize": 24,
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+                "fontWeight": "600",
+              },
+              {
+                "color": "#188038",
+              },
+            ]
+          }
+        >
+          90
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "fontSize": 12,
+                "fontWeight": "400",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+           
+          rpm
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "marginTop": 8,
+        }
+      }
+    >
+      <View
+        style={
+          [
+            {
+              "borderRadius": 8,
+              "marginRight": 8,
+              "paddingHorizontal": 8,
+              "paddingVertical": 3,
+            },
+            {
+              "backgroundColor": "#188038",
+            },
+          ]
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FFFFFF",
+              "fontSize": 12,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "700",
+            }
+          }
+        >
+          -2
+           rpm
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 12,
+              "fontWeight": "500",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+        On Target
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#188038",
+          },
+        ]
+      }
+    >
+      ↻
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`CadenceDisplay Snapshots renders without metrics correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: no data revolutions per minute"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "transparent",
+        "borderLeftWidth": 0,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      CADENCE
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#202028",
+          },
+        ]
+      }
+    >
+      --
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders authenticated state correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Authenticated with server"
+    accessibilityRole="text"
+    accessible={true}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 20,
+          "paddingHorizontal": 12,
+          "paddingVertical": 4,
+        },
+      ]
+    }
+  >
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#188038",
+          "borderRadius": 4,
+          "height": 8,
+          "marginRight": 6,
+          "opacity": 1,
+          "width": 8,
+        }
+      }
+    />
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 0,
+            "lineHeight": 11,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      Authenticated
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders badge variant correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Connected to server"
+    accessibilityRole="text"
+    accessible={true}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 20,
+          "paddingHorizontal": 12,
+          "paddingVertical": 4,
+        },
+      ]
+    }
+  >
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#188038",
+          "borderRadius": 4,
+          "height": 8,
+          "marginRight": 6,
+          "opacity": 1,
+          "width": 8,
+        }
+      }
+    />
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 0,
+            "lineHeight": 11,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      Connected
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders connecting state correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Connecting to server"
+    accessibilityRole="text"
+    accessible={true}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 20,
+          "paddingHorizontal": 12,
+          "paddingVertical": 4,
+        },
+      ]
+    }
+  >
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#EAA000",
+          "borderRadius": 4,
+          "height": 8,
+          "marginRight": 6,
+          "opacity": 1,
+          "width": 8,
+        }
+      }
+    />
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 0,
+            "lineHeight": 11,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      Connecting...
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders disconnected state correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Disconnected from server"
+    accessibilityRole="text"
+    accessible={true}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 20,
+          "paddingHorizontal": 12,
+          "paddingVertical": 4,
+        },
+      ]
+    }
+  >
+    <View
+      collapsable={false}
+      style={
+        {
+          "backgroundColor": "#909098",
+          "borderRadius": 4,
+          "height": 8,
+          "marginRight": 6,
+          "opacity": 1,
+          "width": 8,
+        }
+      }
+    />
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 0,
+            "lineHeight": 11,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      Disconnected
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders dot variant correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Connected to server"
+    accessibilityRole="image"
+    accessible={true}
+    collapsable={false}
+    style={
+      {
+        "backgroundColor": "#188038",
+        "borderRadius": 6,
+        "height": 12,
+        "opacity": 1,
+        "width": 12,
+      }
+    }
+  />
+</View>
+`;
+
+exports[`ConnectionStatus Snapshots renders full variant correctly 1`] = `
+<View
+  style={
+    [
+      {
+        "alignSelf": "flex-start",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLabel="Connected to server. Connected to RustRide-PC:9876"
+    accessibilityRole="text"
+    accessible={true}
+    style={
+      [
+        {
+          "alignSelf": "stretch",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 8,
+          "padding": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <View
+        collapsable={false}
+        style={
+          {
+            "backgroundColor": "#188038",
+            "borderRadius": 4,
+            "height": 8,
+            "marginRight": 6,
+            "opacity": 1,
+            "width": 8,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {},
+            {
+              "fontSize": 16,
+              "fontWeight": "500",
+              "letterSpacing": 0,
+              "lineHeight": 22.4,
+            },
+            {
+              "color": "#202028",
+            },
+          ]
+        }
+      >
+        Connected
+      </Text>
+    </View>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "marginLeft": 14,
+            "marginTop": 4,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      RustRide-PC:9876
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`FullScreenLoader Snapshots renders full screen loader correctly 1`] = `
+<View
+  accessibilityLabel="Please wait..."
+  accessibilityRole="progressbar"
+  accessibilityState={
+    {
+      "busy": true,
+    }
+  }
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "justifyContent": "center",
+      },
+      {
+        "alignItems": "center",
+        "backgroundColor": "rgba(0, 0, 0, 0.4)",
+        "bottom": 0,
+        "flex": 1,
+        "justifyContent": "center",
+        "left": 0,
+        "position": "absolute",
+        "right": 0,
+        "top": 0,
+        "zIndex": 1000,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {},
+        {
+          "transform": [
+            {
+              "scale": 1.2,
+            },
+          ],
+        },
+      ]
+    }
+  >
+    <ActivityIndicator
+      color="#1A73E8"
+      size="large"
+    />
+  </View>
+  <Text
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 14,
+          "fontWeight": "400",
+          "letterSpacing": 0,
+          "lineHeight": 22.400000000000002,
+        },
+        {
+          "color": "#606068",
+          "marginTop": 12,
+        },
+        undefined,
+      ]
+    }
+  >
+    Please wait...
+  </Text>
+</View>
+`;
+
+exports[`HeartRateDisplay Snapshots renders with HR data correctly 1`] = `
+<View
+  accessibilityLabel="Heart rate: 155 beats per minute, Zone: Threshold, Maximum: 172"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FFC800",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      HEART RATE
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#FFC800",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z4
+         
+        Threshold
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#FFC800",
+          },
+        ]
+      }
+    >
+      155
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      bpm
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        172
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        bpm (max)
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#FFC800",
+          },
+        ]
+      }
+    >
+      ♥
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`HeartRateDisplay Snapshots renders without metrics correctly 1`] = `
+<View
+  accessibilityLabel="Heart rate: no data beats per minute"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "transparent",
+        "borderLeftWidth": 0,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      HEART RATE
+    </Text>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#202028",
+          },
+        ]
+      }
+    >
+      --
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      bpm
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        --
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        bpm (max)
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`HeartRateDisplay Snapshots renders zone1 correctly 1`] = `
+<View
+  accessibilityLabel="Heart rate: 95 beats per minute, Zone: Recovery, Maximum: 172"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#808080",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      HEART RATE
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#808080",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z1
+         
+        Recovery
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#808080",
+          },
+        ]
+      }
+    >
+      95
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      bpm
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        172
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        bpm (max)
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#808080",
+          },
+        ]
+      }
+    >
+      ♥
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`HeartRateDisplay Snapshots renders zone5 correctly 1`] = `
+<View
+  accessibilityLabel="Heart rate: 175 beats per minute, Zone: Max, Maximum: 180"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 140,
+        "overflow": "hidden",
+        "position": "relative",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FF3232",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      HEART RATE
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#FF3232",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z5
+         
+        Max
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#FF3232",
+          },
+        ]
+      }
+    >
+      175
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      bpm
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        180
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        bpm (max)
+      </Text>
+    </View>
+  </View>
+  <View
+    collapsable={false}
+    style={
+      {
+        "bottom": 16,
+        "opacity": 0.15,
+        "position": "absolute",
+        "right": 16,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 48,
+          },
+          {
+            "color": "#FF3232",
+          },
+        ]
+      }
+    >
+      ♥
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`IconButton Snapshots renders circular icon button correctly 1`] = `
+<View
+  accessibilityLabel="Play"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  hitSlop={
+    {
+      "bottom": 12,
+      "left": 12,
+      "right": 12,
+      "top": 12,
+    }
+  }
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 22,
+        "height": 44,
+        "justifyContent": "center",
+        "opacity": 1,
+        "width": 44,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    testID="mock-icon"
+  >
+    Icon:24x#fff
+  </Text>
+</View>
+`;
+
+exports[`IconButton Snapshots renders danger icon button correctly 1`] = `
+<View
+  accessibilityLabel="Stop"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  hitSlop={
+    {
+      "bottom": 12,
+      "left": 12,
+      "right": 12,
+      "top": 12,
+    }
+  }
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#C83228",
+        "borderRadius": 4,
+        "height": 44,
+        "justifyContent": "center",
+        "opacity": 1,
+        "width": 44,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    testID="mock-icon"
+  >
+    Icon:24x#fff
+  </Text>
+</View>
+`;
+
+exports[`IconButton Snapshots renders default icon button correctly 1`] = `
+<View
+  accessibilityLabel="Play"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  hitSlop={
+    {
+      "bottom": 12,
+      "left": 12,
+      "right": 12,
+      "top": 12,
+    }
+  }
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 4,
+        "height": 44,
+        "justifyContent": "center",
+        "opacity": 1,
+        "width": 44,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    testID="mock-icon"
+  >
+    Icon:24x#fff
+  </Text>
+</View>
+`;
+
+exports[`IconButton Snapshots renders loading icon button correctly 1`] = `
+<View
+  accessibilityHint="Button is loading"
+  accessibilityLabel="Loading"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": true,
+      "checked": undefined,
+      "disabled": true,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  hitSlop={
+    {
+      "bottom": 12,
+      "left": 12,
+      "right": 12,
+      "top": 12,
+    }
+  }
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 4,
+        "height": 44,
+        "justifyContent": "center",
+        "opacity": 0.5,
+        "width": 44,
+      },
+      undefined,
+    ]
+  }
+>
+  <ActivityIndicator
+    color="#202028"
+    size={24}
+  />
+</View>
+`;
+
+exports[`IconButton Snapshots renders primary icon button correctly 1`] = `
+<View
+  accessibilityLabel="Play"
+  accessibilityRole="button"
+  accessibilityState={
+    {
+      "busy": false,
+      "checked": undefined,
+      "disabled": false,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  hitSlop={
+    {
+      "bottom": 12,
+      "left": 12,
+      "right": 12,
+      "top": 12,
+    }
+  }
+  onBlur={[Function]}
+  onClick={[Function]}
+  onFocus={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "backgroundColor": "#1A73E8",
+        "borderRadius": 4,
+        "height": 44,
+        "justifyContent": "center",
+        "opacity": 1,
+        "width": 44,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    testID="mock-icon"
+  >
+    Icon:24x#fff
+  </Text>
+</View>
+`;
+
+exports[`LoadingSpinner Snapshots renders large spinner correctly 1`] = `
+<View
+  accessibilityLabel="Loading"
+  accessibilityRole="progressbar"
+  accessibilityState={
+    {
+      "busy": true,
+    }
+  }
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "justifyContent": "center",
+      },
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "justifyContent": "center",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {},
+        {
+          "transform": [
+            {
+              "scale": 1.2,
+            },
+          ],
+        },
+      ]
+    }
+  >
+    <ActivityIndicator
+      color="#1A73E8"
+      size="large"
+    />
+  </View>
+</View>
+`;
+
+exports[`LoadingSpinner Snapshots renders medium spinner correctly 1`] = `
+<View
+  accessibilityLabel="Loading"
+  accessibilityRole="progressbar"
+  accessibilityState={
+    {
+      "busy": true,
+    }
+  }
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "justifyContent": "center",
+      },
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "justifyContent": "center",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {},
+        {
+          "transform": [
+            {
+              "scale": 1,
+            },
+          ],
+        },
+      ]
+    }
+  >
+    <ActivityIndicator
+      color="#1A73E8"
+      size="large"
+    />
+  </View>
+</View>
+`;
+
+exports[`LoadingSpinner Snapshots renders small spinner correctly 1`] = `
+<View
+  accessibilityLabel="Loading"
+  accessibilityRole="progressbar"
+  accessibilityState={
+    {
+      "busy": true,
+    }
+  }
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "justifyContent": "center",
+      },
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "justifyContent": "center",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {},
+        {
+          "transform": [
+            {
+              "scale": 0.8,
+            },
+          ],
+        },
+      ]
+    }
+  >
+    <ActivityIndicator
+      color="#1A73E8"
+      size="small"
+    />
+  </View>
+</View>
+`;
+
+exports[`LoadingSpinner Snapshots renders with message correctly 1`] = `
+<View
+  accessibilityLabel="Loading data..."
+  accessibilityRole="progressbar"
+  accessibilityState={
+    {
+      "busy": true,
+    }
+  }
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "justifyContent": "center",
+      },
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "justifyContent": "center",
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {},
+        {
+          "transform": [
+            {
+              "scale": 1,
+            },
+          ],
+        },
+      ]
+    }
+  >
+    <ActivityIndicator
+      color="#1A73E8"
+      size="large"
+    />
+  </View>
+  <Text
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 14,
+          "fontWeight": "400",
+          "letterSpacing": 0,
+          "lineHeight": 22.400000000000002,
+        },
+        {
+          "color": "#606068",
+          "marginTop": 12,
+        },
+        undefined,
+      ]
+    }
+  >
+    Loading data...
+  </Text>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders basic metric card correctly 1`] = `
+<View
+  accessibilityLabel="Power: 250 W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 120,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 32,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 35.2,
+          },
+        ]
+      }
+    >
+      250
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders large size correctly 1`] = `
+<View
+  accessibilityLabel="Power: 285 W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 160,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+        ]
+      }
+    >
+      285
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders placeholder value correctly 1`] = `
+<View
+  accessibilityLabel="Power: -- W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 120,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 32,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 35.2,
+          },
+        ]
+      }
+    >
+      --
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders small size correctly 1`] = `
+<View
+  accessibilityLabel="Cadence: 90 rpm"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 80,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    CADENCE
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 24,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": 0,
+            "lineHeight": 26.400000000000002,
+          },
+        ]
+      }
+    >
+      90
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      rpm
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders with accent color correctly 1`] = `
+<View
+  accessibilityLabel="Power: 300 W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FFC107",
+        "borderLeftWidth": 4,
+        "borderRadius": 8,
+        "minHeight": 120,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#FFC107",
+            "fontSize": 32,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 35.2,
+          },
+        ]
+      }
+    >
+      300
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders with secondary value correctly 1`] = `
+<View
+  accessibilityLabel="Power: 280 W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 120,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 32,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 35.2,
+          },
+        ]
+      }
+    >
+      280
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "marginTop": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 14,
+            "fontWeight": "500",
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      275
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "fontSize": 12,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      3s avg
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`MetricCard Snapshots renders with target value correctly 1`] = `
+<View
+  accessibilityLabel="Power: 250 W"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 8,
+        "minHeight": 120,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <Text
+    numberOfLines={1}
+    style={
+      [
+        {
+          "marginBottom": 4,
+        },
+        {
+          "color": "#909098",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "letterSpacing": 1.5,
+          "lineHeight": 14,
+          "textTransform": "uppercase",
+        },
+      ]
+    }
+  >
+    POWER
+  </Text>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "color": "#202028",
+            "fontSize": 32,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 35.2,
+          },
+        ]
+      }
+    >
+      250
+    </Text>
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 4,
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "alignSelf": "stretch",
+        "borderTopColor": "rgba(255,255,255,0.1)",
+        "borderTopWidth": 0.5,
+        "flexDirection": "row",
+        "marginTop": 8,
+        "paddingTop": 8,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "fontSize": 12,
+            "fontWeight": "500",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      Target
+      :
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "fontSize": 14,
+            "fontWeight": "600",
+            "marginLeft": 4,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      275
+       W
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`NoSessionState Snapshots renders connected state correctly 1`] = `
+<View
+  accessibilityLabel="Ready to Ride. Start a workout or free ride on the desktop app to see live metrics here."
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 12,
+        "padding": 20,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {
+          "alignItems": "center",
+          "height": 96,
+          "justifyContent": "center",
+          "width": 96,
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 9999,
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    <Icon
+      color="#1A73E8"
+      name="bicycle-outline"
+      size={48}
+    />
+  </View>
+  <Text
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 20,
+          "fontWeight": "600",
+          "letterSpacing": 0,
+          "lineHeight": 28,
+        },
+        {
+          "color": "#202028",
+          "marginBottom": 8,
+        },
+      ]
+    }
+  >
+    Ready to Ride
+  </Text>
+  <Text
+    style={
+      [
+        {
+          "lineHeight": 22,
+          "maxWidth": 300,
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 14,
+          "fontWeight": "400",
+          "letterSpacing": 0,
+          "lineHeight": 22.400000000000002,
+        },
+        {
+          "color": "#606068",
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    Start a workout or free ride on the desktop app to see live metrics here.
+  </Text>
+  <View
+    style={
+      [
+        {
+          "alignSelf": "flex-start",
+        },
+        {
+          "marginBottom": 12,
+        },
+      ]
+    }
+  >
+    <View
+      accessibilityLabel="Authenticated with server. Connected to RustRide-PC"
+      accessibilityRole="text"
+      accessible={true}
+      style={
+        [
+          {
+            "alignSelf": "stretch",
+          },
+          {
+            "backgroundColor": "#FFFFFF",
+            "borderRadius": 8,
+            "padding": 12,
+          },
+        ]
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+          }
+        }
+      >
+        <View
+          collapsable={false}
+          style={
+            {
+              "backgroundColor": "#188038",
+              "borderRadius": 4,
+              "height": 8,
+              "marginRight": 6,
+              "opacity": 1,
+              "width": 8,
+            }
+          }
+        />
+        <Text
+          style={
+            [
+              {},
+              {
+                "fontSize": 16,
+                "fontWeight": "500",
+                "letterSpacing": 0,
+                "lineHeight": 22.4,
+              },
+              {
+                "color": "#202028",
+              },
+            ]
+          }
+        >
+          Authenticated
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={
+          [
+            {
+              "marginLeft": 14,
+              "marginTop": 4,
+            },
+            {
+              "fontSize": 12,
+              "fontWeight": "400",
+              "letterSpacing": 0,
+              "lineHeight": 16.799999999999997,
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+        RustRide-PC
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      [
+        {
+          "width": "100%",
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 8,
+          "padding": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "flex-start",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Icon
+        color="#1A73E8"
+        name="information-circle-outline"
+        size={20}
+        style={
+          {
+            "marginRight": 8,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {
+              "lineHeight": 20,
+            },
+            {
+              "fontSize": 12,
+              "fontWeight": "400",
+              "letterSpacing": 0,
+              "lineHeight": 19.200000000000003,
+            },
+            {
+              "color": "#606068",
+              "flex": 1,
+            },
+          ]
+        }
+      >
+        Use your phone as a remote control during workouts
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "alignItems": "flex-start",
+            "flexDirection": "row",
+          },
+          {
+            "marginTop": 8,
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#1A73E8"
+        name="pulse-outline"
+        size={20}
+        style={
+          {
+            "marginRight": 8,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {
+              "lineHeight": 20,
+            },
+            {
+              "fontSize": 12,
+              "fontWeight": "400",
+              "letterSpacing": 0,
+              "lineHeight": 19.200000000000003,
+            },
+            {
+              "color": "#606068",
+              "flex": 1,
+            },
+          ]
+        }
+      >
+        View real-time power, heart rate, and cadence
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`NoSessionState Snapshots renders connecting state correctly 1`] = `
+<View
+  accessibilityLabel="Connecting.... Establishing connection to RustRide desktop app."
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 12,
+        "padding": 20,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {
+          "alignItems": "center",
+          "height": 96,
+          "justifyContent": "center",
+          "width": 96,
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 9999,
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    <Icon
+      color="#EAA000"
+      name="sync-outline"
+      size={48}
+    />
+  </View>
+  <Text
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 20,
+          "fontWeight": "600",
+          "letterSpacing": 0,
+          "lineHeight": 28,
+        },
+        {
+          "color": "#202028",
+          "marginBottom": 8,
+        },
+      ]
+    }
+  >
+    Connecting...
+  </Text>
+  <Text
+    style={
+      [
+        {
+          "lineHeight": 22,
+          "maxWidth": 300,
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 14,
+          "fontWeight": "400",
+          "letterSpacing": 0,
+          "lineHeight": 22.400000000000002,
+        },
+        {
+          "color": "#606068",
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    Establishing connection to RustRide desktop app.
+  </Text>
+  <View
+    style={
+      [
+        {
+          "alignSelf": "flex-start",
+        },
+        undefined,
+      ]
+    }
+  >
+    <View
+      accessibilityLabel="Connecting to server"
+      accessibilityRole="text"
+      accessible={true}
+      style={
+        [
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+          },
+          {
+            "backgroundColor": "#FFFFFF",
+            "borderRadius": 20,
+            "paddingHorizontal": 12,
+            "paddingVertical": 4,
+          },
+        ]
+      }
+    >
+      <View
+        collapsable={false}
+        style={
+          {
+            "backgroundColor": "#EAA000",
+            "borderRadius": 4,
+            "height": 8,
+            "marginRight": 6,
+            "opacity": 1,
+            "width": 8,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {},
+            {
+              "fontSize": 10,
+              "fontWeight": "500",
+              "letterSpacing": 0,
+              "lineHeight": 11,
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        Connecting...
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`NoSessionState Snapshots renders disconnected state correctly 1`] = `
+<View
+  accessibilityLabel="Not Connected. Connect to your RustRide desktop app to control workouts and view live metrics."
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "alignItems": "center",
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderRadius": 12,
+        "padding": 20,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {
+          "alignItems": "center",
+          "height": 96,
+          "justifyContent": "center",
+          "width": 96,
+        },
+        {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 9999,
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    <Icon
+      color="#909098"
+      name="desktop-outline"
+      size={48}
+    />
+  </View>
+  <Text
+    style={
+      [
+        {
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 20,
+          "fontWeight": "600",
+          "letterSpacing": 0,
+          "lineHeight": 28,
+        },
+        {
+          "color": "#202028",
+          "marginBottom": 8,
+        },
+      ]
+    }
+  >
+    Not Connected
+  </Text>
+  <Text
+    style={
+      [
+        {
+          "lineHeight": 22,
+          "maxWidth": 300,
+          "textAlign": "center",
+        },
+        {
+          "fontSize": 14,
+          "fontWeight": "400",
+          "letterSpacing": 0,
+          "lineHeight": 22.400000000000002,
+        },
+        {
+          "color": "#606068",
+          "marginBottom": 16,
+        },
+      ]
+    }
+  >
+    Connect to your RustRide desktop app to control workouts and view live metrics.
+  </Text>
+  <View
+    accessibilityHint="Opens the connection screen to connect to RustRide desktop"
+    accessibilityLabel="Connect to Desktop"
+    accessibilityRole="button"
+    accessibilityState={
+      {
+        "busy": false,
+        "checked": undefined,
+        "disabled": false,
+        "expanded": undefined,
+        "selected": undefined,
+      }
+    }
+    accessibilityValue={
+      {
+        "max": undefined,
+        "min": undefined,
+        "now": undefined,
+        "text": undefined,
+      }
+    }
+    accessible={true}
+    collapsable={false}
+    focusable={true}
+    onBlur={[Function]}
+    onClick={[Function]}
+    onFocus={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderRelease={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "backgroundColor": "#1A73E8",
+          "borderColor": undefined,
+          "borderRadius": 4,
+          "borderWidth": 0,
+          "flexDirection": "row",
+          "justifyContent": "center",
+          "opacity": 1,
+          "paddingHorizontal": 20,
+          "paddingVertical": 16,
+          "width": "100%",
+        },
+        undefined,
+      ]
+    }
+  >
+    <Icon
+      color="#FFFFFF"
+      name="link-outline"
+      size={20}
+    />
+    <Text
+      numberOfLines={1}
+      style={
+        [
+          {
+            "textAlign": "center",
+          },
+          {
+            "fontSize": 18,
+            "fontWeight": "600",
+            "letterSpacing": 0.5,
+            "lineHeight": 17.6,
+          },
+          {
+            "color": "#FFFFFF",
+          },
+          {
+            "marginLeft": 8,
+          },
+          undefined,
+          undefined,
+        ]
+      }
+    >
+      Connect to Desktop
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`PowerDisplay Snapshots renders recovery zone correctly 1`] = `
+<View
+  accessibilityLabel="Power: 100 watts, 3 second average: 95 watts, Zone: Recovery"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 180,
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#808080",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      POWER
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#808080",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z1
+         
+        Recovery
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#808080",
+          },
+        ]
+      }
+    >
+      100
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        95
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        W (3s avg)
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`PowerDisplay Snapshots renders vo2max zone correctly 1`] = `
+<View
+  accessibilityLabel="Power: 350 watts, 3 second average: 345 watts, Zone: VO2max"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 180,
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FF8000",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      POWER
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#FF8000",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z5
+         
+        VO2max
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#FF8000",
+          },
+        ]
+      }
+    >
+      350
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        345
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        W (3s avg)
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`PowerDisplay Snapshots renders with power data correctly 1`] = `
+<View
+  accessibilityLabel="Power: 285 watts, 3 second average: 280 watts, Zone: Threshold"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 180,
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FFC800",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      POWER
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#FFC800",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z4
+         
+        Threshold
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#FFC800",
+          },
+        ]
+      }
+    >
+      285
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        280
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        W (3s avg)
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`PowerDisplay Snapshots renders with target power correctly 1`] = `
+<View
+  accessibilityLabel="Power: 275 watts, 3 second average: 272 watts, Zone: Threshold, Target: 280 watts"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 180,
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#FFC800",
+        "borderLeftWidth": 5,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      POWER
+    </Text>
+    <View
+      style={
+        [
+          {
+            "borderRadius": 12,
+            "paddingHorizontal": 10,
+            "paddingVertical": 4,
+          },
+          {
+            "backgroundColor": "#FFC800",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.5,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#FFFFFF",
+            },
+          ]
+        }
+      >
+        Z4
+         
+        Threshold
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#FFC800",
+          },
+        ]
+      }
+    >
+      275
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        272
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        W (3s avg)
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      [
+        {},
+        {
+          "borderTopColor": "#DADAE0",
+          "borderTopWidth": 0.5,
+          "marginTop": 12,
+          "paddingTop": 12,
+        },
+      ]
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={{}}
+      >
+        <Text
+          style={
+            [
+              {},
+              {
+                "fontSize": 10,
+                "fontWeight": "500",
+                "letterSpacing": 1.5,
+                "lineHeight": 14,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+          TARGET
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "baseline",
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "fontSize": 24,
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+                "fontWeight": "600",
+              },
+              {
+                "color": "#188038",
+              },
+            ]
+          }
+        >
+          280
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "fontSize": 12,
+                "fontWeight": "400",
+              },
+              {
+                "color": "#909098",
+              },
+            ]
+          }
+        >
+           
+          W
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "marginTop": 8,
+        }
+      }
+    >
+      <View
+        style={
+          [
+            {
+              "borderRadius": 8,
+              "marginRight": 8,
+              "paddingHorizontal": 8,
+              "paddingVertical": 3,
+            },
+            {
+              "backgroundColor": "#188038",
+            },
+          ]
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FFFFFF",
+              "fontSize": 12,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "700",
+            }
+          }
+        >
+          -5
+          W
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 12,
+              "fontWeight": "500",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+        On target
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`PowerDisplay Snapshots renders without metrics correctly 1`] = `
+<View
+  accessibilityLabel="Power: no data watts, 3 second average: no data watts, Zone: none"
+  accessibilityRole="text"
+  accessible={true}
+  style={
+    [
+      {
+        "minHeight": 180,
+      },
+      {
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "transparent",
+        "borderLeftWidth": 0,
+        "borderRadius": 12,
+        "padding": 16,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "justifyContent": "space-between",
+        "marginBottom": 4,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {},
+          {
+            "fontSize": 10,
+            "fontWeight": "500",
+            "letterSpacing": 1.5,
+            "lineHeight": 14,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#909098",
+          },
+        ]
+      }
+    >
+      POWER
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "baseline",
+        "flexDirection": "row",
+      }
+    }
+  >
+    <Text
+      adjustsFontSizeToFit={true}
+      numberOfLines={1}
+      style={
+        [
+          {
+            "includeFontPadding": false,
+          },
+          {
+            "fontSize": 56,
+            "fontVariant": [
+              "tabular-nums",
+            ],
+            "fontWeight": "600",
+            "letterSpacing": -0.5,
+            "lineHeight": 61.60000000000001,
+          },
+          {
+            "color": "#202028",
+          },
+        ]
+      }
+    >
+      --
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "alignSelf": "flex-end",
+            "marginBottom": 8,
+            "marginLeft": 6,
+          },
+          {
+            "fontSize": 12,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 16.799999999999997,
+          },
+          {
+            "color": "#606068",
+          },
+        ]
+      }
+    >
+      W
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginTop": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "baseline",
+          "flexDirection": "row",
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 18,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "600",
+            },
+            {
+              "color": "#606068",
+            },
+          ]
+        }
+      >
+        --
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "fontSize": 13,
+              "fontWeight": "400",
+            },
+            {
+              "color": "#909098",
+            },
+          ]
+        }
+      >
+         
+        W (3s avg)
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`Toast Snapshots renders error toast correctly 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLiveRegion="polite"
+    accessibilityRole="alert"
+    collapsable={false}
+    onMoveShouldSetResponder={[Function]}
+    onMoveShouldSetResponderCapture={[Function]}
+    onResponderEnd={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderReject={[Function]}
+    onResponderRelease={[Function]}
+    onResponderStart={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    onStartShouldSetResponderCapture={[Function]}
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#C83228",
+        "borderLeftWidth": 4,
+        "borderRadius": 12,
+        "elevation": 8,
+        "flexDirection": "row",
+        "gap": 12,
+        "left": 16,
+        "marginTop": 55,
+        "opacity": 0,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "position": "absolute",
+        "right": 16,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 4,
+          "width": 0,
+        },
+        "shadowOpacity": 0.15,
+        "shadowRadius": 8,
+        "top": 0,
+        "transform": [
+          {
+            "translateY": -100,
+          },
+          {
+            "translateX": 0,
+          },
+        ],
+        "zIndex": 9999,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "borderRadius": 16,
+            "height": 32,
+            "justifyContent": "center",
+            "width": 32,
+          },
+          {
+            "backgroundColor": "#C8322820",
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#C83228"
+        name="alert-circle"
+        size={20}
+      />
+    </View>
+    <Text
+      numberOfLines={2}
+      style={
+        [
+          {
+            "flex": 1,
+          },
+          {
+            "fontSize": 14,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 22.400000000000002,
+          },
+          {
+            "color": "#202028",
+            "flex": 1,
+          },
+        ]
+      }
+    >
+      Connection failed
+    </Text>
+    <View
+      accessibilityLabel="Dismiss notification"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+    >
+      <Icon
+        color="#606068"
+        name="close"
+        size={18}
+      />
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
+
+exports[`Toast Snapshots renders info toast correctly 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLiveRegion="polite"
+    accessibilityRole="alert"
+    collapsable={false}
+    onMoveShouldSetResponder={[Function]}
+    onMoveShouldSetResponderCapture={[Function]}
+    onResponderEnd={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderReject={[Function]}
+    onResponderRelease={[Function]}
+    onResponderStart={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    onStartShouldSetResponderCapture={[Function]}
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#1A73E8",
+        "borderLeftWidth": 4,
+        "borderRadius": 12,
+        "elevation": 8,
+        "flexDirection": "row",
+        "gap": 12,
+        "left": 16,
+        "marginTop": 55,
+        "opacity": 0,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "position": "absolute",
+        "right": 16,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 4,
+          "width": 0,
+        },
+        "shadowOpacity": 0.15,
+        "shadowRadius": 8,
+        "top": 0,
+        "transform": [
+          {
+            "translateY": -100,
+          },
+          {
+            "translateX": 0,
+          },
+        ],
+        "zIndex": 9999,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "borderRadius": 16,
+            "height": 32,
+            "justifyContent": "center",
+            "width": 32,
+          },
+          {
+            "backgroundColor": "#1A73E820",
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#1A73E8"
+        name="information-circle"
+        size={20}
+      />
+    </View>
+    <Text
+      numberOfLines={2}
+      style={
+        [
+          {
+            "flex": 1,
+          },
+          {
+            "fontSize": 14,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 22.400000000000002,
+          },
+          {
+            "color": "#202028",
+            "flex": 1,
+          },
+        ]
+      }
+    >
+      New update available
+    </Text>
+    <View
+      accessibilityLabel="Dismiss notification"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+    >
+      <Icon
+        color="#606068"
+        name="close"
+        size={18}
+      />
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
+
+exports[`Toast Snapshots renders success toast correctly 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLiveRegion="polite"
+    accessibilityRole="alert"
+    collapsable={false}
+    onMoveShouldSetResponder={[Function]}
+    onMoveShouldSetResponderCapture={[Function]}
+    onResponderEnd={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderReject={[Function]}
+    onResponderRelease={[Function]}
+    onResponderStart={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    onStartShouldSetResponderCapture={[Function]}
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#188038",
+        "borderLeftWidth": 4,
+        "borderRadius": 12,
+        "elevation": 8,
+        "flexDirection": "row",
+        "gap": 12,
+        "left": 16,
+        "marginTop": 55,
+        "opacity": 0,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "position": "absolute",
+        "right": 16,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 4,
+          "width": 0,
+        },
+        "shadowOpacity": 0.15,
+        "shadowRadius": 8,
+        "top": 0,
+        "transform": [
+          {
+            "translateY": -100,
+          },
+          {
+            "translateX": 0,
+          },
+        ],
+        "zIndex": 9999,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "borderRadius": 16,
+            "height": 32,
+            "justifyContent": "center",
+            "width": 32,
+          },
+          {
+            "backgroundColor": "#18803820",
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#188038"
+        name="checkmark-circle"
+        size={20}
+      />
+    </View>
+    <Text
+      numberOfLines={2}
+      style={
+        [
+          {
+            "flex": 1,
+          },
+          {
+            "fontSize": 14,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 22.400000000000002,
+          },
+          {
+            "color": "#202028",
+            "flex": 1,
+          },
+        ]
+      }
+    >
+      Workout saved successfully
+    </Text>
+    <View
+      accessibilityLabel="Dismiss notification"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+    >
+      <Icon
+        color="#606068"
+        name="close"
+        size={18}
+      />
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
+
+exports[`Toast Snapshots renders toast with action correctly 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLiveRegion="polite"
+    accessibilityRole="alert"
+    collapsable={false}
+    onMoveShouldSetResponder={[Function]}
+    onMoveShouldSetResponderCapture={[Function]}
+    onResponderEnd={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderReject={[Function]}
+    onResponderRelease={[Function]}
+    onResponderStart={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    onStartShouldSetResponderCapture={[Function]}
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#188038",
+        "borderLeftWidth": 4,
+        "borderRadius": 12,
+        "elevation": 8,
+        "flexDirection": "row",
+        "gap": 12,
+        "left": 16,
+        "marginTop": 55,
+        "opacity": 0,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "position": "absolute",
+        "right": 16,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 4,
+          "width": 0,
+        },
+        "shadowOpacity": 0.15,
+        "shadowRadius": 8,
+        "top": 0,
+        "transform": [
+          {
+            "translateY": -100,
+          },
+          {
+            "translateX": 0,
+          },
+        ],
+        "zIndex": 9999,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "borderRadius": 16,
+            "height": 32,
+            "justifyContent": "center",
+            "width": 32,
+          },
+          {
+            "backgroundColor": "#18803820",
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#188038"
+        name="checkmark-circle"
+        size={20}
+      />
+    </View>
+    <Text
+      numberOfLines={2}
+      style={
+        [
+          {
+            "flex": 1,
+          },
+          {
+            "fontSize": 14,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 22.400000000000002,
+          },
+          {
+            "color": "#202028",
+            "flex": 1,
+          },
+        ]
+      }
+    >
+      Great job! You completed your FTP workout.
+    </Text>
+    <View
+      accessibilityLabel="View Details"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "paddingHorizontal": 8,
+          "paddingVertical": 4,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "fontSize": 14,
+              "fontWeight": "600",
+            },
+            {
+              "color": "#188038",
+            },
+          ]
+        }
+      >
+        View Details
+      </Text>
+    </View>
+    <View
+      accessibilityLabel="Dismiss notification"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+    >
+      <Icon
+        color="#606068"
+        name="close"
+        size={18}
+      />
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
+
+exports[`Toast Snapshots renders warning toast correctly 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    accessibilityLiveRegion="polite"
+    accessibilityRole="alert"
+    collapsable={false}
+    onMoveShouldSetResponder={[Function]}
+    onMoveShouldSetResponderCapture={[Function]}
+    onResponderEnd={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderReject={[Function]}
+    onResponderRelease={[Function]}
+    onResponderStart={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    onStartShouldSetResponderCapture={[Function]}
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "#F5F5F8",
+        "borderLeftColor": "#EAA000",
+        "borderLeftWidth": 4,
+        "borderRadius": 12,
+        "elevation": 8,
+        "flexDirection": "row",
+        "gap": 12,
+        "left": 16,
+        "marginTop": 55,
+        "opacity": 0,
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+        "position": "absolute",
+        "right": 16,
+        "shadowColor": "#000",
+        "shadowOffset": {
+          "height": 4,
+          "width": 0,
+        },
+        "shadowOpacity": 0.15,
+        "shadowRadius": 8,
+        "top": 0,
+        "transform": [
+          {
+            "translateY": -100,
+          },
+          {
+            "translateX": 0,
+          },
+        ],
+        "zIndex": 9999,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "borderRadius": 16,
+            "height": 32,
+            "justifyContent": "center",
+            "width": 32,
+          },
+          {
+            "backgroundColor": "#EAA00020",
+          },
+        ]
+      }
+    >
+      <Icon
+        color="#EAA000"
+        name="warning"
+        size={20}
+      />
+    </View>
+    <Text
+      numberOfLines={2}
+      style={
+        [
+          {
+            "flex": 1,
+          },
+          {
+            "fontSize": 14,
+            "fontWeight": "400",
+            "letterSpacing": 0,
+            "lineHeight": 22.400000000000002,
+          },
+          {
+            "color": "#202028",
+            "flex": 1,
+          },
+        ]
+      }
+    >
+      Low battery
+    </Text>
+    <View
+      accessibilityLabel="Dismiss notification"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      hitSlop={
+        {
+          "bottom": 10,
+          "left": 10,
+          "right": 10,
+          "top": 10,
+        }
+      }
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+    >
+      <Icon
+        color="#606068"
+        name="close"
+        size={18}
+      />
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
