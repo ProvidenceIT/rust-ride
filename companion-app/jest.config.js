@@ -20,5 +20,8 @@ module.exports = {
     '^react-native-zeroconf$': '<rootDir>/__mocks__/react-native-zeroconf.ts',
     // Mock for react-native-camera-kit (uses native modules)
     '^react-native-camera-kit$': '<rootDir>/__mocks__/react-native-camera-kit.tsx',
+    // Mock for AsyncStorage
+    '^@react-native-async-storage/async-storage$':
+      '<rootDir>/__mocks__/@react-native-async-storage/async-storage.ts',
   },
 };
