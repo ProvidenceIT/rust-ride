@@ -3,7 +3,7 @@
 //! Provides MQTT broker connection using rumqttc.
 
 use super::{MqttConfig, MqttError, MqttEvent, QoS};
-use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions};
+use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS as RumqttcQoS};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
@@ -214,6 +214,15 @@ impl DefaultMqttClient {
     }
 }
 
+/// Convert our QoS enum to rumqttc's QoS enum
+fn qos_to_rumqttc(qos: QoS) -> RumqttcQoS {
+    match qos {
+        QoS::AtMostOnce => RumqttcQoS::AtMostOnce,
+        QoS::AtLeastOnce => RumqttcQoS::AtLeastOnce,
+        QoS::ExactlyOnce => RumqttcQoS::ExactlyOnce,
+    }
+}
+
 impl MqttClient for DefaultMqttClient {
     async fn connect(&self, config: &MqttConfig) -> Result<(), MqttError> {
         if !config.enabled {
@@ -290,15 +299,27 @@ impl MqttClient for DefaultMqttClient {
         }
     }
 
-    async fn publish(&self, topic: &str, payload: &str, _qos: QoS) -> Result<(), MqttError> {
+    async fn publish(&self, topic: &str, payload: &str, qos: QoS) -> Result<(), MqttError> {
         if !self.is_connected() {
             return Err(MqttError::NotConnected);
         }
 
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(MqttError::NotConnected)?;
+
         tracing::debug!("Publishing to {}: {}", topic, payload);
 
-        // TODO: Actual publish using rumqttc
-        // client.publish(topic, qos_to_rumqttc(qos), false, payload).await?;
+        // Convert our QoS to rumqttc QoS
+        let rumqttc_qos = qos_to_rumqttc(qos);
+
+        // Publish using rumqttc AsyncClient
+        // retain=false: don't retain the message on the broker
+        client
+            .publish(topic, rumqttc_qos, false, payload.as_bytes())
+            .await
+            .map_err(|e| MqttError::PublishFailed(e.to_string()))?;
 
         Ok(())
     }
@@ -342,6 +363,13 @@ mod tests {
     fn test_client_creation() {
         let client = DefaultMqttClient::new();
         assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn test_qos_conversion() {
+        assert!(matches!(qos_to_rumqttc(QoS::AtMostOnce), RumqttcQoS::AtMostOnce));
+        assert!(matches!(qos_to_rumqttc(QoS::AtLeastOnce), RumqttcQoS::AtLeastOnce));
+        assert!(matches!(qos_to_rumqttc(QoS::ExactlyOnce), RumqttcQoS::ExactlyOnce));
     }
 
     #[tokio::test]
