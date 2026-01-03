@@ -30,6 +30,58 @@
 
 ---
 
+## Subtask 3.1 Complete - 2026-01-03
+
+### Implemented segments_to_course_data helper function
+
+Created helper function to convert WorkoutSegment list to MRC COURSE DATA points for the MRC exporter.
+
+**Core Functions Added:**
+- `segments_to_course_data(segments, ftp)` - Converts segments to (time_minutes, power_percent) tuples
+- `power_to_percent(power, ftp)` - Converts PowerTarget to percent FTP value
+
+**CourseDataPoint struct:**
+- `minutes: f32` - Time in minutes
+- `power_percent: u8` - Power as percentage of FTP
+
+**Segment Handling:**
+- **SteadyState, Intervals**: Two points at same power (start and end)
+- **FreeRide**: Two points at 0% power
+- **Warmup, Cooldown, Ramp with Range**: Two points at start and end power values
+- **Warmup, Cooldown, Ramp without Range**: Two points at same power
+
+**Power Conversion:**
+- PercentFtp targets: Returns percent directly
+- Absolute targets: Converts using FTP parameter (default 200W)
+- Range targets: Returns start power for `power_to_percent()`
+
+**Tests Added (17 new tests):**
+- `test_power_to_percent_ftp` - PercentFtp targets
+- `test_power_to_percent_absolute_default_ftp` - Absolute with default FTP
+- `test_power_to_percent_absolute_with_ftp` - Absolute with custom FTP
+- `test_power_to_percent_range` - Range targets
+- `test_segments_to_course_data_steady_state` - Basic steady state
+- `test_segments_to_course_data_warmup_with_range` - Warmup with power range
+- `test_segments_to_course_data_cooldown_with_range` - Cooldown with power range
+- `test_segments_to_course_data_ramp_with_range` - Ramp with power range
+- `test_segments_to_course_data_freeride` - FreeRide segments
+- `test_segments_to_course_data_intervals` - Intervals segments
+- `test_segments_to_course_data_time_accumulation` - Multiple segments with correct timing
+- `test_segments_to_course_data_complex_workout` - Full warmup-main-cooldown workout
+- `test_segments_to_course_data_absolute_power_with_ftp` - Absolute power conversion
+- `test_segments_to_course_data_warmup_without_range` - Edge case handling
+- `test_segments_to_course_data_empty_segments` - Empty input
+
+**All acceptance criteria met:**
+- ✅ Converts segments to (time_minutes, power_percent) tuples
+- ✅ SteadyState creates two points at same power
+- ✅ Ramp/Warmup/Cooldown with Range creates points at start and end power
+- ✅ Time accumulates correctly across segments
+- ✅ Handles PercentFtp power targets directly
+- ✅ Handles Absolute power targets by converting to percentage (using optional FTP parameter)
+
+---
+
 ## Subtask 2.2 Complete - 2026-01-03
 
 ### Implemented export_zwo function
