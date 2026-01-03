@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/package.json",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "{\n  \"name\": \"RustRideCompanion\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"description\": \"Mobile companion app for RustRide indoor cycling platform\",\n  \"scripts\": {\n    \"android\": \"react-native run-android\",\n    \"android:release\": \"react-native run-android --variant=release\",\n    \"ios\": \"react-native run-ios\",\n    \"ios:release\": \"react-native run-ios --configuration Release\",\n    \"lint\": \"eslint . --ext .ts,.tsx\",\n    \"lint:fix\": \"eslint . --ext .ts,.tsx --fix\",\n    \"format\": \"prettier --write \\\"**/*.{ts,tsx,js,jsx,json}\\\"\",\n    \"format:check\": \"prettier --check \\\"**/*.{ts,tsx,js,jsx,json}\\\"\",\n    \"typecheck\": \"tsc --noEmit\",\n    \"start\": \"react-native start\",\n    \"start:reset\": \"react-native start --reset-cache\",\n    \"test\": \"jest\",\n    \"test:watch\": \"jest --watch\",\n    \"test:coverage\": \"jest --coverage\",\n    \"clean\": \"react-native clean\",\n    \"clean:android\": \"cd android && ./gradlew clean\",\n    \"clean:ios\": \"cd ios && xcodebuild clean\"\n  },\n  \"dependencies\": {\n    \"@react-native/new-app-screen\": \"0.83.1\",\n    \"@react-navigation/bottom-tabs\": \"^7.9.0\",\n    \"@react-navigation/native\": \"^7.1.26\",\n    \"@react-navigation/native-stack\": \"^7.9.0\",\n    \"react\": \"19.2.0\",\n    \"react-native\": \"0.83.1\",\n    \"react-native-gesture-handler\": \"^2.30.0\",\n    \"react-native-safe-area-context\": \"^5.5.2\",\n    \"react-native-screens\": \"^4.19.0\",\n    \"react-native-camera-kit\": \"^14.1.1\",\n    \"react-native-permissions\": \"^5.3.0\",\n    \"react-native-vector-icons\": \"^10.3.0\",\n    \"react-native-zeroconf\": \"^0.13.9\",\n    \"zustand\": \"^5.0.9\",\n    \"@react-native-async-storage/async-storage\": \"^2.1.2\"\n  },\n  \"devDependencies\": {\n    \"@babel/core\": \"^7.25.2\",\n    \"@babel/preset-env\": \"^7.25.3\",\n    \"@babel/runtime\": \"^7.25.0\",\n    \"@react-native-community/cli\": \"20.0.0\",\n    \"@react-native-community/cli-platform-android\": \"20.0.0\",\n    \"@react-native-community/cli-platform-ios\": \"20.0.0\",\n    \"@react-native/babel-preset\": \"0.83.1\",\n    \"@react-native/eslint-config\": \"0.83.1\",\n    \"@react-native/metro-config\": \"0.83.1\",\n    \"@react-native/typescript-config\": \"0.83.1\",\n    \"@testing-library/react-native\": \"^13.3.3\",\n    \"@types/jest\": \"^29.5.13\",\n    \"@types/react\": \"^19.2.0\",\n    \"@types/react-native-vector-icons\": \"^6.4.18\",\n    \"@types/react-test-renderer\": \"^19.1.0\",\n    \"@typescript-eslint/eslint-plugin\": \"^7.0.0\",\n    \"@typescript-eslint/parser\": \"^7.0.0\",\n    \"babel-plugin-module-resolver\": \"^5.0.0\",\n    \"eslint\": \"^8.19.0\",\n    \"eslint-plugin-react\": \"^7.37.5\",\n    \"eslint-plugin-react-hooks\": \"^4.6.0\",\n    \"jest\": \"^29.6.3\",\n    \"prettier\": \"2.8.8\",\n    \"react-test-renderer\": \"19.2.0\",\n    \"typescript\": \"^5.8.3\"\n  },\n  \"engines\": {\n    \"node\": \">=20\"\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:53.906961"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:17.545948",
+  "last_updated": "2026-01-03T10:31:47.768170"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/navigation/types.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Navigation Type Definitions\n *\n * Type-safe navigation using React Navigation typed params.\n */\n\nimport type { NavigatorScreenParams } from '@react-navigation/native';\nimport type { NativeStackScreenProps } from '@react-navigation/native-stack';\nimport type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';\n\n/**\n * Root stack param list - contains the tab navigator and modal screens\n */\nexport type RootStackParamList = {\n  Main: NavigatorScreenParams<MainTabParamList>;\n  RideDetail: { rideId: string };\n  Connection: undefined;\n};\n\n/**\n * Main tab navigator param list - bottom tab screens\n */\nexport type MainTabParamList = {\n  Dashboard: undefined;\n  Workout: undefined;\n  History: undefined;\n  Settings: undefined;\n};\n\n/**\n * History stack param list - for nested stack navigation in History tab\n */\nexport type HistoryStackParamList = {\n  HistoryList: undefined;\n  HistoryDetail: { rideId: string };\n};\n\n/**\n * Root stack screen props\n */\nexport type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<\n  RootStackParamList,\n  T\n>;\n\n/**\n * Main tab screen props\n */\nexport type MainTabScreenProps<T extends keyof MainTabParamList> = BottomTabScreenProps<\n  MainTabParamList,\n  T\n>;\n\n/**\n * History stack screen props\n */\nexport type HistoryStackScreenProps<T extends keyof HistoryStackParamList> = NativeStackScreenProps<\n  HistoryStackParamList,\n  T\n>;\n\n// Extend the global navigation namespace for useNavigation hook typing\n// This is required by React Navigation for type-safe navigation\ndeclare global {\n  // eslint-disable-next-line @typescript-eslint/no-namespace\n  namespace ReactNavigation {\n    interface RootParamList extends RootStackParamList {}\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:53.999296"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:19.206670",
+  "last_updated": "2026-01-03T10:31:49.291759"
+}

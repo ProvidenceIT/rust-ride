@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/navigation/AppNavigator.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * App Navigator\n *\n * Root stack navigator containing the tab navigator and modal screens.\n * Handles navigation between main tabs and detail/modal screens.\n */\n\nimport React from 'react';\nimport { useColorScheme } from 'react-native';\nimport { createNativeStackNavigator } from '@react-navigation/native-stack';\nimport type { RootStackParamList } from './types';\nimport { TabNavigator } from './TabNavigator';\nimport { RideDetailScreen, ConnectionScreen } from '@/screens';\n\nconst Stack = createNativeStackNavigator<RootStackParamList>();\n\nconst Colors = {\n  light: {\n    background: '#FFFFFF',\n    text: '#1C1C1E',\n    primary: '#007AFF',\n  },\n  dark: {\n    background: '#000000',\n    text: '#FFFFFF',\n    primary: '#0A84FF',\n  },\n};\n\nexport function AppNavigator(): React.JSX.Element {\n  const isDarkMode = useColorScheme() === 'dark';\n  const colors = isDarkMode ? Colors.dark : Colors.light;\n\n  return (\n    <Stack.Navigator\n      initialRouteName=\"Main\"\n      screenOptions={{\n        headerShown: true,\n        headerBackTitle: '',\n        headerTintColor: colors.primary,\n        headerStyle: {\n          backgroundColor: colors.background,\n        },\n        headerTitleStyle: {\n          color: colors.text,\n          fontWeight: '600',\n        },\n        contentStyle: {\n          backgroundColor: colors.background,\n        },\n        animation: 'slide_from_right',\n      }}>\n      <Stack.Screen\n        name=\"Main\"\n        component={TabNavigator}\n        options={{\n          headerShown: false,\n        }}\n      />\n      <Stack.Screen\n        name=\"RideDetail\"\n        component={RideDetailScreen}\n        options={{\n          title: 'Ride Details',\n          animation: 'slide_from_right',\n        }}\n      />\n      <Stack.Screen\n        name=\"Connection\"\n        component={ConnectionScreen}\n        options={{\n          title: 'Connect',\n          presentation: 'modal',\n          animation: 'slide_from_bottom',\n        }}\n      />\n    </Stack.Navigator>\n  );\n}\n",
+        "last_modified": "2026-01-03T10:31:53.978729"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:18.875824",
+  "last_updated": "2026-01-03T10:31:48.830975"
+}

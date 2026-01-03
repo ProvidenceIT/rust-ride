@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/__mocks__/react-native-camera-kit.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Mock for react-native-camera-kit\n *\n * Provides a testable mock for the Camera component used in QR code scanning.\n */\n\nimport React from 'react';\nimport { View, Text } from 'react-native';\n\ninterface OnReadCodeData {\n  nativeEvent: {\n    codeStringValue: string;\n  };\n}\n\ninterface CameraProps {\n  style?: object;\n  onReadCode?: (event: OnReadCodeData) => void;\n  scanBarcode?: boolean;\n  showFrame?: boolean;\n  frameColor?: string;\n  laserColor?: string;\n  onCameraReady?: () => void;\n  cameraType?: 'front' | 'back';\n  flashMode?: 'on' | 'off' | 'auto';\n  ratioOverlay?: string;\n  showCaptureButton?: boolean;\n  zoomMode?: 'on' | 'off';\n  accessibilityLabel?: string;\n  testID?: string;\n}\n\n// Store for controlling mock behavior in tests\nlet mockPermissionStatus: boolean | -1 = true;\nlet mockScanCallback: ((data: string) => void) | null = null;\n\n/**\n * Mock Camera component\n */\nconst CameraComponent = React.forwardRef<View, CameraProps>(\n  function MockCamera({ style, testID, accessibilityLabel, onReadCode, scanBarcode }, ref) {\n    // Store the callback for triggering from tests\n    React.useEffect(() => {\n      if (onReadCode && scanBarcode) {\n        mockScanCallback = (data: string) => {\n          onReadCode({\n            nativeEvent: {\n              codeStringValue: data,\n            },\n          });\n        };\n      }\n      return () => {\n        mockScanCallback = null;\n      };\n    }, [onReadCode, scanBarcode]);\n\n    return (\n      <View\n        ref={ref}\n        style={style}\n        testID={testID || 'mock-camera'}\n        accessibilityLabel={accessibilityLabel}\n      >\n        <Text>Mock Camera</Text>\n      </View>\n    );\n  }\n);\n\n// Camera type with static methods\ninterface CameraType extends React.ForwardRefExoticComponent<CameraProps & React.RefAttributes<View>> {\n  requestDeviceCameraAuthorization: jest.Mock<Promise<boolean>>;\n  checkDeviceCameraAuthorizationStatus: jest.Mock<Promise<boolean | -1>>;\n}\n\n// Add static methods to the Camera component\nexport const Camera = CameraComponent as CameraType;\n\nCamera.requestDeviceCameraAuthorization = jest.fn(\n  async (): Promise<boolean> => {\n    return mockPermissionStatus === true;\n  }\n);\n\nCamera.checkDeviceCameraAuthorizationStatus = jest.fn(\n  async (): Promise<boolean | -1> => {\n    return mockPermissionStatus;\n  }\n);\n\n/**\n * Helper to set mock permission status in tests\n */\nexport function setMockPermissionStatus(status: boolean | -1): void {\n  mockPermissionStatus = status;\n}\n\n/**\n * Helper to simulate scanning a QR code in tests\n */\nexport function triggerQrScan(data: string): void {\n  if (mockScanCallback) {\n    mockScanCallback(data);\n  }\n}\n\n/**\n * Reset all mocks\n */\nexport function resetMocks(): void {\n  mockPermissionStatus = true;\n  mockScanCallback = null;\n  Camera.requestDeviceCameraAuthorization.mockClear();\n  Camera.checkDeviceCameraAuthorizationStatus.mockClear();\n}\n\nexport default Camera;\n",
+        "last_modified": "2026-01-03T10:31:53.642114"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:14.272704",
+  "last_updated": "2026-01-03T10:31:44.480472"
+}

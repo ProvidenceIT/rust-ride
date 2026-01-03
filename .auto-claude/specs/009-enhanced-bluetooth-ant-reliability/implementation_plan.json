@@ -2,9 +2,9 @@
   "feature": "Enhanced Bluetooth/ANT+ Reliability",
   "description": "Improve sensor connection reliability with automatic reconnection, connection quality monitoring, and multi-sensor management. Reduce sensor discovery time and handle disconnections gracefully.",
   "created_at": "2026-01-02T22:57:19.779Z",
-  "updated_at": "2026-01-03T09:31:42.562Z",
-  "status": "in_progress",
-  "planStatus": "in_progress",
+  "updated_at": "2026-01-03T16:39:38.361Z",
+  "status": "human_review",
+  "planStatus": "review",
   "phases": [
     {
       "id": "phase-1",
@@ -219,7 +219,7 @@
           ],
           "tests": [],
           "acceptance": "Sensor setup screen shows quality indicators and warns on poor connections",
-          "notes": "Integrated connection quality indicators into the sensor setup screen:\\n\\n- Added quality_stats HashMap to SensorSetupScreen for tracking per-sensor quality\\n- Added methods for managing quality stats: update_quality_stats, update_all_quality_stats, clear_quality_stats, get_quality_stats, get_poor_quality_sensors, has_poor_quality_sensors\\n- Modified render_connected_sensor to display ConnectionQualityIndicator widget with color-coded quality levels (Excellent/Good/Fair/Poor)\\n- Added visual indicators: red background tint, warning icon (\u26a0), and pulsing animation for poor quality connections\\n- Added render_poor_quality_warning banner that appears when any sensor has poor quality, showing sensor names and troubleshooting tips\\n- Updated SensorConnectionCard widget with optional quality stats support via with_quality() method\\n- Updated SensorStatusSummary with poor_quality_count, fair_quality_count fields and helper methods (has_quality_issues, has_degraded_quality)\\n- Status message now reflects connection quality issues (\"Connection issues detected\")",
+          "notes": "Integrated connection quality indicators into the sensor setup screen:\\n\\n- Added quality_stats HashMap to SensorSetupScreen for tracking per-sensor quality\\n- Added methods for managing quality stats: update_quality_stats, update_all_quality_stats, clear_quality_stats, get_quality_stats, get_poor_quality_sensors, has_poor_quality_sensors\\n- Modified render_connected_sensor to display ConnectionQualityIndicator widget with color-coded quality levels (Excellent/Good/Fair/Poor)\\n- Added visual indicators: red background tint, warning icon (⚠), and pulsing animation for poor quality connections\\n- Added render_poor_quality_warning banner that appears when any sensor has poor quality, showing sensor names and troubleshooting tips\\n- Updated SensorConnectionCard widget with optional quality stats support via with_quality() method\\n- Updated SensorStatusSummary with poor_quality_count, fair_quality_count fields and helper methods (has_quality_issues, has_degraded_quality)\\n- Status message now reflects connection quality issues (\"Connection issues detected\")",
           "updated_at": "2026-01-03T00:43:33.531437+00:00"
         },
         {
@@ -368,7 +368,7 @@
           "id": "5.3",
           "title": "Add calibration reminder system",
           "description": "Track last calibration date for power meters. Remind user to calibrate if not done recently (configurable, default 7 days).",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/calibration.rs",
             "src/sensors/mod.rs"
@@ -376,20 +376,24 @@
           "tests": [
             "tests/unit/calibration_reminder_test.rs"
           ],
-          "acceptance": "Calibration reminder shown if power meter not calibrated in 7+ days"
+          "acceptance": "Calibration reminder shown if power meter not calibrated in 7+ days",
+          "notes": "Calibration reminder system fully implemented in src/sensors/calibration.rs with:\n\n- CalibrationRecord: Tracks last_calibrated_at DateTime, offset_value, was_successful, calibration_count\n- CalibrationReminder: Generates reminder messages with types (Due, Overdue, NeverCalibrated, RecentFailure)\n- CalibrationReminderConfig: Configurable reminder_days (default 7, min 1, max 90), enabled flag, remind_never_calibrated\n- CalibrationManager: Persists calibration history to JSON, checks for reminders, dismisses reminders per session\n- CalibrationProcess/CalibrationCommand/CalibrationResponse: Full calibration flow support\n\nComprehensive unit tests in tests/unit/calibration_reminder_test.rs covering all functionality and real-world scenarios.\n\nCommit: 8556323 auto-claude: 5.3 - Add calibration reminder system for power meters",
+          "updated_at": "2026-01-03T16:20:22.649307+00:00"
         },
         {
           "id": "5.4",
           "title": "Implement zero-offset calibration flow",
           "description": "Guided UI flow for power meter zero-offset calibration. Support both manual and automatic calibration commands.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/dialogs/calibration.rs",
             "src/ui/dialogs/mod.rs",
             "src/sensors/calibration.rs"
           ],
           "tests": [],
-          "acceptance": "User can perform zero-offset calibration through guided UI"
+          "acceptance": "User can perform zero-offset calibration through guided UI",
+          "notes": "Guided UI flow for power meter zero-offset calibration fully implemented in src/ui/dialogs/calibration.rs. Features:\n\n- CalibrationDialogState: Manages dialog visibility and current calibration process\n- CalibrationDialog: Full step-by-step wizard UI with:\n  - Calibration type selection (ZeroOffset, ManualCalibration, AutomaticCalibration)\n  - Instructions step with step-by-step guidance and warnings\n  - Preparing step with status message\n  - SendingCommand step with device name and command type\n  - WaitingForResult step with progress bar and elapsed time\n  - Completed step with success icon, offset value display, and notes field\n  - Failed step with error message, troubleshooting tips, and retry option\n- CalibrationDialogAction enum for handling user actions (StartCalibration, Cancel, Close, Retry)\n- CalibrationReminderButton for compact reminder display\n- CalibrationStatusIndicator for inline status in sensor lists\n- Comprehensive unit tests\n\nIntegrated into SensorSetupScreen:\n- Calibrate button appears on connected power meters and trainers\n- Actions captured and calibration requests created for SensorManager\n- Full state management (open, close, advance, complete, fail)\n\nCommit: a082f98 auto-claude: 5.4 - Guided UI flow for power meter zero-offset calibra",
+          "updated_at": "2026-01-03T16:22:54.471613+00:00"
         }
       ]
     },
@@ -403,45 +407,53 @@
           "id": "6.1",
           "title": "Create integration test for full discovery flow",
           "description": "End-to-end test covering discovery, connection, data reception, and graceful disconnection.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "tests/integration/sensor_flow_test.rs"
           ],
           "tests": [],
-          "acceptance": "Integration test passes for full sensor lifecycle"
+          "acceptance": "Integration test passes for full sensor lifecycle",
+          "notes": "End-to-end integration test for sensor flow already implemented and committed (335fb72). Comprehensive test coverage includes:\\n\\n- SensorFlowCoordinator test harness managing full sensor lifecycle\\n- test_full_sensor_discovery_flow: validates discovery with progressive timeout simulation\\n- test_priority_based_connection: verifies trainers/power meters connect before HR/cadence\\n- test_data_reception_flow: confirms data flows through and updates health/quality monitors\\n- test_graceful_disconnection: tests proper cleanup and event emission\\n- test_connection_loss_and_reconnection: validates automatic reconnection with exponential backoff\\n- test_failover_on_primary_disconnect: confirms secondary sensor promotion on disconnect\\n- test_complete_workout_session: full 60-second simulated workout covering discovery → connection → data → shutdown\\n- test_connection_quality_monitoring: validates RSSI and quality tracking\\n- test_sensor_cache_integration: verifies cached sensor properties\\n- test_session_persistence_integration: confirms session save/restore\\n- test_conflict_detector_integration: tests power conflict detection and failover\\n- test_mock_data_parsing: validates FTMS/CPS/HR data parsing\\n- test_event_sequence_verification: confirms proper event ordering\\n\\nAll tests use mock infrastructure that doesn't require actual BLE hardware.",
+          "updated_at": "2026-01-03T16:26:27.649568+00:00"
         },
         {
           "id": "6.2",
           "title": "Add reconnection stress test",
           "description": "Test rapid connect/disconnect cycles to ensure stability. Verify no resource leaks or crashes.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "tests/integration/reconnection_stress_test.rs"
           ],
           "tests": [],
-          "acceptance": "100 rapid reconnection cycles complete without errors"
+          "acceptance": "100 rapid reconnection cycles complete without errors",
+          "notes": "Reconnection stress test implemented in tests/integration/reconnection_stress_test.rs with comprehensive coverage:\n\n- test_100_rapid_reconnection_cycles: Tests exactly 100 rapid connect/disconnect cycles (acceptance criteria)\n- test_no_resource_leaks_after_cycles: Tests 500 cycles to verify no resource leaks\n- test_parallel_sensor_connect_disconnect: Tests 10 parallel sensors through 20 cycles\n- test_interleaved_connect_disconnect: Tests complex interleaved connect/disconnect patterns\n- test_reconnection_exhaustion_handling: Tests backoff exhaustion handling\n- test_state_machine_consistency: Tests 50 cycles for state consistency\n- test_health_monitor_stability: Tests health monitor through 50 cycles\n- test_quality_monitor_stability: Tests quality monitor through 50 cycles\n- test_session_manager_stability: Tests session manager through 50 cycles\n- test_conflict_detector_stability: Tests conflict detector with failover through 30 cycles\n- test_backoff_state_isolation: Tests multi-device backoff state isolation\n- test_event_generation_correctness: Verifies correct event sequence\n- test_rapid_cycles_with_varying_sensors: Tests different sensor types\n- test_mixed_connect_reconnect_disconnect: Tests mixed operation patterns\n- test_exponential_backoff_sequence_preservation: Verifies backoff sequence\n- test_reconnection_manager_multi_device: Tests multi-device tracking\n- test_stress_with_minimal_resources: Tests 200 cycles with minimal config\n\nStressTestCoordinator test harness manages state_manager, connection_queue, health_monitor, quality_monitor, session_manager, conflict_detector, and reconnection_manager. All tests verify stability and no resource leaks.\n\nCommit: ac67d6b auto-claude: 6.2 - Test rapid connect/disconnect cycles to ensure sta",
+          "updated_at": "2026-01-03T16:28:32.950383+00:00"
         },
         {
           "id": "6.3",
           "title": "Update sensor CLI commands",
           "description": "Add CLI commands for testing connection quality, forcing reconnection, and viewing sensor diagnostics.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/cli/commands/sensors.rs"
           ],
           "tests": [],
-          "acceptance": "CLI commands available for sensor diagnostics and testing"
+          "acceptance": "CLI commands available for sensor diagnostics and testing",
+          "notes": "CLI commands for sensor diagnostics and testing already implemented and committed (5ed0d98). Includes three new commands:\n\n1. **sensors quality** - Shows connection quality metrics:\n   - Signal bars visualization (1-4 bars)\n   - Quality level (Excellent/Good/Fair/Poor) and score (0-100)\n   - RSSI, data rate, packet loss, latency metrics\n   - Component scores breakdown\n   - Summary with poor/degraded connection counts\n\n2. **sensors reconnect** - Forces sensor reconnection:\n   - Optional --reset-backoff flag to reset exponential backoff\n   - Shows reconnection status, attempt count, next delay\n\n3. **sensors diagnostics** - Detailed sensor diagnostics:\n   - --health: Health monitoring status, data rate, uptime, healthy streak\n   - --state: Connection state machine, time in state, reconnection attempts\n   - --backoff: Reconnection backoff attempt, delays, exhaustion status\n   - --all: Show all diagnostic sections\n   - System summary with connected/monitored/stale/exhausted counts\n\nAll commands support both JSON output (--json flag) and human-readable output with ASCII art formatting. Corresponding IPC handlers implemented in daemon/handler.rs for sensor.quality, sensors.quality, sensor.reconnect, sensor.diagnostics, and sensors.diagnostics commands.",
+          "updated_at": "2026-01-03T16:30:30.040648+00:00"
         },
         {
           "id": "6.4",
           "title": "Add troubleshooting documentation",
           "description": "Document common connection issues and resolutions. Add in-app troubleshooting tips.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/screens/sensor_setup.rs"
           ],
           "tests": [],
-          "acceptance": "Troubleshooting tips displayed when connection issues detected"
+          "acceptance": "Troubleshooting tips displayed when connection issues detected",
+          "notes": "Troubleshooting documentation and in-app tips already fully implemented and committed (40e865f). Implementation includes:\n\n**Troubleshooting Module (src/sensors/troubleshooting.rs):**\n- TroubleshootingGuide with 15+ standard tips across categories (Signal, Connection, Discovery, PowerMeter, Battery, Protocol, Interference, Calibration)\n- IssueDetector for context-aware tip generation based on detected issues\n- TroubleshootingTip with priority levels (Critical, High, Medium, Low) and resolution steps\n- Quick tips functions: get_no_sensors_tips(), get_poor_signal_tips(), get_power_meter_tips(), get_ant_plus_tips(), get_calibration_tips(), get_connection_drop_tips(), get_protocol_specific_tips()\n\n**In-App Integration (src/ui/screens/sensor_setup.rs):**\n- Help button (❓) in header toggles comprehensive help panel\n- render_help_panel() with 7 expandable connection issues showing symptoms, causes, and resolutions\n- render_troubleshooting_tips_panel() for contextual tips based on TroubleshootingContext\n- render_poor_quality_warning() banner when poor connections detected\n- render_contextual_troubleshooting() with dismissible tips from IssueDetector\n- Issue recording methods: record_quality_issue(), record_health_issue(), record_discovery_issue(), record_battery_issue(), record_ant_dongle_missing()\n\n**Documented Common Issues:**\n1. Sensor Not Found During Discovery\n2. Connection Keeps Dropping\n3. Weak or Intermittent Signal\n4. Power Meter Not Waking Up\n5. ANT+ Dongle Not Detected\n6. Inaccurate Power Readings\n7. Multiple Sensors of Same Type Conflicting\n\n**Quick Reference Section:**\n- Common sensor battery types\n- Optimal distances for BLE and ANT+\n- Before every ride checklist\n- When things go wrong tips",
+          "updated_at": "2026-01-03T16:32:37.252694+00:00"
         }
       ]
     }
@@ -473,6 +485,33 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-03T10:25:11.286749+00:00",
-  "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:42.303Z"
+  "last_updated": "2026-01-03T16:39:22.971983+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T16:18:47.684Z",
+  "qa_signoff": {
+    "status": "approved",
+    "qa_session": 0,
+    "issues_found": [
+      {
+        "description": "None - all acceptance criteria verified"
+      }
+    ],
+    "tests_passed": {},
+    "timestamp": "2026-01-03T16:39:22.971983+00:00",
+    "ready_for_qa_revalidation": false
+  },
+  "qa_iteration_history": [
+    {
+      "iteration": 1,
+      "status": "approved",
+      "timestamp": "2026-01-03T16:39:38.275594+00:00",
+      "issues": [],
+      "duration_seconds": 374.26
+    }
+  ],
+  "qa_stats": {
+    "total_iterations": 1,
+    "last_iteration": 1,
+    "last_status": "approved",
+    "issues_by_type": {}
+  }
 }

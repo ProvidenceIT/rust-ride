@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/theme/theme.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App - Theme Definitions\n *\n * Complete theme objects combining colors, typography, and spacing.\n */\n\nimport { darkColors, lightColors, type ThemeColors } from './colors';\nimport { textStyles, fontSize, fontWeight, lineHeight, letterSpacing } from './typography';\nimport { spacing, borderRadius, componentSpacing, shadows, hitSlop, animation } from './spacing';\n\n/**\n * Theme mode enum matching desktop app\n */\nexport type ThemeMode = 'dark' | 'light' | 'system';\n\n/**\n * Complete theme object type\n */\nexport interface Theme {\n  /** Theme mode identifier */\n  mode: 'dark' | 'light';\n\n  /** Color palette */\n  colors: ThemeColors;\n\n  /** Typography system */\n  typography: {\n    textStyles: typeof textStyles;\n    fontSize: typeof fontSize;\n    fontWeight: typeof fontWeight;\n    lineHeight: typeof lineHeight;\n    letterSpacing: typeof letterSpacing;\n  };\n\n  /** Spacing system */\n  spacing: typeof spacing;\n\n  /** Border radius values */\n  borderRadius: typeof borderRadius;\n\n  /** Component-specific spacing */\n  componentSpacing: typeof componentSpacing;\n\n  /** Shadow definitions */\n  shadows: typeof shadows;\n\n  /** Touch hit slop values */\n  hitSlop: typeof hitSlop;\n\n  /** Animation timing values */\n  animation: typeof animation;\n}\n\n/**\n * Dark theme definition\n */\nexport const darkTheme: Theme = {\n  mode: 'dark',\n  colors: darkColors,\n  typography: {\n    textStyles,\n    fontSize,\n    fontWeight,\n    lineHeight,\n    letterSpacing,\n  },\n  spacing,\n  borderRadius,\n  componentSpacing,\n  shadows,\n  hitSlop,\n  animation,\n};\n\n/**\n * Light theme definition\n */\nexport const lightTheme: Theme = {\n  mode: 'light',\n  colors: lightColors,\n  typography: {\n    textStyles,\n    fontSize,\n    fontWeight,\n    lineHeight,\n    letterSpacing,\n  },\n  spacing,\n  borderRadius,\n  componentSpacing,\n  shadows,\n  hitSlop,\n  animation,\n};\n\n/**\n * Get theme by mode\n */\nexport function getTheme(mode: 'dark' | 'light'): Theme {\n  return mode === 'dark' ? darkTheme : lightTheme;\n}\n\n/**\n * Default theme (dark mode)\n */\nexport const defaultTheme = darkTheme;\n",
+        "last_modified": "2026-01-03T10:31:54.111849"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.717979",
+  "last_updated": "2026-01-03T10:31:51.563293"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/theme/spacing.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App - Spacing System\n *\n * Consistent spacing values for margins, padding, and gaps.\n * Based on a 4px base unit for visual harmony.\n */\n\n/**\n * Base spacing unit in pixels\n */\nexport const BASE_UNIT = 4;\n\n/**\n * Spacing scale\n * All values are multiples of 4px for consistency\n */\nexport const spacing = {\n  // 0px - no spacing\n  none: 0,\n  // 2px - hairline spacing\n  hairline: 2,\n  // 4px - minimal spacing\n  xs: 4,\n  // 8px - small spacing\n  sm: 8,\n  // 12px - medium-small spacing\n  md: 12,\n  // 16px - standard spacing\n  lg: 16,\n  // 20px - medium-large spacing\n  xl: 20,\n  // 24px - large spacing\n  '2xl': 24,\n  // 32px - extra large spacing\n  '3xl': 32,\n  // 40px - huge spacing\n  '4xl': 40,\n  // 48px - massive spacing\n  '5xl': 48,\n  // 64px - gigantic spacing\n  '6xl': 64,\n} as const;\n\n/**\n * Border radius values\n */\nexport const borderRadius = {\n  // No radius\n  none: 0,\n  // Small radius - buttons, inputs\n  sm: 4,\n  // Medium radius - cards\n  md: 8,\n  // Large radius - modals, sheets\n  lg: 12,\n  // Extra large radius - large cards\n  xl: 16,\n  // 2X large radius - pills, badges\n  '2xl': 20,\n  // Full radius - circular elements\n  full: 9999,\n} as const;\n\n/**\n * Component-specific spacing\n */\nexport const componentSpacing = {\n  // Screen padding\n  screenPaddingHorizontal: spacing.lg,\n  screenPaddingVertical: spacing.md,\n\n  // Card padding\n  cardPadding: spacing.lg,\n  cardPaddingSmall: spacing.md,\n  cardPaddingLarge: spacing['2xl'],\n\n  // Button padding\n  buttonPaddingHorizontal: spacing.lg,\n  buttonPaddingVertical: spacing.md,\n  buttonPaddingHorizontalSmall: spacing.md,\n  buttonPaddingVerticalSmall: spacing.sm,\n\n  // Input padding\n  inputPaddingHorizontal: spacing.md,\n  inputPaddingVertical: spacing.md,\n\n  // List item padding\n  listItemPaddingHorizontal: spacing.lg,\n  listItemPaddingVertical: spacing.md,\n\n  // Header/navigation heights\n  headerHeight: 56,\n  tabBarHeight: 60,\n  statusBarHeight: 44, // iOS default, will be overridden by SafeAreaView\n\n  // Gap between elements\n  gridGap: spacing.md,\n  sectionGap: spacing['2xl'],\n  itemGap: spacing.sm,\n\n  // Icon sizes\n  iconSizeSmall: 16,\n  iconSizeMedium: 24,\n  iconSizeLarge: 32,\n  iconSizeXLarge: 48,\n\n  // Metric card sizes\n  metricCardMinHeight: 100,\n  metricCardLargeMinHeight: 160,\n\n  // Badge/status indicator sizes\n  statusDotSize: 8,\n  statusDotSizeLarge: 12,\n  badgeHeight: 24,\n  badgeHeightSmall: 20,\n} as const;\n\n/**\n * Shadow definitions for elevation\n */\nexport const shadows = {\n  // No shadow\n  none: {\n    shadowColor: 'transparent',\n    shadowOffset: { width: 0, height: 0 },\n    shadowOpacity: 0,\n    shadowRadius: 0,\n    elevation: 0,\n  },\n  // Small shadow - cards\n  sm: {\n    shadowColor: '#000',\n    shadowOffset: { width: 0, height: 1 },\n    shadowOpacity: 0.18,\n    shadowRadius: 1.0,\n    elevation: 1,\n  },\n  // Medium shadow - elevated cards\n  md: {\n    shadowColor: '#000',\n    shadowOffset: { width: 0, height: 2 },\n    shadowOpacity: 0.2,\n    shadowRadius: 2.0,\n    elevation: 3,\n  },\n  // Large shadow - modals, overlays\n  lg: {\n    shadowColor: '#000',\n    shadowOffset: { width: 0, height: 4 },\n    shadowOpacity: 0.22,\n    shadowRadius: 5.0,\n    elevation: 5,\n  },\n  // Extra large shadow - floating buttons\n  xl: {\n    shadowColor: '#000',\n    shadowOffset: { width: 0, height: 8 },\n    shadowOpacity: 0.25,\n    shadowRadius: 8.0,\n    elevation: 8,\n  },\n} as const;\n\n/**\n * Hit slop for touchable elements\n * Increases touch target without changing visual size\n */\nexport const hitSlop = {\n  small: {\n    top: 8,\n    right: 8,\n    bottom: 8,\n    left: 8,\n  },\n  medium: {\n    top: 12,\n    right: 12,\n    bottom: 12,\n    left: 12,\n  },\n  large: {\n    top: 16,\n    right: 16,\n    bottom: 16,\n    left: 16,\n  },\n} as const;\n\n/**\n * Animation durations in milliseconds\n */\nexport const animation = {\n  // Fast transitions\n  fast: 150,\n  // Normal transitions\n  normal: 250,\n  // Slow transitions\n  slow: 350,\n  // Very slow transitions (page transitions)\n  verySlow: 500,\n} as const;\n\n/**\n * Spacing type\n */\nexport type Spacing = typeof spacing;\n\n/**\n * Border radius type\n */\nexport type BorderRadius = typeof borderRadius;\n",
+        "last_modified": "2026-01-03T10:31:54.107846"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.656966",
+  "last_updated": "2026-01-03T10:31:51.430742"
+}

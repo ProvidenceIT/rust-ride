@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/ios/Podfile",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "# Resolve react_native_pods.rb with node to allow for hoisting\nrequire Pod::Executable.execute_command('node', ['-p',\n  'require.resolve(\n    \"react-native/scripts/react_native_pods.rb\",\n    {paths: [process.argv[1]]},\n  )', __dir__]).strip\n\nplatform :ios, min_ios_version_supported\nprepare_react_native_project!\n\nlinkage = ENV['USE_FRAMEWORKS']\nif linkage != nil\n  Pod::UI.puts \"Configuring Pod with #{linkage}ally linked Frameworks\".green\n  use_frameworks! :linkage => linkage.to_sym\nend\n\ntarget 'RustRideCompanion' do\n  config = use_native_modules!\n\n  use_react_native!(\n    :path => config[:reactNativePath],\n    # An absolute path to your application root.\n    :app_path => \"#{Pod::Config.instance.installation_root}/..\"\n  )\n\n  post_install do |installer|\n    react_native_post_install(\n      installer,\n      config[:reactNativePath],\n      :mac_catalyst_enabled => false,\n      # :ccache_enabled => true\n    )\n  end\nend\n",
+        "last_modified": "2026-01-03T10:31:53.843211"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:16.656100",
+  "last_updated": "2026-01-03T10:31:46.872873"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/components/LoadingSpinner.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * LoadingSpinner Component\n *\n * An animated loading spinner for async operations.\n * Supports multiple sizes and optional message text.\n */\n\nimport React from 'react';\nimport { View, Text, ActivityIndicator, StyleSheet, ViewStyle, TextStyle } from 'react-native';\nimport { useTheme } from '@/theme';\n\n/**\n * LoadingSpinner sizes\n */\nexport type LoadingSpinnerSize = 'small' | 'medium' | 'large';\n\n/**\n * LoadingSpinner props\n */\nexport interface LoadingSpinnerProps {\n  /** Spinner size */\n  size?: LoadingSpinnerSize;\n  /** Optional loading message */\n  message?: string;\n  /** Custom spinner color */\n  color?: string;\n  /** Whether to center in the container */\n  centered?: boolean;\n  /** Whether to overlay on top of content */\n  overlay?: boolean;\n  /** Custom container style */\n  style?: ViewStyle;\n  /** Custom text style */\n  textStyle?: TextStyle;\n}\n\n/**\n * Get ActivityIndicator size prop\n */\nfunction getIndicatorSize(size: LoadingSpinnerSize): 'small' | 'large' {\n  // React Native ActivityIndicator only supports 'small' and 'large'\n  switch (size) {\n    case 'small':\n      return 'small';\n    case 'medium':\n    case 'large':\n    default:\n      return 'large';\n  }\n}\n\n/**\n * Get custom spinner dimensions for consistent sizing\n */\nfunction getSpinnerDimensions(size: LoadingSpinnerSize) {\n  switch (size) {\n    case 'small':\n      return { containerSize: 24, scale: 0.8 };\n    case 'medium':\n      return { containerSize: 40, scale: 1 };\n    case 'large':\n      return { containerSize: 64, scale: 1.2 };\n  }\n}\n\n/**\n * LoadingSpinner Component\n *\n * Shows a loading spinner with optional message text.\n * Useful for indicating async operations.\n *\n * @example\n * ```tsx\n * <LoadingSpinner size=\"large\" message=\"Loading rides...\" />\n * ```\n */\nexport function LoadingSpinner({\n  size = 'medium',\n  message,\n  color,\n  centered = true,\n  overlay = false,\n  style,\n  textStyle,\n}: LoadingSpinnerProps): React.JSX.Element {\n  const { colors, spacing, typography } = useTheme();\n\n  const spinnerColor = color || colors.accent;\n  const indicatorSize = getIndicatorSize(size);\n  const { scale } = getSpinnerDimensions(size);\n\n  // Container styles based on props\n  const containerStyle: ViewStyle = {\n    ...(centered && styles.centered),\n    ...(overlay && {\n      ...StyleSheet.absoluteFillObject,\n      backgroundColor: colors.overlay,\n      zIndex: 1000,\n    }),\n  };\n\n  return (\n    <View\n      style={[styles.container, containerStyle, style]}\n      accessible\n      accessibilityRole=\"progressbar\"\n      accessibilityLabel={message || 'Loading'}\n      accessibilityState={{ busy: true }}\n    >\n      <View style={[styles.spinnerContainer, { transform: [{ scale }] }]}>\n        <ActivityIndicator size={indicatorSize} color={spinnerColor} />\n      </View>\n      {message && (\n        <Text\n          style={[\n            styles.message,\n            typography.textStyles.body,\n            { color: colors.textSecondary, marginTop: spacing.md },\n            textStyle,\n          ]}\n        >\n          {message}\n        </Text>\n      )}\n    </View>\n  );\n}\n\n/**\n * FullScreenLoader Component\n *\n * A loading spinner that covers the entire screen with an overlay.\n * Useful for blocking UI during critical operations.\n *\n * @example\n * ```tsx\n * {isLoading && <FullScreenLoader message=\"Connecting...\" />}\n * ```\n */\nexport function FullScreenLoader({\n  message,\n  color,\n}: Pick<LoadingSpinnerProps, 'message' | 'color'>): React.JSX.Element {\n  return <LoadingSpinner size=\"large\" message={message} color={color} overlay centered />;\n}\n\n/**\n * InlineLoader Component\n *\n * A small inline loading indicator for use within content.\n * Does not center itself and takes minimal space.\n *\n * @example\n * ```tsx\n * <Text>\n *   Loading data <InlineLoader />\n * </Text>\n * ```\n */\nexport function InlineLoader({\n  color,\n  style,\n}: Pick<LoadingSpinnerProps, 'color' | 'style'>): React.JSX.Element {\n  return <LoadingSpinner size=\"small\" color={color} centered={false} style={style} />;\n}\n\nconst styles = StyleSheet.create({\n  container: {\n    alignItems: 'center',\n    justifyContent: 'center',\n  },\n  centered: {\n    flex: 1,\n    alignItems: 'center',\n    justifyContent: 'center',\n  },\n  spinnerContainer: {\n    // Scale transform applied inline\n  },\n  message: {\n    textAlign: 'center',\n  },\n});\n",
+        "last_modified": "2026-01-03T10:31:53.930184"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:17.891926",
+  "last_updated": "2026-01-03T10:31:48.094003"
+}

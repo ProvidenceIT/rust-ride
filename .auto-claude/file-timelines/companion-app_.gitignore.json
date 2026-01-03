@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/.gitignore",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "# OSX\n#\n.DS_Store\n\n# Xcode\n#\nbuild/\n*.pbxuser\n!default.pbxuser\n*.mode1v3\n!default.mode1v3\n*.mode2v3\n!default.mode2v3\n*.perspectivev3\n!default.perspectivev3\nxcuserdata\n*.xccheckout\n*.moved-aside\nDerivedData\n*.hmap\n*.ipa\n*.xcuserstate\n**/.xcode.env.local\n\n# Android/IntelliJ\n#\nbuild/\n.idea\n.gradle\nlocal.properties\n*.iml\n*.hprof\n.cxx/\n*.keystore\n!debug.keystore\n.kotlin/\n\n# node.js\n#\nnode_modules/\nnpm-debug.log\nyarn-error.log\n\n# fastlane\n#\n# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the\n# screenshots whenever they are needed.\n# For more information about the recommended setup visit:\n# https://docs.fastlane.tools/best-practices/source-control/\n\n**/fastlane/report.xml\n**/fastlane/Preview.html\n**/fastlane/screenshots\n**/fastlane/test_output\n\n# Bundle artifact\n*.jsbundle\n\n# Ruby / CocoaPods\n**/Pods/\n/vendor/bundle/\n\n# Temporary files created by Metro to check the health of the file watcher\n.metro-health-check*\n\n# testing\n/coverage\n\n# Yarn\n.yarn/*\n!.yarn/patches\n!.yarn/plugins\n!.yarn/releases\n!.yarn/sdks\n!.yarn/versions\n",
+        "last_modified": "2026-01-03T10:31:53.610120"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:13.821409",
+  "last_updated": "2026-01-03T10:31:43.956104"
+}

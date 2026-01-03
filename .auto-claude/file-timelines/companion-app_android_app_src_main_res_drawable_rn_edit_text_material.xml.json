@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/android/app/src/main/res/drawable/rn_edit_text_material.xml",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- Copyright (C) 2014 The Android Open Source Project\n\n     Licensed under the Apache License, Version 2.0 (the \"License\");\n     you may not use this file except in compliance with the License.\n     You may obtain a copy of the License at\n\n          http://www.apache.org/licenses/LICENSE-2.0\n\n     Unless required by applicable law or agreed to in writing, software\n     distributed under the License is distributed on an \"AS IS\" BASIS,\n     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n     See the License for the specific language governing permissions and\n     limitations under the License.\n-->\n<inset xmlns:android=\"http://schemas.android.com/apk/res/android\"\n       android:insetLeft=\"@dimen/abc_edit_text_inset_horizontal_material\"\n       android:insetRight=\"@dimen/abc_edit_text_inset_horizontal_material\"\n       android:insetTop=\"@dimen/abc_edit_text_inset_top_material\"\n       android:insetBottom=\"@dimen/abc_edit_text_inset_bottom_material\"\n       >\n\n    <selector>\n        <!--\n          This file is a copy of abc_edit_text_material (https://bit.ly/3k8fX7I).\n          The item below with state_pressed=\"false\" and state_focused=\"false\" causes a NullPointerException.\n          NullPointerException:tempt to invoke virtual method 'android.graphics.drawable.Drawable android.graphics.drawable.Drawable$ConstantState.newDrawable(android.content.res.Resources)'\n\n          <item android:state_pressed=\"false\" android:state_focused=\"false\" android:drawable=\"@drawable/abc_textfield_default_mtrl_alpha\"/>\n\n          For more info, see https://bit.ly/3CdLStv (react-native/pull/29452) and https://bit.ly/3nxOMoR.\n        -->\n        <item android:state_enabled=\"false\" android:drawable=\"@drawable/abc_textfield_default_mtrl_alpha\"/>\n        <item android:drawable=\"@drawable/abc_textfield_activated_mtrl_alpha\"/>\n    </selector>\n\n</inset>\n",
+        "last_modified": "2026-01-03T10:31:53.716654"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:15.205281",
+  "last_updated": "2026-01-03T10:31:45.440012"
+}

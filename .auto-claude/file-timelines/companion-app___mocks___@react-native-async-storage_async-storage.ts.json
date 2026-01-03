@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/__mocks__/@react-native-async-storage/async-storage.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Mock for @react-native-async-storage/async-storage\n */\n\nconst mockStorage: Record<string, string> = {};\n\nconst AsyncStorage = {\n  setItem: jest.fn((key: string, value: string) => {\n    mockStorage[key] = value;\n    return Promise.resolve();\n  }),\n  getItem: jest.fn((key: string) => {\n    return Promise.resolve(mockStorage[key] || null);\n  }),\n  removeItem: jest.fn((key: string) => {\n    delete mockStorage[key];\n    return Promise.resolve();\n  }),\n  clear: jest.fn(() => {\n    Object.keys(mockStorage).forEach(key => delete mockStorage[key]);\n    return Promise.resolve();\n  }),\n  getAllKeys: jest.fn(() => {\n    return Promise.resolve(Object.keys(mockStorage));\n  }),\n  multiGet: jest.fn((keys: string[]) => {\n    const result = keys.map(key => [key, mockStorage[key] || null]);\n    return Promise.resolve(result);\n  }),\n  multiSet: jest.fn((keyValuePairs: [string, string][]) => {\n    keyValuePairs.forEach(([key, value]) => {\n      mockStorage[key] = value;\n    });\n    return Promise.resolve();\n  }),\n  multiRemove: jest.fn((keys: string[]) => {\n    keys.forEach(key => delete mockStorage[key]);\n    return Promise.resolve();\n  }),\n  mergeItem: jest.fn((key: string, value: string) => {\n    const existing = mockStorage[key];\n    if (existing) {\n      mockStorage[key] = JSON.stringify({\n        ...JSON.parse(existing),\n        ...JSON.parse(value),\n      });\n    } else {\n      mockStorage[key] = value;\n    }\n    return Promise.resolve();\n  }),\n  flushGetRequests: jest.fn(),\n};\n\nexport default AsyncStorage;\n",
+        "last_modified": "2026-01-03T10:31:53.638114"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:14.217694",
+  "last_updated": "2026-01-03T10:31:44.429097"
+}

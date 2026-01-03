@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/utils/index.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App - Utility Functions\n */\n\n/**\n * Format duration in seconds to HH:MM:SS string\n */\nexport function formatDuration(seconds: number): string {\n  const hrs = Math.floor(seconds / 3600);\n  const mins = Math.floor((seconds % 3600) / 60);\n  const secs = seconds % 60;\n\n  if (hrs > 0) {\n    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;\n  }\n  return `${mins}:${secs.toString().padStart(2, '0')}`;\n}\n\n/**\n * Format distance based on unit preference\n */\nexport function formatDistance(km: number, units: 'metric' | 'imperial'): string {\n  if (units === 'imperial') {\n    const miles = km * 0.621371;\n    return `${miles.toFixed(1)} mi`;\n  }\n  return `${km.toFixed(1)} km`;\n}\n\n/**\n * Format speed based on unit preference\n */\nexport function formatSpeed(kph: number, units: 'metric' | 'imperial'): string {\n  if (units === 'imperial') {\n    const mph = kph * 0.621371;\n    return `${mph.toFixed(1)} mph`;\n  }\n  return `${kph.toFixed(1)} km/h`;\n}\n\n/**\n * Format power with optional target comparison\n */\nexport function formatPower(watts: number, target?: number): string {\n  if (target) {\n    const diff = watts - target;\n    const sign = diff >= 0 ? '+' : '';\n    return `${watts}W (${sign}${diff})`;\n  }\n  return `${watts}W`;\n}\n\n/**\n * Clamp a value between min and max\n */\nexport function clamp(value: number, min: number, max: number): number {\n  return Math.min(Math.max(value, min), max);\n}\n",
+        "last_modified": "2026-01-03T10:31:54.142849"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:21.101358",
+  "last_updated": "2026-01-03T10:31:52.154978"
+}

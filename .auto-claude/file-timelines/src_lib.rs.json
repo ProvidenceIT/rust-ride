@@ -1,0 +1,28 @@
+{
+  "file_path": "src/lib.rs",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "//! RustRide - Indoor Cycling Training Application\n//!\n//! An open-source, self-hosted indoor cycling training application built in Rust.\n//! Provides BLE sensor connectivity, structured workout execution with ERG mode,\n//! real-time metrics display, and ride recording with export capabilities.\n\n// Core modules\npub mod goals;\npub mod leaderboards;\npub mod metrics;\npub mod ml;\npub mod networking;\npub mod racing;\npub mod recording;\npub mod sensors;\npub mod social;\npub mod storage;\npub mod ui;\npub mod workouts;\npub mod world;\n\n// Hardware integration modules (Feature 007)\npub mod audio;\npub mod hid;\npub mod integrations;\npub mod video;\n\n// UX & Accessibility modules (Feature 008)\npub mod accessibility;\npub mod i18n;\npub mod input;\npub mod onboarding;\n\n// Competitive Features modules (Feature 010)\npub mod achievements;\npub mod career;\npub mod gradient;\npub mod power_profile;\npub mod training_plans;\n\n// Headless/CLI Mode modules (Feature 009)\n#[cfg(target_os = \"linux\")]\npub mod cli;\n#[cfg(target_os = \"linux\")]\npub mod daemon;\n#[cfg(target_os = \"linux\")]\npub mod ipc;\n\n// Re-export commonly used types\npub use metrics::calculator::MetricsCalculator;\npub use recording::recorder::RideRecorder;\npub use sensors::manager::SensorManager;\npub use storage::config::UserProfile;\npub use workouts::engine::WorkoutEngine;\n",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "//! RustRide - Indoor Cycling Training Application\n//!\n//! An open-source, self-hosted indoor cycling training application built in Rust.\n//! Provides BLE sensor connectivity, structured workout execution with ERG mode,\n//! real-time metrics display, and ride recording with export capabilities.\n\n// Core modules\npub mod goals;\npub mod leaderboards;\npub mod metrics;\npub mod ml;\npub mod networking;\npub mod racing;\npub mod recording;\npub mod sensors;\npub mod social;\npub mod storage;\npub mod ui;\npub mod workouts;\npub mod world;\n\n// Hardware integration modules (Feature 007)\npub mod audio;\npub mod hid;\npub mod integrations;\npub mod video;\n\n// UX & Accessibility modules (Feature 008)\npub mod accessibility;\npub mod i18n;\npub mod input;\npub mod onboarding;\n\n// Competitive Features modules (Feature 010)\npub mod achievements;\npub mod career;\npub mod gradient;\npub mod power_profile;\npub mod training_plans;\n\n// Mobile Companion modules (Feature 014)\npub mod companion;\n\n// Headless/CLI Mode modules (Feature 009)\n#[cfg(target_os = \"linux\")]\npub mod cli;\n#[cfg(target_os = \"linux\")]\npub mod daemon;\n#[cfg(target_os = \"linux\")]\npub mod ipc;\n\n// Re-export commonly used types\npub use metrics::calculator::MetricsCalculator;\npub use recording::recorder::RideRecorder;\npub use sensors::manager::SensorManager;\npub use storage::config::UserProfile;\npub use workouts::engine::WorkoutEngine;\n",
+        "last_modified": "2026-01-03T10:31:54.187876"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:21.629395",
+  "last_updated": "2026-01-03T10:31:52.948097"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/types/async-storage.d.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Type declarations for @react-native-async-storage/async-storage\n *\n * This file provides type declarations for the AsyncStorage package.\n * The actual package should be installed when running the app.\n */\n\ndeclare module '@react-native-async-storage/async-storage' {\n  /**\n   * AsyncStorage is a simple, unencrypted, asynchronous, persistent,\n   * key-value storage system that is global to the app.\n   */\n  interface AsyncStorageStatic {\n    /**\n     * Get a value from storage.\n     * @param key - Key for the value to retrieve\n     * @returns Promise with the value or null if not found\n     */\n    getItem(key: string): Promise<string | null>;\n\n    /**\n     * Set a value in storage.\n     * @param key - Key for the value\n     * @param value - The value to store\n     * @returns Promise that resolves when complete\n     */\n    setItem(key: string, value: string): Promise<void>;\n\n    /**\n     * Remove a value from storage.\n     * @param key - Key for the value to remove\n     * @returns Promise that resolves when complete\n     */\n    removeItem(key: string): Promise<void>;\n\n    /**\n     * Remove multiple values from storage.\n     * @param keys - Array of keys to remove\n     * @returns Promise that resolves when complete\n     */\n    multiRemove(keys: readonly string[]): Promise<void>;\n\n    /**\n     * Get multiple values from storage.\n     * @param keys - Array of keys to retrieve\n     * @returns Promise with array of key-value pairs\n     */\n    multiGet(keys: readonly string[]): Promise<readonly [string, string | null][]>;\n\n    /**\n     * Set multiple values in storage.\n     * @param keyValuePairs - Array of key-value pairs\n     * @returns Promise that resolves when complete\n     */\n    multiSet(keyValuePairs: readonly [string, string][]): Promise<void>;\n\n    /**\n     * Clear all values from storage.\n     * @returns Promise that resolves when complete\n     */\n    clear(): Promise<void>;\n\n    /**\n     * Get all keys in storage.\n     * @returns Promise with array of all keys\n     */\n    getAllKeys(): Promise<readonly string[]>;\n  }\n\n  const AsyncStorage: AsyncStorageStatic;\n  export default AsyncStorage;\n}\n",
+        "last_modified": "2026-01-03T10:31:54.123857"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.849937",
+  "last_updated": "2026-01-03T10:31:51.776154"
+}

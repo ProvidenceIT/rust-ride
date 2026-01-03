@@ -1,0 +1,25 @@
+{
+  "file_path": "src/ui/widgets/mod.rs",
+  "main_branch_history": [],
+  "task_views": {
+    "009-enhanced-bluetooth-ant-reliability": {
+      "task_id": "009-enhanced-bluetooth-ant-reliability",
+      "branch_point": {
+        "commit_hash": "1752639f67c5558f4fd7082a66238adfce17fb01",
+        "content": "//! UI widgets for reusable components.\n\npub mod accessible_button;\npub mod achievement_notification;\npub mod chat_panel;\npub mod connection_quality;\npub mod dynamics_display;\npub mod ftp_notification;\npub mod gradient_display;\npub mod gradient_settings;\npub mod hud;\npub mod level_up_notification;\npub mod metric_display;\npub mod participant_list;\npub mod pdc_chart;\npub mod plan_detail;\npub mod power_curve_chart;\npub mod sensor_status;\npub mod shortcut_overlay;\npub mod smo2_display;\npub mod sync_notification;\npub mod tilt_indicator;\npub mod upcoming_workouts;\npub mod voice_indicator;\npub mod weather_widget;\npub mod zone_indicator;\n\npub use accessible_button::{\n    accessible_button, accessible_icon_button, AccessibleButton, AccessibleButtonStyle,\n    AccessibleIconButton, TouchFeedbackStyle, MIN_TOUCH_TARGET,\n};\npub use achievement_notification::{\n    AchievementBadge, AchievementNotificationConfig, AchievementNotificationWidget,\n};\npub use chat_panel::{ChatMessage, ChatOverlay, ChatPanel, ChatPanelAction, ChatPanelConfig};\npub use connection_quality::{\n    CompactConnectionQualityIndicator, ConnectionQualityIndicator,\n    ConnectionQualityIndicatorConfig, ConnectionQualityIndicatorResponse, ConnectionQualityPreview,\n};\npub use dynamics_display::{BalanceBar, DynamicsDisplay};\npub use ftp_notification::{FtpNotification, FtpNotificationAction};\npub use gradient_display::{GradientDisplay, GradientDisplayConfig, GradientPreview};\npub use gradient_settings::{\n    GradientSettingsAction, GradientSettingsPanel, GradientSettingsResponse,\n};\npub use level_up_notification::{\n    LevelBadge, LevelProgressBar, LevelUpNotificationConfig, LevelUpNotificationWidget,\n};\npub use metric_display::{MetricDisplay, MetricSize};\npub use participant_list::{CompactParticipantRow, ParticipantList, ParticipantListConfig};\npub use pdc_chart::{KeyPowers, PdcChart, PdcDateFilter};\npub use plan_detail::{PlanDetailAction, PlanDetailConfig, PlanDetailWidget};\npub use power_curve_chart::{\n    PowerCurveChart, PowerCurveConfig, PowerCurveSummary, PowerImprovement,\n};\npub use sensor_status::{SensorConnectionCard, SensorStatusIndicator, SensorStatusSummary};\npub use shortcut_overlay::ShortcutOverlay;\npub use smo2_display::{SmO2Display, SmO2Placeholder, SmO2WidgetSize};\npub use sync_notification::{\n    SyncNotificationAction, SyncNotificationConfig, SyncNotificationItem, SyncNotificationQueue,\n    SyncNotificationType, SyncNotificationWidget,\n};\npub use tilt_indicator::{TiltIndicator, TiltIndicatorConfig};\npub use upcoming_workouts::{\n    UpcomingWorkoutsAction, UpcomingWorkoutsCompact, UpcomingWorkoutsConfig, UpcomingWorkoutsWidget,\n};\npub use voice_indicator::{\n    CompactVoiceIndicator, ConfirmationCue, VoiceIndicator, VoiceIndicatorResponse,\n    VoiceIndicatorState,\n};\npub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};\npub use zone_indicator::{ZoneIndicator, ZoneType};\npub use hud::{\n    HudConnectionQualityConfig, HudConnectionQualityIndicator, HudConnectionQualityResponse,\n    HudConnectionState, InlineHudSensorStatus,\n};",
+        "timestamp": "2026-01-03T17:18:49.144157"
+      },
+      "worktree_state": null,
+      "task_intent": {
+        "title": "009-enhanced-bluetooth-ant-reliability",
+        "description": "Improve sensor connection reliability with automatic reconnection, connection quality monitoring, and multi-sensor management. Reduce sensor discovery time and handle disconnections gracefully.",
+        "from_plan": true
+      },
+      "commits_behind_main": 0,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T17:18:49.298628",
+  "last_updated": "2026-01-03T17:18:49.321811"
+}

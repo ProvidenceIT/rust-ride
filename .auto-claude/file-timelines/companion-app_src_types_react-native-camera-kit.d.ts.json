@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/types/react-native-camera-kit.d.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Type definitions for react-native-camera-kit\n *\n * Provides QR code scanning capabilities for the companion app.\n */\n\ndeclare module 'react-native-camera-kit' {\n  import type { ViewStyle } from 'react-native';\n\n  /**\n   * QR code read event data\n   */\n  export interface OnReadCodeData {\n    /** The scanned code value */\n    nativeEvent: {\n      codeStringValue: string;\n    };\n  }\n\n  /**\n   * Camera properties for Camera component\n   */\n  export interface CameraProps {\n    /** Container style */\n    style?: ViewStyle;\n    /** Callback when QR code is read */\n    onReadCode?: (event: OnReadCodeData) => void;\n    /** Whether to scan barcodes */\n    scanBarcode?: boolean;\n    /** Show/hide the frame around detected barcodes */\n    showFrame?: boolean;\n    /** Frame color (hex string) */\n    frameColor?: string;\n    /** Laser color for scanning animation */\n    laserColor?: string;\n    /** Callback when camera is ready */\n    onCameraReady?: () => void;\n    /** Camera type - 'front' or 'back' */\n    cameraType?: 'front' | 'back';\n    /** Flash mode */\n    flashMode?: 'on' | 'off' | 'auto';\n    /** Ratio mode for preview */\n    ratioOverlay?: string;\n    /** Whether to show a capture button */\n    showCaptureButton?: boolean;\n    /** Whether to enable zoom gestures */\n    zoomMode?: 'on' | 'off';\n    /** Accessibility label */\n    accessibilityLabel?: string;\n    /** Test ID for testing */\n    testID?: string;\n  }\n\n  /**\n   * Camera component for capturing photos and scanning barcodes\n   */\n  export class Camera extends React.Component<CameraProps> {\n    /**\n     * Capture a photo\n     * @returns Promise with photo data\n     */\n    capture(): Promise<{\n      uri: string;\n      name: string;\n      height: number;\n      width: number;\n    }>;\n\n    /**\n     * Request camera permission\n     */\n    static requestDeviceCameraAuthorization(): Promise<boolean>;\n\n    /**\n     * Check camera permission status\n     */\n    static checkDeviceCameraAuthorizationStatus(): Promise<boolean | -1>;\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:54.133846"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.980350",
+  "last_updated": "2026-01-03T10:31:51.957161"
+}

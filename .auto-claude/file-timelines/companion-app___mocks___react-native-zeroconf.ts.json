@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/__mocks__/react-native-zeroconf.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Mock for react-native-zeroconf\n *\n * This mock is used in tests to simulate mDNS/Zeroconf service discovery\n * without requiring the actual native module.\n */\n\ninterface ZeroconfService {\n  name: string;\n  fullName: string;\n  host: string;\n  port: number;\n  addresses: string[];\n  txt: Record<string, string>;\n}\n\ntype ZeroconfEventHandler = (...args: unknown[]) => void;\n\n// Store handlers at module level for access across instances\nconst handlers: Map<string, ZeroconfEventHandler[]> = new Map();\n\n// Store the current instance for test access using a WeakRef-like pattern\nlet instanceRef: { current: MockZeroconf | null } = { current: null };\n\nclass MockZeroconf {\n  private services: Map<string, ZeroconfService> = new Map();\n  public scan: jest.Mock;\n  public stop: jest.Mock;\n  public publishService: jest.Mock;\n  public unpublishService: jest.Mock;\n\n  constructor() {\n    MockZeroconf.setInstance(this);\n\n    // Initialize mock functions in constructor\n    this.scan = jest.fn((_type?: string, _protocol?: string) => {\n      this.emitEvent('start');\n    });\n\n    this.stop = jest.fn(() => {\n      this.emitEvent('stop');\n    });\n\n    this.publishService = jest.fn();\n    this.unpublishService = jest.fn();\n  }\n\n  private static setInstance(inst: MockZeroconf): void {\n    instanceRef.current = inst;\n  }\n\n  on(event: string, handler: ZeroconfEventHandler): void {\n    const eventHandlers = handlers.get(event) || [];\n    eventHandlers.push(handler);\n    handlers.set(event, eventHandlers);\n  }\n\n  off(event: string, handler: ZeroconfEventHandler): void {\n    const eventHandlers = handlers.get(event) || [];\n    const index = eventHandlers.indexOf(handler);\n    if (index > -1) {\n      eventHandlers.splice(index, 1);\n    }\n  }\n\n  removeDeviceListeners(): void {\n    handlers.clear();\n  }\n\n  getServices(): Record<string, ZeroconfService> {\n    const result: Record<string, ZeroconfService> = {};\n    this.services.forEach((service, name) => {\n      result[name] = service;\n    });\n    return result;\n  }\n\n  // Test helpers - emit events to registered handlers\n  emitEvent(event: string, ...args: unknown[]): void {\n    const eventHandlers = handlers.get(event) || [];\n    eventHandlers.forEach(handler => handler(...args));\n  }\n\n  simulateServiceResolved(service: ZeroconfService): void {\n    this.services.set(service.name, service);\n    this.emitEvent('resolved', service);\n  }\n\n  simulateServiceRemoved(name: string): void {\n    this.services.delete(name);\n    this.emitEvent('remove', name);\n  }\n\n  simulateError(error: Error): void {\n    this.emitEvent('error', error);\n  }\n\n  // Static getter for accessing the current instance in tests\n  static get instance(): MockZeroconf | null {\n    return instanceRef.current;\n  }\n\n  static clearInstance(): void {\n    instanceRef = { current: null };\n    handlers.clear();\n  }\n}\n\nexport default MockZeroconf;\n",
+        "last_modified": "2026-01-03T10:31:53.646117"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:14.327214",
+  "last_updated": "2026-01-03T10:31:44.546483"
+}

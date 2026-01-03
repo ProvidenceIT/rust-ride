@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/screens/index.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Screen Exports\n *\n * Central export point for all screen components.\n */\n\nexport { DashboardScreen } from './DashboardScreen';\nexport { WorkoutScreen } from './WorkoutScreen';\nexport { HistoryScreen } from './HistoryScreen';\nexport { SettingsScreen } from './SettingsScreen';\nexport { RideDetailScreen } from './RideDetailScreen';\nexport { ConnectionScreen } from './ConnectionScreen';\n",
+        "last_modified": "2026-01-03T10:31:54.054288"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:19.814330",
+  "last_updated": "2026-01-03T10:31:50.148139"
+}

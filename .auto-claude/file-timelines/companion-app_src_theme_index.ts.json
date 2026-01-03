@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/theme/index.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App - Theme Module\n *\n * Centralized theme system for consistent styling across the app.\n * Matches the desktop app's design language from src/ui/theme.rs\n */\n\n// Colors\nexport {\n  darkColors,\n  lightColors,\n  zoneColors,\n  hrZoneColors,\n  getPowerZoneColor,\n  getHrZoneColor,\n  type ThemeColors,\n  type Colors,\n} from './colors';\n\n// Typography\nexport {\n  fontFamily,\n  fontSize,\n  fontWeight,\n  lineHeight,\n  letterSpacing,\n  textStyles,\n  type Typography,\n} from './typography';\n\n// Spacing\nexport {\n  BASE_UNIT,\n  spacing,\n  borderRadius,\n  componentSpacing,\n  shadows,\n  hitSlop,\n  animation,\n  type Spacing,\n  type BorderRadius,\n} from './spacing';\n\n// Theme\nexport { darkTheme, lightTheme, defaultTheme, getTheme, type Theme, type ThemeMode } from './theme';\n\n// Theme Provider and hooks\nexport {\n  ThemeProvider,\n  useTheme,\n  useThemeContext,\n  useIsDarkMode,\n  useColors,\n  useSpacing,\n  useTypography,\n} from './ThemeProvider';\n",
+        "last_modified": "2026-01-03T10:31:54.105850"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.592917",
+  "last_updated": "2026-01-03T10:31:51.311188"
+}

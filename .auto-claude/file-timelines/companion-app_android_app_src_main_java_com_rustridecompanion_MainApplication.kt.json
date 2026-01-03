@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/android/app/src/main/java/com/rustridecompanion/MainApplication.kt",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "package com.rustridecompanion\n\nimport android.app.Application\nimport com.facebook.react.PackageList\nimport com.facebook.react.ReactApplication\nimport com.facebook.react.ReactHost\nimport com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative\nimport com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost\n\nclass MainApplication : Application(), ReactApplication {\n\n  override val reactHost: ReactHost by lazy {\n    getDefaultReactHost(\n      context = applicationContext,\n      packageList =\n        PackageList(this).packages.apply {\n          // Packages that cannot be autolinked yet can be added manually here, for example:\n          // add(MyReactNativePackage())\n        },\n    )\n  }\n\n  override fun onCreate() {\n    super.onCreate()\n    loadReactNative(this)\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:53.711655"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:15.147168",
+  "last_updated": "2026-01-03T10:31:45.365433"
+}

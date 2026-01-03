@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/navigation/TabNavigator.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Tab Navigator\n *\n * Bottom tab navigation for main app screens:\n * Dashboard, Workout, History, Settings\n */\n\nimport React from 'react';\nimport { StyleSheet, useColorScheme } from 'react-native';\nimport { createBottomTabNavigator } from '@react-navigation/bottom-tabs';\nimport Icon from 'react-native-vector-icons/Ionicons';\nimport type { MainTabParamList } from './types';\nimport { DashboardScreen, WorkoutScreen, HistoryScreen, SettingsScreen } from '@/screens';\n\nconst Tab = createBottomTabNavigator<MainTabParamList>();\n\nconst Colors = {\n  light: {\n    background: '#FFFFFF',\n    border: '#E5E5EA',\n    tabActive: '#007AFF',\n    tabInactive: '#8E8E93',\n  },\n  dark: {\n    background: '#1C1C1E',\n    border: '#38383A',\n    tabActive: '#0A84FF',\n    tabInactive: '#8E8E93',\n  },\n};\n\ntype TabIconProps = {\n  focused: boolean;\n  color: string;\n  size: number;\n};\n\n/**\n * Returns the icon name for a given tab route.\n */\nfunction getIconName(routeName: keyof MainTabParamList, focused: boolean): string {\n  switch (routeName) {\n    case 'Dashboard':\n      return focused ? 'speedometer' : 'speedometer-outline';\n    case 'Workout':\n      return focused ? 'barbell' : 'barbell-outline';\n    case 'History':\n      return focused ? 'time' : 'time-outline';\n    case 'Settings':\n      return focused ? 'settings' : 'settings-outline';\n    default:\n      return 'help-outline';\n  }\n}\n\n/**\n * Tab bar icon component for the given route.\n */\nfunction TabBarIcon({\n  routeName,\n  focused,\n  color,\n  size,\n}: TabIconProps & { routeName: keyof MainTabParamList }): React.JSX.Element {\n  const iconName = getIconName(routeName, focused);\n  return <Icon name={iconName} size={size} color={color} />;\n}\n\n/**\n * Creates a tab bar icon renderer for the specified route.\n */\nfunction createTabBarIcon(routeName: keyof MainTabParamList) {\n  return function TabIcon(props: TabIconProps): React.JSX.Element {\n    return <TabBarIcon routeName={routeName} {...props} />;\n  };\n}\n\nexport function TabNavigator(): React.JSX.Element {\n  const isDarkMode = useColorScheme() === 'dark';\n  const colors = isDarkMode ? Colors.dark : Colors.light;\n\n  return (\n    <Tab.Navigator\n      initialRouteName=\"Dashboard\"\n      screenOptions={{\n        headerShown: false,\n        tabBarActiveTintColor: colors.tabActive,\n        tabBarInactiveTintColor: colors.tabInactive,\n        tabBarStyle: [\n          styles.tabBar,\n          {\n            backgroundColor: colors.background,\n            borderTopColor: colors.border,\n          },\n        ],\n        tabBarLabelStyle: styles.tabBarLabel,\n        tabBarHideOnKeyboard: true,\n      }}>\n      <Tab.Screen\n        name=\"Dashboard\"\n        component={DashboardScreen}\n        options={{\n          tabBarLabel: 'Dashboard',\n          tabBarIcon: createTabBarIcon('Dashboard'),\n        }}\n      />\n      <Tab.Screen\n        name=\"Workout\"\n        component={WorkoutScreen}\n        options={{\n          tabBarLabel: 'Workout',\n          tabBarIcon: createTabBarIcon('Workout'),\n        }}\n      />\n      <Tab.Screen\n        name=\"History\"\n        component={HistoryScreen}\n        options={{\n          tabBarLabel: 'History',\n          tabBarIcon: createTabBarIcon('History'),\n        }}\n      />\n      <Tab.Screen\n        name=\"Settings\"\n        component={SettingsScreen}\n        options={{\n          tabBarLabel: 'Settings',\n          tabBarIcon: createTabBarIcon('Settings'),\n        }}\n      />\n    </Tab.Navigator>\n  );\n}\n\nconst styles = StyleSheet.create({\n  tabBar: {\n    borderTopWidth: StyleSheet.hairlineWidth,\n    paddingTop: 8,\n    height: 88,\n  },\n  tabBarLabel: {\n    fontSize: 11,\n    fontWeight: '500',\n    marginTop: 4,\n  },\n});\n",
+        "last_modified": "2026-01-03T10:31:53.983735"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:18.963365",
+  "last_updated": "2026-01-03T10:31:48.937541"
+}

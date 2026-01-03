@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/navigation/linking.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Deep Linking Configuration\n *\n * Configures URL schemes and deep links for the app.\n * Supports linking to specific screens via rustride:// URLs.\n */\n\nimport type { LinkingOptions } from '@react-navigation/native';\nimport type { RootStackParamList } from './types';\n\n/**\n * Deep linking configuration for React Navigation.\n *\n * URL patterns:\n * - rustride://dashboard - Opens Dashboard tab\n * - rustride://workout - Opens Workout tab\n * - rustride://history - Opens History tab\n * - rustride://history/ride/:rideId - Opens specific ride detail\n * - rustride://settings - Opens Settings tab\n * - rustride://connect - Opens connection screen\n * - rustride://connect?url=ws://host:port&pin=123456 - Auto-connect with params\n */\nexport const linking: LinkingOptions<RootStackParamList> = {\n  prefixes: ['rustride://', 'https://rustride.app'],\n  config: {\n    screens: {\n      Main: {\n        screens: {\n          Dashboard: 'dashboard',\n          Workout: 'workout',\n          History: 'history',\n          Settings: 'settings',\n        },\n      },\n      RideDetail: 'history/ride/:rideId',\n      Connection: {\n        path: 'connect',\n        parse: {\n          // Parse query params for auto-connection\n          // e.g., rustride://connect?url=ws://192.168.1.100:9876&pin=123456\n        },\n      },\n    },\n  },\n};\n\n/**\n * Get deep link for a specific route.\n * Useful for generating shareable links.\n */\nexport function getDeepLink(path: string): string {\n  return `rustride://${path}`;\n}\n\n/**\n * Parse connection params from a deep link URL.\n * Returns null if the URL doesn't contain connection params.\n *\n * Uses simple string parsing since React Native doesn't have full URL API.\n */\nexport function parseConnectionParams(url: string): { url: string; pin?: string } | null {\n  try {\n    // Check if this is a connect URL\n    if (!url.includes('connect')) {\n      return null;\n    }\n\n    // Extract query string\n    const queryIndex = url.indexOf('?');\n    if (queryIndex === -1) {\n      return null;\n    }\n\n    const queryString = url.slice(queryIndex + 1);\n    const params: Record<string, string> = {};\n\n    // Parse query parameters\n    queryString.split('&').forEach(pair => {\n      const [key, value] = pair.split('=');\n      if (key && value) {\n        params[decodeURIComponent(key)] = decodeURIComponent(value);\n      }\n    });\n\n    const serverUrl = params['url'];\n    if (!serverUrl) {\n      return null;\n    }\n\n    const pin = params['pin'];\n\n    return { url: serverUrl, pin };\n  } catch {\n    return null;\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:53.994293"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:19.129651",
+  "last_updated": "2026-01-03T10:31:49.184359"
+}

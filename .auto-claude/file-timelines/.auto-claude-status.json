@@ -1,0 +1,28 @@
+{
+  "file_path": ".auto-claude-status",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "{\n  \"active\": true,\n  \"spec\": \"007-rider-profile-export-import\",\n  \"state\": \"building\",\n  \"subtasks\": {\n    \"completed\": 18,\n    \"total\": 27,\n    \"in_progress\": 1,\n    \"failed\": 0\n  },\n  \"phase\": {\n    \"current\": \"UI Integration\",\n    \"id\": null,\n    \"total\": 4\n  },\n  \"workers\": {\n    \"active\": 0,\n    \"max\": 1\n  },\n  \"session\": {\n    \"number\": 20,\n    \"started_at\": \"2026-01-02T23:53:06.451074\"\n  },\n  \"last_update\": \"2026-01-03T00:49:31.140640\"\n}",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "{\n  \"active\": true,\n  \"spec\": \"014-mobile-companion-app\",\n  \"state\": \"building\",\n  \"subtasks\": {\n    \"completed\": 25,\n    \"total\": 55,\n    \"in_progress\": 1,\n    \"failed\": 0\n  },\n  \"phase\": {\n    \"current\": \"Mobile App: Real-time Dashboard\",\n    \"id\": null,\n    \"total\": 7\n  },\n  \"workers\": {\n    \"active\": 0,\n    \"max\": 1\n  },\n  \"session\": {\n    \"number\": 29,\n    \"started_at\": \"2026-01-03T10:26:26.199935\"\n  },\n  \"last_update\": \"2026-01-03T10:31:19.268766\"\n}",
+        "last_modified": "2026-01-03T10:31:53.552578"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:12.999299",
+  "last_updated": "2026-01-03T10:31:43.273792"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/.prettierrc.js",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "module.exports = {\n  arrowParens: 'avoid',\n  bracketSameLine: true,\n  bracketSpacing: true,\n  singleQuote: true,\n  trailingComma: 'all',\n  tabWidth: 2,\n  useTabs: false,\n  semi: true,\n  printWidth: 100,\n  endOfLine: 'auto',\n};\n",
+        "last_modified": "2026-01-03T10:31:53.619118"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:13.935851",
+  "last_updated": "2026-01-03T10:31:44.038645"
+}

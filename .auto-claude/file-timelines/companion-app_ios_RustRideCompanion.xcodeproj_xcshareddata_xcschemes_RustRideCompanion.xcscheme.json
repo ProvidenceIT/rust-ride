@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/ios/RustRideCompanion.xcodeproj/xcshareddata/xcschemes/RustRideCompanion.xcscheme",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Scheme\n   LastUpgradeVersion = \"1210\"\n   version = \"1.3\">\n   <BuildAction\n      parallelizeBuildables = \"YES\"\n      buildImplicitDependencies = \"YES\">\n      <BuildActionEntries>\n         <BuildActionEntry\n            buildForTesting = \"YES\"\n            buildForRunning = \"YES\"\n            buildForProfiling = \"YES\"\n            buildForArchiving = \"YES\"\n            buildForAnalyzing = \"YES\">\n            <BuildableReference\n               BuildableIdentifier = \"primary\"\n               BlueprintIdentifier = \"13B07F861A680F5B00A75B9A\"\n               BuildableName = \"RustRideCompanion.app\"\n               BlueprintName = \"RustRideCompanion\"\n               ReferencedContainer = \"container:RustRideCompanion.xcodeproj\">\n            </BuildableReference>\n         </BuildActionEntry>\n      </BuildActionEntries>\n   </BuildAction>\n   <TestAction\n      buildConfiguration = \"Debug\"\n      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n      shouldUseLaunchSchemeArgsEnv = \"YES\">\n      <Testables>\n         <TestableReference\n            skipped = \"NO\">\n            <BuildableReference\n               BuildableIdentifier = \"primary\"\n               BlueprintIdentifier = \"00E356ED1AD99517003FC87E\"\n               BuildableName = \"RustRideCompanionTests.xctest\"\n               BlueprintName = \"RustRideCompanionTests\"\n               ReferencedContainer = \"container:RustRideCompanion.xcodeproj\">\n            </BuildableReference>\n         </TestableReference>\n      </Testables>\n   </TestAction>\n   <LaunchAction\n      buildConfiguration = \"Debug\"\n      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n      launchStyle = \"0\"\n      useCustomWorkingDirectory = \"NO\"\n      ignoresPersistentStateOnLaunch = \"NO\"\n      debugDocumentVersioning = \"YES\"\n      debugServiceExtension = \"internal\"\n      allowLocationSimulation = \"YES\">\n      <BuildableProductRunnable\n         runnableDebuggingMode = \"0\">\n         <BuildableReference\n            BuildableIdentifier = \"primary\"\n            BlueprintIdentifier = \"13B07F861A680F5B00A75B9A\"\n            BuildableName = \"RustRideCompanion.app\"\n            BlueprintName = \"RustRideCompanion\"\n            ReferencedContainer = \"container:RustRideCompanion.xcodeproj\">\n         </BuildableReference>\n      </BuildableProductRunnable>\n   </LaunchAction>\n   <ProfileAction\n      buildConfiguration = \"Release\"\n      shouldUseLaunchSchemeArgsEnv = \"YES\"\n      savedToolIdentifier = \"\"\n      useCustomWorkingDirectory = \"NO\"\n      debugDocumentVersioning = \"YES\">\n      <BuildableProductRunnable\n         runnableDebuggingMode = \"0\">\n         <BuildableReference\n            BuildableIdentifier = \"primary\"\n            BlueprintIdentifier = \"13B07F861A680F5B00A75B9A\"\n            BuildableName = \"RustRideCompanion.app\"\n            BlueprintName = \"RustRideCompanion\"\n            ReferencedContainer = \"container:RustRideCompanion.xcodeproj\">\n         </BuildableReference>\n      </BuildableProductRunnable>\n   </ProfileAction>\n   <AnalyzeAction\n      buildConfiguration = \"Debug\">\n   </AnalyzeAction>\n   <ArchiveAction\n      buildConfiguration = \"Release\"\n      revealArchiveInOrganizer = \"YES\">\n   </ArchiveAction>\n</Scheme>\n",
+        "last_modified": "2026-01-03T10:31:53.852728"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:16.787644",
+  "last_updated": "2026-01-03T10:31:47.034000"
+}

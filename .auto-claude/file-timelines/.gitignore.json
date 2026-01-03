@@ -1,0 +1,28 @@
+{
+  "file_path": ".gitignore",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "# Rust build artifacts\ntarget/\ndebug/\nrelease/\n*.rs.bk\n*.rlib\n*.so\n*.dll\n*.dylib\n\n# Profiling\n*.prof*\nperf.data\nperf.data.old\nflamegraph.svg\n\n# IDE\n.idea/\n.vscode/\n*.iml\n\n# Environment and secrets\n.env\n.env.*\n*.pem\n*.key\n\n# OS files\n.DS_Store\nThumbs.db\n*.tmp\n*.swp\n*~\n\n# Logs\n*.log\nlogs/\n\n# Database files (development)\n*.db\n*.sqlite\n*.sqlite3\n\n# User data (development)\ndata/\n\n# Build artifacts\n*.exe\n*.out\n\n# Cargo lock for libraries (keep for binaries)\n# Cargo.lock  # Keep for binary crate\n\n# Coverage\n*.profraw\n*.profdata\ncoverage/\ntarpaulin-report.html\n",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "# Rust build artifacts\ntarget/\ndebug/\nrelease/\n*.rs.bk\n*.rlib\n*.so\n*.dll\n*.dylib\n\n# Profiling\n*.prof*\nperf.data\nperf.data.old\nflamegraph.svg\n\n# IDE\n.idea/\n.vscode/\n*.iml\n\n# Environment and secrets\n.env\n.env.*\n*.pem\n*.key\n\n# OS files\n.DS_Store\nThumbs.db\n*.tmp\n*.swp\n*~\n\n# Logs\n*.log\nlogs/\n\n# Database files (development)\n*.db\n*.sqlite\n*.sqlite3\n\n# User data (development)\ndata/\n\n# Build artifacts\n*.exe\n*.out\n\n# Cargo lock for libraries (keep for binaries)\n# Cargo.lock  # Keep for binary crate\n\n# Coverage\n*.profraw\n*.profdata\ncoverage/\ntarpaulin-report.html\n\n# React Native / Node.js (companion-app)\ncompanion-app/node_modules/\ncompanion-app/.bundle/\ncompanion-app/android/app/build/\ncompanion-app/android/.gradle/\ncompanion-app/ios/Pods/\ncompanion-app/ios/build/\ncompanion-app/.metro-health-check-*\n",
+        "last_modified": "2026-01-03T10:31:53.599118"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:13.650088",
+  "last_updated": "2026-01-03T10:31:43.828044"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/.eslintrc.js",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "module.exports = {\n  root: true,\n  extends: [\n    'eslint:recommended',\n    'plugin:@typescript-eslint/recommended',\n    'plugin:react/recommended',\n    'plugin:react-hooks/recommended',\n  ],\n  parser: '@typescript-eslint/parser',\n  parserOptions: {\n    ecmaFeatures: {\n      jsx: true,\n    },\n    ecmaVersion: 'latest',\n    sourceType: 'module',\n  },\n  plugins: ['@typescript-eslint', 'react', 'react-hooks'],\n  env: {\n    es2021: true,\n    node: true,\n  },\n  rules: {\n    // TypeScript-specific rules\n    '@typescript-eslint/explicit-function-return-type': 'off',\n    '@typescript-eslint/explicit-module-boundary-types': 'off',\n    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],\n    '@typescript-eslint/no-explicit-any': 'warn',\n\n    // React rules\n    'react/react-in-jsx-scope': 'off',\n    'react/prop-types': 'off',\n\n    // React hooks rules\n    'react-hooks/rules-of-hooks': 'error',\n    'react-hooks/exhaustive-deps': 'warn',\n\n    // General code quality\n    'no-console': ['warn', { allow: ['warn', 'error'] }],\n    'prefer-const': 'error',\n    'no-var': 'error',\n  },\n  settings: {\n    react: {\n      version: 'detect',\n    },\n  },\n  ignorePatterns: ['node_modules/', 'android/', 'ios/', '.bundle/', 'coverage/', '*.config.js'],\n};\n",
+        "last_modified": "2026-01-03T10:31:53.606120"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:13.765712",
+  "last_updated": "2026-01-03T10:31:43.913112"
+}

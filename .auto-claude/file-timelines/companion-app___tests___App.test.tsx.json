@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/__tests__/App.test.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * App Tests\n *\n * @format\n */\n\nimport React from 'react';\nimport { render } from '@testing-library/react-native';\nimport App from '../App';\n\n// Mock navigation\njest.mock('@react-navigation/native', () => {\n  const actualNav = jest.requireActual('@react-navigation/native');\n  return {\n    ...actualNav,\n    useNavigation: () => ({\n      navigate: jest.fn(),\n      goBack: jest.fn(),\n    }),\n    useRoute: () => ({\n      params: {},\n    }),\n    NavigationContainer: ({ children }: { children: React.ReactNode }) => children,\n  };\n});\n\njest.mock('@react-navigation/native-stack', () => ({\n  createNativeStackNavigator: () => ({\n    Navigator: ({ children }: { children: React.ReactNode }) => children,\n    Screen: () => null,\n  }),\n}));\n\njest.mock('@react-navigation/bottom-tabs', () => ({\n  createBottomTabNavigator: () => ({\n    Navigator: ({ children }: { children: React.ReactNode }) => children,\n    Screen: () => null,\n  }),\n}));\n\ndescribe('App', () => {\n  it('renders without crashing', () => {\n    const { toJSON } = render(<App />);\n    expect(toJSON()).toBeTruthy();\n  });\n});\n",
+        "last_modified": "2026-01-03T10:31:53.651119"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:14.381213",
+  "last_updated": "2026-01-03T10:31:44.597006"
+}

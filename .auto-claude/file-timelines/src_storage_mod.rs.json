@@ -1,0 +1,28 @@
+{
+  "file_path": "src/storage/mod.rs",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "//! Storage module for database and configuration.\n\npub mod achievements_store;\npub mod analytics_store;\npub mod config;\npub mod database;\npub mod gradient_store;\npub mod hardware_store;\npub mod ml_store;\npub mod plan_store;\npub mod power_profile_store;\npub mod rewards_store;\npub mod schema;\npub mod social_store;\npub mod sync_store;\npub mod xp_store;\n\npub use analytics_store::AnalyticsStore;\npub use config::{AppConfig, DashboardLayout, MetricType, Theme, UiSettings, Units, UserProfile};\npub use database::{Database, DatabaseError};\npub use hardware_store::{\n    HardwareStore, StoredAntDongle, StoredAudioSettings, StoredButtonMapping,\n    StoredDualProtocolBinding, StoredFanProfile, StoredHidDevice, StoredPlatformSync,\n    StoredSyncRecord as HwStoredSyncRecord, StoredVideoSync,\n};\npub use sync_store::{\n    delete_fit_from_queue, get_upload_queue_dir, load_fit_from_queue, save_fit_for_queue,\n    StoredSyncRecord, StoredUploadQueueEntry, SyncRecordStatus, SyncStore,\n};\npub use ml_store::{CachedPrediction, FatigueStateRecord, MlStore, WorkoutRecommendationRecord};\npub use social_store::{\n    ActivitySummary, ChatMessageRecord, Club, ClubMembership, GroupRideParticipant,\n    GroupRideRecord, Rider, SocialStore,\n};\n\n// Competitive features storage (Feature 010)\npub use achievements_store::{AchievementsStore, UserAchievementRecord};\npub use gradient_store::{GradientSettingsRecord, GradientStore};\npub use plan_store::{PlanAssignmentRecord, PlanStore};\npub use power_profile_store::{PowerProfilePointRecord, PowerProfileRecord, PowerProfileStore};\npub use rewards_store::{RewardsStore, UserRewardRecord};\npub use xp_store::{UserXpRecord, XpStore};\n",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "//! Storage module for database and configuration.\n\npub mod achievements_store;\npub mod analytics_store;\npub mod config;\npub mod database;\npub mod gradient_store;\npub mod hardware_store;\npub mod ml_store;\npub mod plan_store;\npub mod power_profile_store;\npub mod rewards_store;\npub mod schema;\npub mod social_store;\npub mod sync_store;\npub mod xp_store;\n\npub use analytics_store::AnalyticsStore;\npub use crate::companion::types::CompanionConfig;\npub use config::{AppConfig, DashboardLayout, MetricType, Theme, UiSettings, Units, UserProfile};\npub use database::{Database, DatabaseError};\npub use hardware_store::{\n    HardwareStore, StoredAntDongle, StoredAudioSettings, StoredButtonMapping,\n    StoredDualProtocolBinding, StoredFanProfile, StoredHidDevice, StoredPlatformSync,\n    StoredSyncRecord as HwStoredSyncRecord, StoredVideoSync,\n};\npub use sync_store::{\n    delete_fit_from_queue, get_upload_queue_dir, load_fit_from_queue, save_fit_for_queue,\n    StoredSyncRecord, StoredUploadQueueEntry, SyncRecordStatus, SyncStore,\n};\npub use ml_store::{CachedPrediction, FatigueStateRecord, MlStore, WorkoutRecommendationRecord};\npub use social_store::{\n    ActivitySummary, ChatMessageRecord, Club, ClubMembership, GroupRideParticipant,\n    GroupRideRecord, Rider, SocialStore,\n};\n\n// Competitive features storage (Feature 010)\npub use achievements_store::{AchievementsStore, UserAchievementRecord};\npub use gradient_store::{GradientSettingsRecord, GradientStore};\npub use plan_store::{PlanAssignmentRecord, PlanStore};\npub use power_profile_store::{PowerProfilePointRecord, PowerProfileRecord, PowerProfileStore};\npub use rewards_store::{RewardsStore, UserRewardRecord};\npub use xp_store::{UserXpRecord, XpStore};\n",
+        "last_modified": "2026-01-03T10:31:54.200420"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:21.747532",
+  "last_updated": "2026-01-03T10:31:53.146939"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/App.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App\n *\n * Mobile companion app for remote workout control, real-time metrics viewing,\n * and ride history access. Connects to the desktop app over local network.\n *\n * @format\n */\n\nimport React from 'react';\nimport { StatusBar, useColorScheme } from 'react-native';\nimport { SafeAreaProvider } from 'react-native-safe-area-context';\nimport { NavigationContainer } from '@react-navigation/native';\nimport { GestureHandlerRootView } from 'react-native-gesture-handler';\nimport { AppNavigator, linking } from '@/navigation';\nimport { AutoReconnectProvider } from '@/providers';\n\n// Color palette matching the RustRide desktop app\nconst Colors = {\n  light: {\n    background: '#FFFFFF',\n  },\n  dark: {\n    background: '#000000',\n  },\n};\n\nfunction App(): React.JSX.Element {\n  const isDarkMode = useColorScheme() === 'dark';\n  const colors = isDarkMode ? Colors.dark : Colors.light;\n\n  return (\n    <GestureHandlerRootView style={{ flex: 1 }}>\n      <SafeAreaProvider>\n        <StatusBar\n          barStyle={isDarkMode ? 'light-content' : 'dark-content'}\n          backgroundColor={colors.background}\n        />\n        <AutoReconnectProvider>\n          <NavigationContainer\n            linking={linking}\n            theme={{\n              dark: isDarkMode,\n              colors: {\n                primary: isDarkMode ? '#0A84FF' : '#007AFF',\n                background: isDarkMode ? '#000000' : '#FFFFFF',\n                card: isDarkMode ? '#1C1C1E' : '#FFFFFF',\n                text: isDarkMode ? '#FFFFFF' : '#1C1C1E',\n                border: isDarkMode ? '#38383A' : '#E5E5EA',\n                notification: isDarkMode ? '#FF453A' : '#FF3B30',\n              },\n              fonts: {\n                regular: {\n                  fontFamily: 'System',\n                  fontWeight: '400',\n                },\n                medium: {\n                  fontFamily: 'System',\n                  fontWeight: '500',\n                },\n                bold: {\n                  fontFamily: 'System',\n                  fontWeight: '700',\n                },\n                heavy: {\n                  fontFamily: 'System',\n                  fontWeight: '900',\n                },\n              },\n            }}>\n            <AppNavigator />\n          </NavigationContainer>\n        </AutoReconnectProvider>\n      </SafeAreaProvider>\n    </GestureHandlerRootView>\n  );\n}\n\nexport default App;\n",
+        "last_modified": "2026-01-03T10:31:53.627114"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:14.048211",
+  "last_updated": "2026-01-03T10:31:44.181016"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/stores/index.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * RustRide Companion App - State Management\n *\n * Zustand stores for managing app state.\n */\n\n// Connection store - WebSocket connection state\nexport {\n  useConnectionStore,\n  selectConnectionStatus,\n  selectServerUrl,\n  selectIsAuthenticated,\n  selectDiscoveredServers,\n  selectIsScanning,\n  selectConnectionError,\n  selectCanReconnect,\n  selectIsConnecting,\n  selectIsConnected,\n} from './connectionStore';\n\n// Metrics store - Real-time workout metrics\nexport {\n  useMetricsStore,\n  selectCurrentPower,\n  selectPower3sAvg,\n  selectHeartRate,\n  selectHeartRateMax,\n  selectCadence,\n  selectSpeed,\n  selectDistance,\n  selectCalories,\n  selectTargetPower,\n  selectTargetCadence,\n  selectIsSubscribed,\n  selectLiveMetrics,\n  getPowerZone,\n  getHeartRateZone,\n  getPowerZoneColor,\n  getHeartRateZoneColor,\n  type PowerZone,\n  type HeartRateZone,\n} from './metricsStore';\n\n// Session store - Workout/ride session state\nexport {\n  useSessionStore,\n  selectIsSessionActive,\n  selectSessionId,\n  selectSessionType,\n  selectSessionState,\n  selectWorkoutName,\n  selectIsPaused,\n  selectElapsedSecs,\n  selectCurrentInterval,\n  selectTargetPower as selectSessionTargetPower,\n  selectIsWorkout,\n  selectIsFreeRide,\n  selectIntervalProgress,\n  selectCanPause,\n  selectCanResume,\n  selectCanSkip,\n  selectCanStop,\n} from './sessionStore';\n\n// History store - Ride history and details\nexport {\n  useHistoryStore,\n  selectRides,\n  selectIsLoading,\n  selectIsLoadingMore,\n  selectError,\n  selectHasMore,\n  selectTotal,\n  selectFilters,\n  selectCurrentRideDetail,\n  selectIsLoadingDetail,\n  selectPagination,\n  selectRideCount,\n  selectIsEmpty,\n  selectHasFiltersApplied,\n  getFilterDateRange,\n  type DateRangeFilter,\n  type RideTypeFilter,\n} from './historyStore';\n",
+        "last_modified": "2026-01-03T10:31:54.086309"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:20.264411",
+  "last_updated": "2026-01-03T10:31:50.838738"
+}

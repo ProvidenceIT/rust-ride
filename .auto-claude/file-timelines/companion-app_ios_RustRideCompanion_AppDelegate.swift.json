@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/ios/RustRideCompanion/AppDelegate.swift",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "import UIKit\nimport React\nimport React_RCTAppDelegate\nimport ReactAppDependencyProvider\n\n@main\nclass AppDelegate: UIResponder, UIApplicationDelegate {\n  var window: UIWindow?\n\n  var reactNativeDelegate: ReactNativeDelegate?\n  var reactNativeFactory: RCTReactNativeFactory?\n\n  func application(\n    _ application: UIApplication,\n    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil\n  ) -> Bool {\n    let delegate = ReactNativeDelegate()\n    let factory = RCTReactNativeFactory(delegate: delegate)\n    delegate.dependencyProvider = RCTAppDependencyProvider()\n\n    reactNativeDelegate = delegate\n    reactNativeFactory = factory\n\n    window = UIWindow(frame: UIScreen.main.bounds)\n\n    factory.startReactNative(\n      withModuleName: \"RustRideCompanion\",\n      in: window,\n      launchOptions: launchOptions\n    )\n\n    return true\n  }\n}\n\nclass ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {\n  override func sourceURL(for bridge: RCTBridge) -> URL? {\n    self.bundleURL()\n  }\n\n  override func bundleURL() -> URL? {\n#if DEBUG\n    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: \"index\")\n#else\n    Bundle.main.url(forResource: \"main\", withExtension: \"jsbundle\")\n#endif\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:53.856225"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:16.858075",
+  "last_updated": "2026-01-03T10:31:47.118652"
+}

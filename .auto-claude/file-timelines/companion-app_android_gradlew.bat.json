@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/android/gradlew.bat",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "@REM Copyright (c) Meta Platforms, Inc. and affiliates.\n@REM\n@REM This source code is licensed under the MIT license found in the\n@REM LICENSE file in the root directory of this source tree.\n\n@rem\n@rem Copyright 2015 the original author or authors.\n@rem\n@rem Licensed under the Apache License, Version 2.0 (the \"License\");\n@rem you may not use this file except in compliance with the License.\n@rem You may obtain a copy of the License at\n@rem\n@rem      https://www.apache.org/licenses/LICENSE-2.0\n@rem\n@rem Unless required by applicable law or agreed to in writing, software\n@rem distributed under the License is distributed on an \"AS IS\" BASIS,\n@rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n@rem See the License for the specific language governing permissions and\n@rem limitations under the License.\n@rem\n@rem SPDX-License-Identifier: Apache-2.0\n@rem\n\n@if \"%DEBUG%\"==\"\" @echo off\n@rem ##########################################################################\n@rem\n@rem  Gradle startup script for Windows\n@rem\n@rem ##########################################################################\n\n@rem Set local scope for the variables with windows NT shell\nif \"%OS%\"==\"Windows_NT\" setlocal\n\nset DIRNAME=%~dp0\nif \"%DIRNAME%\"==\"\" set DIRNAME=.\n@rem This is normally unused\nset APP_BASE_NAME=%~n0\nset APP_HOME=%DIRNAME%\n\n@rem Resolve any \".\" and \"..\" in APP_HOME to make it shorter.\nfor %%i in (\"%APP_HOME%\") do set APP_HOME=%%~fi\n\n@rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.\nset DEFAULT_JVM_OPTS=\"-Xmx64m\" \"-Xms64m\"\n\n@rem Find java.exe\nif defined JAVA_HOME goto findJavaFromJavaHome\n\nset JAVA_EXE=java.exe\n%JAVA_EXE% -version >NUL 2>&1\nif %ERRORLEVEL% equ 0 goto execute\n\necho. 1>&2\necho ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH. 1>&2\necho. 1>&2\necho Please set the JAVA_HOME variable in your environment to match the 1>&2\necho location of your Java installation. 1>&2\n\ngoto fail\n\n:findJavaFromJavaHome\nset JAVA_HOME=%JAVA_HOME:\"=%\nset JAVA_EXE=%JAVA_HOME%/bin/java.exe\n\nif exist \"%JAVA_EXE%\" goto execute\n\necho. 1>&2\necho ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME% 1>&2\necho. 1>&2\necho Please set the JAVA_HOME variable in your environment to match the 1>&2\necho location of your Java installation. 1>&2\n\ngoto fail\n\n:execute\n@rem Setup the command line\n\nset CLASSPATH=\n\n\n@rem Execute Gradle\n\"%JAVA_EXE%\" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% \"-Dorg.gradle.appname=%APP_BASE_NAME%\" -classpath \"%CLASSPATH%\" -jar \"%APP_HOME%\\gradle\\wrapper\\gradle-wrapper.jar\" %*\n\n:end\n@rem End local scope for the variables with windows NT shell\nif %ERRORLEVEL% equ 0 goto mainEnd\n\n:fail\nrem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of\nrem the _cmd.exe /c_ return code!\nset EXIT_CODE=%ERRORLEVEL%\nif %EXIT_CODE% equ 0 set EXIT_CODE=1\nif not \"\"==\"%GRADLE_EXIT_CONSOLE%\" exit %EXIT_CODE%\nexit /b %EXIT_CODE%\n\n:mainEnd\nif \"%OS%\"==\"Windows_NT\" endlocal\n\n:omega\n",
+        "last_modified": "2026-01-03T10:31:53.814209"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:16.292407",
+  "last_updated": "2026-01-03T10:31:46.470108"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "src/companion/mod.rs",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "//! Companion server module for mobile app connectivity.\n//!\n//! This module provides a WebSocket server that allows the RustRide mobile\n//! companion app to connect over LAN for remote workout control, real-time\n//! metrics streaming, and ride history access.\n//!\n//! ## Architecture\n//!\n//! The companion server consists of:\n//! - `server`: WebSocket server using tokio-tungstenite for LAN connectivity\n//! - `handlers`: Request handlers for workout control, metrics, and history\n//! - `types`: Message types for WebSocket communication\n//! - `discovery`: mDNS service advertisement for auto-discovery\n//! - `streaming`: Real-time metrics streaming at 1Hz to connected clients\n//! - `qr`: QR code generation for easy mobile app pairing\n//!\n//! ## Authentication\n//!\n//! The server supports optional PIN-based authentication. When enabled,\n//! clients must send an authentication message with the correct PIN before\n//! receiving metrics or sending commands.\n//!\n//! ## Discovery\n//!\n//! The server advertises itself via mDNS as `_rustride._tcp.local` for\n//! automatic discovery by the mobile app on the same LAN. TXT records\n//! include the port number and protocol version.\n//!\n//! ## Metrics Streaming\n//!\n//! The streaming module provides 1Hz metrics broadcasting to authenticated\n//! clients. It subscribes to sensor events and aggregates power, heart rate,\n//! cadence, speed, distance, and calorie data.\n//!\n//! ## Feature: Mobile Companion App (014)\n\npub mod discovery;\npub mod handlers;\npub mod qr;\npub mod server;\npub mod streaming;\npub mod types;\n\n// Re-export commonly used types\npub use discovery::{CompanionMdnsAdvertiser, COMPANION_PROTOCOL_VERSION, COMPANION_SERVICE_TYPE};\npub use qr::{generate_pairing_qr_code, CompanionConnectionData, CompanionQrCode, QrCodeError};\npub use server::CompanionServer;\npub use streaming::{MetricsStreamer, MetricsStreamerConfig, SensorEventProcessor, StreamingMetrics};\npub use types::{\n    CompanionConfig, CompanionError, CompanionEvent, CompanionRequest, CompanionResponse,\n};\n",
+        "last_modified": "2026-01-03T10:31:54.163847"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:21.334892",
+  "last_updated": "2026-01-03T10:31:52.519708"
+}

@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/jest.config.js",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "module.exports = {\n  preset: 'react-native',\n  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],\n  transformIgnorePatterns: [\n    'node_modules/(?!(react-native|@react-native|react-native-vector-icons|@react-navigation|react-native-screens|react-native-safe-area-context|react-native-gesture-handler|react-native-camera-kit|react-native-permissions)/)',\n  ],\n  moduleNameMapper: {\n    '^@/(.*)$': '<rootDir>/src/$1',\n    '^@components/(.*)$': '<rootDir>/src/components/$1',\n    '^@screens/(.*)$': '<rootDir>/src/screens/$1',\n    '^@navigation/(.*)$': '<rootDir>/src/navigation/$1',\n    '^@services/(.*)$': '<rootDir>/src/services/$1',\n    '^@stores/(.*)$': '<rootDir>/src/stores/$1',\n    '^@hooks/(.*)$': '<rootDir>/src/hooks/$1',\n    '^@theme$': '<rootDir>/src/theme/index',\n    '^@theme/(.*)$': '<rootDir>/src/theme/$1',\n    '^@utils/(.*)$': '<rootDir>/src/utils/$1',\n    '^@types/(.*)$': '<rootDir>/src/types/$1',\n    // Mock for react-native-zeroconf (not installed, using manual mock)\n    '^react-native-zeroconf$': '<rootDir>/__mocks__/react-native-zeroconf.ts',\n    // Mock for react-native-camera-kit (uses native modules)\n    '^react-native-camera-kit$': '<rootDir>/__mocks__/react-native-camera-kit.tsx',\n    // Mock for AsyncStorage\n    '^@react-native-async-storage/async-storage$':\n      '<rootDir>/__mocks__/@react-native-async-storage/async-storage.ts',\n  },\n};\n",
+        "last_modified": "2026-01-03T10:31:53.877557"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:17.270309",
+  "last_updated": "2026-01-03T10:31:47.536970"
+}

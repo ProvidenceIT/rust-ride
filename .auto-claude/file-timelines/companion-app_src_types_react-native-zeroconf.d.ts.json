@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/types/react-native-zeroconf.d.ts",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * Type definitions for react-native-zeroconf\n *\n * Provides TypeScript types for the react-native-zeroconf library\n * which handles mDNS/Bonjour service discovery on local networks.\n */\n\ndeclare module 'react-native-zeroconf' {\n  /**\n   * Resolved service information from mDNS discovery\n   */\n  export interface ZeroconfService {\n    /** Service name (e.g., \"RustRide\") */\n    name: string;\n    /** Full service type (e.g., \"_rustride._tcp.local.\") */\n    fullName: string;\n    /** Hostname of the service */\n    host: string;\n    /** Port number the service is running on */\n    port: number;\n    /** Array of IP addresses for the service */\n    addresses: string[];\n    /** TXT record key-value pairs */\n    txt: Record<string, string>;\n  }\n\n  /**\n   * Events emitted by Zeroconf\n   */\n  export type ZeroconfEvent =\n    | 'start'\n    | 'stop'\n    | 'found'\n    | 'resolved'\n    | 'remove'\n    | 'update'\n    | 'error';\n\n  /**\n   * Event handler types for each Zeroconf event\n   */\n  export interface ZeroconfEventHandlers {\n    start: () => void;\n    stop: () => void;\n    found: (name: string) => void;\n    resolved: (service: ZeroconfService) => void;\n    remove: (name: string) => void;\n    update: () => void;\n    error: (error: Error) => void;\n  }\n\n  /**\n   * Zeroconf class for mDNS/Bonjour service discovery\n   *\n   * @example\n   * ```typescript\n   * const zeroconf = new Zeroconf();\n   * zeroconf.on('resolved', (service) => {\n   *   console.log('Found service:', service.name);\n   * });\n   * zeroconf.scan('_rustride._tcp.', 'local.');\n   * ```\n   */\n  export default class Zeroconf {\n    /**\n     * Register an event listener\n     * @param event Event name to listen for\n     * @param handler Callback function for the event\n     */\n    on<E extends ZeroconfEvent>(event: E, handler: ZeroconfEventHandlers[E]): void;\n\n    /**\n     * Remove an event listener\n     * @param event Event name to remove listener from\n     * @param handler Handler function to remove\n     */\n    off<E extends ZeroconfEvent>(event: E, handler: ZeroconfEventHandlers[E]): void;\n\n    /**\n     * Remove all event listeners\n     */\n    removeDeviceListeners(): void;\n\n    /**\n     * Start scanning for services of a specific type\n     * @param type Service type to scan for (e.g., \"_rustride._tcp.\")\n     * @param protocol Protocol domain (e.g., \"local.\")\n     */\n    scan(type?: string, protocol?: string): void;\n\n    /**\n     * Stop the current scan\n     */\n    stop(): void;\n\n    /**\n     * Get all currently discovered services\n     * @returns Object mapping service names to service info\n     */\n    getServices(): Record<string, ZeroconfService>;\n\n    /**\n     * Publish/advertise a service on the network\n     * @param type Service type (e.g., \"_http._tcp.\")\n     * @param protocol Protocol domain (e.g., \"local.\")\n     * @param name Service name\n     * @param port Port number\n     */\n    publishService(type: string, protocol: string, name: string, port: number): void;\n\n    /**\n     * Unpublish/stop advertising a service\n     * @param name Service name to unpublish\n     */\n    unpublishService(name: string): void;\n  }\n}\n",
+        "last_modified": "2026-01-03T10:31:54.138850"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:21.040969",
+  "last_updated": "2026-01-03T10:31:52.066446"
+}

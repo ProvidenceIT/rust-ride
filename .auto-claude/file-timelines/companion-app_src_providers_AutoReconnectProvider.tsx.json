@@ -1,0 +1,28 @@
+{
+  "file_path": "companion-app/src/providers/AutoReconnectProvider.tsx",
+  "main_branch_history": [],
+  "task_views": {
+    "014-mobile-companion-app": {
+      "task_id": "014-mobile-companion-app",
+      "branch_point": {
+        "commit_hash": "88095821a70560ce521aec87552f83ebd58387b8",
+        "content": "",
+        "timestamp": "2026-01-03T10:31:43.232720"
+      },
+      "worktree_state": {
+        "content": "/**\n * AutoReconnectProvider\n *\n * Provider component that handles auto-reconnection to the last connected\n * server on app launch. Shows a loading state while initializing.\n */\n\nimport React, { createContext, useContext, type ReactNode } from 'react';\nimport { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';\nimport {\n  useAutoReconnect,\n  type AutoReconnectState,\n  type AutoReconnectActions,\n} from '@/hooks/useAutoReconnect';\n\n/**\n * Context value type\n */\ninterface AutoReconnectContextValue {\n  state: AutoReconnectState;\n  actions: AutoReconnectActions;\n}\n\n/**\n * Context for auto-reconnect state and actions\n */\nconst AutoReconnectContext = createContext<AutoReconnectContextValue | null>(null);\n\n/**\n * Provider props\n */\ninterface AutoReconnectProviderProps {\n  children: ReactNode;\n  /** Whether to show loading screen during initialization */\n  showLoadingScreen?: boolean;\n}\n\n/**\n * Loading screen shown during initialization\n */\nfunction LoadingScreen(): React.JSX.Element {\n  const isDarkMode = useColorScheme() === 'dark';\n\n  return (\n    <View style={[styles.loadingContainer, isDarkMode && styles.loadingContainerDark]}>\n      <ActivityIndicator\n        size=\"large\"\n        color={isDarkMode ? '#0A84FF' : '#007AFF'}\n        style={styles.spinner}\n      />\n      <Text style={[styles.loadingText, isDarkMode && styles.loadingTextDark]}>\n        Connecting...\n      </Text>\n    </View>\n  );\n}\n\n/**\n * AutoReconnectProvider component\n *\n * Wraps the app to provide auto-reconnect functionality and optionally\n * shows a loading screen during initialization.\n *\n * @example\n * ```tsx\n * function App() {\n *   return (\n *     <AutoReconnectProvider>\n *       <MainApp />\n *     </AutoReconnectProvider>\n *   );\n * }\n * ```\n */\nexport function AutoReconnectProvider({\n  children,\n  showLoadingScreen = false,\n}: AutoReconnectProviderProps): React.JSX.Element {\n  const autoReconnect = useAutoReconnect();\n\n  // Show loading screen during initialization if enabled\n  if (showLoadingScreen && autoReconnect.state.isInitializing) {\n    return <LoadingScreen />;\n  }\n\n  return (\n    <AutoReconnectContext.Provider value={autoReconnect}>\n      {children}\n    </AutoReconnectContext.Provider>\n  );\n}\n\n/**\n * Hook to access auto-reconnect context\n *\n * @returns Auto-reconnect state and actions\n * @throws Error if used outside of AutoReconnectProvider\n */\nexport function useAutoReconnectContext(): AutoReconnectContextValue {\n  const context = useContext(AutoReconnectContext);\n\n  if (!context) {\n    throw new Error('useAutoReconnectContext must be used within AutoReconnectProvider');\n  }\n\n  return context;\n}\n\nconst styles = StyleSheet.create({\n  loadingContainer: {\n    flex: 1,\n    justifyContent: 'center',\n    alignItems: 'center',\n    backgroundColor: '#FFFFFF',\n  },\n  loadingContainerDark: {\n    backgroundColor: '#000000',\n  },\n  spinner: {\n    marginBottom: 16,\n  },\n  loadingText: {\n    fontSize: 16,\n    color: '#1C1C1E',\n  },\n  loadingTextDark: {\n    color: '#FFFFFF',\n  },\n});\n",
+        "last_modified": "2026-01-03T10:31:54.005284"
+      },
+      "task_intent": {
+        "title": "014-mobile-companion-app",
+        "description": "Create a mobile app (iOS/Android) for remote workout control, real-time metrics viewing, and ride history access. Connect to the desktop app over local network.",
+        "from_plan": true
+      },
+      "commits_behind_main": 91,
+      "status": "active",
+      "merged_at": null
+    }
+  },
+  "created_at": "2026-01-03T10:20:19.281200",
+  "last_updated": "2026-01-03T10:31:49.393825"
+}
