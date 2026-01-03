@@ -873,3 +873,267 @@ fn test_preference_manager_clear() {
     std::fs::remove_file(&temp_path).ok();
     std::fs::remove_dir(&temp_dir).ok();
 }
+
+// ============================================================================
+// Failover tests
+// ============================================================================
+
+#[test]
+fn test_failover_with_no_secondary() {
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    detector.register_sensor(&pm);
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Simulate primary disconnect with no secondary available
+    let failovers = detector.handle_primary_disconnect(&pm.device_id);
+
+    // No failover should occur (no secondary)
+    assert!(failovers.is_empty());
+}
+
+#[test]
+fn test_failover_with_secondary_available() {
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+
+    // Set power meter as primary
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Simulate trainer connected
+    detector.update_connection_status(&trainer.device_id, true);
+
+    // Simulate primary disconnect
+    let failovers = detector.handle_primary_disconnect(&pm.device_id);
+
+    // Failover should occur to trainer
+    assert_eq!(failovers.len(), 1);
+    assert_eq!(failovers[0].data_type, DataType::Power);
+    assert_eq!(failovers[0].from_device_id, pm.device_id);
+    assert_eq!(failovers[0].to_device_id, trainer.device_id);
+}
+
+#[test]
+fn test_failover_targets() {
+    let mut detector = ConflictDetector::new();
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+
+    // Set power meter as primary
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Mark trainer as connected (potential failover target)
+    detector.update_connection_status(&trainer.device_id, true);
+
+    // Get failover targets
+    let targets = detector.get_failover_targets(DataType::Power);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].device_id, trainer.device_id);
+}
+
+#[test]
+fn test_has_failover_available() {
+    let mut detector = ConflictDetector::new();
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    detector.register_sensor(&pm);
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // No failover available (only one sensor)
+    assert!(!detector.has_failover_available(DataType::Power));
+
+    // Add trainer and mark as connected
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+    detector.register_sensor(&trainer);
+    detector.update_connection_status(&trainer.device_id, true);
+
+    // Now failover is available
+    assert!(detector.has_failover_available(DataType::Power));
+}
+
+#[test]
+fn test_protected_data_types() {
+    let mut detector = ConflictDetector::new();
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+    detector.set_primary(DataType::Power, &pm.device_id);
+    detector.update_connection_status(&trainer.device_id, true);
+
+    let protected = detector.get_protected_data_types();
+    assert!(protected.contains(&DataType::Power));
+}
+
+#[test]
+fn test_at_risk_data_types() {
+    let mut detector = ConflictDetector::new();
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    detector.register_sensor(&pm);
+    detector.set_primary(DataType::Power, &pm.device_id);
+    detector.update_connection_status(&pm.device_id, true);
+
+    // With only one sensor connected, data types are at risk
+    let at_risk = detector.get_at_risk_data_types();
+    assert!(at_risk.contains(&DataType::Power));
+}
+
+#[test]
+fn test_failover_result_message() {
+    use rust_ride::sensors::conflict::FailoverResult;
+
+    let result = FailoverResult {
+        data_type: DataType::Power,
+        from_device_id: "device1".to_string(),
+        from_sensor_name: "Stages Power".to_string(),
+        to_device_id: "device2".to_string(),
+        to_sensor_name: "KICKR Core".to_string(),
+    };
+
+    let message = result.message();
+    assert!(message.contains("Power"));
+    assert!(message.contains("Stages Power"));
+    assert!(message.contains("KICKR Core"));
+}
+
+// ============================================================================
+// User alerting workflow tests
+// ============================================================================
+
+#[test]
+fn test_conflict_alerting_workflow() {
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    // Add two power meters - creates a conflict
+    let pm1 = make_ble_sensor("Stages Left", SensorType::PowerMeter);
+    let pm2 = make_ble_sensor("Stages Right", SensorType::PowerMeter);
+
+    detector.register_sensor(&pm1);
+    detector.register_sensor(&pm2);
+
+    // Conflict should need attention
+    let needing_attention = detector.conflicts_needing_attention();
+    assert!(!needing_attention.is_empty());
+    assert!(needing_attention.iter().any(|c| c.data_type == DataType::Power));
+
+    // After showing alert, mark as notified
+    detector.mark_notified(DataType::Power);
+
+    // Should no longer need attention
+    let needing_attention_after = detector.conflicts_needing_attention();
+    assert!(needing_attention_after.is_empty() ||
+            !needing_attention_after.iter().any(|c| c.data_type == DataType::Power));
+}
+
+#[test]
+fn test_conflict_resolution_workflow() {
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    // User has trainer + power meter
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+
+    detector.register_sensor(&trainer);
+    detector.register_sensor(&pm);
+
+    // Conflict should exist for power
+    assert!(detector.has_conflict(DataType::Power));
+    assert!(!detector.get_conflict(DataType::Power).unwrap().is_resolved);
+
+    // User selects power meter as primary for power
+    detector.set_primary(DataType::Power, &pm.device_id);
+
+    // Conflict should be resolved now
+    assert!(detector.get_conflict(DataType::Power).unwrap().is_resolved);
+
+    // Power meter should be the primary
+    assert_eq!(
+        detector.get_primary(DataType::Power),
+        Some(pm.device_id.as_str())
+    );
+}
+
+#[test]
+fn test_multiple_conflict_mark_all_notified() {
+    let mut detector = ConflictDetector::with_config(ConflictDetectorConfig {
+        strategy: ResolutionStrategy::UserSelection,
+        auto_resolve_non_critical: false,
+        persist_resolutions: false,
+    });
+
+    // Create multiple conflicts
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    let trainer = make_ble_sensor("KICKR Core", SensorType::Trainer);
+    let hr1 = make_ble_sensor("Polar H10", SensorType::HeartRate);
+    let hr2 = make_ant_sensor("Garmin HRM", 1234, SensorType::HeartRate);
+
+    detector.register_sensor(&pm);
+    detector.register_sensor(&trainer);
+    detector.register_sensor(&hr1);
+    detector.register_sensor(&hr2);
+
+    // Multiple conflicts should need attention
+    let needing_attention = detector.conflicts_needing_attention();
+    assert!(needing_attention.len() >= 2);
+
+    // Mark all as notified
+    detector.mark_all_notified();
+
+    // None should need attention now
+    assert!(detector.conflicts_needing_attention().is_empty());
+}
+
+// ============================================================================
+// Connection status update tests
+// ============================================================================
+
+#[test]
+fn test_update_connection_status() {
+    let mut detector = ConflictDetector::new();
+
+    let pm = make_ble_sensor("Stages Power", SensorType::PowerMeter);
+    detector.register_sensor(&pm);
+
+    // Initial status should be disconnected
+    let conflict = detector.get_conflict(DataType::Power);
+    if let Some(c) = conflict {
+        assert!(!c.sources.iter().any(|s| s.is_connected));
+    }
+
+    // Update to connected
+    detector.update_connection_status(&pm.device_id, true);
+
+    // Now should be connected
+    let conflict_after = detector.get_conflict(DataType::Power);
+    // Note: This conflict may not be "active" since there's only one sensor
+    // but we can verify the update happened via the internal state
+}

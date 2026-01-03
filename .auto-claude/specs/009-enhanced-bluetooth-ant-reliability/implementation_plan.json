@@ -2,9 +2,9 @@
   "feature": "Enhanced Bluetooth/ANT+ Reliability",
   "description": "Improve sensor connection reliability with automatic reconnection, connection quality monitoring, and multi-sensor management. Reduce sensor discovery time and handle disconnections gracefully.",
   "created_at": "2026-01-02T22:57:19.779Z",
-  "updated_at": "2026-01-03T00:00:00.000Z",
+  "updated_at": "2026-01-03T09:31:42.562Z",
   "status": "in_progress",
-  "planStatus": "ready",
+  "planStatus": "in_progress",
   "phases": [
     {
       "id": "phase-1",
@@ -263,7 +263,7 @@
           "id": "4.2",
           "title": "Add protocol preference storage",
           "description": "Store user's preferred protocol (BLE vs ANT+) for each dual-protocol sensor. Persist preference and use on reconnection.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/dual_protocol.rs",
             "src/sensors/persistence.rs"
@@ -271,7 +271,9 @@
           "tests": [
             "tests/unit/protocol_preference_test.rs"
           ],
-          "acceptance": "Protocol preference saved and used automatically on reconnection"
+          "acceptance": "Protocol preference saved and used automatically on reconnection",
+          "notes": "Implementation complete with ProtocolPreferenceManager for storing user's preferred protocol (BLE vs ANT+) for dual-protocol sensors. Features:\\n\\n- ProtocolPreference struct stores binding_id, sensor_name, sensor_type, preferred_protocol, usage_count, user_set flag\\n- ProtocolPreferenceData for JSON persistence\\n- ProtocolPreferenceManager with load/save, set/get/remove preference, record_usage, sync_from_detector, apply_to_detector\\n- Integration with DualProtocolBinding.preferred_protocol and DualProtocolDetector methods\\n- Comprehensive unit tests in tests/unit/protocol_preference_test.rs\\n\\nCommit: 7a3fd4d auto-claude: 4.2 - Store user's preferred protocol (BLE vs ANT+) for dual-protocol sensors",
+          "updated_at": "2026-01-03T10:02:08.680151+00:00"
         },
         {
           "id": "4.3",
@@ -461,5 +463,6 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-03T00:56:53.791248+00:00"
+  "last_updated": "2026-01-03T10:02:08.680151+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:42.303Z"
 }

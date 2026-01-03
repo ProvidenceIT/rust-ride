@@ -2674,6 +2674,86 @@ impl SensorManager {
         self.conflict_detector.lock().await.clear_primary(data_type);
     }
 
+    /// Get conflicts that need user attention.
+    ///
+    /// Returns conflicts that are active and haven't been notified to the user yet.
+    /// Use this to alert users about new conflicts that require resolution.
+    pub async fn get_conflicts_needing_attention(&self) -> Vec<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .conflicts_needing_attention()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Mark a specific conflict as notified.
+    ///
+    /// Call this after showing the user a conflict alert so they don't see it again.
+    pub async fn mark_conflict_notified(&self, data_type: DataType) {
+        self.conflict_detector.lock().await.mark_notified(data_type);
+    }
+
+    /// Mark all conflicts as notified.
+    ///
+    /// Call this after showing the user all conflict alerts.
+    pub async fn mark_all_conflicts_notified(&self) {
+        self.conflict_detector.lock().await.mark_all_notified();
+    }
+
+    /// Get a specific conflict by data type.
+    ///
+    /// Returns the conflict for the given data type if it exists and is active.
+    pub async fn get_conflict(&self, data_type: DataType) -> Option<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .get_conflict(data_type)
+            .cloned()
+    }
+
+    /// Get all active conflicts.
+    ///
+    /// Returns all conflicts that have multiple sensors providing the same data type.
+    pub async fn get_active_conflicts(&self) -> Vec<crate::sensors::conflict::SensorConflict> {
+        self.conflict_detector
+            .lock()
+            .await
+            .active_conflicts()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Check if a specific data type has a conflict.
+    pub async fn has_conflict(&self, data_type: DataType) -> bool {
+        self.conflict_detector.lock().await.has_conflict(data_type)
+    }
+
+    /// Auto-resolve conflicts using the configured strategy.
+    ///
+    /// Returns the data types that were auto-resolved.
+    pub async fn auto_resolve_conflicts(&mut self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.auto_resolve()
+    }
+
+    /// Apply saved conflict preferences to current sensors.
+    ///
+    /// This loads saved primary sensor preferences and applies them to
+    /// any matching sensors that are currently registered.
+    pub async fn apply_saved_conflict_preferences(&self) {
+        self.conflict_detector.lock().await.apply_saved_preferences();
+    }
+
+    /// Save conflict preferences to disk.
+    ///
+    /// This persists the current primary sensor selections so they
+    /// are remembered across app restarts.
+    pub async fn save_conflict_preferences(&self) -> Result<(), crate::sensors::conflict::ConflictError> {
+        self.conflict_detector.lock().await.save_preferences()
+    }
+
     // ========================================================================
     // Power Meter Wake-Up Detection Methods
     // ========================================================================

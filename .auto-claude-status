@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "009-enhanced-bluetooth-ant-reliability",
+  "state": "building",
+  "subtasks": {
+    "completed": 15,
+    "total": 26,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Sensor Conflict Resolution",
+    "id": null,
+    "total": 5
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 108,
+    "started_at": "2026-01-03T10:31:46.574677"
+  },
+  "last_update": "2026-01-03T11:02:37.661492"
+}

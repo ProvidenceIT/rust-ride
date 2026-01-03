@@ -203,11 +203,45 @@
 - Quality indicator in ride HUD
 
 ### Phase 4: Sensor Conflict Resolution (5 subtasks)
-- DualProtocolDetector implementation
-- Protocol preference storage
-- Sensor conflict detector
+- DualProtocolDetector implementation (COMPLETED - 4.1)
+- Protocol preference storage (COMPLETED - 4.2)
+- Sensor conflict detector (COMPLETED - 4.3)
 - Conflict resolution dialog UI
 - Automatic primary sensor failover
+
+### 4.3 - Implement sensor conflict detector (COMPLETED)
+- Core conflict detection implemented in `src/sensors/conflict.rs`:
+  - `DataType` enum: Power, HeartRate, Cadence, Speed, TrainerControl
+  - `DataSource` struct: represents a sensor providing a specific data type
+  - `SensorConflict` struct: manages conflicts with detection, resolution, and user notification
+  - `ConflictDetector` struct: main detector with registration, alerting, and preference persistence
+  - `ConflictPreferenceManager`: persists user's primary sensor selections to JSON
+  - `FailoverResult`: captures failover details for user notification
+  - `ResolutionStrategy` enum: UserSelection, AutoPriority, FirstConnected, MostRecent
+- Updated `src/sensors/manager.rs` with new SensorManager methods:
+  - `get_conflicts_needing_attention()` - get conflicts that haven't been notified yet
+  - `mark_conflict_notified()` - mark a specific conflict as notified
+  - `mark_all_conflicts_notified()` - mark all conflicts as notified
+  - `get_conflict()` - get a specific conflict by data type
+  - `get_active_conflicts()` - get all active conflicts
+  - `has_conflict()` - check if a specific data type has a conflict
+  - `auto_resolve_conflicts()` - auto-resolve using configured strategy
+  - `apply_saved_conflict_preferences()` - load and apply saved preferences
+  - `save_conflict_preferences()` - persist preferences to disk
+- Conflict detection integrated with SensorManager:
+  - Sensors registered on connect
+  - Connection status updated on connect/disconnect
+  - Failover triggered automatically on primary disconnect
+  - FailoverActivated event sent to notify users
+- Added comprehensive unit tests in `tests/unit/sensor_conflict_test.rs`:
+  - DataType and DataSource tests
+  - SensorConflict lifecycle tests
+  - ConflictDetector registration and detection tests
+  - Auto-resolution tests by strategy
+  - Three-way conflict tests
+  - Failover tests (with/without secondary)
+  - User alerting workflow tests
+  - Preference persistence tests
 
 ### Phase 5: Power Meter Pairing Improvements (4 subtasks)
 - Power meter wake-up detection
