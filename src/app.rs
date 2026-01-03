@@ -21,6 +21,7 @@ use rustride::hid::{
 };
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttClient, MqttConfig,
+    load_fan_profiles,
 };
 use rustride::integrations::streaming::{
     DefaultPinAuthenticator, DefaultStreamingServer, PinAuthenticator, StreamingConfig,
@@ -253,13 +254,10 @@ impl RustRideApp {
         let gradient_controller = GradientController::new();
 
         // T071: Initialize MQTT client and fan controller
-        let mqtt_config = MqttConfig::default();
+        // Load MQTT config from AppConfig for persistence (T012/5.3)
+        let mqtt_config = config.mqtt.clone();
         let mqtt_client = Arc::new(DefaultMqttClient::new());
         let fan_controller = Arc::new(DefaultFanController::new(mqtt_client.clone()));
-
-        // Load default fan profile
-        let default_fan_profile = FanProfile::default();
-        fan_controller.configure(vec![default_fan_profile]);
 
         // T080: Initialize streaming server for external displays
         let streaming_config = StreamingConfig::default();
@@ -311,6 +309,30 @@ impl RustRideApp {
                 }
             }
         }
+
+        // T012/5.3: Load fan profiles from database if available
+        // Fall back to default profile if database is not available or no profiles exist
+        let fan_profiles: Vec<FanProfile> = if let Some(ref db) = database {
+            let store = HardwareStore::new(db.connection());
+            match load_fan_profiles(&store, &user_id) {
+                Ok(profiles) if !profiles.is_empty() => {
+                    tracing::info!("Loaded {} fan profile(s) from database", profiles.len());
+                    profiles
+                }
+                Ok(_) => {
+                    tracing::debug!("No fan profiles in database, using default");
+                    vec![FanProfile::default()]
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load fan profiles from database: {}. Using default.", e);
+                    vec![FanProfile::default()]
+                }
+            }
+        } else {
+            tracing::debug!("Database not available, using default fan profile");
+            vec![FanProfile::default()]
+        };
+        fan_controller.configure(fan_profiles);
 
         // T091: Create executor event channel for UI navigation actions
         // The executor_event_rx will be set when the action executor is created
