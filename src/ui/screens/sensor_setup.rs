@@ -2,16 +2,20 @@
 //!
 //! T045: Implement sensor discovery list widget
 //! T046: Implement sensor pairing confirmation dialog
+//! T009-3.4: Add connection quality indicators to sensor setup screen
+
+use std::collections::HashMap;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::sensors::ant::dongle::{AntDongle, DongleStatus};
+use crate::sensors::quality::{QualityLevel, QualityStats};
 use crate::sensors::types::{ConnectionState, DiscoveredSensor, Protocol, SensorState, SensorType};
+use crate::ui::widgets::connection_quality::ConnectionQualityIndicator;
 
 use super::Screen;
 
 /// Sensor setup screen state.
-#[derive(Default)]
 pub struct SensorSetupScreen {
     /// Whether discovery is active
     pub is_scanning: bool,
@@ -32,6 +36,25 @@ pub struct SensorSetupScreen {
     /// Sensor for protocol choice (device_id, ble_sensor, ant_sensor)
     pub protocol_choice_sensor:
         Option<(String, Option<DiscoveredSensor>, Option<DiscoveredSensor>)>,
+    /// Connection quality stats per device (device_id -> QualityStats)
+    pub quality_stats: HashMap<String, QualityStats>,
+}
+
+impl Default for SensorSetupScreen {
+    fn default() -> Self {
+        Self {
+            is_scanning: false,
+            discovered_sensors: Vec::new(),
+            connected_sensors: Vec::new(),
+            selected_sensor: None,
+            show_pairing_dialog: false,
+            ant_enabled: false,
+            ant_dongles: Vec::new(),
+            show_protocol_dialog: false,
+            protocol_choice_sensor: None,
+            quality_stats: HashMap::new(),
+        }
+    }
 }
 
 impl SensorSetupScreen {
@@ -104,6 +127,46 @@ impl SensorSetupScreen {
     /// Set ANT+ enabled state.
     pub fn set_ant_enabled(&mut self, enabled: bool) {
         self.ant_enabled = enabled;
+    }
+
+    /// Update connection quality stats for a sensor.
+    pub fn update_quality_stats(&mut self, device_id: &str, stats: QualityStats) {
+        self.quality_stats.insert(device_id.to_string(), stats);
+    }
+
+    /// Update quality stats for multiple sensors.
+    pub fn update_all_quality_stats(&mut self, stats: Vec<QualityStats>) {
+        for stat in stats {
+            self.quality_stats.insert(stat.device_id.clone(), stat);
+        }
+    }
+
+    /// Clear quality stats for a sensor.
+    pub fn clear_quality_stats(&mut self, device_id: &str) {
+        self.quality_stats.remove(device_id);
+    }
+
+    /// Get quality stats for a sensor.
+    pub fn get_quality_stats(&self, device_id: &str) -> Option<&QualityStats> {
+        self.quality_stats.get(device_id)
+    }
+
+    /// Get sensors with poor quality connections.
+    pub fn get_poor_quality_sensors(&self) -> Vec<&SensorState> {
+        self.connected_sensors
+            .iter()
+            .filter(|s| {
+                self.quality_stats
+                    .get(&s.device_id)
+                    .map(|q| q.level == QualityLevel::Poor)
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// Check if any sensor has poor connection quality.
+    pub fn has_poor_quality_sensors(&self) -> bool {
+        self.quality_stats.values().any(|q| q.level == QualityLevel::Poor)
     }
 
     /// Check if a sensor with the same name exists with a different protocol.
@@ -275,6 +338,12 @@ impl SensorSetupScreen {
                     if self.connected_sensors.is_empty() {
                         ui.label(RichText::new("No sensors connected").weak());
                     } else {
+                        // Show warning banner if any sensor has poor connection quality
+                        if self.has_poor_quality_sensors() {
+                            self.render_poor_quality_warning(ui);
+                            ui.add_space(8.0);
+                        }
+
                         for sensor in &self.connected_sensors {
                             self.render_connected_sensor(ui, sensor);
                         }
@@ -347,8 +416,20 @@ impl SensorSetupScreen {
 
     /// Render a connected sensor item.
     fn render_connected_sensor(&self, ui: &mut Ui, sensor: &SensorState) {
+        let quality_stats = self.quality_stats.get(&sensor.device_id);
+        let is_poor_quality = quality_stats
+            .map(|q| q.level == QualityLevel::Poor)
+            .unwrap_or(false);
+
+        // Use different background color for poor quality connections
+        let bg_color = if is_poor_quality {
+            Color32::from_rgba_unmultiplied(234, 67, 53, 25) // Red tint for poor connections
+        } else {
+            ui.visuals().faint_bg_color
+        };
+
         let frame = egui::Frame::new()
-            .fill(ui.visuals().faint_bg_color)
+            .fill(bg_color)
             .inner_margin(12.0)
             .corner_radius(4.0);
 
@@ -377,6 +458,42 @@ impl SensorSetupScreen {
                             ui.label(battery_indicator(battery));
                         }
                     });
+
+                    // Show quality indicator for connected sensors
+                    if sensor.connection_state == ConnectionState::Connected {
+                        ui.horizontal(|ui| {
+                            if let Some(stats) = quality_stats {
+                                ConnectionQualityIndicator::new()
+                                    .with_stats(stats.clone())
+                                    .compact()
+                                    .show(ui);
+
+                                ui.add_space(4.0);
+
+                                // Show quality level text
+                                let quality_color = match stats.level {
+                                    QualityLevel::Excellent => Color32::from_rgb(52, 168, 83),
+                                    QualityLevel::Good => Color32::from_rgb(102, 187, 106),
+                                    QualityLevel::Fair => Color32::from_rgb(251, 188, 4),
+                                    QualityLevel::Poor => Color32::from_rgb(234, 67, 53),
+                                };
+                                ui.label(
+                                    RichText::new(format!("{}", stats.level))
+                                        .small()
+                                        .color(quality_color),
+                                );
+
+                                // Show warning icon for poor connections
+                                if stats.level == QualityLevel::Poor {
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new("⚠").color(Color32::from_rgb(234, 67, 53)));
+                                }
+                            } else if let Some(rssi) = sensor.signal_strength {
+                                // Fallback to RSSI-based signal indicator if no quality stats available
+                                ui.label(signal_indicator(rssi));
+                            }
+                        });
+                    }
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -388,6 +505,48 @@ impl SensorSetupScreen {
         });
 
         ui.add_space(4.0);
+    }
+
+    /// Render a warning banner for poor quality connections.
+    fn render_poor_quality_warning(&self, ui: &mut Ui) {
+        let poor_sensors = self.get_poor_quality_sensors();
+        if poor_sensors.is_empty() {
+            return;
+        }
+
+        let warning_bg = Color32::from_rgba_unmultiplied(234, 67, 53, 30);
+        let warning_border = Color32::from_rgb(234, 67, 53);
+
+        egui::Frame::new()
+            .fill(warning_bg)
+            .stroke(egui::Stroke::new(1.0, warning_border))
+            .inner_margin(10.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("⚠").size(18.0).color(warning_border));
+                    ui.add_space(8.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("Poor Connection Quality Detected")
+                                .strong()
+                                .color(warning_border),
+                        );
+                        let sensor_names: Vec<_> = poor_sensors.iter().map(|s| s.name.as_str()).collect();
+                        let names_text = if sensor_names.len() == 1 {
+                            format!("{} has a weak signal", sensor_names[0])
+                        } else {
+                            format!("{} have weak signals", sensor_names.join(", "))
+                        };
+                        ui.label(RichText::new(names_text).weak());
+                        ui.label(
+                            RichText::new("Try moving closer to the sensor or reducing interference")
+                                .small()
+                                .weak(),
+                        );
+                    });
+                });
+            });
     }
 
     /// Render the pairing confirmation dialog.
