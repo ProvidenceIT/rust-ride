@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use crate::audio::{AlertCategory, AlertType, AudioConfig, VoiceInfo};
 use crate::ui::settings::{AudioSettingsAction, AudioSettingsPanel, AudioSettingsPanelConfig, AudioTestType};
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
-use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
+use crate::integrations::mqtt::{FanProfile, MqttConfig, MqttCredentialStore, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
 use crate::integrations::weather::{WeatherConfig, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
@@ -84,6 +84,10 @@ pub struct SettingsScreen {
     show_fan_profiles: bool,
     /// MQTT broker port input buffer
     mqtt_port_input: String,
+    /// MQTT password input buffer (stored in OS keyring, not in config)
+    mqtt_password_input: String,
+    /// Credential store for securely saving MQTT passwords to OS keyring
+    mqtt_credential_store: MqttCredentialStore,
     /// Editing fan profile (index, if editing)
     editing_fan_profile: Option<usize>,
     /// T100: Weather configuration
@@ -485,6 +489,8 @@ impl SettingsScreen {
             show_mqtt: false,
             show_fan_profiles: false,
             mqtt_port_input: "1883".to_string(),
+            mqtt_password_input: String::new(),
+            mqtt_credential_store: MqttCredentialStore::new(),
             editing_fan_profile: None,
             weather_config: WeatherConfig::default(),
             show_weather: false,
@@ -523,6 +529,44 @@ impl SettingsScreen {
     /// Get current weather configuration.
     pub fn get_weather_config(&self) -> &WeatherConfig {
         &self.weather_config
+    }
+
+    /// Set MQTT configuration.
+    /// T072: MQTT settings management.
+    /// Also retrieves the password from OS keyring if username is set.
+    pub fn set_mqtt_config(&mut self, config: MqttConfig) {
+        self.mqtt_port_input = config.broker_port.to_string();
+
+        // Try to load password from keyring if username is set
+        self.mqtt_password_input = if let Some(username) = &config.username {
+            if !username.is_empty() {
+                match self.mqtt_credential_store.get_password(username, &config.broker_host) {
+                    Ok(Some(password)) => password,
+                    Ok(None) => String::new(),
+                    Err(e) => {
+                        tracing::warn!("Failed to retrieve MQTT password from keyring: {}", e);
+                        String::new()
+                    }
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        self.mqtt_config = config;
+    }
+
+    /// Get current MQTT configuration.
+    pub fn get_mqtt_config(&self) -> &MqttConfig {
+        &self.mqtt_config
+    }
+
+    /// Get a reference to the MQTT credential store.
+    /// Use this to store or retrieve passwords from the OS keyring.
+    pub fn mqtt_credential_store(&self) -> &MqttCredentialStore {
+        &self.mqtt_credential_store
     }
 
     /// Set incline configuration.
@@ -2060,14 +2104,16 @@ impl SettingsScreen {
                             ui.label("Username:");
                             let mut username_str =
                                 self.mqtt_config.username.clone().unwrap_or_default();
-                            if ui
+                            let username_response = ui
                                 .add(
                                     egui::TextEdit::singleline(&mut username_str)
                                         .desired_width(150.0),
                                 )
-                                .on_hover_text("Leave empty for anonymous connection")
-                                .changed()
-                            {
+                                .on_hover_text("Leave empty for anonymous connection");
+                            if username_response.changed() {
+                                // When username changes, clear the password input
+                                // User will need to re-enter password for new username
+                                self.mqtt_password_input.clear();
                                 self.mqtt_config.username = if username_str.is_empty() {
                                     None
                                 } else {
@@ -2076,6 +2122,52 @@ impl SettingsScreen {
                                 self.has_changes = true;
                             }
                             ui.end_row();
+
+                            // Password (only show if username is set)
+                            if self.mqtt_config.username.as_ref().is_some_and(|u| !u.is_empty()) {
+                                ui.label("Password:");
+                                let password_response = ui
+                                    .add(
+                                        egui::TextEdit::singleline(&mut self.mqtt_password_input)
+                                            .password(true)
+                                            .desired_width(150.0),
+                                    )
+                                    .on_hover_text("Password stored securely in OS keyring");
+                                if password_response.lost_focus() && password_response.changed() {
+                                    // Save password to keyring when user finishes editing
+                                    if let Some(username) = &self.mqtt_config.username {
+                                        if !self.mqtt_password_input.is_empty() {
+                                            match self.mqtt_credential_store.store_password(
+                                                username,
+                                                &self.mqtt_config.broker_host,
+                                                &self.mqtt_password_input,
+                                            ) {
+                                                Ok(()) => {
+                                                    tracing::info!(
+                                                        "Saved MQTT password for {}@{} to OS keyring",
+                                                        username,
+                                                        self.mqtt_config.broker_host
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!(
+                                                        "Failed to save MQTT password to keyring: {}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            // Empty password - delete from keyring
+                                            let _ = self.mqtt_credential_store.delete_password(
+                                                username,
+                                                &self.mqtt_config.broker_host,
+                                            );
+                                        }
+                                    }
+                                    self.has_changes = true;
+                                }
+                                ui.end_row();
+                            }
                         });
 
                     ui.add_space(8.0);
