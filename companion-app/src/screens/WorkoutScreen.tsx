@@ -3,121 +3,287 @@
  *
  * Screen for viewing active workout details and controlling the workout
  * (pause, resume, skip interval, stop).
+ *
+ * Features:
+ * - Display current workout name and status
+ * - Show current interval with progress bar
+ * - Display target power and elapsed time
+ * - Control buttons for pause/resume, skip interval, stop
+ * - Toast notifications on skip success/failure
  */
 
-import React from 'react';
-import { StyleSheet, Text, View, useColorScheme, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
+import { useTheme } from '@/theme';
+import { WorkoutControlBar, NoSessionState, ConnectionStatus } from '@/components';
+import { useWorkoutControls, useToast, useHaptics } from '@/hooks';
+import {
+  useSessionStore,
+  selectIsSessionActive,
+  selectIsPaused,
+  selectCurrentInterval,
+  selectWorkoutName,
+  selectTargetPower,
+  selectIsWorkout,
+  selectCanSkip,
+} from '@/stores/sessionStore';
+import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
+import { useNavigation } from '@react-navigation/native';
+import type { RootStackNavigationProp } from '@/navigation/types';
 
-const Colors = {
-  light: {
-    background: '#FFFFFF',
-    surface: '#F5F5F5',
-    primary: '#007AFF',
-    text: '#1C1C1E',
-    textSecondary: '#8E8E93',
-    border: '#E5E5EA',
-    destructive: '#FF3B30',
-  },
-  dark: {
-    background: '#000000',
-    surface: '#1C1C1E',
-    primary: '#0A84FF',
-    text: '#FFFFFF',
-    textSecondary: '#8E8E93',
-    border: '#38383A',
-    destructive: '#FF453A',
-  },
-};
+/**
+ * Format seconds to MM:SS or HH:MM:SS
+ */
+function formatTime(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
 
 type Props = MainTabScreenProps<'Workout'>;
 
 export function WorkoutScreen(_props: Props): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  const colors = isDarkMode ? Colors.dark : Colors.light;
+  const { colors, spacing, typography } = useTheme();
+  const navigation = useNavigation<RootStackNavigationProp>();
+
+  // Toast notifications
+  const { showSuccess, showError } = useToast();
+
+  // Haptic feedback
+  const { successHaptic, errorHaptic } = useHaptics();
+
+  // Session state
+  const isSessionActive = useSessionStore(selectIsSessionActive);
+  const isPaused = useSessionStore(selectIsPaused);
+  const currentInterval = useSessionStore(selectCurrentInterval);
+  const workoutName = useSessionStore(selectWorkoutName);
+  const targetPower = useSessionStore(selectTargetPower);
+  const elapsedSecs = useSessionStore(state => state.elapsedSecs);
+  const isWorkout = useSessionStore(selectIsWorkout);
+  const canSkip = useSessionStore(selectCanSkip);
+
+  // Connection state
+  const connectionStatus = useConnectionStore(selectConnectionStatus);
+  const currentServer = useConnectionStore(selectCurrentServer);
+  const isConnected = connectionStatus === 'connected' || connectionStatus === 'authenticated';
+
+  // Workout controls
+  const {
+    pause,
+    resume,
+    skip,
+    stop,
+    isPauseResumeLoading,
+    isSkipLoading,
+    isStopLoading,
+    skipState,
+  } = useWorkoutControls();
+
+  // Track previous interval to detect changes (for toast on skip)
+  const prevIntervalRef = useRef(currentInterval?.index);
+  const skipPendingRef = useRef(false);
+
+  // Show toast when interval changes after skip
+  useEffect(() => {
+    // If we triggered a skip and the interval changed
+    if (skipPendingRef.current && currentInterval) {
+      if (prevIntervalRef.current !== currentInterval.index) {
+        // Successfully skipped
+        skipPendingRef.current = false;
+        const intervalLabel = currentInterval.name
+          ? `Now: ${currentInterval.name}`
+          : `Interval ${currentInterval.index + 1} of ${currentInterval.total}`;
+        showSuccess(intervalLabel);
+        successHaptic();
+      }
+    }
+    prevIntervalRef.current = currentInterval?.index;
+  }, [currentInterval, showSuccess, successHaptic]);
+
+  // Handle skip error
+  useEffect(() => {
+    if (skipState.error) {
+      skipPendingRef.current = false;
+      showError(`Failed to skip: ${skipState.error}`);
+      errorHaptic();
+    }
+  }, [skipState.error, showError, errorHaptic]);
+
+  // Handle connect press
+  const handleConnectPress = useCallback(() => {
+    navigation.navigate('Connection');
+  }, [navigation]);
+
+  // Handle pause
+  const handlePause = useCallback(async () => {
+    await pause();
+  }, [pause]);
+
+  // Handle resume
+  const handleResume = useCallback(async () => {
+    await resume();
+  }, [resume]);
+
+  // Handle skip with toast
+  const handleSkip = useCallback(async () => {
+    skipPendingRef.current = true;
+    await skip();
+  }, [skip]);
+
+  // Handle stop
+  const handleStop = useCallback(async () => {
+    await stop();
+  }, [stop]);
+
+  // Calculate interval progress
+  const intervalProgress = currentInterval
+    ? ((currentInterval.index + 1) / currentInterval.total) * 100
+    : 0;
+
+  // Server name for status display
+  const serverName = currentServer
+    ? `${currentServer.name || currentServer.host}:${currentServer.port}`
+    : undefined;
 
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
-      edges={['top']}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Workout</Text>
+      edges={['top']}
+    >
+      {/* Header */}
+      <View style={[styles.header, { paddingHorizontal: spacing.md }]}>
+        <Text style={[styles.title, typography.textStyles.screenTitle, { color: colors.textPrimary }]}>
+          Workout
+        </Text>
+        <ConnectionStatus
+          status={connectionStatus}
+          variant="badge"
+          animated
+          serverName={serverName}
+        />
       </View>
 
-      <View style={styles.content}>
-        {/* Workout info card */}
-        <View style={[styles.workoutCard, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.workoutName, { color: colors.text }]}>No Active Workout</Text>
-          <Text style={[styles.workoutStatus, { color: colors.textSecondary }]}>
-            Start a workout from the desktop app
-          </Text>
-        </View>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { padding: spacing.md, gap: spacing.md }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Show content only when connected and has active session */}
+        {isConnected && isSessionActive ? (
+          <>
+            {/* Workout info card */}
+            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.workoutName, typography.textStyles.heading2, { color: colors.textPrimary }]}>
+                {workoutName || (isWorkout ? 'Structured Workout' : 'Free Ride')}
+              </Text>
+              <Text style={[styles.workoutStatus, typography.textStyles.bodySmall, { color: colors.textSecondary }]}>
+                {isPaused ? 'Paused' : 'In Progress'}
+              </Text>
+            </View>
 
-        {/* Interval progress */}
-        <View style={[styles.intervalSection, { backgroundColor: colors.surface }]}>
-          <View style={styles.intervalHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Current Interval</Text>
-            <Text style={[styles.intervalCount, { color: colors.textSecondary }]}>- / -</Text>
-          </View>
-          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-            <View style={[styles.progressFill, { width: '0%', backgroundColor: colors.primary }]} />
-          </View>
-          <View style={styles.intervalDetails}>
-            <Text style={[styles.intervalName, { color: colors.text }]}>---</Text>
-            <Text style={[styles.intervalTime, { color: colors.textSecondary }]}>--:--</Text>
-          </View>
-        </View>
+            {/* Interval progress - only for workouts */}
+            {isWorkout && currentInterval && (
+              <View style={[styles.card, { backgroundColor: colors.surface }]}>
+                <View style={styles.intervalHeader}>
+                  <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+                    Current Interval
+                  </Text>
+                  <Text style={[styles.intervalCount, typography.textStyles.body, { color: colors.textSecondary }]}>
+                    {currentInterval.index + 1} / {currentInterval.total}
+                  </Text>
+                </View>
+                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${intervalProgress}%`,
+                        backgroundColor: colors.accent,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.intervalDetails}>
+                  <Text style={[styles.intervalName, typography.textStyles.bodyLarge, { color: colors.textPrimary }]}>
+                    {currentInterval.name || `Interval ${currentInterval.index + 1}`}
+                  </Text>
+                  {currentInterval.remainingSecs != null && (
+                    <Text
+                      style={[
+                        styles.intervalTime,
+                        typography.textStyles.bodyLarge,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {formatTime(currentInterval.remainingSecs)}
+                    </Text>
+                  )}
+                </View>
+                {!canSkip && (
+                  <Text style={[styles.lastIntervalHint, typography.textStyles.caption, { color: colors.textMuted }]}>
+                    This is the last interval
+                  </Text>
+                )}
+              </View>
+            )}
 
-        {/* Target power */}
-        <View style={[styles.targetSection, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Target Power</Text>
-          <View style={styles.targetValue}>
-            <Text style={[styles.targetPower, { color: colors.primary }]}>---</Text>
-            <Text style={[styles.targetUnit, { color: colors.textSecondary }]}>watts</Text>
-          </View>
-        </View>
+            {/* Target power - only for workouts */}
+            {isWorkout && targetPower != null && (
+              <View style={[styles.card, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+                  Target Power
+                </Text>
+                <View style={styles.targetValue}>
+                  <Text style={[styles.targetPower, { color: colors.accent }]}>
+                    {targetPower}
+                  </Text>
+                  <Text style={[styles.targetUnit, typography.textStyles.body, { color: colors.textSecondary }]}>
+                    watts
+                  </Text>
+                </View>
+              </View>
+            )}
 
-        {/* Elapsed time */}
-        <View style={[styles.timeSection, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Elapsed Time</Text>
-          <Text style={[styles.elapsedTime, { color: colors.text }]}>00:00:00</Text>
-        </View>
-      </View>
+            {/* Elapsed time */}
+            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+                Elapsed Time
+              </Text>
+              <Text style={[styles.elapsedTime, { color: colors.textPrimary }]}>
+                {formatTime(elapsedSecs)}
+              </Text>
+            </View>
+          </>
+        ) : (
+          /* No Session State */
+          <NoSessionState
+            connectionStatus={connectionStatus}
+            serverName={serverName}
+            onConnectPress={handleConnectPress}
+          />
+        )}
+      </ScrollView>
 
-      {/* Control buttons */}
-      <View
-        style={[
-          styles.controls,
-          { backgroundColor: colors.surface, borderTopColor: colors.border },
-        ]}>
-        <TouchableOpacity
-          style={[styles.controlButton, { backgroundColor: colors.primary }]}
-          disabled={true}
-          activeOpacity={0.7}>
-          <Text style={styles.controlButtonText}>Pause</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.controlButton,
-            styles.controlButtonSecondary,
-            { borderColor: colors.border },
-          ]}
-          disabled={true}
-          activeOpacity={0.7}>
-          <Text style={[styles.controlButtonText, { color: colors.text }]}>Skip</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.controlButton,
-            styles.controlButtonDestructive,
-            { backgroundColor: colors.destructive },
-          ]}
-          disabled={true}
-          activeOpacity={0.7}>
-          <Text style={styles.controlButtonText}>Stop</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Control bar - always visible when connected */}
+      {isConnected && (
+        <WorkoutControlBar
+          onPause={handlePause}
+          onResume={handleResume}
+          onSkip={handleSkip}
+          onStop={handleStop}
+          isPauseLoading={isPauseResumeLoading}
+          isSkipLoading={isSkipLoading}
+          isStopLoading={isStopLoading}
+          testID="workout-control-bar"
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -127,34 +293,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 12,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    // Typography from theme
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
-    flex: 1,
-    padding: 16,
-    gap: 16,
+    flexGrow: 1,
+    // Allow space for the control bar at the bottom
+    paddingBottom: 120,
   },
-  workoutCard: {
+  card: {
     padding: 20,
     borderRadius: 12,
-    alignItems: 'center',
   },
   workoutName: {
-    fontSize: 20,
-    fontWeight: '600',
     marginBottom: 4,
+    textAlign: 'center',
   },
   workoutStatus: {
-    fontSize: 14,
-  },
-  intervalSection: {
-    padding: 16,
-    borderRadius: 12,
+    textAlign: 'center',
   },
   intervalHeader: {
     flexDirection: 'row',
@@ -163,13 +327,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   intervalCount: {
-    fontSize: 14,
+    // Typography from theme
   },
   progressBar: {
     height: 8,
@@ -187,16 +349,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   intervalName: {
-    fontSize: 18,
-    fontWeight: '500',
+    flex: 1,
   },
   intervalTime: {
-    fontSize: 18,
     fontVariant: ['tabular-nums'],
   },
-  targetSection: {
-    padding: 16,
-    borderRadius: 12,
+  lastIntervalHint: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   targetValue: {
     flexDirection: 'row',
@@ -210,41 +371,12 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   targetUnit: {
-    fontSize: 18,
-  },
-  timeSection: {
-    padding: 16,
-    borderRadius: 12,
+    // Typography from theme
   },
   elapsedTime: {
     fontSize: 36,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
     marginTop: 8,
-  },
-  controls: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    borderTopWidth: 1,
-  },
-  controlButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlButtonSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-  },
-  controlButtonDestructive: {
-    flex: 0.6,
-  },
-  controlButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
 });

@@ -82,3 +82,11 @@ export type { NoSessionStateProps } from './NoSessionState';
 // WorkoutControlBar - fixed bottom bar with play/pause, skip, and stop buttons
 export { WorkoutControlBar } from './WorkoutControlBar';
 export type { WorkoutControlBarProps } from './WorkoutControlBar';
+
+// Toast - notification toast for user feedback
+export { Toast } from './Toast';
+export type { ToastProps, ToastData, ToastVariant } from './Toast';
+
+// ToastContainer - renders all active toasts
+export { ToastContainer } from './ToastContainer';
+export type { ToastContainerProps } from './ToastContainer';

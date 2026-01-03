@@ -15,3 +15,6 @@ export type { HapticFeedbackType } from './useHaptics';
 
 export { useWorkoutControls } from './useWorkoutControls';
 export type { UseWorkoutControlsReturn } from './useWorkoutControls';
+
+export { useToast, ToastProvider } from './useToast';
+export type { ToastProviderProps, ToastContextValue, ShowToastOptions } from './useToast';
