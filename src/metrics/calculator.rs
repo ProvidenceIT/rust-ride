@@ -359,7 +359,7 @@ mod tests {
         }
     }
 
-    fn make_reading_with_cadence(cadence: u8) -> SensorReading {
+    fn make_cadence_reading(cadence: u8) -> SensorReading {
         SensorReading {
             sensor_id: Uuid::new_v4(),
             timestamp: Instant::now(),
@@ -462,19 +462,19 @@ mod tests {
         calc.set_cadence_zones(CadenceZones::default());
 
         // Test Zone 1 (Low: 0-75 RPM)
-        let reading = make_reading_with_cadence(60);
+        let reading = make_cadence_reading(60);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence, Some(60));
         assert_eq!(metrics.cadence_zone, Some(1));
 
         // Test Zone 3 (Natural: 86-95 RPM) - optimal cadence range
-        let reading = make_reading_with_cadence(90);
+        let reading = make_cadence_reading(90);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence, Some(90));
         assert_eq!(metrics.cadence_zone, Some(3));
 
         // Test Zone 5 (Sprint: 106+ RPM)
-        let reading = make_reading_with_cadence(110);
+        let reading = make_cadence_reading(110);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence, Some(110));
         assert_eq!(metrics.cadence_zone, Some(5));
@@ -485,7 +485,7 @@ mod tests {
         let mut calc = MetricsCalculator::new(200);
         // Don't set cadence zones
 
-        let reading = make_reading_with_cadence(90);
+        let reading = make_cadence_reading(90);
         let metrics = calc.process(&reading);
 
         assert_eq!(metrics.cadence, Some(90));
@@ -501,32 +501,32 @@ mod tests {
         // Zone boundaries: Z1 (0-75), Z2 (76-85), Z3 (86-95), Z4 (96-105), Z5 (106+)
 
         // Z1 upper boundary
-        let reading = make_reading_with_cadence(75);
+        let reading = make_cadence_reading(75);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(1));
 
         // Z2 lower boundary
-        let reading = make_reading_with_cadence(76);
+        let reading = make_cadence_reading(76);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(2));
 
         // Z2 upper boundary
-        let reading = make_reading_with_cadence(85);
+        let reading = make_cadence_reading(85);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(2));
 
         // Z3 lower boundary
-        let reading = make_reading_with_cadence(86);
+        let reading = make_cadence_reading(86);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(3));
 
         // Z4 lower boundary
-        let reading = make_reading_with_cadence(96);
+        let reading = make_cadence_reading(96);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(4));
 
         // Z5 lower boundary
-        let reading = make_reading_with_cadence(106);
+        let reading = make_cadence_reading(106);
         let metrics = calc.process(&reading);
         assert_eq!(metrics.cadence_zone, Some(5));
     }

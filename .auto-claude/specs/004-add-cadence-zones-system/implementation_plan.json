@@ -2,12 +2,12 @@
   "spec_id": "004-add-cadence-zones-system",
   "title": "Add Cadence Zones System",
   "description": "Implement CadenceZones struct following the existing PowerZones and HRZones patterns. Cadence zones track optimal cadence ranges for different training objectives (recovery, endurance, tempo climbing, high-cadence drills). Include zone tracking and change events similar to ZoneTracker's power/HR zone change detection.",
-  "status": "human_review",
-  "planStatus": "review",
+  "status": "in_progress",
+  "planStatus": "in_progress",
   "workflow_type": "development",
   "spec_file": "spec.md",
   "created_at": "2026-01-02T22:52:56.811Z",
-  "updated_at": "2026-01-03T06:12:19.934Z",
+  "updated_at": "2026-01-03T05:13:48.418Z",
   "phases": [
     {
       "id": "phase-1",
@@ -427,46 +427,22 @@
           "id": "7.3",
           "title": "Update build-progress.txt",
           "description": "Document completed work in build-progress.txt.",
-          "status": "completed",
+          "status": "pending",
           "files": [
             ".auto-claude/specs/004-add-cadence-zones-system/build-progress.txt"
           ],
           "acceptance_criteria": [
             "Progress file updated with implementation summary",
             "All completed subtasks documented"
-          ],
-          "notes": "Documented completed work in build-progress.txt. Updated with comprehensive implementation summary including all 7 phases (25/25 subtasks), files modified, test summary (21 tests), commit history, architecture decisions, and next steps. Committed as 5f7f350.",
-          "updated_at": "2026-01-03T06:06:54.610104+00:00"
+          ]
         }
       ]
     }
   ],
   "qa_signoff": {
-    "status": "approved",
-    "qa_session": 0,
-    "issues_found": [
-      {
-        "description": "None"
-      }
-    ],
-    "tests_passed": {},
-    "timestamp": "2026-01-03T06:11:15.051453+00:00",
-    "ready_for_qa_revalidation": false
+    "status": "pending",
+    "tests_passed": "",
+    "issues": ""
   },
-  "last_updated": "2026-01-03T06:11:15.051453+00:00",
-  "qa_iteration_history": [
-    {
-      "iteration": 1,
-      "status": "approved",
-      "timestamp": "2026-01-03T06:12:19.873901+00:00",
-      "issues": [],
-      "duration_seconds": 298.04
-    }
-  ],
-  "qa_stats": {
-    "total_iterations": 1,
-    "last_iteration": 1,
-    "last_status": "approved",
-    "issues_by_type": {}
-  }
+  "last_updated": "2026-01-03T06:04:46.911558+00:00"
 }
