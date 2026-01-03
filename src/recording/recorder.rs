@@ -48,6 +48,21 @@ pub struct RecoverableRide {
     pub samples: Vec<RideSample>,
 }
 
+/// A lap marker during a ride.
+#[derive(Debug, Clone)]
+pub struct LapMarker {
+    /// Lap number (1-indexed)
+    pub lap_number: u32,
+    /// Elapsed seconds when lap was marked
+    pub elapsed_seconds: u32,
+    /// Distance at lap marker in meters
+    pub distance_meters: f64,
+    /// Average power for this lap (if available)
+    pub avg_power: Option<u16>,
+    /// Average heart rate for this lap (if available)
+    pub avg_hr: Option<u8>,
+}
+
 /// Records ride data from sensors.
 pub struct RideRecorder {
     /// Configuration
@@ -62,6 +77,8 @@ pub struct RideRecorder {
     motion_samples: Vec<MotionSample>,
     /// T115: Recorded SmO2 samples (muscle oxygen data)
     smo2_samples: Vec<SmO2Sample>,
+    /// Lap markers during the ride
+    lap_markers: Vec<LapMarker>,
     /// Live summary statistics
     live_summary: LiveRideSummary,
     /// Database for persistence (optional)
@@ -105,6 +122,7 @@ impl RideRecorder {
             samples: Vec::new(),
             motion_samples: Vec::new(),
             smo2_samples: Vec::new(),
+            lap_markers: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: None,
             autosave_handle: None,
@@ -128,6 +146,7 @@ impl RideRecorder {
             samples: Vec::new(),
             motion_samples: Vec::new(),
             smo2_samples: Vec::new(),
+            lap_markers: Vec::new(),
             live_summary: LiveRideSummary::default(),
             database: Some(database),
             autosave_handle: None,
@@ -175,6 +194,7 @@ impl RideRecorder {
         self.samples.clear();
         self.motion_samples.clear();
         self.smo2_samples.clear();
+        self.lap_markers.clear();
         self.live_summary = LiveRideSummary::default();
         self.status = RecordingStatus::Recording;
 
@@ -283,6 +303,102 @@ impl RideRecorder {
             .collect()
     }
 
+    /// Add a lap marker at the current position in the ride.
+    ///
+    /// This creates a lap marker that captures the current elapsed time
+    /// and distance. Lap data is useful for FIT file export and analysis.
+    pub fn add_lap(&mut self) -> Result<LapMarker, RecorderError> {
+        if self.status != RecordingStatus::Recording && self.status != RecordingStatus::Paused {
+            return Err(RecorderError::NotRecording);
+        }
+
+        let lap_number = self.lap_markers.len() as u32 + 1;
+        let elapsed_seconds = self.live_summary.elapsed_seconds;
+        let distance_meters = self.live_summary.distance_meters;
+
+        // Calculate average power and HR since last lap marker
+        let last_lap_time = self
+            .lap_markers
+            .last()
+            .map(|lm| lm.elapsed_seconds)
+            .unwrap_or(0);
+
+        let lap_samples: Vec<&RideSample> = self
+            .samples
+            .iter()
+            .filter(|s| s.elapsed_seconds > last_lap_time)
+            .collect();
+
+        let avg_power = if !lap_samples.is_empty() {
+            let power_sum: u32 = lap_samples
+                .iter()
+                .filter_map(|s| s.power_watts.map(|p| p as u32))
+                .sum();
+            let power_count = lap_samples
+                .iter()
+                .filter(|s| s.power_watts.is_some())
+                .count();
+            if power_count > 0 {
+                Some((power_sum / power_count as u32) as u16)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let avg_hr = if !lap_samples.is_empty() {
+            let hr_sum: u32 = lap_samples
+                .iter()
+                .filter_map(|s| s.heart_rate_bpm.map(|h| h as u32))
+                .sum();
+            let hr_count = lap_samples
+                .iter()
+                .filter(|s| s.heart_rate_bpm.is_some())
+                .count();
+            if hr_count > 0 {
+                Some((hr_sum / hr_count as u32) as u8)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let marker = LapMarker {
+            lap_number,
+            elapsed_seconds,
+            distance_meters,
+            avg_power,
+            avg_hr,
+        };
+
+        self.lap_markers.push(marker.clone());
+        tracing::info!(
+            "Lap {} marked at {}s, {}m",
+            lap_number,
+            elapsed_seconds,
+            distance_meters
+        );
+
+        Ok(marker)
+    }
+
+    /// Get all lap markers for the current ride.
+    pub fn get_laps(&self) -> &[LapMarker] {
+        &self.lap_markers
+    }
+
+    /// Check if there are any lap markers.
+    pub fn has_laps(&self) -> bool {
+        !self.lap_markers.is_empty()
+    }
+
+    /// Get the number of laps marked.
+    pub fn lap_count(&self) -> usize {
+        self.lap_markers.len()
+    }
+
     /// Pause recording.
     pub fn pause(&mut self) -> Result<(), RecorderError> {
         if self.status != RecordingStatus::Recording {
@@ -353,6 +469,9 @@ impl RideRecorder {
     pub fn discard(&mut self) {
         self.current_ride = None;
         self.samples.clear();
+        self.motion_samples.clear();
+        self.smo2_samples.clear();
+        self.lap_markers.clear();
         self.live_summary = LiveRideSummary::default();
         self.status = RecordingStatus::Idle;
         tracing::info!("Discarded recording");

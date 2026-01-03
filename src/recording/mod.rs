@@ -12,7 +12,7 @@ pub use exporter_fit::{
     export_fit_with_workout, extract_workout_segment_durations, generate_fit_filename, LapData,
 };
 pub use exporter_tcx::{export_tcx, export_tcx_to_file, generate_tcx_filename};
-pub use recorder::{RecoverableRide, RideRecorder, SmO2Sample, StorageStatus};
+pub use recorder::{LapMarker, RecoverableRide, RideRecorder, SmO2Sample, StorageStatus};
 pub use types::{
     ExportConfig, ExportError, ExportFormat, LiveRideSummary, RecorderConfig, RecorderError,
     RecordingStatus, Ride, RideSample,

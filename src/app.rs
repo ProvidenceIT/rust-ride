@@ -15,7 +15,10 @@ use rustride::achievements::{
     RideMetrics,
 };
 use rustride::audio::{AudioEngine, DefaultAudioEngine};
-use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
+use rustride::hid::{
+    load_hid_config_from_db, save_hid_config_to_db, ButtonInputHandler, ButtonMapping,
+    DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
+};
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
 };
@@ -31,9 +34,10 @@ use rustride::sensors::{
     CadenceFusion, DefaultInclineController, FusionMode, InclineConfig, InclineController,
     SensorFusion, SensorFusionConfig, SensorManager,
 };
-use rustride::storage::config::{AppConfig, UserProfile};
+use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
+use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
+    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, RideView, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
@@ -121,6 +125,8 @@ pub struct RustRideApp {
     /// T091: Button input handler for mapping (reserved for future use)
     #[allow(dead_code)]
     button_input_handler: Arc<DefaultButtonInputHandler>,
+    /// T091: Executor event receiver for UI navigation actions
+    executor_event_rx: Option<tokio::sync::broadcast::Receiver<ExecutorEvent>>,
     /// Sensor event receiver
     sensor_event_rx: Option<Receiver<SensorEvent>>,
     /// Last UI update time
@@ -153,6 +159,8 @@ pub struct RustRideApp {
     cumulative_stats: CumulativeStats,
     /// T043: User ID for achievement tracking
     user_id: Uuid,
+    /// T091: Database connection for persistent storage
+    database: Option<Database>,
 }
 
 impl RustRideApp {
@@ -257,10 +265,56 @@ impl RustRideApp {
         ));
         let streaming_server = Arc::new(DefaultStreamingServer::new(pin_auth));
 
+        // T091: Initialize database for HID config persistence
+        let db_path = get_data_dir().join("rustride.db");
+        let database = match Database::open(&db_path) {
+            Ok(db) => {
+                tracing::info!("Opened database at {:?}", db_path);
+                Some(db)
+            }
+            Err(e) => {
+                tracing::error!("Failed to open database: {}. HID config will not persist.", e);
+                None
+            }
+        };
+
         // T091: Initialize HID device manager and button input handler
-        let hid_config = HidConfig::default();
-        let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config));
+        // Load HID config from database if available
+        let hid_config = if let Some(ref db) = database {
+            let store = HardwareStore::new(db.connection());
+            load_hid_config_from_db(&store, &user_id)
+        } else {
+            HidConfig::default()
+        };
+
+        let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config.clone()));
         let button_input_handler = Arc::new(DefaultButtonInputHandler::new());
+
+        // T091: Register loaded button mappings with the handler
+        for device_config in &hid_config.devices {
+            if device_config.enabled {
+                let mappings: Vec<ButtonMapping> = device_config
+                    .mappings
+                    .iter()
+                    .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
+                    .collect();
+                if !mappings.is_empty() {
+                    button_input_handler.register_mappings(&device_config.device_id, mappings);
+                    tracing::info!(
+                        "Loaded {} button mappings for device {}",
+                        device_config.mappings.len(),
+                        device_config.name
+                    );
+                }
+            }
+        }
+
+        // T091: Create executor event channel for UI navigation actions
+        // The executor_event_rx will be set when the action executor is created
+        // For now, create a placeholder channel that can receive navigation events
+        let (executor_event_tx, executor_event_rx) =
+            tokio::sync::broadcast::channel::<ExecutorEvent>(100);
+        drop(executor_event_tx); // Drop sender for now - will be replaced with actual executor integration
 
         // T135: Initialize cadence sensor fusion
         let fusion_config = SensorFusionConfig::default();
@@ -283,9 +337,10 @@ impl RustRideApp {
             Screen::Home
         };
 
-        // Initialize settings screen with profile
+        // Initialize settings screen with profile and HID config
         let mut settings_screen = SettingsScreen::new(profile.clone());
         settings_screen.set_incline_config(incline_config);
+        settings_screen.set_hid_config(hid_config);
 
         Self {
             current_screen: start_screen,
@@ -313,6 +368,7 @@ impl RustRideApp {
             streaming_config,
             hid_device_manager,
             button_input_handler,
+            executor_event_rx: Some(executor_event_rx),
             sensor_event_rx,
             last_update: Instant::now(),
             sensor_status: "No sensors connected".to_string(),
@@ -330,6 +386,7 @@ impl RustRideApp {
             achievement_checker: AllCheckers::new(),
             cumulative_stats: CumulativeStats::default(),
             user_id,
+            database,
         }
     }
 
@@ -643,6 +700,82 @@ impl RustRideApp {
         tracing::debug!("Cadence fusion state reset");
     }
 
+    /// T091: Poll for learned button from HID input handler.
+    ///
+    /// Called each frame to check if a button was learned and update the settings screen.
+    fn poll_learned_button(&mut self) {
+        // Only poll when in learning mode and on the Settings screen
+        if self.current_screen != Screen::Settings {
+            return;
+        }
+
+        // Check if the button input handler has a learned button
+        if self.button_input_handler.is_learning() {
+            if let Some(button_code) = self.button_input_handler.get_learned_button() {
+                tracing::info!("Learned button code: {}", button_code);
+                // Pass the learned button code to the settings screen
+                self.settings_screen.set_learned_button(button_code);
+                // Stop learning mode in the handler (button was captured)
+                self.button_input_handler.stop_learning_mode();
+            }
+        }
+    }
+
+    /// T091: Process pending executor events for UI navigation.
+    ///
+    /// Called each frame to handle navigation and fullscreen events from HID button actions.
+    fn process_executor_events(&mut self) {
+        let Some(rx) = &mut self.executor_event_rx else {
+            return;
+        };
+
+        // Process all pending events
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutorEvent::NavigationRequest(target) => {
+                    // Only handle navigation when on the Ride screen
+                    if self.current_screen == Screen::Ride {
+                        match target {
+                            NavigationTarget::Metrics => {
+                                tracing::info!("HID action: switching to metrics view");
+                                self.ride_screen.set_view(RideView::Metrics);
+                            }
+                            NavigationTarget::Map => {
+                                tracing::info!("HID action: switching to map view");
+                                self.ride_screen.set_view(RideView::Map);
+                            }
+                            NavigationTarget::Workout => {
+                                tracing::info!("HID action: switching to workout view");
+                                self.ride_screen.show_workout_view();
+                            }
+                        }
+                    }
+                }
+                ExecutorEvent::FullscreenToggle => {
+                    // Handle fullscreen toggle when on the Ride screen
+                    if self.current_screen == Screen::Ride {
+                        tracing::info!("HID action: toggling fullscreen mode");
+                        self.ride_screen.toggle_fullscreen();
+                    }
+                }
+                ExecutorEvent::ActionExecuted(result) => {
+                    // Log action results for debugging
+                    tracing::debug!(
+                        "Action executed: {:?}, success: {}",
+                        result.action,
+                        result.success
+                    );
+                }
+                ExecutorEvent::LapMarked(lap) => {
+                    tracing::info!("Lap {} marked at {}s", lap.lap_number, lap.elapsed_seconds);
+                }
+                ExecutorEvent::CustomAction { command } => {
+                    tracing::info!("Custom action: {}", command);
+                }
+            }
+        }
+    }
+
     /// T043: Check achievements after ride completion.
     ///
     /// This analyzes the completed ride metrics and cumulative stats
@@ -866,11 +999,20 @@ impl eframe::App for RustRideApp {
         // Process sensor events each frame
         self.process_sensor_events();
 
+        // T091: Process HID executor events for UI navigation
+        self.process_executor_events();
+
+        // T091: Poll for learned buttons from HID input handler
+        self.poll_learned_button();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates)
-        if self.current_screen == Screen::Ride || self.current_screen == Screen::SensorSetup {
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode)
+        if self.current_screen == Screen::Ride
+            || self.current_screen == Screen::SensorSetup
+            || (self.current_screen == Screen::Settings && self.button_input_handler.is_learning())
+        {
             ctx.request_repaint();
         }
 
@@ -1040,6 +1182,33 @@ impl eframe::App for RustRideApp {
                                 0.5, // update interval
                             );
 
+                            // T091: Save HID config to database
+                            let hid_config = self.settings_screen.get_hid_config();
+                            if let Some(ref db) = self.database {
+                                let store = HardwareStore::new(db.connection());
+                                if let Err(e) = save_hid_config_to_db(&store, &self.user_id, &hid_config) {
+                                    tracing::error!("Failed to save HID config to database: {}", e);
+                                } else {
+                                    tracing::info!("HID config saved to database");
+                                }
+
+                                // Update button mappings in the handler
+                                for device_config in &hid_config.devices {
+                                    // Clear existing mappings for this device
+                                    self.button_input_handler.clear_mappings(&device_config.device_id);
+
+                                    // Register new mappings if device is enabled
+                                    if device_config.enabled && !device_config.mappings.is_empty() {
+                                        let mappings: Vec<ButtonMapping> = device_config
+                                            .mappings
+                                            .iter()
+                                            .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
+                                            .collect();
+                                        self.button_input_handler.register_mappings(&device_config.device_id, mappings);
+                                    }
+                                }
+                            }
+
                             tracing::info!(
                                 "Settings saved. Incline mode: {}",
                                 incline_config.enabled
@@ -1069,6 +1238,23 @@ impl eframe::App for RustRideApp {
                             if let Err(e) = tts.speak(PREVIEW_PHRASE) {
                                 tracing::warn!("Failed to preview voice: {}", e);
                             }
+                        }
+                        SettingsAction::ScanHidDevices => {
+                            // T091: Scan for HID devices and update the settings screen
+                            tracing::info!("Scanning for HID devices...");
+                            let devices = self.hid_device_manager.scan_devices();
+                            tracing::info!("Found {} HID device(s)", devices.len());
+                            self.settings_screen.set_hid_devices(devices);
+                        }
+                        SettingsAction::StartLearningMode(device_id) => {
+                            // T091: Start button learning mode for the specified device
+                            tracing::info!("Starting button learning mode for device {:?}", device_id);
+                            self.button_input_handler.start_learning_mode(&device_id);
+                        }
+                        SettingsAction::StopLearningMode => {
+                            // T091: Stop button learning mode
+                            tracing::info!("Stopping button learning mode");
+                            self.button_input_handler.stop_learning_mode();
                         }
                         SettingsAction::None => {}
                     }

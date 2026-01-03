@@ -44,10 +44,26 @@ pub enum RideMode {
     World3D,
 }
 
+/// Ride view mode (what content to display on the ride screen).
+///
+/// T091: These views can be switched via HID button actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RideView {
+    /// Show primary metrics display (power, HR, cadence, etc.)
+    #[default]
+    Metrics,
+    /// Show map/route view (for World3D or imported routes)
+    Map,
+    /// Show workout progress and interval details
+    Workout,
+}
+
 /// Ride screen state.
 pub struct RideScreen {
     /// Current ride mode
     pub mode: RideMode,
+    /// Current view mode (T091: switchable via HID buttons)
+    pub current_view: RideView,
     /// Recording status
     pub recording_status: RecordingStatus,
     /// Is ride paused
@@ -122,6 +138,7 @@ impl Default for RideScreen {
     fn default() -> Self {
         Self {
             mode: RideMode::FreeRide,
+            current_view: RideView::Metrics,
             recording_status: RecordingStatus::Idle,
             is_paused: false,
             metrics: AggregatedMetrics::default(),
@@ -1308,6 +1325,48 @@ impl RideScreen {
     /// T052: Toggle dynamics panel visibility.
     pub fn toggle_dynamics_panel(&mut self) {
         self.show_dynamics_panel = !self.show_dynamics_panel;
+    }
+
+    /// T091: Set the current view mode.
+    ///
+    /// Called by HID button actions to switch between different ride screen views.
+    pub fn set_view(&mut self, view: RideView) {
+        tracing::debug!("Switching ride view to {:?}", view);
+        self.current_view = view;
+    }
+
+    /// T091: Get the current view mode.
+    pub fn get_view(&self) -> RideView {
+        self.current_view
+    }
+
+    /// T091: Switch to metrics view.
+    pub fn show_metrics_view(&mut self) {
+        self.set_view(RideView::Metrics);
+    }
+
+    /// T091: Switch to map view.
+    pub fn show_map_view(&mut self) {
+        self.set_view(RideView::Map);
+    }
+
+    /// T091: Switch to workout view.
+    ///
+    /// This is only meaningful when a workout is active.
+    pub fn show_workout_view(&mut self) {
+        if self.mode == RideMode::Workout {
+            self.set_view(RideView::Workout);
+        } else {
+            tracing::debug!("Cannot switch to workout view: no active workout");
+        }
+    }
+
+    /// T091: Toggle fullscreen mode.
+    ///
+    /// Called by HID button actions to toggle fullscreen.
+    pub fn toggle_fullscreen(&mut self) {
+        self.full_screen_mode = !self.full_screen_mode;
+        tracing::debug!("Fullscreen mode: {}", self.full_screen_mode);
     }
 
     /// T052: Render cycling dynamics panel.

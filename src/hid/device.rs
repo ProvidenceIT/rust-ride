@@ -2,8 +2,12 @@
 //!
 //! Handles detection and management of USB HID devices.
 
-use super::{HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
-use std::sync::Arc;
+use super::{find_known_device, HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
+use hidapi::HidApi;
+use std::collections::{HashMap, HashSet};
+use std::ffi::CString;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
@@ -20,6 +24,8 @@ pub struct HidDevice {
     pub name: String,
     /// Serial number if available
     pub serial_number: Option<String>,
+    /// Device path for opening (platform-specific)
+    pub device_path: Option<String>,
     /// Number of buttons (if known)
     pub button_count: Option<u8>,
     /// Current status
@@ -56,6 +62,7 @@ impl HidDevice {
             product_id,
             name,
             serial_number: None,
+            device_path: None,
             button_count: known.map(|d| d.button_count),
             status: HidDeviceStatus::Detected,
             is_known: known.is_some(),
@@ -70,6 +77,18 @@ impl HidDevice {
     /// Get device path for display
     pub fn display_path(&self) -> String {
         format!("{:04X}:{:04X}", self.vendor_id, self.product_id)
+    }
+
+    /// Get a unique identity key for tracking devices across scans
+    /// Uses VID:PID:Serial (or VID:PID:Path if no serial)
+    pub fn identity_key(&self) -> String {
+        if let Some(ref serial) = self.serial_number {
+            format!("{:04X}:{:04X}:{}", self.vendor_id, self.product_id, serial)
+        } else if let Some(ref path) = self.device_path {
+            format!("{:04X}:{:04X}:{}", self.vendor_id, self.product_id, path)
+        } else {
+            format!("{:04X}:{:04X}", self.vendor_id, self.product_id)
+        }
     }
 }
 
@@ -112,9 +131,22 @@ pub trait HidDeviceManager: Send + Sync {
 /// Default HID device manager implementation
 pub struct DefaultHidDeviceManager {
     devices: Arc<RwLock<Vec<HidDevice>>>,
+    /// Open device handles keyed by device UUID
+    device_handles: Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>>,
+    /// Track identity keys of devices that should be auto-reconnected
+    /// Maps identity_key -> (vendor_id, product_id, name) for reconnect
+    auto_reconnect_targets: Arc<Mutex<HashMap<String, DeviceReconnectInfo>>>,
     event_tx: broadcast::Sender<HidDeviceEvent>,
     is_monitoring: Arc<RwLock<bool>>,
-    _config: HidConfig,
+    config: Arc<RwLock<HidConfig>>,
+}
+
+/// Information needed to reconnect a device
+#[derive(Debug, Clone)]
+struct DeviceReconnectInfo {
+    vendor_id: u16,
+    product_id: u16,
+    name: String,
 }
 
 impl DefaultHidDeviceManager {
@@ -124,9 +156,59 @@ impl DefaultHidDeviceManager {
 
         Self {
             devices: Arc::new(RwLock::new(Vec::new())),
+            device_handles: Arc::new(Mutex::new(HashMap::new())),
+            auto_reconnect_targets: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
             is_monitoring: Arc::new(RwLock::new(false)),
-            _config: config,
+            config: Arc::new(RwLock::new(config)),
+        }
+    }
+
+    /// Get a reference to the device handles for input reading
+    pub fn device_handles(&self) -> Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>> {
+        Arc::clone(&self.device_handles)
+    }
+
+    /// Update the reconnect configuration
+    pub async fn set_reconnect_config(&self, auto_reconnect: bool, delay_ms: u64) {
+        let mut config = self.config.write().await;
+        config.auto_reconnect = auto_reconnect;
+        config.reconnect_delay_ms = delay_ms;
+    }
+
+    /// Get current reconnect configuration
+    pub async fn get_reconnect_config(&self) -> (bool, u64) {
+        let config = self.config.read().await;
+        (config.auto_reconnect, config.reconnect_delay_ms)
+    }
+
+    /// Mark a device for auto-reconnect tracking
+    pub fn track_for_reconnect(&self, device: &HidDevice) {
+        if let Ok(mut targets) = self.auto_reconnect_targets.lock() {
+            let info = DeviceReconnectInfo {
+                vendor_id: device.vendor_id,
+                product_id: device.product_id,
+                name: device.name.clone(),
+            };
+            targets.insert(device.identity_key(), info);
+            tracing::debug!("Device {} marked for auto-reconnect", device.identity_key());
+        }
+    }
+
+    /// Remove a device from auto-reconnect tracking
+    pub fn untrack_for_reconnect(&self, device: &HidDevice) {
+        if let Ok(mut targets) = self.auto_reconnect_targets.lock() {
+            targets.remove(&device.identity_key());
+            tracing::debug!("Device {} removed from auto-reconnect tracking", device.identity_key());
+        }
+    }
+
+    /// Check if a device should be auto-reconnected
+    pub fn should_auto_reconnect(&self, identity_key: &str) -> bool {
+        if let Ok(targets) = self.auto_reconnect_targets.lock() {
+            targets.contains_key(identity_key)
+        } else {
+            false
         }
     }
 }
@@ -135,42 +217,371 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     fn scan_devices(&self) -> Vec<HidDevice> {
         tracing::info!("Scanning for HID devices...");
 
-        let found = Vec::new();
+        let mut found = Vec::new();
 
-        // TODO: Use hidapi to enumerate devices
-        // let api = HidApi::new().unwrap();
-        // for device in api.device_list() {
-        //     if let Some(known) = find_known_device(device.vendor_id(), device.product_id()) {
-        //         found.push(HidDevice::new(
-        //             device.vendor_id(),
-        //             device.product_id(),
-        //             known.name.to_string(),
-        //         ));
-        //     }
-        // }
+        // Initialize the HID API
+        let api = match HidApi::new() {
+            Ok(api) => api,
+            Err(e) => {
+                tracing::error!("Failed to initialize HID API: {}", e);
+                return found;
+            }
+        };
 
-        tracing::debug!("Found {} HID devices", found.len());
+        // Enumerate all connected HID devices
+        for device_info in api.device_list() {
+            let vendor_id = device_info.vendor_id();
+            let product_id = device_info.product_id();
+
+            // Check if this is a known/supported device
+            if let Some(known) = find_known_device(vendor_id, product_id) {
+                // Get the serial number if available
+                let serial_number = device_info
+                    .serial_number()
+                    .map(|s| s.to_string());
+
+                // Get the device path for later opening
+                let device_path = device_info.path().to_string_lossy().to_string();
+
+                // Create the HID device struct
+                let mut device = HidDevice::new(
+                    vendor_id,
+                    product_id,
+                    known.name.to_string(),
+                );
+                device.serial_number = serial_number;
+                device.device_path = Some(device_path);
+
+                tracing::debug!(
+                    "Found known HID device: {} (VID:{:04X} PID:{:04X}{})",
+                    known.name,
+                    vendor_id,
+                    product_id,
+                    device.serial_number
+                        .as_ref()
+                        .map(|s| format!(" SN:{}", s))
+                        .unwrap_or_default()
+                );
+
+                // Avoid adding duplicate devices (same VID:PID:Serial)
+                let is_duplicate = found.iter().any(|d: &HidDevice| {
+                    d.vendor_id == vendor_id
+                        && d.product_id == product_id
+                        && d.serial_number == device.serial_number
+                });
+
+                if !is_duplicate {
+                    found.push(device);
+                }
+            }
+        }
+
+        tracing::info!("Found {} HID device(s)", found.len());
+
+        // Update our internal device list
+        if let Ok(mut devices) = self.devices.try_write() {
+            *devices = found.clone();
+        }
 
         found
     }
 
     async fn start_monitoring(&self) -> Result<(), HidError> {
+        // Check if already monitoring
+        {
+            let is_monitoring = self.is_monitoring.read().await;
+            if *is_monitoring {
+                tracing::warn!("HID device monitoring already active");
+                return Ok(());
+            }
+        }
+
         *self.is_monitoring.write().await = true;
 
-        tracing::info!("Started HID device monitoring");
+        tracing::info!("Starting HID device monitoring (polling every 2 seconds)");
 
-        // TODO: Start background task to monitor for device changes
-        // This would use platform-specific APIs or polling
+        // Clone references for the background task
+        let is_monitoring = Arc::clone(&self.is_monitoring);
+        let devices = Arc::clone(&self.devices);
+        let device_handles = Arc::clone(&self.device_handles);
+        let auto_reconnect_targets = Arc::clone(&self.auto_reconnect_targets);
+        let config = Arc::clone(&self.config);
+        let event_tx = self.event_tx.clone();
+
+        // Spawn the monitoring background task
+        tokio::spawn(async move {
+            let poll_interval = Duration::from_secs(2);
+            let mut interval = tokio::time::interval(poll_interval);
+
+            // Track known devices by their identity key to detect connect/disconnect
+            let mut known_device_keys: HashMap<String, Uuid> = HashMap::new();
+
+            // Initialize with current devices
+            {
+                if let Ok(current_devices) = devices.try_read() {
+                    for device in current_devices.iter() {
+                        known_device_keys.insert(device.identity_key(), device.id);
+                    }
+                }
+            }
+
+            loop {
+                interval.tick().await;
+
+                // Check if we should stop monitoring
+                {
+                    if let Ok(monitoring) = is_monitoring.try_read() {
+                        if !*monitoring {
+                            tracing::info!("HID device monitoring stopped");
+                            break;
+                        }
+                    }
+                }
+
+                // Scan for devices in a blocking task (hidapi is not async)
+                let scan_result = tokio::task::spawn_blocking(|| {
+                    let api = match HidApi::new() {
+                        Ok(api) => api,
+                        Err(e) => {
+                            tracing::error!("Failed to initialize HID API for scan: {}", e);
+                            return Vec::new();
+                        }
+                    };
+
+                    let mut found = Vec::new();
+                    for device_info in api.device_list() {
+                        let vendor_id = device_info.vendor_id();
+                        let product_id = device_info.product_id();
+
+                        if let Some(known) = find_known_device(vendor_id, product_id) {
+                            let serial_number = device_info
+                                .serial_number()
+                                .map(|s| s.to_string());
+                            let device_path = device_info.path().to_string_lossy().to_string();
+
+                            let mut device = HidDevice::new(
+                                vendor_id,
+                                product_id,
+                                known.name.to_string(),
+                            );
+                            device.serial_number = serial_number;
+                            device.device_path = Some(device_path);
+
+                            // Check for duplicates within this scan
+                            let is_duplicate = found.iter().any(|d: &HidDevice| {
+                                d.identity_key() == device.identity_key()
+                            });
+
+                            if !is_duplicate {
+                                found.push(device);
+                            }
+                        }
+                    }
+                    found
+                })
+                .await;
+
+                let scanned_devices = match scan_result {
+                    Ok(devices) => devices,
+                    Err(e) => {
+                        tracing::error!("Device scan task failed: {}", e);
+                        continue;
+                    }
+                };
+
+                // Build a set of current identity keys
+                let current_keys: HashSet<String> = scanned_devices
+                    .iter()
+                    .map(|d| d.identity_key())
+                    .collect();
+
+                // Detect disconnected devices (in known_device_keys but not in current scan)
+                let disconnected: Vec<(String, Uuid)> = known_device_keys
+                    .iter()
+                    .filter(|(key, _)| !current_keys.contains(*key))
+                    .map(|(k, v)| (k.clone(), *v))
+                    .collect();
+
+                for (key, device_id) in disconnected {
+                    tracing::info!("HID device disconnected: {}", key);
+
+                    // Check if this device was open and should be tracked for reconnect
+                    let was_open = {
+                        if let Ok(mut handles) = device_handles.lock() {
+                            handles.remove(&device_id).is_some()
+                        } else {
+                            false
+                        }
+                    };
+
+                    if was_open {
+                        tracing::debug!("Closed handle for disconnected device, will attempt auto-reconnect");
+                        // Note: device is already in auto_reconnect_targets if it was opened via open_device()
+                    }
+
+                    // Update device status in our list
+                    if let Ok(mut device_list) = devices.try_write() {
+                        if let Some(device) = device_list.iter_mut().find(|d| d.id == device_id) {
+                            device.status = HidDeviceStatus::Disconnected;
+                        }
+                    }
+
+                    // Remove from known devices and emit event
+                    known_device_keys.remove(&key);
+                    let _ = event_tx.send(HidDeviceEvent::DeviceDisconnected(device_id));
+                }
+
+                // Detect newly connected devices (in current scan but not in known_device_keys)
+                for device in scanned_devices {
+                    let key = device.identity_key();
+                    if !known_device_keys.contains_key(&key) {
+                        tracing::info!(
+                            "HID device connected: {} ({})",
+                            device.name,
+                            device.display_path()
+                        );
+
+                        // Track this device
+                        let device_id = device.id;
+                        known_device_keys.insert(key.clone(), device_id);
+
+                        // Add to our device list
+                        if let Ok(mut device_list) = devices.try_write() {
+                            device_list.push(device.clone());
+                        }
+
+                        // Emit connected event
+                        let _ = event_tx.send(HidDeviceEvent::DeviceConnected(device.clone()));
+
+                        // Check if this device should be auto-reconnected
+                        let should_reconnect = {
+                            if let Ok(targets) = auto_reconnect_targets.lock() {
+                                targets.contains_key(&key)
+                            } else {
+                                false
+                            }
+                        };
+
+                        let (auto_reconnect_enabled, reconnect_delay_ms) = {
+                            if let Ok(cfg) = config.try_read() {
+                                (cfg.auto_reconnect, cfg.reconnect_delay_ms)
+                            } else {
+                                (true, 1000) // Defaults if we can't read config
+                            }
+                        };
+
+                        if should_reconnect && auto_reconnect_enabled {
+                            tracing::info!(
+                                "Device {} was previously opened, scheduling auto-reconnect in {}ms",
+                                device.name, reconnect_delay_ms
+                            );
+
+                            // Clone what we need for the auto-reconnect task
+                            let devices_clone = Arc::clone(&devices);
+                            let device_handles_clone = Arc::clone(&device_handles);
+                            let event_tx_clone = event_tx.clone();
+                            let device_path = device.device_path.clone();
+                            let vendor_id = device.vendor_id;
+                            let product_id = device.product_id;
+                            let device_name = device.name.clone();
+
+                            // Spawn a task to perform the reconnect after delay
+                            tokio::spawn(async move {
+                                // Wait for the configured delay
+                                tokio::time::sleep(Duration::from_millis(reconnect_delay_ms)).await;
+
+                                tracing::info!("Attempting auto-reconnect for device: {}", device_name);
+
+                                // Try to open the device
+                                let open_result = tokio::task::spawn_blocking(move || {
+                                    let api = match HidApi::new() {
+                                        Ok(api) => api,
+                                        Err(e) => {
+                                            return Err(HidError::HidApiError(format!(
+                                                "Failed to initialize HID API: {}", e
+                                            )));
+                                        }
+                                    };
+
+                                    // Try to open by path first, fall back to VID/PID
+                                    let handle = if let Some(path) = device_path {
+                                        let c_path = match CString::new(path.clone()) {
+                                            Ok(p) => p,
+                                            Err(e) => {
+                                                return Err(HidError::OpenFailed(format!(
+                                                    "Invalid device path: {}", e
+                                                )));
+                                            }
+                                        };
+                                        api.open_path(&c_path).map_err(|e| {
+                                            HidError::OpenFailed(format!(
+                                                "Failed to open device by path: {}", e
+                                            ))
+                                        })?
+                                    } else {
+                                        api.open(vendor_id, product_id).map_err(|e| {
+                                            HidError::OpenFailed(format!(
+                                                "Failed to open device {:04X}:{:04X}: {}",
+                                                vendor_id, product_id, e
+                                            ))
+                                        })?
+                                    };
+
+                                    Ok::<hidapi::HidDevice, HidError>(handle)
+                                })
+                                .await;
+
+                                match open_result {
+                                    Ok(Ok(handle)) => {
+                                        // Store the handle
+                                        if let Ok(mut handles) = device_handles_clone.lock() {
+                                            handles.insert(device_id, handle);
+                                        }
+
+                                        // Update device status
+                                        if let Ok(mut device_list) = devices_clone.try_write() {
+                                            if let Some(dev) = device_list.iter_mut().find(|d| d.id == device_id) {
+                                                dev.status = HidDeviceStatus::Open;
+                                            }
+                                        }
+
+                                        tracing::info!("Successfully auto-reconnected device: {}", device_name);
+                                        let _ = event_tx_clone.send(HidDeviceEvent::DeviceReconnected(device_id));
+                                    }
+                                    Ok(Err(e)) => {
+                                        tracing::error!("Auto-reconnect failed for {}: {}", device_name, e);
+                                        let _ = event_tx_clone.send(HidDeviceEvent::Error {
+                                            device_id: Some(device_id),
+                                            error: format!("Auto-reconnect failed: {}", e),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Auto-reconnect task failed for {}: {}", device_name, e);
+                                        let _ = event_tx_clone.send(HidDeviceEvent::Error {
+                                            device_id: Some(device_id),
+                                            error: format!("Auto-reconnect task failed: {}", e),
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        });
 
         Ok(())
     }
 
     fn stop_monitoring(&self) {
+        // Signal the background task to stop by setting the flag
+        // The background task checks this flag on each iteration
         if let Ok(mut monitoring) = self.is_monitoring.try_write() {
             *monitoring = false;
+            tracing::info!("Signaled HID device monitoring to stop");
+        } else {
+            tracing::warn!("Could not acquire write lock to stop monitoring");
         }
-
-        tracing::info!("Stopped HID device monitoring");
     }
 
     fn get_device(&self, device_id: &Uuid) -> Option<HidDevice> {
@@ -183,48 +594,158 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     }
 
     async fn open_device(&self, device_id: &Uuid) -> Result<(), HidError> {
-        let mut devices = self.devices.write().await;
+        // Check if device is already open
+        {
+            let handles = self.device_handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            if handles.contains_key(device_id) {
+                return Err(HidError::DeviceInUse);
+            }
+        }
 
-        let device = devices
-            .iter_mut()
-            .find(|d| &d.id == device_id)
-            .ok_or(HidError::DeviceNotFound(*device_id))?;
+        // Get device info for opening
+        let (vendor_id, product_id, device_path, device_name) = {
+            let mut devices = self.devices.write().await;
+            let device = devices
+                .iter_mut()
+                .find(|d| &d.id == device_id)
+                .ok_or(HidError::DeviceNotFound(*device_id))?;
 
-        device.status = HidDeviceStatus::Opening;
+            device.status = HidDeviceStatus::Opening;
 
-        tracing::info!("Opening HID device: {}", device.name);
+            (
+                device.vendor_id,
+                device.product_id,
+                device.device_path.clone(),
+                device.name.clone(),
+            )
+        };
 
-        // TODO: Actually open the device using hidapi
-        // let api = HidApi::new()?;
-        // let handle = api.open(device.vendor_id, device.product_id)?;
+        tracing::info!("Opening HID device: {} (VID:{:04X} PID:{:04X})",
+            device_name, vendor_id, product_id);
 
-        device.status = HidDeviceStatus::Open;
+        // Open the device using hidapi
+        let device_id_copy = *device_id;
+        let handles = Arc::clone(&self.device_handles);
 
-        let _ = self.event_tx.send(HidDeviceEvent::DeviceOpened(*device_id));
+        let open_result = tokio::task::spawn_blocking(move || {
+            // Initialize the HID API
+            let api = HidApi::new().map_err(|e| {
+                HidError::HidApiError(format!("Failed to initialize HID API: {}", e))
+            })?;
 
-        Ok(())
+            // Try to open by path first (more specific), fall back to VID/PID
+            let handle = if let Some(path) = device_path {
+                let c_path = CString::new(path.clone()).map_err(|e| {
+                    HidError::OpenFailed(format!("Invalid device path: {}", e))
+                })?;
+                api.open_path(&c_path).map_err(|e| {
+                    HidError::OpenFailed(format!(
+                        "Failed to open device by path '{}': {}. \
+                         This may be a permissions issue. On Linux, you may need udev rules. \
+                         On Windows, the device may be in use by another application.",
+                        path, e
+                    ))
+                })?
+            } else {
+                // Fall back to opening by VID/PID (may open any matching device)
+                api.open(vendor_id, product_id).map_err(|e| {
+                    HidError::OpenFailed(format!(
+                        "Failed to open device {:04X}:{:04X}: {}. \
+                         This may be a permissions issue or the device may be disconnected.",
+                        vendor_id, product_id, e
+                    ))
+                })?
+            };
+
+            // Store the handle
+            let mut handles_guard = handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            handles_guard.insert(device_id_copy, handle);
+
+            Ok::<(), HidError>(())
+        })
+        .await
+        .map_err(|e| HidError::OpenFailed(format!("Task join error: {}", e)))?;
+
+        // Update device status based on result
+        {
+            let mut devices = self.devices.write().await;
+            if let Some(device) = devices.iter_mut().find(|d| &d.id == device_id) {
+                match &open_result {
+                    Ok(()) => {
+                        device.status = HidDeviceStatus::Open;
+                        tracing::info!("Successfully opened HID device: {}", device.name);
+
+                        // Track this device for auto-reconnect
+                        self.track_for_reconnect(device);
+                    }
+                    Err(e) => {
+                        device.status = HidDeviceStatus::Error(e.to_string());
+                        tracing::error!("Failed to open HID device {}: {}", device.name, e);
+                    }
+                }
+            }
+        }
+
+        if open_result.is_ok() {
+            let _ = self.event_tx.send(HidDeviceEvent::DeviceOpened(*device_id));
+        }
+
+        open_result
     }
 
     async fn close_device(&self, device_id: &Uuid) -> Result<(), HidError> {
-        let mut devices = self.devices.write().await;
-
-        let device = devices
-            .iter_mut()
-            .find(|d| &d.id == device_id)
-            .ok_or(HidError::DeviceNotFound(*device_id))?;
+        // Get device for logging and tracking removal
+        let device = {
+            let devices = self.devices.read().await;
+            devices
+                .iter()
+                .find(|d| &d.id == device_id)
+                .cloned()
+                .ok_or(HidError::DeviceNotFound(*device_id))?
+        };
 
         tracing::info!("Closing HID device: {}", device.name);
 
-        // TODO: Close the device handle
+        // Remove the handle from storage (dropping it closes the device)
+        let was_open = {
+            let mut handles = self.device_handles.lock().map_err(|e| {
+                HidError::OpenFailed(format!("Failed to lock device handles: {}", e))
+            })?;
+            handles.remove(device_id).is_some()
+        };
 
-        device.status = HidDeviceStatus::Detected;
+        if !was_open {
+            tracing::warn!("Device {} was not open", device.name);
+            return Err(HidError::DeviceNotOpen);
+        }
 
+        // Remove from auto-reconnect tracking since user explicitly closed it
+        self.untrack_for_reconnect(&device);
+
+        // Update device status
+        {
+            let mut devices = self.devices.write().await;
+            if let Some(d) = devices.iter_mut().find(|d| &d.id == device_id) {
+                d.status = HidDeviceStatus::Detected;
+            }
+        }
+
+        tracing::info!("Successfully closed HID device: {}", device.name);
         let _ = self.event_tx.send(HidDeviceEvent::DeviceClosed(*device_id));
 
         Ok(())
     }
 
     fn is_open(&self, device_id: &Uuid) -> bool {
+        // Check actual device handles for authoritative answer
+        if let Ok(handles) = self.device_handles.lock() {
+            return handles.contains_key(device_id);
+        }
+        // Fall back to status check if lock fails
         self.devices
             .try_read()
             .ok()
@@ -270,5 +791,94 @@ mod tests {
     fn test_display_path() {
         let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
         assert_eq!(device.display_path(), "0FD9:0060");
+    }
+
+    #[test]
+    fn test_identity_key_with_serial() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("ABC123".to_string());
+        device.device_path = Some("/dev/hidraw0".to_string());
+
+        // Serial number takes precedence over path
+        assert_eq!(device.identity_key(), "0FD9:0060:ABC123");
+    }
+
+    #[test]
+    fn test_identity_key_with_path() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.device_path = Some("/dev/hidraw0".to_string());
+
+        // Falls back to path when no serial
+        assert_eq!(device.identity_key(), "0FD9:0060:/dev/hidraw0");
+    }
+
+    #[test]
+    fn test_identity_key_minimal() {
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Falls back to VID:PID only
+        assert_eq!(device.identity_key(), "0FD9:0060");
+    }
+
+    #[test]
+    fn test_track_for_reconnect() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("ABC123".to_string());
+
+        // Initially not tracked
+        assert!(!manager.should_auto_reconnect(&device.identity_key()));
+
+        // Track the device
+        manager.track_for_reconnect(&device);
+
+        // Now should be tracked
+        assert!(manager.should_auto_reconnect(&device.identity_key()));
+    }
+
+    #[test]
+    fn test_untrack_for_reconnect() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("ABC123".to_string());
+
+        // Track and then untrack
+        manager.track_for_reconnect(&device);
+        assert!(manager.should_auto_reconnect(&device.identity_key()));
+
+        manager.untrack_for_reconnect(&device);
+        assert!(!manager.should_auto_reconnect(&device.identity_key()));
+    }
+
+    #[test]
+    fn test_auto_reconnect_config_defaults() {
+        let config = HidConfig::default();
+
+        // Verify default values
+        assert!(config.auto_reconnect);
+        assert_eq!(config.reconnect_delay_ms, 1000);
+    }
+
+    #[tokio::test]
+    async fn test_get_set_reconnect_config() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        // Check default config
+        let (enabled, delay) = manager.get_reconnect_config().await;
+        assert!(enabled);
+        assert_eq!(delay, 1000);
+
+        // Update config
+        manager.set_reconnect_config(false, 500).await;
+
+        // Verify updated
+        let (enabled, delay) = manager.get_reconnect_config().await;
+        assert!(!enabled);
+        assert_eq!(delay, 500);
     }
 }

@@ -450,6 +450,78 @@ impl WorkoutEngine {
         Ok(())
     }
 
+    /// Restart the current segment from the beginning.
+    ///
+    /// This resets the elapsed time within the current segment to zero,
+    /// effectively restarting the interval without changing which segment
+    /// we're on. Useful for repeating an interval you want to retry.
+    pub fn restart_segment(&mut self) -> Result<(), WorkoutError> {
+        let state = self.state.as_mut().ok_or(WorkoutError::NoWorkoutLoaded)?;
+
+        if state.status != WorkoutStatus::InProgress && state.status != WorkoutStatus::Paused {
+            return Err(WorkoutError::EngineError("Workout not active".to_string()));
+        }
+
+        let current_idx = state
+            .segment_progress
+            .as_ref()
+            .map(|p| p.segment_index)
+            .unwrap_or(0);
+
+        // Calculate elapsed time at start of current segment
+        let mut elapsed_at_segment_start = 0u32;
+        for (i, segment) in state.workout.segments.iter().enumerate() {
+            if i >= current_idx {
+                break;
+            }
+            elapsed_at_segment_start += segment.duration_seconds;
+        }
+
+        // Reset to start of current segment
+        state.total_elapsed_seconds = elapsed_at_segment_start;
+
+        // Store current power for smooth transition
+        if let Some(progress) = &state.segment_progress {
+            self.previous_power = Some(progress.target_power);
+        }
+
+        // Reset extension and ramp
+        self.segment_extension = 0;
+        self.ramp_elapsed = 0;
+        self.last_countdown = None;
+
+        // Update progress
+        self.update_segment_progress();
+
+        // Emit interval restart event
+        if let Some(segment) = state.workout.segments.get(current_idx) {
+            let interval_name = segment
+                .text_event
+                .clone()
+                .unwrap_or_else(|| segment.segment_type.to_string());
+            let target_power = state
+                .segment_progress
+                .as_ref()
+                .map(|p| p.target_power);
+            let is_recovery = segment.segment_type == SegmentType::Cooldown
+                || (segment
+                    .text_event
+                    .as_ref()
+                    .map(|t| t.to_lowercase().contains("recovery"))
+                    .unwrap_or(false));
+
+            self.emit_event(WorkoutEvent::IntervalRestarted {
+                interval_name,
+                target_power,
+                duration_secs: segment.duration_seconds,
+                is_recovery,
+            });
+        }
+
+        tracing::info!("Restarted segment {}", current_idx);
+        Ok(())
+    }
+
     /// Adjust the power offset by the specified amount.
     pub fn adjust_power(&mut self, offset_delta: i16) -> Result<(), WorkoutError> {
         let power_offset = {
@@ -776,5 +848,132 @@ mod tests {
                 .segment_index,
             segment_before
         );
+    }
+
+    #[test]
+    fn test_restart_segment() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+        engine.start().unwrap();
+
+        // Tick for 30 seconds into first segment
+        for _ in 0..30 {
+            engine.tick();
+        }
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 30);
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            0
+        );
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .elapsed_seconds,
+            30
+        );
+
+        // Restart the segment
+        engine.restart_segment().unwrap();
+
+        // Should be back at the start of segment 0
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 0);
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            0
+        );
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .elapsed_seconds,
+            0
+        );
+
+        // Check that IntervalRestarted event was emitted
+        let events = engine.take_events();
+        assert!(
+            events.iter().any(|e| matches!(e, WorkoutEvent::IntervalRestarted { .. })),
+            "Expected IntervalRestarted event"
+        );
+    }
+
+    #[test]
+    fn test_restart_segment_in_second_segment() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+        engine.start().unwrap();
+
+        // Skip to second segment (after 60 seconds)
+        for _ in 0..70 {
+            engine.tick();
+        }
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            1
+        );
+
+        // Clear events from segment transition
+        engine.take_events();
+
+        // Restart the second segment
+        engine.restart_segment().unwrap();
+
+        // Should be back at the start of segment 1 (elapsed = 60)
+        assert_eq!(engine.state().unwrap().total_elapsed_seconds, 60);
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            1
+        );
+        assert_eq!(
+            engine
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .elapsed_seconds,
+            0
+        );
+    }
+
+    #[test]
+    fn test_restart_segment_requires_active_workout() {
+        let mut engine = WorkoutEngine::new();
+        engine.load(simple_workout(), 200).unwrap();
+
+        // Workout not started - should fail
+        let result = engine.restart_segment();
+        assert!(result.is_err());
     }
 }

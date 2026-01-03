@@ -260,12 +260,20 @@ pub struct HidSettings {
     pub selected_device: Option<Uuid>,
     /// Learning mode: waiting for button press
     pub learning_mode: bool,
+    /// The device for which learning mode was started
+    pub learning_device_id: Option<Uuid>,
     /// The mapping slot being configured (device_id, button_index)
     pub learning_target: Option<(Uuid, usize)>,
     /// Last learned button code
     pub learned_button_code: Option<u8>,
     /// Action being selected for new mapping
     pub selecting_action_for: Option<(Uuid, u8)>,
+    /// Flag indicating a device scan was requested
+    pub scan_requested: bool,
+    /// Flag indicating learning mode start was requested (device_id)
+    pub learning_mode_start_requested: Option<Uuid>,
+    /// Flag indicating learning mode cancel was requested
+    pub learning_mode_cancel_requested: bool,
 }
 
 impl Default for HidSettings {
@@ -276,9 +284,13 @@ impl Default for HidSettings {
             device_configs: Vec::new(),
             selected_device: None,
             learning_mode: false,
+            learning_device_id: None,
             learning_target: None,
             learned_button_code: None,
             selecting_action_for: None,
+            scan_requested: false,
+            learning_mode_start_requested: None,
+            learning_mode_cancel_requested: false,
         }
     }
 }
@@ -292,9 +304,13 @@ impl HidSettings {
             device_configs: config.devices.clone(),
             selected_device: None,
             learning_mode: false,
+            learning_device_id: None,
             learning_target: None,
             learned_button_code: None,
             selecting_action_for: None,
+            scan_requested: false,
+            learning_mode_start_requested: None,
+            learning_mode_cancel_requested: false,
         }
     }
 
@@ -338,6 +354,8 @@ impl HidSettings {
         HidConfig {
             enabled: self.enabled,
             devices: self.device_configs.clone(),
+            reconnect_delay_ms: 1000,
+            auto_reconnect: true,
         }
     }
 }
@@ -403,6 +421,12 @@ pub enum SettingsAction {
     Cancel,
     /// Test/preview the current voice settings
     TestVoice(TestVoiceSettings),
+    /// Scan for HID devices
+    ScanHidDevices,
+    /// Start learning mode for a specific device
+    StartLearningMode(Uuid),
+    /// Stop/cancel learning mode
+    StopLearningMode,
 }
 
 impl SettingsScreen {
@@ -663,6 +687,23 @@ impl SettingsScreen {
 
             ui.add_space(32.0);
         });
+
+        // Check if HID device scan was requested
+        if self.hid_settings.scan_requested {
+            self.hid_settings.scan_requested = false;
+            return SettingsAction::ScanHidDevices;
+        }
+
+        // Check if HID learning mode start was requested
+        if let Some(device_id) = self.hid_settings.learning_mode_start_requested.take() {
+            return SettingsAction::StartLearningMode(device_id);
+        }
+
+        // Check if HID learning mode cancel was requested
+        if self.hid_settings.learning_mode_cancel_requested {
+            self.hid_settings.learning_mode_cancel_requested = false;
+            return SettingsAction::StopLearningMode;
+        }
 
         action
     }
@@ -2744,8 +2785,7 @@ impl SettingsScreen {
                     .on_hover_text("Scan for connected USB devices")
                     .clicked()
                 {
-                    // TODO: Trigger device scan via app
-                    tracing::info!("Scanning for HID devices");
+                    self.hid_settings.scan_requested = true;
                 }
             });
         } else {
@@ -2814,7 +2854,7 @@ impl SettingsScreen {
                 .on_hover_text("Refresh device list")
                 .clicked()
             {
-                tracing::info!("Refreshing HID device list");
+                self.hid_settings.scan_requested = true;
             }
         }
     }
@@ -2853,14 +2893,18 @@ impl SettingsScreen {
                         .color(Color32::from_rgb(66, 133, 244)),
                 );
                 if ui.small_button("Cancel").clicked() {
+                    // Request to stop learning mode (will be handled by app.rs)
+                    self.hid_settings.learning_mode_cancel_requested = true;
                     self.hid_settings.learning_mode = false;
+                    self.hid_settings.learning_device_id = None;
                     self.hid_settings.learning_target = None;
                 }
             });
 
-            // Check if button was learned
+            // Check if button was learned (set by app.rs polling ButtonInputHandler)
             if let Some(button_code) = self.hid_settings.learned_button_code.take() {
                 self.hid_settings.learning_mode = false;
+                self.hid_settings.learning_device_id = None;
                 self.hid_settings.selecting_action_for = Some((selected_id, button_code));
             }
 
@@ -2976,11 +3020,12 @@ impl SettingsScreen {
                 .on_hover_text("Press a button on the device to map it to an action")
                 .clicked()
         {
+            // Request to start learning mode (will be handled by app.rs)
             self.hid_settings.learning_mode = true;
+            self.hid_settings.learning_device_id = Some(selected_id);
             self.hid_settings.learning_target = Some((selected_id, 0));
             self.hid_settings.learned_button_code = None;
-            // TODO: Signal to HID handler to start learning mode
-            tracing::info!("Started button learning mode for device {:?}", selected_id);
+            self.hid_settings.learning_mode_start_requested = Some(selected_id);
         }
     }
 
