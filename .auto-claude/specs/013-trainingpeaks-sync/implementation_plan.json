@@ -75,14 +75,16 @@
           "id": "T005",
           "title": "Add TrainingPeaks OAuth scopes",
           "description": "Define required OAuth scopes for TrainingPeaks API access (workouts:read, file:write, athlete:profile). Create scopes module similar to Strava implementation.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T001"
           ],
           "estimated_hours": 0.5,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "OAuth scopes were already implemented as part of T001. The implementation includes: scopes module with ATHLETE_PROFILE (\"athlete:profile\"), WORKOUTS_READ (\"workouts:read\"), and FILE_WRITE (\"file:write\") constants. Also includes default_scopes() function returning all required scopes as Vec<String>, and test_default_scopes() test. Pattern matches Strava implementation exactly.",
+          "updated_at": "2026-01-03T13:57:51.458093+00:00"
         }
       ]
     },
@@ -95,14 +97,16 @@
           "id": "T006",
           "title": "Implement FIT file upload to TrainingPeaks",
           "description": "Add upload_activity() method to TrainingPeaksClient for uploading FIT files via multipart form POST to /v1/file. Handle upload response including activity ID assignment.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T003"
           ],
           "estimated_hours": 3,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "upload_activity() method was already implemented as part of T001. Implementation includes: FIT file validation via validate_fit_file(), multipart form POST to /v1/file endpoint, comprehensive error handling (rate limit, unauthorized, duplicate detection, API errors), returns SyncRecord with upload_id in external_id for status polling. Includes helper methods: validate_fit_file() for FIT header validation, is_duplicate_error() for duplicate detection. HTTP mocked tests using wiremock cover success, rate limit, unauthorized, API errors, and duplicate detection scenarios.",
+          "updated_at": "2026-01-03T14:00:04.164938+00:00"
         },
         {
           "id": "T007",
@@ -491,5 +495,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T13:55:29.617632+00:00"
+  "last_updated": "2026-01-03T14:00:04.164938+00:00"
 }
