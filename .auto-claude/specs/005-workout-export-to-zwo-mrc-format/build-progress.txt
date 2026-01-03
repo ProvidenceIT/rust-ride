@@ -109,6 +109,40 @@ The main `export_zwo` function now converts Workout structs to ZWO XML strings:
 
 ---
 
+## Subtask 3.4 Complete - 2026-01-03
+
+### Verified export_mrc_to_file and generate_mrc_filename
+
+These functions were already implemented as part of subtask 1.3 during module creation (same pattern as ZWO in subtask 2.3).
+
+**export_mrc_to_file:**
+- Calls `export_mrc()` to generate MRC content string
+- Writes content to specified path using `std::fs::write()`
+- Returns `Result<(), WorkoutExportError>` with IoError on write failure
+
+**generate_mrc_filename:**
+- Creates sanitized filename from workout name
+- Appends `.mrc` extension
+- Uses `sanitize_filename()` helper to replace invalid chars
+
+**sanitize_filename helper:**
+- Replaces filesystem-invalid characters: `/ \ : * ? " < > |`
+- Replaces each with underscore `_`
+- Trims whitespace
+
+**Existing Tests (from subtask 1.3):**
+- `test_generate_mrc_filename_simple`
+- `test_generate_mrc_filename_sanitizes_invalid_chars`
+- `test_sanitize_filename`
+- `test_export_mrc_empty_workout_error`
+
+**All acceptance criteria met:**
+- ✅ export_mrc_to_file writes content to specified path
+- ✅ generate_mrc_filename creates filename from workout name with .mrc extension
+- ✅ Filename sanitized to remove invalid filesystem characters
+
+---
+
 ## Subtask 2.3 Complete - 2026-01-03
 
 ### Verified export_zwo_to_file and generate_zwo_filename

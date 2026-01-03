@@ -21,14 +21,14 @@
       "discovered_at": "2026-01-03T05:19:45.224791+00:00"
     },
     "src/workouts/exporter_zwo.rs": {
-      "description": "export_zwo function generates ZWO XML with: XML declaration, workout_file root element, name/author/description metadata, tags as <tag name=\"...\"/> elements, workout element containing segments. Uses escape_xml and escape_xml_attr helpers for XML special character escaping.",
-      "category": "implementation",
-      "discovered_at": "2026-01-03T05:32:23.543964+00:00"
+      "description": "ZWO exporter test module now has 42 total tests covering: segment_to_xml (all segment types, cadence), export_zwo (simple, metadata, escaping, multiple segments), filename generation, round-trip tests (export -> parse -> verify), and edge cases (long duration, high/low power, many segments). Round-trip tests verify that exported ZWO XML can be parsed back and produce equivalent workouts.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T05:39:51.138037+00:00"
     },
     "src/workouts/exporter_mrc.rs": {
-      "description": "MRC exporter module with export_mrc(), export_mrc_to_file(), generate_mrc_filename() signatures. Uses sanitize_filename helper to remove invalid filesystem chars (/ \\ : * ? \" &lt; &gt; |). Follows same pattern as exporter_zwo.rs and recording module exporter pattern.",
-      "category": "pattern",
-      "discovered_at": "2026-01-03T05:23:47.666333+00:00"
+      "description": "MRC exporter now fully implements export_mrc() function. Uses helper functions: segments_to_course_data() for time/power pairs, extract_text_events() for text event extraction, format_text_event() for text event formatting. Also provides export_mrc_with_ftp() variant for specifying FTP value when workout has absolute power targets.",
+      "category": "implementation",
+      "discovered_at": "2026-01-03T05:49:58.859072+00:00"
     },
     "src/workouts/mod.rs": {
       "description": "Workouts module now exports all exporter functions (export_zwo, export_mrc, etc.) alongside parser functions (parse_zwo, parse_mrc). Pattern follows: module declarations first, then pub use for types and functions.",
@@ -36,5 +36,5 @@
       "discovered_at": "2026-01-03T05:25:57.256735+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:32:23.543964+00:00"
+  "last_updated": "2026-01-03T05:49:58.859072+00:00"
 }

@@ -71,11 +71,71 @@
         }
       ],
       "status": "completed"
+    },
+    "2.3": {
+      "attempts": [
+        {
+          "session": 8,
+          "timestamp": "2026-01-03T06:36:15.548605",
+          "approach": "Implemented: Add file writing function and filename generator for ZWO exports.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.4": {
+      "attempts": [
+        {
+          "session": 9,
+          "timestamp": "2026-01-03T06:40:05.436039",
+          "approach": "Implemented: Comprehensive unit tests for ZWO export covering all segment types and edge cases.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "3.1": {
+      "attempts": [
+        {
+          "session": 10,
+          "timestamp": "2026-01-03T06:44:15.662847",
+          "approach": "Implemented: Create helper function to convert WorkoutSegment list to MRC COURSE DATA points. Handle power target",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "3.2": {
+      "attempts": [
+        {
+          "session": 11,
+          "timestamp": "2026-01-03T06:47:19.527019",
+          "approach": "Implemented: Create helper to extract text events from segments for COURSE TEXT section.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "3.3": {
+      "attempts": [
+        {
+          "session": 12,
+          "timestamp": "2026-01-03T06:50:09.517195",
+          "approach": "Implemented: Implement the main export_mrc function that converts a Workout to MRC format string.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [],
   "metadata": {
     "created_at": "2026-01-03T06:13:49.355404",
-    "last_updated": "2026-01-03T06:33:43.811224"
+    "last_updated": "2026-01-03T06:50:09.517195"
   }
 }
