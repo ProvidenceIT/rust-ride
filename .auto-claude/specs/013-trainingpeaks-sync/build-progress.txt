@@ -360,3 +360,28 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 - Comprehensive tests included for all functionality
 - Commit: 3ec8087
 - **Phase 4 (T015-T017) Complete!** Remaining: T018 (UI badge)
+
+### 2026-01-03 - T022: Integrate TrainingPeaks into Main Settings Screen
+- Added TrainingPeaks entry to main settings screen with:
+  - Connection status indicator (green dot when connected)
+  - "Settings →" navigation button to TrainingPeaks settings screen
+  - "Connected" / "Not connected" status text
+  - TrainingPeaks teal brand color (rgb(0, 128, 128))
+- Implementation in src/ui/screens/settings.rs:
+  - Added NavigateToStravaSettings and NavigateToTrainingPeaksSettings action variants to SettingsAction enum
+  - Added pending_navigation field to SettingsScreen to track navigation requests
+  - Modified render_sync_section() to:
+    - Show "Settings →" button for Strava and TrainingPeaks (platforms with dedicated settings screens)
+    - Display connection status indicator (●) next to platform name when connected
+    - Keep inline connect/disconnect for other platforms (GarminConnect, IntervalsIcu)
+  - Added check in show() to return pending navigation action
+- Added comprehensive unit tests:
+  - test_settings_action_navigate_to_strava_settings
+  - test_settings_action_navigate_to_trainingpeaks_settings
+  - test_settings_action_navigation_not_equal
+  - test_settings_screen_pending_navigation_initial
+  - test_platform_states_includes_trainingpeaks
+  - test_set_platform_connected_trainingpeaks
+  - test_get_connected_platforms
+- Fixed git conflict marker at end of file
+- Note: app.rs will need to handle NavigateToTrainingPeaksSettings action for navigation (done in parent task)
