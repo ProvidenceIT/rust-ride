@@ -10,9 +10,11 @@
 //! - VO2max Estimation
 //! - Rider Type Classification
 //! - Sweet Spot Recommendations
+//! - Data Export (JSON/CSV)
 
 pub mod critical_power;
 pub mod error;
+pub mod export;
 pub mod ftp_detection;
 pub mod pdc;
 pub mod rider_type;
@@ -24,6 +26,7 @@ pub mod vo2max;
 // Re-exports for convenience
 pub use critical_power::{CpFitError, CpFitter, CpModel};
 pub use error::{AnalyticsError, AnalyticsResult};
+pub use export::{AnalyticsExport, AnalyticsExporter, ExportError, ExportOptions};
 pub use ftp_detection::{FtpConfidence, FtpDetector, FtpEstimate, FtpMethod};
 pub use pdc::{MmpCalculator, PdcPoint, PowerDurationCurve};
 pub use rider_type::{PowerProfile, RiderClassifier, RiderType};
