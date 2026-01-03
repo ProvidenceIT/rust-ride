@@ -266,6 +266,8 @@ pub struct HidSettings {
     pub learned_button_code: Option<u8>,
     /// Action being selected for new mapping
     pub selecting_action_for: Option<(Uuid, u8)>,
+    /// Flag indicating a device scan was requested
+    pub scan_requested: bool,
 }
 
 impl Default for HidSettings {
@@ -279,6 +281,7 @@ impl Default for HidSettings {
             learning_target: None,
             learned_button_code: None,
             selecting_action_for: None,
+            scan_requested: false,
         }
     }
 }
@@ -295,6 +298,7 @@ impl HidSettings {
             learning_target: None,
             learned_button_code: None,
             selecting_action_for: None,
+            scan_requested: false,
         }
     }
 
@@ -405,6 +409,8 @@ pub enum SettingsAction {
     Cancel,
     /// Test/preview the current voice settings
     TestVoice(TestVoiceSettings),
+    /// Scan for HID devices
+    ScanHidDevices,
 }
 
 impl SettingsScreen {
@@ -665,6 +671,12 @@ impl SettingsScreen {
 
             ui.add_space(32.0);
         });
+
+        // Check if HID device scan was requested
+        if self.hid_settings.scan_requested {
+            self.hid_settings.scan_requested = false;
+            return SettingsAction::ScanHidDevices;
+        }
 
         action
     }
@@ -2746,8 +2758,7 @@ impl SettingsScreen {
                     .on_hover_text("Scan for connected USB devices")
                     .clicked()
                 {
-                    // TODO: Trigger device scan via app
-                    tracing::info!("Scanning for HID devices");
+                    self.hid_settings.scan_requested = true;
                 }
             });
         } else {
@@ -2816,7 +2827,7 @@ impl SettingsScreen {
                 .on_hover_text("Refresh device list")
                 .clicked()
             {
-                tracing::info!("Refreshing HID device list");
+                self.hid_settings.scan_requested = true;
             }
         }
     }

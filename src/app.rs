@@ -1212,6 +1212,13 @@ impl eframe::App for RustRideApp {
                                 tracing::warn!("Failed to preview voice: {}", e);
                             }
                         }
+                        SettingsAction::ScanHidDevices => {
+                            // T091: Scan for HID devices and update the settings screen
+                            tracing::info!("Scanning for HID devices...");
+                            let devices = self.hid_device_manager.scan_devices();
+                            tracing::info!("Found {} HID device(s)", devices.len());
+                            self.settings_screen.set_hid_devices(devices);
+                        }
                         SettingsAction::None => {}
                     }
                 }
