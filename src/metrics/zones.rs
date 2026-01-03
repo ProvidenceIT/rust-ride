@@ -766,9 +766,11 @@ impl ZoneTracker {
     pub fn reset(&mut self) {
         self.current_power_zone = 0;
         self.current_hr_zone = 0;
+        self.current_cadence_zone = 0;
         self.pending_events.clear();
         self.last_power_zone_change = None;
         self.last_hr_zone_change = None;
+        self.last_cadence_zone_change = None;
     }
 }
 
