@@ -12,6 +12,13 @@ struct CourseDataPoint {
     power_percent: u8,
 }
 
+/// A text event entry for the MRC COURSE TEXT section.
+#[derive(Debug, Clone, PartialEq)]
+struct TextEventEntry {
+    minutes: f32,
+    text: String,
+}
+
 /// Convert a power target to percent FTP.
 ///
 /// For PercentFtp targets, returns the percent directly.
@@ -106,6 +113,47 @@ fn segments_to_course_data(segments: &[WorkoutSegment], ftp: Option<u16>) -> Vec
     }
 
     points
+}
+
+/// Extract text events from workout segments for the MRC COURSE TEXT section.
+///
+/// Each segment with a text_event is converted to a TextEventEntry with:
+/// - The start time of the segment (in minutes)
+/// - The text event message
+///
+/// Segments without text events are skipped.
+///
+/// # Arguments
+/// * `segments` - The workout segments to extract text events from
+///
+/// # Returns
+/// A vector of TextEventEntry with time and text for each text event
+fn extract_text_events(segments: &[WorkoutSegment]) -> Vec<TextEventEntry> {
+    let mut events = Vec::new();
+    let mut current_time_minutes: f32 = 0.0;
+
+    for segment in segments {
+        // If segment has a text event, add it with the current start time
+        if let Some(text) = &segment.text_event {
+            events.push(TextEventEntry {
+                minutes: current_time_minutes,
+                text: text.clone(),
+            });
+        }
+
+        // Accumulate time for next segment
+        current_time_minutes += segment.duration_seconds as f32 / 60.0;
+    }
+
+    events
+}
+
+/// Format a text event entry as an MRC COURSE TEXT line.
+///
+/// Formats the entry as: `<minutes>    "<text>"`
+/// For example: `5.00    "Zone 3"`
+fn format_text_event(event: &TextEventEntry) -> String {
+    format!("{:.2}\t\"{}\"", event.minutes, event.text)
 }
 
 /// Export a workout to MRC format.
@@ -496,5 +544,210 @@ mod tests {
         let segments: Vec<WorkoutSegment> = vec![];
         let points = segments_to_course_data(&segments, None);
         assert!(points.is_empty());
+    }
+
+    // extract_text_events tests
+
+    #[test]
+    fn test_extract_text_events_single_segment_with_event() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: Some("Zone 3 effort".to_string()),
+        }];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Zone 3 effort");
+    }
+
+    #[test]
+    fn test_extract_text_events_no_text_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600,
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_events_multiple_segments_mixed() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Warm up".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None, // No text event
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 2);
+        // First event at start (0 min)
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Warm up");
+        // Second event at 15 min (after warmup 5 min + steady 10 min)
+        assert_eq!(events[1].minutes, 15.0);
+        assert_eq!(events[1].text, "Sweet spot");
+    }
+
+    #[test]
+    fn test_extract_text_events_all_segments_with_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Start easy".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: Some("Main set".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(40),
+                cadence_target: None,
+                text_event: Some("Cool down".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Start easy");
+        assert_eq!(events[1].minutes, 5.0);
+        assert_eq!(events[1].text, "Main set");
+        assert_eq!(events[2].minutes, 15.0);
+        assert_eq!(events[2].text, "Cool down");
+    }
+
+    #[test]
+    fn test_extract_text_events_empty_segments() {
+        let segments: Vec<WorkoutSegment> = vec![];
+        let events = extract_text_events(&segments);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_events_fractional_minutes() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30, // 0.5 minutes
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: Some("Sprint!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 90, // 1.5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Recover".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Sprint!");
+        assert_eq!(events[1].minutes, 0.5);
+        assert_eq!(events[1].text, "Recover");
+    }
+
+    // format_text_event tests
+
+    #[test]
+    fn test_format_text_event_simple() {
+        let event = TextEventEntry {
+            minutes: 0.0,
+            text: "Zone 3".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "0.00\t\"Zone 3\"");
+    }
+
+    #[test]
+    fn test_format_text_event_with_time() {
+        let event = TextEventEntry {
+            minutes: 5.0,
+            text: "Push hard!".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "5.00\t\"Push hard!\"");
+    }
+
+    #[test]
+    fn test_format_text_event_fractional_minutes() {
+        let event = TextEventEntry {
+            minutes: 12.50,
+            text: "Halfway there".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "12.50\t\"Halfway there\"");
+    }
+
+    #[test]
+    fn test_format_text_event_long_text() {
+        let event = TextEventEntry {
+            minutes: 0.0,
+            text: "This is a longer text message for the workout".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(
+            formatted,
+            "0.00\t\"This is a longer text message for the workout\""
+        );
     }
 }
