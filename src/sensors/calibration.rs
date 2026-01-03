@@ -747,6 +747,332 @@ pub enum CalibrationError {
 
     #[error("Deserialize error: {0}")]
     DeserializeError(String),
+
+    #[error("Calibration command failed: {0}")]
+    CommandFailed(String),
+
+    #[error("Calibration timed out")]
+    Timeout,
+
+    #[error("Sensor not connected")]
+    SensorNotConnected,
+
+    #[error("Calibration cancelled")]
+    Cancelled,
+}
+
+/// Type of calibration command to send to the power meter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalibrationType {
+    /// Zero-offset (also called "auto-zero") calibration.
+    /// The most common calibration type. Resets the baseline torque reading.
+    ZeroOffset,
+    /// Manual calibration with user-applied known force.
+    /// Used for slope/span calibration on some power meters.
+    ManualCalibration,
+    /// Automatic calibration triggered by the power meter.
+    /// Some power meters perform periodic auto-calibration.
+    AutomaticCalibration,
+}
+
+impl std::fmt::Display for CalibrationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CalibrationType::ZeroOffset => write!(f, "Zero Offset"),
+            CalibrationType::ManualCalibration => write!(f, "Manual Calibration"),
+            CalibrationType::AutomaticCalibration => write!(f, "Automatic Calibration"),
+        }
+    }
+}
+
+/// Current step in the calibration process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalibrationStep {
+    /// Initial step - showing instructions.
+    Instructions,
+    /// Preparing - waiting for user confirmation.
+    Preparing,
+    /// Sending calibration command to the power meter.
+    SendingCommand,
+    /// Waiting for calibration to complete.
+    WaitingForResult,
+    /// Calibration completed successfully.
+    Completed,
+    /// Calibration failed.
+    Failed,
+}
+
+impl std::fmt::Display for CalibrationStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CalibrationStep::Instructions => write!(f, "Instructions"),
+            CalibrationStep::Preparing => write!(f, "Preparing"),
+            CalibrationStep::SendingCommand => write!(f, "Sending Command"),
+            CalibrationStep::WaitingForResult => write!(f, "Waiting for Result"),
+            CalibrationStep::Completed => write!(f, "Completed"),
+            CalibrationStep::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
+/// Result of a calibration attempt.
+#[derive(Debug, Clone)]
+pub struct CalibrationResult {
+    /// Whether the calibration was successful.
+    pub success: bool,
+    /// The calibration offset value (if available).
+    pub offset_value: Option<i32>,
+    /// Error message if calibration failed.
+    pub error_message: Option<String>,
+    /// Time taken to complete calibration in seconds.
+    pub duration_secs: f32,
+    /// The type of calibration that was performed.
+    pub calibration_type: CalibrationType,
+}
+
+impl CalibrationResult {
+    /// Create a successful calibration result.
+    pub fn success(offset_value: Option<i32>, duration_secs: f32, calibration_type: CalibrationType) -> Self {
+        Self {
+            success: true,
+            offset_value,
+            error_message: None,
+            duration_secs,
+            calibration_type,
+        }
+    }
+
+    /// Create a failed calibration result.
+    pub fn failure(error_message: String, duration_secs: f32, calibration_type: CalibrationType) -> Self {
+        Self {
+            success: false,
+            offset_value: None,
+            error_message: Some(error_message),
+            duration_secs,
+            calibration_type,
+        }
+    }
+
+    /// Get a user-friendly result message.
+    pub fn message(&self) -> String {
+        if self.success {
+            if let Some(offset) = self.offset_value {
+                format!(
+                    "Calibration successful! Offset value: {}",
+                    offset
+                )
+            } else {
+                "Calibration successful!".to_string()
+            }
+        } else {
+            self.error_message
+                .clone()
+                .unwrap_or_else(|| "Calibration failed".to_string())
+        }
+    }
+}
+
+/// Instructions for a specific calibration type.
+#[derive(Debug, Clone)]
+pub struct CalibrationInstructions {
+    /// Title for the calibration process.
+    pub title: String,
+    /// Step-by-step instructions.
+    pub steps: Vec<String>,
+    /// Important warnings or notes.
+    pub warnings: Vec<String>,
+    /// Estimated time to complete in seconds.
+    pub estimated_time_secs: u32,
+    /// Whether pedaling should stop during calibration.
+    pub stop_pedaling: bool,
+    /// Whether the bike should be unweighted (out of saddle).
+    pub unweight_bike: bool,
+}
+
+impl CalibrationInstructions {
+    /// Get instructions for zero-offset calibration.
+    pub fn zero_offset() -> Self {
+        Self {
+            title: "Zero Offset Calibration".to_string(),
+            steps: vec![
+                "Stop pedaling completely".to_string(),
+                "Keep the cranks still (preferably horizontal)".to_string(),
+                "Do not touch the pedals or apply any pressure".to_string(),
+                "Wait for the calibration to complete".to_string(),
+            ],
+            warnings: vec![
+                "The cranks must be completely stationary".to_string(),
+                "Do not apply any force to the pedals".to_string(),
+            ],
+            estimated_time_secs: 5,
+            stop_pedaling: true,
+            unweight_bike: false,
+        }
+    }
+
+    /// Get instructions for manual calibration.
+    pub fn manual_calibration() -> Self {
+        Self {
+            title: "Manual Calibration".to_string(),
+            steps: vec![
+                "Stop pedaling and unclip from the pedals".to_string(),
+                "Remove any weight from the bike (step off)".to_string(),
+                "Ensure the cranks are horizontal".to_string(),
+                "Apply a known weight to the crank arm when prompted".to_string(),
+                "Wait for the calibration to complete".to_string(),
+            ],
+            warnings: vec![
+                "Only perform if instructed by the manufacturer".to_string(),
+                "Requires accurate known weight".to_string(),
+            ],
+            estimated_time_secs: 30,
+            stop_pedaling: true,
+            unweight_bike: true,
+        }
+    }
+
+    /// Get instructions for automatic calibration.
+    pub fn automatic_calibration() -> Self {
+        Self {
+            title: "Automatic Calibration".to_string(),
+            steps: vec![
+                "Stop pedaling completely".to_string(),
+                "The power meter will calibrate automatically".to_string(),
+                "Wait for the calibration to complete".to_string(),
+            ],
+            warnings: vec![
+                "Do not pedal during automatic calibration".to_string(),
+            ],
+            estimated_time_secs: 10,
+            stop_pedaling: true,
+            unweight_bike: false,
+        }
+    }
+
+    /// Get instructions for a specific calibration type.
+    pub fn for_type(calibration_type: CalibrationType) -> Self {
+        match calibration_type {
+            CalibrationType::ZeroOffset => Self::zero_offset(),
+            CalibrationType::ManualCalibration => Self::manual_calibration(),
+            CalibrationType::AutomaticCalibration => Self::automatic_calibration(),
+        }
+    }
+}
+
+/// State of an ongoing calibration process.
+#[derive(Debug, Clone)]
+pub struct CalibrationProcess {
+    /// The device being calibrated.
+    pub device_id: String,
+    /// Name of the device being calibrated.
+    pub device_name: String,
+    /// Protocol of the device.
+    pub protocol: Protocol,
+    /// Type of calibration being performed.
+    pub calibration_type: CalibrationType,
+    /// Current step in the process.
+    pub current_step: CalibrationStep,
+    /// When the calibration process started.
+    pub started_at: std::time::Instant,
+    /// Instructions for this calibration.
+    pub instructions: CalibrationInstructions,
+    /// The result of the calibration (set when completed or failed).
+    pub result: Option<CalibrationResult>,
+    /// Optional user notes to record with the calibration.
+    pub user_notes: Option<String>,
+}
+
+impl CalibrationProcess {
+    /// Create a new calibration process.
+    pub fn new(
+        device_id: String,
+        device_name: String,
+        protocol: Protocol,
+        calibration_type: CalibrationType,
+    ) -> Self {
+        Self {
+            device_id,
+            device_name,
+            protocol,
+            calibration_type,
+            current_step: CalibrationStep::Instructions,
+            started_at: std::time::Instant::now(),
+            instructions: CalibrationInstructions::for_type(calibration_type),
+            result: None,
+            user_notes: None,
+        }
+    }
+
+    /// Advance to the next step.
+    pub fn advance_step(&mut self) {
+        self.current_step = match self.current_step {
+            CalibrationStep::Instructions => CalibrationStep::Preparing,
+            CalibrationStep::Preparing => CalibrationStep::SendingCommand,
+            CalibrationStep::SendingCommand => CalibrationStep::WaitingForResult,
+            CalibrationStep::WaitingForResult => CalibrationStep::Completed,
+            CalibrationStep::Completed | CalibrationStep::Failed => self.current_step,
+        };
+    }
+
+    /// Mark the calibration as completed successfully.
+    pub fn complete(&mut self, offset_value: Option<i32>) {
+        let duration = self.started_at.elapsed().as_secs_f32();
+        self.result = Some(CalibrationResult::success(offset_value, duration, self.calibration_type));
+        self.current_step = CalibrationStep::Completed;
+    }
+
+    /// Mark the calibration as failed.
+    pub fn fail(&mut self, error_message: String) {
+        let duration = self.started_at.elapsed().as_secs_f32();
+        self.result = Some(CalibrationResult::failure(error_message, duration, self.calibration_type));
+        self.current_step = CalibrationStep::Failed;
+    }
+
+    /// Set user notes for this calibration.
+    pub fn set_notes(&mut self, notes: String) {
+        self.user_notes = Some(notes);
+    }
+
+    /// Get the elapsed time in seconds.
+    pub fn elapsed_secs(&self) -> f32 {
+        self.started_at.elapsed().as_secs_f32()
+    }
+
+    /// Check if the calibration is in progress.
+    pub fn is_in_progress(&self) -> bool {
+        matches!(
+            self.current_step,
+            CalibrationStep::Instructions
+                | CalibrationStep::Preparing
+                | CalibrationStep::SendingCommand
+                | CalibrationStep::WaitingForResult
+        )
+    }
+
+    /// Check if the calibration is finished (completed or failed).
+    pub fn is_finished(&self) -> bool {
+        matches!(
+            self.current_step,
+            CalibrationStep::Completed | CalibrationStep::Failed
+        )
+    }
+
+    /// Get the progress percentage (0-100).
+    pub fn progress_percent(&self) -> f32 {
+        match self.current_step {
+            CalibrationStep::Instructions => 0.0,
+            CalibrationStep::Preparing => 20.0,
+            CalibrationStep::SendingCommand => 40.0,
+            CalibrationStep::WaitingForResult => {
+                // Calculate progress based on estimated time
+                let elapsed = self.elapsed_secs();
+                let estimated = self.instructions.estimated_time_secs as f32;
+                let waiting_progress = (elapsed / estimated).min(0.95);
+                40.0 + (waiting_progress * 50.0)
+            }
+            CalibrationStep::Completed | CalibrationStep::Failed => 100.0,
+        }
+    }
 }
 
 /// Check if a sensor type is a power meter or provides power data.
@@ -1084,5 +1410,203 @@ mod tests {
             CalibrationReminderType::Overdue,
         );
         assert!(overdue.short_message().contains("overdue"));
+    }
+
+    #[test]
+    fn test_calibration_type_display() {
+        assert_eq!(format!("{}", CalibrationType::ZeroOffset), "Zero Offset");
+        assert_eq!(format!("{}", CalibrationType::ManualCalibration), "Manual Calibration");
+        assert_eq!(format!("{}", CalibrationType::AutomaticCalibration), "Automatic Calibration");
+    }
+
+    #[test]
+    fn test_calibration_step_display() {
+        assert_eq!(format!("{}", CalibrationStep::Instructions), "Instructions");
+        assert_eq!(format!("{}", CalibrationStep::Preparing), "Preparing");
+        assert_eq!(format!("{}", CalibrationStep::SendingCommand), "Sending Command");
+        assert_eq!(format!("{}", CalibrationStep::WaitingForResult), "Waiting for Result");
+        assert_eq!(format!("{}", CalibrationStep::Completed), "Completed");
+        assert_eq!(format!("{}", CalibrationStep::Failed), "Failed");
+    }
+
+    #[test]
+    fn test_calibration_result_success() {
+        let result = CalibrationResult::success(Some(100), 3.5, CalibrationType::ZeroOffset);
+
+        assert!(result.success);
+        assert_eq!(result.offset_value, Some(100));
+        assert!(result.error_message.is_none());
+        assert_eq!(result.duration_secs, 3.5);
+        assert_eq!(result.calibration_type, CalibrationType::ZeroOffset);
+        assert!(result.message().contains("100"));
+    }
+
+    #[test]
+    fn test_calibration_result_failure() {
+        let result = CalibrationResult::failure(
+            "Sensor not ready".to_string(),
+            2.0,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert!(!result.success);
+        assert!(result.offset_value.is_none());
+        assert_eq!(result.error_message, Some("Sensor not ready".to_string()));
+        assert!(result.message().contains("Sensor not ready"));
+    }
+
+    #[test]
+    fn test_calibration_instructions_zero_offset() {
+        let instructions = CalibrationInstructions::zero_offset();
+
+        assert_eq!(instructions.title, "Zero Offset Calibration");
+        assert!(!instructions.steps.is_empty());
+        assert!(instructions.stop_pedaling);
+        assert!(!instructions.unweight_bike);
+        assert!(instructions.estimated_time_secs > 0);
+    }
+
+    #[test]
+    fn test_calibration_instructions_manual() {
+        let instructions = CalibrationInstructions::manual_calibration();
+
+        assert!(instructions.title.contains("Manual"));
+        assert!(instructions.unweight_bike);
+        assert!(instructions.estimated_time_secs > 10); // Manual takes longer
+    }
+
+    #[test]
+    fn test_calibration_instructions_automatic() {
+        let instructions = CalibrationInstructions::automatic_calibration();
+
+        assert!(instructions.title.contains("Automatic"));
+        assert!(instructions.stop_pedaling);
+    }
+
+    #[test]
+    fn test_calibration_instructions_for_type() {
+        let zero = CalibrationInstructions::for_type(CalibrationType::ZeroOffset);
+        assert!(zero.title.contains("Zero"));
+
+        let manual = CalibrationInstructions::for_type(CalibrationType::ManualCalibration);
+        assert!(manual.title.contains("Manual"));
+
+        let auto = CalibrationInstructions::for_type(CalibrationType::AutomaticCalibration);
+        assert!(auto.title.contains("Automatic"));
+    }
+
+    #[test]
+    fn test_calibration_process_new() {
+        let process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert_eq!(process.device_id, "device1");
+        assert_eq!(process.device_name, "Stages Power");
+        assert_eq!(process.calibration_type, CalibrationType::ZeroOffset);
+        assert_eq!(process.current_step, CalibrationStep::Instructions);
+        assert!(process.result.is_none());
+        assert!(process.is_in_progress());
+        assert!(!process.is_finished());
+    }
+
+    #[test]
+    fn test_calibration_process_advance_step() {
+        let mut process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert_eq!(process.current_step, CalibrationStep::Instructions);
+
+        process.advance_step();
+        assert_eq!(process.current_step, CalibrationStep::Preparing);
+
+        process.advance_step();
+        assert_eq!(process.current_step, CalibrationStep::SendingCommand);
+
+        process.advance_step();
+        assert_eq!(process.current_step, CalibrationStep::WaitingForResult);
+
+        process.advance_step();
+        assert_eq!(process.current_step, CalibrationStep::Completed);
+    }
+
+    #[test]
+    fn test_calibration_process_complete() {
+        let mut process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        process.complete(Some(42));
+
+        assert_eq!(process.current_step, CalibrationStep::Completed);
+        assert!(process.result.is_some());
+        assert!(process.result.as_ref().unwrap().success);
+        assert_eq!(process.result.as_ref().unwrap().offset_value, Some(42));
+        assert!(process.is_finished());
+        assert!(!process.is_in_progress());
+    }
+
+    #[test]
+    fn test_calibration_process_fail() {
+        let mut process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        process.fail("Timeout".to_string());
+
+        assert_eq!(process.current_step, CalibrationStep::Failed);
+        assert!(process.result.is_some());
+        assert!(!process.result.as_ref().unwrap().success);
+        assert!(process.is_finished());
+    }
+
+    #[test]
+    fn test_calibration_process_notes() {
+        let mut process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert!(process.user_notes.is_none());
+
+        process.set_notes("Cold garage calibration".to_string());
+
+        assert_eq!(process.user_notes, Some("Cold garage calibration".to_string()));
+    }
+
+    #[test]
+    fn test_calibration_process_progress_percent() {
+        let mut process = CalibrationProcess::new(
+            "device1".to_string(),
+            "Stages Power".to_string(),
+            Protocol::BleCyclingPower,
+            CalibrationType::ZeroOffset,
+        );
+
+        assert_eq!(process.progress_percent(), 0.0);
+
+        process.current_step = CalibrationStep::Preparing;
+        assert_eq!(process.progress_percent(), 20.0);
+
+        process.current_step = CalibrationStep::SendingCommand;
+        assert_eq!(process.progress_percent(), 40.0);
+
+        process.current_step = CalibrationStep::Completed;
+        assert_eq!(process.progress_percent(), 100.0);
     }
 }
