@@ -10,7 +10,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 // Re-export main types
-pub use client::{ConnectionState, DefaultMqttClient, MqttClient, MqttTestResult, test_mqtt_connection};
+pub use client::{ConnectionState, DefaultMqttClient, FanTestResult, MqttClient, MqttTestResult, test_fan, test_mqtt_connection};
 pub use fan::{
     DefaultFanController, FanController, FanProfile, FanProfileSettings, FanState, PayloadFormat,
     // Database helper functions

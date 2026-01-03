@@ -58,6 +58,40 @@ impl Default for MqttTestStatus {
     }
 }
 
+/// Status of a fan speed test cycle.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FanTestStatus {
+    /// No test has been run
+    Idle,
+    /// Test is currently running, cycling through speeds
+    Testing {
+        /// Current speed being tested (0-100)
+        current_speed: u8,
+        /// Profile name being tested
+        profile_name: String,
+    },
+    /// Test completed successfully
+    Success {
+        /// Success message
+        message: String,
+        /// Time the test was completed
+        timestamp: std::time::Instant,
+    },
+    /// Test failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the test was completed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for FanTestStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
 /// Settings screen state.
 pub struct SettingsScreen {
     /// Current user profile being edited
@@ -123,6 +157,10 @@ pub struct SettingsScreen {
     mqtt_test_requested: bool,
     /// Editing fan profile (index, if editing)
     editing_fan_profile: Option<usize>,
+    /// Status of fan speed test cycle
+    pub fan_test_status: FanTestStatus,
+    /// Flag indicating fan test was requested (profile_id, mqtt_config, fan_profile)
+    fan_test_requested: Option<(Uuid, MqttConfig, FanProfile)>,
     /// T100: Weather configuration
     pub weather_config: WeatherConfig,
     /// T100: Show/hide weather section
@@ -479,6 +517,8 @@ pub enum SettingsAction {
     StopLearningMode,
     /// Test MQTT broker connection
     TestMqttConnection(MqttConfig),
+    /// Test fan by cycling through speeds (profile, mqtt_config)
+    TestFan(FanProfile, MqttConfig),
 }
 
 impl SettingsScreen {
@@ -529,6 +569,8 @@ impl SettingsScreen {
             mqtt_test_status: MqttTestStatus::Idle,
             mqtt_test_requested: false,
             editing_fan_profile: None,
+            fan_test_status: FanTestStatus::Idle,
+            fan_test_requested: None,
             weather_config: WeatherConfig::default(),
             show_weather: false,
             weather_lat_input: "0.0".to_string(),
@@ -626,6 +668,39 @@ impl SettingsScreen {
     /// Called by app.rs when starting a connection test.
     pub fn set_mqtt_testing(&mut self) {
         self.mqtt_test_status = MqttTestStatus::Testing;
+    }
+
+    /// Set the fan test status result.
+    /// Called by app.rs after a fan test completes.
+    pub fn set_fan_test_result(&mut self, success: bool, message: String) {
+        if success {
+            self.fan_test_status = FanTestStatus::Success {
+                message,
+                timestamp: std::time::Instant::now(),
+            };
+        } else {
+            self.fan_test_status = FanTestStatus::Failed {
+                message,
+                timestamp: std::time::Instant::now(),
+            };
+        }
+    }
+
+    /// Set fan test status to testing (in progress).
+    /// Called by app.rs when starting a fan test.
+    pub fn set_fan_testing(&mut self, profile_name: String, current_speed: u8) {
+        self.fan_test_status = FanTestStatus::Testing {
+            current_speed,
+            profile_name,
+        };
+    }
+
+    /// Update the current speed during fan testing.
+    /// Called by app.rs during the test cycle.
+    pub fn update_fan_test_speed(&mut self, speed: u8) {
+        if let FanTestStatus::Testing { ref mut current_speed, .. } = self.fan_test_status {
+            *current_speed = speed;
+        }
     }
 
     /// Set incline configuration.
@@ -828,6 +903,15 @@ impl SettingsScreen {
             self.mqtt_test_requested = false;
             self.mqtt_test_status = MqttTestStatus::Testing;
             return SettingsAction::TestMqttConnection(self.mqtt_config.clone());
+        }
+
+        // Check if fan test was requested
+        if let Some((_, mqtt_config, fan_profile)) = self.fan_test_requested.take() {
+            self.fan_test_status = FanTestStatus::Testing {
+                current_speed: 0,
+                profile_name: fan_profile.name.clone(),
+            };
+            return SettingsAction::TestFan(fan_profile, mqtt_config);
         }
 
         // Check if HID device scan was requested
@@ -2611,6 +2695,62 @@ impl SettingsScreen {
                                 {
                                     profile.zone_speeds = [0, 0, 0, 25, 50, 75, 100];
                                     self.has_changes = true;
+                                }
+                            });
+
+                            ui.add_space(8.0);
+
+                            // Test fan button
+                            ui.horizontal(|ui| {
+                                // Determine if we can test (not already testing)
+                                let is_testing = matches!(self.fan_test_status, FanTestStatus::Testing { .. });
+
+                                // Button - disabled while testing
+                                let button_text = if is_testing {
+                                    "Testing..."
+                                } else {
+                                    "Test Fan"
+                                };
+
+                                let button = egui::Button::new(button_text);
+                                let button_response = ui.add_enabled(!is_testing, button)
+                                    .on_hover_text("Cycle through fan speeds to verify configuration");
+
+                                if button_response.clicked() && !is_testing {
+                                    // Store the request to be processed in show()
+                                    self.fan_test_requested = Some((
+                                        profile.id,
+                                        self.mqtt_config.clone(),
+                                        profile.clone(),
+                                    ));
+                                }
+
+                                // Show status indicator/message
+                                ui.add_space(8.0);
+                                match &self.fan_test_status {
+                                    FanTestStatus::Idle => {
+                                        // No message
+                                    }
+                                    FanTestStatus::Testing { current_speed, profile_name } => {
+                                        ui.spinner();
+                                        ui.label(RichText::new(format!("Testing {} at {}%...", profile_name, current_speed)).weak());
+                                    }
+                                    FanTestStatus::Success { message, timestamp } => {
+                                        // Show success for 10 seconds, then fade
+                                        let elapsed = timestamp.elapsed().as_secs();
+                                        if elapsed < 10 {
+                                            ui.label(RichText::new("✓").color(Color32::from_rgb(52, 168, 83)));
+                                            ui.label(RichText::new(message).color(Color32::from_rgb(52, 168, 83)).small());
+                                        }
+                                    }
+                                    FanTestStatus::Failed { message, timestamp } => {
+                                        // Show failure for 30 seconds
+                                        let elapsed = timestamp.elapsed().as_secs();
+                                        if elapsed < 30 {
+                                            ui.label(RichText::new("✗").color(Color32::from_rgb(234, 67, 53)));
+                                            ui.label(RichText::new(message).color(Color32::from_rgb(234, 67, 53)).small());
+                                        }
+                                    }
                                 }
                             });
                         });

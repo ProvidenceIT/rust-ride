@@ -803,6 +803,192 @@ pub async fn test_mqtt_connection(config: &MqttConfig) -> MqttTestResult {
     // Note: The test client is dropped here, which will clean up the connection
 }
 
+/// Result of a fan test cycle.
+#[derive(Debug, Clone)]
+pub struct FanTestResult {
+    /// Whether the test completed successfully
+    pub success: bool,
+    /// Status message
+    pub message: String,
+    /// Duration of the test in milliseconds
+    pub duration_ms: u64,
+    /// Current speed being tested (for progress updates)
+    pub current_speed: u8,
+}
+
+/// Callback type for fan test progress updates.
+pub type FanTestProgressCallback = Box<dyn Fn(u8) + Send + Sync>;
+
+/// Test a fan by cycling through speeds without affecting the main client state.
+///
+/// This function creates a temporary MQTT connection, cycles through fan speeds
+/// [25, 50, 75, 100, 50, 0] with delays between each, then disconnects.
+/// It's designed to be used from the settings UI to validate fan configuration.
+///
+/// # Arguments
+/// * `config` - MQTT broker configuration
+/// * `profile` - Fan profile with topic and payload format
+/// * `progress_callback` - Optional callback for progress updates (receives current speed)
+pub async fn test_fan(
+    config: &MqttConfig,
+    profile: &super::fan::FanProfile,
+    progress_callback: Option<FanTestProgressCallback>,
+) -> FanTestResult {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    if !config.enabled {
+        return FanTestResult {
+            success: false,
+            message: "MQTT is disabled in configuration".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            current_speed: 0,
+        };
+    }
+
+    if config.broker_host.is_empty() {
+        return FanTestResult {
+            success: false,
+            message: "Broker host is not configured".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            current_speed: 0,
+        };
+    }
+
+    if profile.mqtt_topic.is_empty() {
+        return FanTestResult {
+            success: false,
+            message: "Fan MQTT topic is not configured".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            current_speed: 0,
+        };
+    }
+
+    // Create test client ID (unique for this test)
+    let test_client_id = format!("{}-fantest-{}", config.client_id, uuid::Uuid::new_v4().as_simple());
+
+    // Create MQTT options for the test connection
+    let mut mqtt_options = MqttOptions::new(
+        &test_client_id,
+        &config.broker_host,
+        config.broker_port,
+    );
+    mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
+
+    // Use a shorter timeout for testing (max 10 seconds)
+    let timeout_secs = std::cmp::min(config.connection_timeout_secs, 10);
+    mqtt_options.set_connection_timeout(timeout_secs.into());
+
+    // Configure TLS when enabled
+    configure_tls(&mut mqtt_options, config.use_tls);
+
+    // Configure credentials from keyring when username is set
+    let credential_store = MqttCredentialStore::new();
+    configure_credentials(&mut mqtt_options, config, &credential_store);
+
+    tracing::info!(
+        "Testing fan '{}' on topic '{}' via {}:{}",
+        profile.name,
+        profile.mqtt_topic,
+        config.broker_host,
+        config.broker_port
+    );
+
+    // Create the test client and event loop
+    let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+
+    // First, connect to the broker
+    let connect_timeout = Duration::from_secs(timeout_secs as u64);
+    let connect_result = tokio::time::timeout(connect_timeout, async {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::ConnAck(connack))) => {
+                    if connack.code == rumqttc::ConnectReturnCode::Success {
+                        return Ok(());
+                    } else {
+                        return Err(format!("Connection rejected: {:?}", connack.code));
+                    }
+                }
+                Ok(_event) => continue,
+                Err(e) => return Err(format!("Connection error: {}", e)),
+            }
+        }
+    })
+    .await;
+
+    match connect_result {
+        Ok(Ok(())) => {
+            tracing::info!("Connected to MQTT broker for fan test");
+        }
+        Ok(Err(e)) => {
+            return FanTestResult {
+                success: false,
+                message: e,
+                duration_ms: start.elapsed().as_millis() as u64,
+                current_speed: 0,
+            };
+        }
+        Err(_) => {
+            return FanTestResult {
+                success: false,
+                message: format!("Connection timed out after {}s", timeout_secs),
+                duration_ms: start.elapsed().as_millis() as u64,
+                current_speed: 0,
+            };
+        }
+    }
+
+    // Cycle through speeds: 25, 50, 75, 100, 50, 0
+    let speeds: [u8; 6] = [25, 50, 75, 100, 50, 0];
+    let topic = profile.command_topic();
+
+    for speed in speeds.iter() {
+        // Notify progress callback
+        if let Some(ref callback) = progress_callback {
+            callback(*speed);
+        }
+
+        // Format and publish the speed command
+        let is_on = *speed > 0;
+        let payload = profile.format_payload(*speed, is_on);
+
+        tracing::debug!("Fan test: setting speed to {}% (topic: {}, payload: {})", speed, topic, payload);
+
+        if let Err(e) = client.publish(&topic, RumqttcQoS::AtLeastOnce, false, payload.as_bytes()).await {
+            return FanTestResult {
+                success: false,
+                message: format!("Failed to publish speed {}: {}", speed, e),
+                duration_ms: start.elapsed().as_millis() as u64,
+                current_speed: *speed,
+            };
+        }
+
+        // Poll the event loop to process the publish
+        // Give it a short time to process the outgoing message
+        let poll_result = tokio::time::timeout(Duration::from_millis(500), eventloop.poll()).await;
+        if let Ok(Err(e)) = poll_result {
+            tracing::warn!("Event loop error during fan test: {}", e);
+            // Continue anyway, the publish may have still succeeded
+        }
+
+        // Wait 2 seconds before changing speed (unless this is the last speed)
+        if *speed != 0 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
+    tracing::info!("Fan test completed successfully for '{}'", profile.name);
+
+    FanTestResult {
+        success: true,
+        message: format!("Fan test completed for '{}'", profile.name),
+        duration_ms: start.elapsed().as_millis() as u64,
+        current_speed: 0,
+    }
+    // Note: The test client is dropped here, which will clean up the connection
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -165,6 +165,9 @@ pub struct RustRideApp {
     /// T071/4.3: Pending MQTT connection test task handle
     pending_mqtt_test:
         Option<tokio::task::JoinHandle<rustride::integrations::mqtt::MqttTestResult>>,
+    /// T012/6.3: Pending fan test task handle
+    pending_fan_test:
+        Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
 }
 
 impl RustRideApp {
@@ -413,6 +416,7 @@ impl RustRideApp {
             user_id,
             database,
             pending_mqtt_test: None,
+            pending_fan_test: None,
         }
     }
 
@@ -907,6 +911,45 @@ impl RustRideApp {
         }
     }
 
+    /// T012/6.3: Poll for fan test result.
+    ///
+    /// Called each frame to check if a pending fan test has completed.
+    fn poll_fan_test(&mut self) {
+        // Only poll when on the Settings screen
+        if self.current_screen != Screen::Settings {
+            return;
+        }
+
+        // Check if we have a pending test
+        if let Some(handle) = &mut self.pending_fan_test {
+            // Check if the task has completed (non-blocking)
+            if handle.is_finished() {
+                // Take ownership of the handle
+                if let Some(handle) = self.pending_fan_test.take() {
+                    // Block on the result (it's already finished, so this is instant)
+                    match self.tokio_runtime.block_on(handle) {
+                        Ok(result) => {
+                            tracing::info!(
+                                "Fan test completed: success={}, message={}",
+                                result.success,
+                                result.message
+                            );
+                            self.settings_screen
+                                .set_fan_test_result(result.success, result.message);
+                        }
+                        Err(e) => {
+                            tracing::error!("Fan test task panicked: {}", e);
+                            self.settings_screen.set_fan_test_result(
+                                false,
+                                format!("Internal error: {}", e),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// T091: Process pending executor events for UI navigation.
     ///
     /// Called each frame to handle navigation and fullscreen events from HID button actions.
@@ -1194,14 +1237,19 @@ impl eframe::App for RustRideApp {
         // T071/4.3: Poll for MQTT connection test result
         self.poll_mqtt_test();
 
+        // T012/6.3: Poll for fan test result
+        self.poll_fan_test();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test)
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test)
         if self.current_screen == Screen::Ride
             || self.current_screen == Screen::SensorSetup
             || (self.current_screen == Screen::Settings
-                && (self.button_input_handler.is_learning() || self.pending_mqtt_test.is_some()))
+                && (self.button_input_handler.is_learning()
+                    || self.pending_mqtt_test.is_some()
+                    || self.pending_fan_test.is_some()))
         {
             ctx.request_repaint();
         }
@@ -1474,6 +1522,20 @@ impl eframe::App for RustRideApp {
                                 rustride::integrations::mqtt::test_mqtt_connection(&config).await
                             });
                             self.pending_mqtt_test = Some(handle);
+                        }
+                        SettingsAction::TestFan(profile, config) => {
+                            // T012/6.3: Test fan by cycling through speeds
+                            tracing::info!(
+                                "Testing fan '{}' on topic '{}'",
+                                profile.name,
+                                profile.mqtt_topic
+                            );
+
+                            // Spawn async task to test the fan
+                            let handle = self.tokio_runtime.spawn(async move {
+                                rustride::integrations::mqtt::test_fan(&config, &profile, None).await
+                            });
+                            self.pending_fan_test = Some(handle);
                         }
                         SettingsAction::None => {}
                     }
