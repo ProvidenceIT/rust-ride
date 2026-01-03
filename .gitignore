@@ -56,3 +56,12 @@ data/
 *.profdata
 coverage/
 tarpaulin-report.html
+
+# React Native / Node.js (companion-app)
+companion-app/node_modules/
+companion-app/.bundle/
+companion-app/android/app/build/
+companion-app/android/.gradle/
+companion-app/ios/Pods/
+companion-app/ios/build/
+companion-app/.metro-health-check-*
