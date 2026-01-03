@@ -20,7 +20,7 @@ use crate::workouts::types::WorkoutEvent;
 use std::sync::Arc;
 
 /// Configuration for the workout audio bridge.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkoutAudioBridgeConfig {
     /// Enable interval change announcements
     pub announce_interval_changes: bool,
@@ -39,6 +39,24 @@ pub struct WorkoutAudioBridgeConfig {
     /// Enable voice announcements for countdown (10s, 5s)
     /// When false, only plays tones for all countdown values
     pub countdown_voice_enabled: bool,
+    /// Which countdown seconds to announce (voice and/or tones).
+    /// Default: [10, 5, 3, 2, 1]
+    /// This allows customization of which countdown values trigger audio feedback.
+    #[serde(default = "default_countdown_thresholds")]
+    pub countdown_thresholds: Vec<u32>,
+    /// Thresholds that receive voice announcements (subset of countdown_thresholds).
+    /// Default: [10, 5]
+    /// Other thresholds in countdown_thresholds will receive tone-only feedback.
+    #[serde(default = "default_countdown_voice_thresholds")]
+    pub countdown_voice_thresholds: Vec<u32>,
+}
+
+fn default_countdown_thresholds() -> Vec<u32> {
+    vec![10, 5, 3, 2, 1]
+}
+
+fn default_countdown_voice_thresholds() -> Vec<u32> {
+    vec![10, 5]
 }
 
 impl Default for WorkoutAudioBridgeConfig {
@@ -52,6 +70,8 @@ impl Default for WorkoutAudioBridgeConfig {
             announce_motivational_messages: false, // Optional by default to avoid annoyance
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: default_countdown_thresholds(),
+            countdown_voice_thresholds: default_countdown_voice_thresholds(),
         }
     }
 }
@@ -269,8 +289,11 @@ impl<A: AlertManager, E: AudioEngine> WorkoutAudioBridge<A, E> {
     ///
     /// # Countdown Strategy
     ///
-    /// - **10 seconds**: Voice announcement ("10 seconds") + countdown tick tone
-    /// - **5 seconds**: Voice announcement ("5 seconds") + countdown tick tone
+    /// Uses configurable `countdown_thresholds` to determine which seconds trigger audio.
+    /// Uses `countdown_voice_thresholds` to determine which of those get voice announcements.
+    ///
+    /// Default behavior:
+    /// - **10, 5 seconds**: Voice announcement + countdown tick tone
     /// - **3, 2, 1 seconds**: Tone-only with escalating urgency patterns
     ///
     /// This approach prevents voice announcements from overlapping during the
@@ -278,47 +301,37 @@ impl<A: AlertManager, E: AudioEngine> WorkoutAudioBridge<A, E> {
     async fn handle_countdown(&self, seconds_remaining: u32) {
         tracing::debug!("Handling countdown: {} seconds", seconds_remaining);
 
+        // Check if this second is in our configured thresholds
+        let is_countdown_threshold = self.config.countdown_thresholds.contains(&seconds_remaining);
+        if !is_countdown_threshold {
+            tracing::trace!(
+                "Countdown {} seconds - no audio (not a configured threshold)",
+                seconds_remaining
+            );
+            return;
+        }
+
+        // Check if this second should get voice announcement
+        let is_voice_threshold = self.config.countdown_voice_thresholds.contains(&seconds_remaining);
+
         // Get the appropriate countdown pattern for this second
         let pattern = CuePattern::for_countdown_seconds(seconds_remaining);
 
-        match seconds_remaining {
-            // For 10 and 5 seconds: voice announcement + tone
-            10 | 5 => {
-                // Play countdown tone if sounds are enabled
-                if self.config.countdown_sounds_enabled {
-                    if let Some(cue_pattern) = pattern {
-                        self.play_countdown_tone(cue_pattern).await;
-                    }
-                }
-
-                // Voice announcement if enabled
-                if self.config.countdown_voice_enabled {
-                    self.alert_manager
-                        .trigger(
-                            AlertType::IntervalCountdown,
-                            AlertContext::countdown(seconds_remaining),
-                        )
-                        .await;
-                }
+        // Play countdown tone if sounds are enabled
+        if self.config.countdown_sounds_enabled {
+            if let Some(cue_pattern) = pattern {
+                self.play_countdown_tone(cue_pattern).await;
             }
+        }
 
-            // For 3, 2, 1 seconds: tone only (no voice to avoid overlap)
-            3 | 2 | 1 => {
-                if self.config.countdown_sounds_enabled {
-                    if let Some(cue_pattern) = pattern {
-                        self.play_countdown_tone(cue_pattern).await;
-                    }
-                }
-                // No voice for final 3-2-1 to prevent overlapping announcements
-            }
-
-            // For other seconds (if any): just log, no audio
-            _ => {
-                tracing::trace!(
-                    "Countdown {} seconds - no audio (not a configured threshold)",
-                    seconds_remaining
-                );
-            }
+        // Voice announcement if enabled and this is a voice threshold
+        if self.config.countdown_voice_enabled && is_voice_threshold {
+            self.alert_manager
+                .trigger(
+                    AlertType::IntervalCountdown,
+                    AlertContext::countdown(seconds_remaining),
+                )
+                .await;
         }
     }
 
@@ -707,6 +720,8 @@ mod tests {
             announce_motivational_messages: false,
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -749,6 +764,8 @@ mod tests {
             announce_motivational_messages: false,
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -786,6 +803,8 @@ mod tests {
             announce_motivational_messages: false,
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -815,6 +834,8 @@ mod tests {
         assert!(!config.announce_motivational_messages); // Disabled by default
         assert!(config.countdown_sounds_enabled);
         assert!(config.countdown_voice_enabled);
+        assert_eq!(config.countdown_thresholds, vec![10, 5, 3, 2, 1]);
+        assert_eq!(config.countdown_voice_thresholds, vec![10, 5]);
     }
 
     #[tokio::test]
@@ -830,6 +851,8 @@ mod tests {
             announce_motivational_messages: true, // Enable motivational messages
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -861,6 +884,8 @@ mod tests {
             announce_motivational_messages: true, // Enable motivational messages
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -892,6 +917,8 @@ mod tests {
             announce_motivational_messages: false, // Disabled
             countdown_sounds_enabled: true,
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -937,6 +964,8 @@ mod tests {
             announce_motivational_messages: false,
             countdown_sounds_enabled: false, // Disable countdown sounds
             countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -969,6 +998,8 @@ mod tests {
             announce_motivational_messages: false,
             countdown_sounds_enabled: true,
             countdown_voice_enabled: false, // Disable countdown voice
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10, 5],
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -986,5 +1017,157 @@ mod tests {
         // But tones should still be played
         let tones = audio_engine.get_played_tones();
         assert!(!tones.is_empty(), "Tones should still play when only voice is disabled");
+    }
+
+    #[tokio::test]
+    async fn test_custom_countdown_thresholds() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let audio_engine = Arc::new(MockAudioEngine::new());
+        // Custom thresholds: only 5 and 3 second countdown
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: true,
+            announce_workout_lifecycle: true,
+            announce_trainer_status: true,
+            announce_recovery_intervals: true,
+            announce_motivational_messages: false,
+            countdown_sounds_enabled: true,
+            countdown_voice_enabled: true,
+            countdown_thresholds: vec![5, 3], // Only 5 and 3 seconds
+            countdown_voice_thresholds: vec![5], // Only 5 seconds gets voice
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
+
+        let events = vec![
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 10 }, // Not in thresholds
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },  // In thresholds, voice
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },  // In thresholds, no voice
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },  // Not in thresholds
+        ];
+        bridge.process_events(&events).await;
+
+        // Only 5 should trigger voice (it's in both thresholds and voice_thresholds)
+        let triggered = alert_manager.get_triggered_alerts();
+        assert_eq!(triggered.len(), 1, "Only 5 seconds should trigger voice");
+        match &triggered[0].1.data {
+            AlertData::Countdown { seconds_remaining } => {
+                assert_eq!(*seconds_remaining, 5);
+            }
+            _ => panic!("Expected Countdown data"),
+        }
+
+        // Tones should be played for 5 and 3 (both in thresholds)
+        let tones = audio_engine.get_played_tones();
+        assert!(!tones.is_empty(), "Should have played tones for 5 and 3 seconds");
+    }
+
+    #[tokio::test]
+    async fn test_countdown_thresholds_out_of_range() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let audio_engine = Arc::new(MockAudioEngine::new());
+        // Custom thresholds: only 3, 2, 1
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: true,
+            announce_workout_lifecycle: true,
+            announce_trainer_status: true,
+            announce_recovery_intervals: true,
+            announce_motivational_messages: false,
+            countdown_sounds_enabled: true,
+            countdown_voice_enabled: true,
+            countdown_thresholds: vec![3, 2, 1],
+            countdown_voice_thresholds: vec![3],
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
+
+        // Send countdown for 10 and 5 which are NOT in thresholds
+        let events = vec![
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 10 },
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
+        ];
+        bridge.process_events(&events).await;
+
+        // No alerts should be triggered (10 and 5 are not in thresholds)
+        let triggered = alert_manager.get_triggered_alerts();
+        assert!(triggered.is_empty(), "10 and 5 are not in thresholds, should have no alerts");
+
+        // No tones either
+        let tones = audio_engine.get_played_tones();
+        assert!(tones.is_empty(), "No tones for out-of-threshold seconds");
+    }
+
+    #[tokio::test]
+    async fn test_countdown_voice_thresholds_subset() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let audio_engine = Arc::new(MockAudioEngine::new());
+        // Voice thresholds is a subset of countdown thresholds
+        let config = WorkoutAudioBridgeConfig {
+            announce_interval_changes: true,
+            announce_countdowns: true,
+            announce_workout_lifecycle: true,
+            announce_trainer_status: true,
+            announce_recovery_intervals: true,
+            announce_motivational_messages: false,
+            countdown_sounds_enabled: true,
+            countdown_voice_enabled: true,
+            countdown_thresholds: vec![10, 5, 3, 2, 1],
+            countdown_voice_thresholds: vec![10], // Only 10 gets voice
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
+
+        let events = vec![
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 10 },
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 2 },
+            WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },
+        ];
+        bridge.process_events(&events).await;
+
+        // Only 10 should trigger voice
+        let triggered = alert_manager.get_triggered_alerts();
+        assert_eq!(triggered.len(), 1, "Only 10 seconds should trigger voice");
+        match &triggered[0].1.data {
+            AlertData::Countdown { seconds_remaining } => {
+                assert_eq!(*seconds_remaining, 10);
+            }
+            _ => panic!("Expected Countdown data"),
+        }
+
+        // All 5 should have triggered tones
+        let tones = audio_engine.get_played_tones();
+        assert!(!tones.is_empty(), "All 5 seconds should have played tones");
+    }
+
+    #[test]
+    fn test_serde_serialization() {
+        let config = WorkoutAudioBridgeConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("countdown_thresholds"));
+        assert!(json.contains("countdown_voice_thresholds"));
+
+        let deserialized: WorkoutAudioBridgeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.countdown_thresholds, vec![10, 5, 3, 2, 1]);
+        assert_eq!(deserialized.countdown_voice_thresholds, vec![10, 5]);
+    }
+
+    #[test]
+    fn test_serde_deserialization_with_defaults() {
+        // Test deserializing without the new fields (backward compatibility)
+        let json = r#"{
+            "announce_interval_changes": true,
+            "announce_countdowns": true,
+            "announce_workout_lifecycle": true,
+            "announce_trainer_status": true,
+            "announce_recovery_intervals": true,
+            "announce_motivational_messages": false,
+            "countdown_sounds_enabled": true,
+            "countdown_voice_enabled": true
+        }"#;
+
+        let config: WorkoutAudioBridgeConfig = serde_json::from_str(json).unwrap();
+        // Should use defaults for missing fields
+        assert_eq!(config.countdown_thresholds, vec![10, 5, 3, 2, 1]);
+        assert_eq!(config.countdown_voice_thresholds, vec![10, 5]);
     }
 }

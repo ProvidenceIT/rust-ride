@@ -74,6 +74,20 @@ pub struct AudioConfig {
     pub sound_effects_volume: u8,
     /// Minimum interval between alerts (prevents spam)
     pub min_alert_interval_ms: u32,
+    /// Enable countdown sounds and voice announcements
+    #[serde(default = "default_countdown_enabled")]
+    pub countdown_enabled: bool,
+    /// Volume for countdown sounds (0-100), separate from master and speech volume
+    #[serde(default = "default_countdown_volume")]
+    pub countdown_volume: u8,
+}
+
+fn default_countdown_enabled() -> bool {
+    true
+}
+
+fn default_countdown_volume() -> u8 {
+    100
 }
 
 impl Default for AudioConfig {
@@ -88,6 +102,8 @@ impl Default for AudioConfig {
             sound_effects_enabled: true,
             sound_effects_volume: 80,
             min_alert_interval_ms: 3000,
+            countdown_enabled: default_countdown_enabled(),
+            countdown_volume: default_countdown_volume(),
         }
     }
 }
@@ -205,6 +221,8 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.volume, 80);
         assert_eq!(config.speech_rate, 1.0);
+        assert!(config.countdown_enabled);
+        assert_eq!(config.countdown_volume, 100);
     }
 
     #[test]
@@ -254,5 +272,59 @@ mod tests {
             }
             _ => panic!("Expected Tone type"),
         }
+    }
+
+    #[test]
+    fn test_audio_config_serde_serialization() {
+        let config = AudioConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("countdown_enabled"));
+        assert!(json.contains("countdown_volume"));
+
+        let deserialized: AudioConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.countdown_enabled);
+        assert_eq!(deserialized.countdown_volume, 100);
+    }
+
+    #[test]
+    fn test_audio_config_serde_with_defaults() {
+        // Test deserializing without the new countdown fields (backward compatibility)
+        let json = r#"{
+            "enabled": true,
+            "volume": 80,
+            "voice_enabled": true,
+            "voice_volume": 100,
+            "preferred_voice": null,
+            "speech_rate": 1.0,
+            "sound_effects_enabled": true,
+            "sound_effects_volume": 80,
+            "min_alert_interval_ms": 3000
+        }"#;
+
+        let config: AudioConfig = serde_json::from_str(json).unwrap();
+        // Should use defaults for missing countdown fields
+        assert!(config.countdown_enabled);
+        assert_eq!(config.countdown_volume, 100);
+    }
+
+    #[test]
+    fn test_audio_config_with_custom_countdown_settings() {
+        let json = r#"{
+            "enabled": true,
+            "volume": 80,
+            "voice_enabled": true,
+            "voice_volume": 100,
+            "preferred_voice": null,
+            "speech_rate": 1.0,
+            "sound_effects_enabled": true,
+            "sound_effects_volume": 80,
+            "min_alert_interval_ms": 3000,
+            "countdown_enabled": false,
+            "countdown_volume": 50
+        }"#;
+
+        let config: AudioConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.countdown_enabled);
+        assert_eq!(config.countdown_volume, 50);
     }
 }
