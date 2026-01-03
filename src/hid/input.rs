@@ -1,0 +1,691 @@
+//! HID Input Reading
+//!
+//! Background task for reading input reports from HID devices
+//! and translating them to button events.
+
+use super::mapping::RawButtonEvent;
+use super::{find_known_device, HidDeviceEvent, HidError};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, Mutex, RwLock};
+use uuid::Uuid;
+
+/// Read timeout for HID devices in milliseconds
+/// Short timeout allows responsive checking of multiple devices
+const READ_TIMEOUT_MS: i32 = 50;
+
+/// Polling interval between read cycles
+const POLL_INTERVAL_MS: u64 = 10;
+
+/// Device type for protocol selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HidDeviceType {
+    /// Elgato Stream Deck (various models)
+    StreamDeck,
+    /// Stream Deck Pedal (foot controller)
+    StreamDeckPedal,
+    /// Generic HID gamepad/button device
+    Generic,
+}
+
+impl HidDeviceType {
+    /// Determine device type from vendor/product IDs
+    pub fn from_ids(vendor_id: u16, product_id: u16) -> Self {
+        // Elgato vendor ID
+        if vendor_id == 0x0FD9 {
+            match product_id {
+                // Stream Deck Pedal
+                0x0086 => HidDeviceType::StreamDeckPedal,
+                // All other Elgato Stream Deck variants
+                0x0060 | 0x006C | 0x006D | 0x0080 => HidDeviceType::StreamDeck,
+                _ => HidDeviceType::Generic,
+            }
+        } else {
+            HidDeviceType::Generic
+        }
+    }
+}
+
+/// Information about an open device for input reading
+#[derive(Debug, Clone)]
+pub struct OpenDeviceInfo {
+    /// Device UUID
+    pub id: Uuid,
+    /// Vendor ID
+    pub vendor_id: u16,
+    /// Product ID
+    pub product_id: u16,
+    /// Device type for protocol selection
+    pub device_type: HidDeviceType,
+    /// Number of buttons
+    pub button_count: u8,
+    /// Previous button states for press/release detection
+    pub previous_states: Vec<bool>,
+}
+
+impl OpenDeviceInfo {
+    /// Create new device info
+    pub fn new(id: Uuid, vendor_id: u16, product_id: u16) -> Self {
+        let device_type = HidDeviceType::from_ids(vendor_id, product_id);
+        let button_count = find_known_device(vendor_id, product_id)
+            .map(|d| d.button_count)
+            .unwrap_or(32); // Default to 32 buttons for unknown devices
+
+        Self {
+            id,
+            vendor_id,
+            product_id,
+            device_type,
+            button_count,
+            previous_states: vec![false; button_count as usize],
+        }
+    }
+}
+
+/// HID Input Reader
+///
+/// Manages background reading of input reports from open HID devices.
+pub struct HidInputReader {
+    /// Reference to device handles (shared with device manager)
+    device_handles: Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>>,
+    /// Information about open devices
+    open_devices: Arc<RwLock<HashMap<Uuid, OpenDeviceInfo>>>,
+    /// Sender for raw button events
+    event_tx: broadcast::Sender<RawButtonEvent>,
+    /// Whether the reader is running
+    is_running: Arc<RwLock<bool>>,
+    /// Receiver for device events
+    device_event_rx: Option<broadcast::Receiver<HidDeviceEvent>>,
+}
+
+impl HidInputReader {
+    /// Create a new HID input reader
+    ///
+    /// # Arguments
+    /// * `device_handles` - Shared reference to device handles from device manager
+    pub fn new(device_handles: Arc<Mutex<HashMap<Uuid, hidapi::HidDevice>>>) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+
+        Self {
+            device_handles,
+            open_devices: Arc::new(RwLock::new(HashMap::new())),
+            event_tx,
+            is_running: Arc::new(RwLock::new(false)),
+            device_event_rx: None,
+        }
+    }
+
+    /// Set the device event receiver for tracking device opens/closes
+    pub fn with_device_events(mut self, rx: broadcast::Receiver<HidDeviceEvent>) -> Self {
+        self.device_event_rx = Some(rx);
+        self
+    }
+
+    /// Subscribe to raw button events
+    pub fn subscribe(&self) -> broadcast::Receiver<RawButtonEvent> {
+        self.event_tx.subscribe()
+    }
+
+    /// Register a device for input reading
+    pub async fn register_device(&self, id: Uuid, vendor_id: u16, product_id: u16) {
+        let info = OpenDeviceInfo::new(id, vendor_id, product_id);
+        tracing::info!(
+            "Registered device {} for input reading (type: {:?}, {} buttons)",
+            id,
+            info.device_type,
+            info.button_count
+        );
+        self.open_devices.write().await.insert(id, info);
+    }
+
+    /// Unregister a device from input reading
+    pub async fn unregister_device(&self, id: &Uuid) {
+        if self.open_devices.write().await.remove(id).is_some() {
+            tracing::info!("Unregistered device {} from input reading", id);
+        }
+    }
+
+    /// Check if the reader is running
+    pub async fn is_running(&self) -> bool {
+        *self.is_running.read().await
+    }
+
+    /// Start the input reading background task
+    pub async fn start(&self) -> Result<(), HidError> {
+        // Check if already running
+        {
+            let is_running = self.is_running.read().await;
+            if *is_running {
+                tracing::warn!("HID input reader already running");
+                return Ok(());
+            }
+        }
+
+        *self.is_running.write().await = true;
+        tracing::info!("Starting HID input reader");
+
+        // Clone references for the background task
+        let is_running = Arc::clone(&self.is_running);
+        let device_handles = Arc::clone(&self.device_handles);
+        let open_devices = Arc::clone(&self.open_devices);
+        let event_tx = self.event_tx.clone();
+
+        // Spawn the input reading background task
+        tokio::spawn(async move {
+            let poll_interval = Duration::from_millis(POLL_INTERVAL_MS);
+            let mut interval = tokio::time::interval(poll_interval);
+
+            // Buffer for reading HID reports
+            let read_buffer_size = 64; // Most HID reports are under 64 bytes
+
+            loop {
+                interval.tick().await;
+
+                // Check if we should stop
+                {
+                    if let Ok(running) = is_running.try_read() {
+                        if !*running {
+                            tracing::info!("HID input reader stopped");
+                            break;
+                        }
+                    }
+                }
+
+                // Get list of device IDs to read from
+                let device_ids: Vec<Uuid> = {
+                    if let Ok(devices) = open_devices.try_read() {
+                        devices.keys().cloned().collect()
+                    } else {
+                        continue;
+                    }
+                };
+
+                // Read from each device
+                for device_id in device_ids {
+                    // Clone values needed for the blocking task
+                    let handles = Arc::clone(&device_handles);
+                    let devices = Arc::clone(&open_devices);
+                    let tx = event_tx.clone();
+
+                    // Perform the read in a blocking task since hidapi is sync
+                    let read_result = tokio::task::spawn_blocking(move || {
+                        let mut events = Vec::new();
+
+                        // Lock handles and read
+                        if let Ok(mut handles_guard) = handles.lock() {
+                            if let Some(handle) = handles_guard.get_mut(&device_id) {
+                                let mut buffer = vec![0u8; read_buffer_size];
+
+                                match handle.read_timeout(&mut buffer, READ_TIMEOUT_MS) {
+                                    Ok(0) => {
+                                        // No data available (timeout)
+                                    }
+                                    Ok(bytes_read) => {
+                                        // Got data - parse it
+                                        events = parse_hid_report(
+                                            &device_id,
+                                            &buffer[..bytes_read],
+                                            &devices,
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!(
+                                            "Read error on device {}: {}",
+                                            device_id,
+                                            e
+                                        );
+                                        // Don't spam logs - device may have disconnected
+                                    }
+                                }
+                            }
+                        }
+
+                        events
+                    })
+                    .await;
+
+                    // Send any events that were generated
+                    if let Ok(events) = read_result {
+                        for event in events {
+                            let _ = tx.send(event);
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Stop the input reading background task
+    pub async fn stop(&self) {
+        *self.is_running.write().await = false;
+        tracing::info!("Signaled HID input reader to stop");
+    }
+}
+
+/// Parse a HID report and generate button events
+///
+/// This is a basic implementation that handles the most common case.
+/// Device-specific parsing (Stream Deck, etc.) is handled in subtask 2.2/2.3.
+fn parse_hid_report(
+    device_id: &Uuid,
+    report: &[u8],
+    open_devices: &Arc<RwLock<HashMap<Uuid, OpenDeviceInfo>>>,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
+    let timestamp = Instant::now();
+
+    // Try to get device info for state tracking
+    let device_info = {
+        if let Ok(mut devices) = open_devices.try_write() {
+            devices.get_mut(device_id).cloned()
+        } else {
+            return events;
+        }
+    };
+
+    let Some(mut device_info) = device_info else {
+        return events;
+    };
+
+    // Determine parsing based on device type
+    match device_info.device_type {
+        HidDeviceType::StreamDeck => {
+            // Stream Deck button report format (to be fully implemented in 2.2)
+            // First byte is report ID (0x01 for button state)
+            if report.first() == Some(&0x01) && report.len() > 1 {
+                events = parse_streamdeck_report(device_id, report, &mut device_info, timestamp);
+            }
+        }
+        HidDeviceType::StreamDeckPedal => {
+            // Stream Deck Pedal - 3 buttons (to be fully implemented in 2.2)
+            if !report.is_empty() {
+                events = parse_pedal_report(device_id, report, &mut device_info, timestamp);
+            }
+        }
+        HidDeviceType::Generic => {
+            // Generic HID button device (to be fully implemented in 2.3)
+            events = parse_generic_report(device_id, report, &mut device_info, timestamp);
+        }
+    }
+
+    // Update stored state
+    if !events.is_empty() {
+        if let Ok(mut devices) = open_devices.try_write() {
+            if let Some(info) = devices.get_mut(device_id) {
+                info.previous_states = device_info.previous_states;
+            }
+        }
+    }
+
+    events
+}
+
+/// Parse Stream Deck button report
+///
+/// Stream Deck reports button states as a byte array where each byte
+/// represents a button (1 = pressed, 0 = not pressed).
+fn parse_streamdeck_report(
+    device_id: &Uuid,
+    report: &[u8],
+    device_info: &mut OpenDeviceInfo,
+    timestamp: Instant,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
+
+    // Skip report ID byte
+    let button_data = &report[1..];
+
+    for (index, &button_byte) in button_data.iter().enumerate() {
+        if index >= device_info.button_count as usize {
+            break;
+        }
+
+        let is_pressed = button_byte != 0;
+        let was_pressed = device_info
+            .previous_states
+            .get(index)
+            .copied()
+            .unwrap_or(false);
+
+        // Generate event on state change
+        if is_pressed != was_pressed {
+            events.push(RawButtonEvent {
+                device_id: *device_id,
+                button_code: index as u8,
+                pressed: is_pressed,
+                timestamp,
+            });
+
+            tracing::debug!(
+                "Stream Deck button {} {}",
+                index,
+                if is_pressed { "pressed" } else { "released" }
+            );
+        }
+
+        // Update state
+        if index < device_info.previous_states.len() {
+            device_info.previous_states[index] = is_pressed;
+        }
+    }
+
+    events
+}
+
+/// Parse Stream Deck Pedal report
+///
+/// The pedal has 3 buttons and uses a simple bitmap format.
+fn parse_pedal_report(
+    device_id: &Uuid,
+    report: &[u8],
+    device_info: &mut OpenDeviceInfo,
+    timestamp: Instant,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
+
+    // Pedal uses first few bytes for 3 button states
+    for (index, &button_byte) in report.iter().take(3).enumerate() {
+        if index >= device_info.button_count as usize {
+            break;
+        }
+
+        let is_pressed = button_byte != 0;
+        let was_pressed = device_info
+            .previous_states
+            .get(index)
+            .copied()
+            .unwrap_or(false);
+
+        if is_pressed != was_pressed {
+            events.push(RawButtonEvent {
+                device_id: *device_id,
+                button_code: index as u8,
+                pressed: is_pressed,
+                timestamp,
+            });
+
+            tracing::debug!(
+                "Stream Deck Pedal button {} {}",
+                index,
+                if is_pressed { "pressed" } else { "released" }
+            );
+        }
+
+        if index < device_info.previous_states.len() {
+            device_info.previous_states[index] = is_pressed;
+        }
+    }
+
+    events
+}
+
+/// Parse generic HID button report
+///
+/// Handles common HID gamepad/button formats using bitmap encoding.
+fn parse_generic_report(
+    device_id: &Uuid,
+    report: &[u8],
+    device_info: &mut OpenDeviceInfo,
+    timestamp: Instant,
+) -> Vec<RawButtonEvent> {
+    let mut events = Vec::new();
+
+    // Many generic button devices use bitmap encoding
+    // Each bit represents a button state
+    let mut button_index = 0;
+
+    for &byte in report.iter() {
+        for bit in 0..8 {
+            if button_index >= device_info.button_count as usize {
+                break;
+            }
+
+            let is_pressed = (byte >> bit) & 1 != 0;
+            let was_pressed = device_info
+                .previous_states
+                .get(button_index)
+                .copied()
+                .unwrap_or(false);
+
+            if is_pressed != was_pressed {
+                events.push(RawButtonEvent {
+                    device_id: *device_id,
+                    button_code: button_index as u8,
+                    pressed: is_pressed,
+                    timestamp,
+                });
+
+                tracing::debug!(
+                    "Generic button {} {}",
+                    button_index,
+                    if is_pressed { "pressed" } else { "released" }
+                );
+            }
+
+            if button_index < device_info.previous_states.len() {
+                device_info.previous_states[button_index] = is_pressed;
+            }
+
+            button_index += 1;
+        }
+    }
+
+    events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_type_detection() {
+        // Stream Deck Original
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x0060),
+            HidDeviceType::StreamDeck
+        );
+
+        // Stream Deck Mini
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x006C),
+            HidDeviceType::StreamDeck
+        );
+
+        // Stream Deck XL
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x006D),
+            HidDeviceType::StreamDeck
+        );
+
+        // Stream Deck MK.2
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x0080),
+            HidDeviceType::StreamDeck
+        );
+
+        // Stream Deck Pedal
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x0086),
+            HidDeviceType::StreamDeckPedal
+        );
+
+        // Unknown Elgato device
+        assert_eq!(
+            HidDeviceType::from_ids(0x0FD9, 0x9999),
+            HidDeviceType::Generic
+        );
+
+        // Completely unknown device
+        assert_eq!(
+            HidDeviceType::from_ids(0x1234, 0x5678),
+            HidDeviceType::Generic
+        );
+    }
+
+    #[test]
+    fn test_open_device_info_creation() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x0FD9, 0x0060);
+
+        assert_eq!(info.id, id);
+        assert_eq!(info.vendor_id, 0x0FD9);
+        assert_eq!(info.product_id, 0x0060);
+        assert_eq!(info.device_type, HidDeviceType::StreamDeck);
+        assert_eq!(info.button_count, 15);
+        assert_eq!(info.previous_states.len(), 15);
+        assert!(info.previous_states.iter().all(|&s| !s));
+    }
+
+    #[test]
+    fn test_pedal_device_info() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x0FD9, 0x0086);
+
+        assert_eq!(info.device_type, HidDeviceType::StreamDeckPedal);
+        assert_eq!(info.button_count, 3);
+        assert_eq!(info.previous_states.len(), 3);
+    }
+
+    #[test]
+    fn test_unknown_device_defaults() {
+        let id = Uuid::new_v4();
+        let info = OpenDeviceInfo::new(id, 0x1234, 0x5678);
+
+        assert_eq!(info.device_type, HidDeviceType::Generic);
+        assert_eq!(info.button_count, 32); // Default for unknown
+        assert_eq!(info.previous_states.len(), 32);
+    }
+
+    #[tokio::test]
+    async fn test_input_reader_creation() {
+        let handles = Arc::new(Mutex::new(HashMap::new()));
+        let reader = HidInputReader::new(handles);
+
+        assert!(!reader.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn test_device_registration() {
+        let handles = Arc::new(Mutex::new(HashMap::new()));
+        let reader = HidInputReader::new(handles);
+
+        let device_id = Uuid::new_v4();
+        reader.register_device(device_id, 0x0FD9, 0x0060).await;
+
+        // Verify device is registered
+        let devices = reader.open_devices.read().await;
+        assert!(devices.contains_key(&device_id));
+        assert_eq!(devices.get(&device_id).unwrap().device_type, HidDeviceType::StreamDeck);
+    }
+
+    #[tokio::test]
+    async fn test_device_unregistration() {
+        let handles = Arc::new(Mutex::new(HashMap::new()));
+        let reader = HidInputReader::new(handles);
+
+        let device_id = Uuid::new_v4();
+        reader.register_device(device_id, 0x0FD9, 0x0060).await;
+        reader.unregister_device(&device_id).await;
+
+        let devices = reader.open_devices.read().await;
+        assert!(!devices.contains_key(&device_id));
+    }
+
+    #[test]
+    fn test_streamdeck_report_parsing() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0060);
+        let timestamp = Instant::now();
+
+        // Simulate button 0 pressed (report format: [report_id, button_states...])
+        let report = [0x01, 0x01, 0x00, 0x00, 0x00, 0x00]; // Button 0 pressed
+
+        let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 0);
+        assert!(events[0].pressed);
+
+        // Simulate button 0 released
+        let report2 = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let events2 = parse_streamdeck_report(&device_id, &report2, &mut device_info, timestamp);
+
+        assert_eq!(events2.len(), 1);
+        assert_eq!(events2[0].button_code, 0);
+        assert!(!events2[0].pressed);
+    }
+
+    #[test]
+    fn test_streamdeck_multiple_buttons() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0060);
+        let timestamp = Instant::now();
+
+        // Simulate buttons 0, 2, and 4 pressed
+        let report = [0x01, 0x01, 0x00, 0x01, 0x00, 0x01];
+
+        let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 3);
+
+        let button_codes: Vec<u8> = events.iter().map(|e| e.button_code).collect();
+        assert!(button_codes.contains(&0));
+        assert!(button_codes.contains(&2));
+        assert!(button_codes.contains(&4));
+    }
+
+    #[test]
+    fn test_pedal_report_parsing() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0086);
+        let timestamp = Instant::now();
+
+        // Simulate left pedal pressed
+        let report = [0x01, 0x00, 0x00];
+
+        let events = parse_pedal_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button_code, 0);
+        assert!(events[0].pressed);
+    }
+
+    #[test]
+    fn test_generic_bitmap_parsing() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x1234, 0x5678);
+        device_info.button_count = 8; // Limit to 8 buttons for this test
+        device_info.previous_states = vec![false; 8];
+        let timestamp = Instant::now();
+
+        // Simulate buttons 0, 2, and 7 pressed (binary: 10000101 = 0x85)
+        let report = [0x85];
+
+        let events = parse_generic_report(&device_id, &report, &mut device_info, timestamp);
+
+        assert_eq!(events.len(), 3);
+
+        let button_codes: Vec<u8> = events.iter().map(|e| e.button_code).collect();
+        assert!(button_codes.contains(&0));
+        assert!(button_codes.contains(&2));
+        assert!(button_codes.contains(&7));
+    }
+
+    #[test]
+    fn test_no_event_when_no_change() {
+        let device_id = Uuid::new_v4();
+        let mut device_info = OpenDeviceInfo::new(device_id, 0x0FD9, 0x0060);
+        let timestamp = Instant::now();
+
+        // First press
+        let report = [0x01, 0x01, 0x00, 0x00];
+        let _ = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+
+        // Same state again - should produce no events
+        let events = parse_streamdeck_report(&device_id, &report, &mut device_info, timestamp);
+        assert!(events.is_empty());
+    }
+}

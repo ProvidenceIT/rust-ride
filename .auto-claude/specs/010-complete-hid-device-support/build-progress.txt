@@ -116,3 +116,42 @@ Progress updates will be logged below as implementation proceeds.
 
 ### Verification Required:
 Manual verification needed (cargo not available in sandbox)
+
+## 2026-01-03 - Subtask 2.1 Complete: HID Input Reading Task
+
+### Completed:
+- Created new `src/hid/input.rs` module with `HidInputReader` struct
+- Implemented background task that reads input reports from open HID devices
+- Uses non-blocking `read_timeout()` for responsive input reading
+- Handles multiple devices concurrently using `spawn_blocking` for hidapi operations
+- Created `HidDeviceType` enum to categorize devices (StreamDeck, StreamDeckPedal, Generic)
+- Created `OpenDeviceInfo` struct to track device state and button states
+- Implemented report parsing for three device types:
+  - Stream Deck: byte-per-button format with report ID prefix
+  - Stream Deck Pedal: 3-button simple format
+  - Generic: bitmap encoding (bit per button)
+- Tracks previous button states to detect press/release transitions
+- Generates `RawButtonEvent` structs for state changes
+- Added comprehensive unit tests for:
+  - Device type detection
+  - Device info creation
+  - Report parsing (Stream Deck, Pedal, Generic)
+  - Multiple button simultaneous press
+  - No-change detection (prevents duplicate events)
+- Updated `mod.rs` to export `HidInputReader`, `HidDeviceType`, `OpenDeviceInfo`, `RawButtonEvent`
+
+### Key Implementation Details:
+- `READ_TIMEOUT_MS = 50`: Short timeout for responsive multi-device polling
+- `POLL_INTERVAL_MS = 10`: Fast polling for low-latency input
+- Device handles shared with `DefaultHidDeviceManager` via `Arc<Mutex<HashMap>>`
+- Background task spawned via `tokio::spawn` with internal `spawn_blocking` for hidapi calls
+- State machine pattern: only emits events on state transition (press or release)
+
+### Files Created:
+- `src/hid/input.rs` - New module with HidInputReader
+
+### Files Modified:
+- `src/hid/mod.rs` - Added input module and re-exports
+
+### Verification Required:
+Manual verification needed (cargo not available in sandbox)

@@ -4,6 +4,7 @@
 
 pub mod actions;
 pub mod device;
+pub mod input;
 pub mod mapping;
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,8 @@ use uuid::Uuid;
 // Re-export main types
 pub use actions::{ActionExecutor, ButtonAction};
 pub use device::{DefaultHidDeviceManager, HidDevice, HidDeviceManager, HidDeviceStatus};
-pub use mapping::{ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler};
+pub use input::{HidDeviceType, HidInputReader, OpenDeviceInfo};
+pub use mapping::{ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler, RawButtonEvent};
 
 /// HID-related errors
 #[derive(Debug, Error)]
