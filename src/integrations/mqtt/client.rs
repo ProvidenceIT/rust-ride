@@ -78,6 +78,8 @@ pub struct DefaultMqttClient {
     event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     /// Whether auto-reconnection is enabled (disabled on manual disconnect)
     reconnect_enabled: Arc<AtomicBool>,
+    /// Current reconnection attempt counter (shared across reconnection tasks)
+    reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl Default for DefaultMqttClient {
@@ -98,6 +100,7 @@ impl DefaultMqttClient {
             client: Arc::new(RwLock::new(None)),
             event_loop_handle: Arc::new(RwLock::new(None)),
             reconnect_enabled: Arc::new(AtomicBool::new(false)),
+            reconnect_attempt: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         }
     }
 
@@ -112,11 +115,16 @@ impl DefaultMqttClient {
         client: Arc<RwLock<Option<AsyncClient>>>,
         event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
         reconnect_enabled: Arc<AtomicBool>,
+        reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 match event_loop.poll().await {
                     Ok(event) => {
+                        // Reset reconnection counter on successful event (connection established)
+                        if matches!(event, Event::Incoming(Incoming::ConnAck(_))) {
+                            reconnect_attempt.store(0, Ordering::SeqCst);
+                        }
                         Self::handle_event(event, &state, &event_tx).await;
                     }
                     Err(e) => {
@@ -132,6 +140,7 @@ impl DefaultMqttClient {
                                 Arc::clone(&client),
                                 Arc::clone(&event_loop_handle),
                                 Arc::clone(&reconnect_enabled),
+                                Arc::clone(&reconnect_attempt),
                             );
                         }
                         break;
@@ -276,7 +285,7 @@ impl DefaultMqttClient {
     /// Spawn a reconnection task that will attempt to reconnect to the broker.
     /// The task will wait for the configured reconnection interval, then attempt
     /// to create a new connection. It tracks reconnection attempts and emits
-    /// Reconnecting events.
+    /// Reconnecting events. Gives up after max_reconnect_attempts if configured.
     fn spawn_reconnection_task(
         state: Arc<RwLock<ConnectionState>>,
         config: Arc<RwLock<Option<MqttConfig>>>,
@@ -284,10 +293,9 @@ impl DefaultMqttClient {
         client: Arc<RwLock<Option<AsyncClient>>>,
         event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
         reconnect_enabled: Arc<AtomicBool>,
+        reconnect_attempt: Arc<std::sync::atomic::AtomicU32>,
     ) {
         tokio::spawn(async move {
-            let mut attempt: u32 = 0;
-
             loop {
                 // Check if reconnection is still enabled (user might disconnect manually)
                 if !reconnect_enabled.load(Ordering::SeqCst) {
@@ -308,13 +316,42 @@ impl DefaultMqttClient {
                     }
                 };
 
-                attempt += 1;
+                // Increment attempt counter
+                let attempt = reconnect_attempt.fetch_add(1, Ordering::SeqCst) + 1;
+
+                // Check if we've exceeded max reconnection attempts
+                if let Some(max_attempts) = cfg.max_reconnect_attempts {
+                    if attempt > max_attempts {
+                        tracing::error!(
+                            "MQTT reconnection failed after {} attempts (max: {})",
+                            attempt - 1,
+                            max_attempts
+                        );
+                        reconnect_enabled.store(false, Ordering::SeqCst);
+                        *state.write().await = ConnectionState::Disconnected;
+                        let _ = event_tx.send(MqttEvent::ReconnectionFailed {
+                            attempts: attempt - 1,
+                            reason: format!(
+                                "Exceeded maximum reconnection attempts ({})",
+                                max_attempts
+                            ),
+                        });
+                        let _ = event_tx.send(MqttEvent::Disconnected);
+                        break;
+                    }
+                }
+
                 *state.write().await = ConnectionState::Reconnecting { attempt };
                 let _ = event_tx.send(MqttEvent::Reconnecting { attempt });
 
+                let max_info = cfg
+                    .max_reconnect_attempts
+                    .map(|m| format!(" of {}", m))
+                    .unwrap_or_default();
                 tracing::info!(
-                    "MQTT reconnection attempt {} to {}:{}",
+                    "MQTT reconnection attempt {}{} to {}:{}",
                     attempt,
+                    max_info,
                     cfg.broker_host,
                     cfg.broker_port
                 );
@@ -338,6 +375,7 @@ impl DefaultMqttClient {
                     cfg.broker_port,
                 );
                 mqtt_options.set_keep_alive(Duration::from_secs(cfg.keep_alive_secs as u64));
+                mqtt_options.set_connection_timeout(cfg.connection_timeout_secs.into());
 
                 // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
                 // TODO (subtask 3.2): Add credentials from keyring when username is set
@@ -360,6 +398,7 @@ impl DefaultMqttClient {
                     Arc::clone(&client),
                     Arc::clone(&event_loop_handle),
                     Arc::clone(&reconnect_enabled),
+                    Arc::clone(&reconnect_attempt),
                 );
                 *event_loop_handle.write().await = Some(handle);
 
@@ -392,8 +431,9 @@ impl MqttClient for DefaultMqttClient {
         *self.state.write().await = ConnectionState::Connecting;
         *self.config.write().await = Some(config.clone());
 
-        // Enable auto-reconnection for this connection
+        // Enable auto-reconnection for this connection and reset attempt counter
         self.reconnect_enabled.store(true, Ordering::SeqCst);
+        self.reconnect_attempt.store(0, Ordering::SeqCst);
 
         tracing::info!(
             "Connecting to MQTT broker at {}:{}",
@@ -408,6 +448,7 @@ impl MqttClient for DefaultMqttClient {
             config.broker_port,
         );
         mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
+        mqtt_options.set_connection_timeout(config.connection_timeout_secs.into());
 
         // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
         // TODO (subtask 3.2): Add credentials from keyring when username is set
@@ -429,6 +470,7 @@ impl MqttClient for DefaultMqttClient {
             Arc::clone(&self.client),
             Arc::clone(&self.event_loop_handle),
             Arc::clone(&self.reconnect_enabled),
+            Arc::clone(&self.reconnect_attempt),
         );
         *self.event_loop_handle.write().await = Some(handle);
 
@@ -663,5 +705,35 @@ mod tests {
         // Disconnect should disable it
         let _ = client.disconnect().await;
         assert!(!client.reconnect_enabled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_reconnect_attempt_counter_initial_zero() {
+        let client = DefaultMqttClient::new();
+        // Reconnection attempt counter should start at 0
+        assert_eq!(client.reconnect_attempt.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_config_connection_timeout_default() {
+        let config = MqttConfig::default();
+        // Default connection timeout should be 30 seconds
+        assert_eq!(config.connection_timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_config_max_reconnect_attempts_default() {
+        let config = MqttConfig::default();
+        // Default max reconnection attempts should be None (unlimited)
+        assert!(config.max_reconnect_attempts.is_none());
+    }
+
+    #[test]
+    fn test_config_max_reconnect_attempts_set() {
+        let config = MqttConfig {
+            max_reconnect_attempts: Some(5),
+            ..Default::default()
+        };
+        assert_eq!(config.max_reconnect_attempts, Some(5));
     }
 }

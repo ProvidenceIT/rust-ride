@@ -58,6 +58,16 @@ pub struct MqttConfig {
     pub reconnect_interval_secs: u32,
     /// Keep-alive interval in seconds
     pub keep_alive_secs: u16,
+    /// Connection timeout in seconds (how long to wait for initial connection)
+    #[serde(default = "default_connection_timeout_secs")]
+    pub connection_timeout_secs: u32,
+    /// Maximum reconnection attempts before giving up (None = unlimited)
+    #[serde(default)]
+    pub max_reconnect_attempts: Option<u32>,
+}
+
+fn default_connection_timeout_secs() -> u32 {
+    30
 }
 
 impl Default for MqttConfig {
@@ -78,6 +88,8 @@ impl Default for MqttConfig {
             ),
             reconnect_interval_secs: 5,
             keep_alive_secs: 60,
+            connection_timeout_secs: default_connection_timeout_secs(),
+            max_reconnect_attempts: None, // Unlimited by default
         }
     }
 }
@@ -104,6 +116,8 @@ pub enum MqttEvent {
     ConnectionLost { reason: String },
     /// Attempting to reconnect
     Reconnecting { attempt: u32 },
+    /// Reconnection failed after reaching max attempts
+    ReconnectionFailed { attempts: u32, reason: String },
     /// Message received on subscribed topic
     MessageReceived { topic: String, payload: String },
     /// Error occurred
@@ -121,5 +135,19 @@ mod tests {
         assert_eq!(config.broker_host, "localhost");
         assert_eq!(config.broker_port, 1883);
         assert!(!config.use_tls);
+        // Verify new fields have correct defaults
+        assert_eq!(config.connection_timeout_secs, 30);
+        assert!(config.max_reconnect_attempts.is_none());
+    }
+
+    #[test]
+    fn test_config_with_max_reconnect_attempts() {
+        let config = MqttConfig {
+            max_reconnect_attempts: Some(10),
+            connection_timeout_secs: 60,
+            ..Default::default()
+        };
+        assert_eq!(config.max_reconnect_attempts, Some(10));
+        assert_eq!(config.connection_timeout_secs, 60);
     }
 }
