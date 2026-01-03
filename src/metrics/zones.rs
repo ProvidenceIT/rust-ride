@@ -497,6 +497,15 @@ pub enum ZoneEvent {
         /// Zone name
         zone_name: String,
     },
+    /// Cadence zone changed
+    CadenceZoneChange {
+        /// Previous zone (0 if first reading)
+        previous_zone: u8,
+        /// New zone number (1-5)
+        new_zone: u8,
+        /// Zone name
+        zone_name: String,
+    },
 }
 
 /// Tracks power and HR zones and detects zone changes.
