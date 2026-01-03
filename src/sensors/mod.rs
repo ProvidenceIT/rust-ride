@@ -2,6 +2,7 @@
 
 pub mod ant;
 pub mod cache;
+pub mod conflict;
 pub mod connection_queue;
 pub mod connection_state;
 pub mod dual_protocol;
@@ -33,6 +34,11 @@ pub use incline::{
     IntensityScaler,
 };
 pub use cache::{CacheError, CachedSensor, SensorCache};
+pub use conflict::{
+    ConflictDetector, ConflictDetectorConfig, ConflictError, ConflictInfo, ConflictPreference,
+    ConflictPreferenceManager, ConflictSummary, DataSource, DataType, ResolutionStrategy,
+    SensorConflict, get_conflict_preference_path,
+};
 pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 pub use connection_state::{
     ConnectionLifecycleState, ConnectionStateMachine, ConnectionStateMachineConfig,
