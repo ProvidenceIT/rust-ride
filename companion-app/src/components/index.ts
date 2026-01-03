@@ -36,3 +36,7 @@ export type { ManualEntryModalProps } from './ManualEntryModal';
 // QRScannerModal - modal for QR code scanning
 export { QRScannerModal } from './QRScannerModal';
 export type { QRScannerModalProps } from './QRScannerModal';
+
+// PinEntryModal - modal for PIN entry during authentication
+export { PinEntryModal } from './PinEntryModal';
+export type { PinEntryModalProps } from './PinEntryModal';

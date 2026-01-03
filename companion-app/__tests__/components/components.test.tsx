@@ -18,6 +18,7 @@ import {
   ServerListItem,
   ManualEntryModal,
   QRScannerModal,
+  PinEntryModal,
 } from '../../src/components';
 import {
   parseQrConnectionData,
@@ -734,5 +735,265 @@ describe('QRScannerModal', () => {
     await wait(100);
 
     expect(getByText('Connecting...')).toBeTruthy();
+  });
+});
+
+describe('PinEntryModal', () => {
+  const mockOnClose = jest.fn();
+  const mockOnSubmit = jest.fn();
+
+  beforeEach(() => {
+    mockOnClose.mockClear();
+    mockOnSubmit.mockClear();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('renders when visible', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText('Enter PIN')).toBeTruthy();
+  });
+
+  it('does not render content when not visible', () => {
+    const { queryByText } = renderWithTheme(
+      <PinEntryModal visible={false} onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(queryByText('Enter PIN')).toBeNull();
+  });
+
+  it('renders server name in instructions when provided', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal
+        visible
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        serverName="RustRide-PC"
+      />,
+    );
+
+    expect(getByText(/Enter the PIN shown on RustRide-PC/)).toBeTruthy();
+  });
+
+  it('renders default instructions when no server name', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText(/Enter the PIN shown on the RustRide desktop app/)).toBeTruthy();
+  });
+
+  it('renders numeric keypad with digits 0-9', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Check that all digits are present
+    for (let i = 0; i <= 9; i++) {
+      expect(getByLabelText(String(i))).toBeTruthy();
+    }
+  });
+
+  it('renders delete button', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByLabelText('Delete')).toBeTruthy();
+  });
+
+  it('renders cancel button', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    expect(getByText('Cancel')).toBeTruthy();
+  });
+
+  it('calls onClose when cancel is pressed', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.press(getByText('Cancel'));
+
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('updates PIN display when digits are pressed', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    fireEvent.press(getByLabelText('1'));
+    fireEvent.press(getByLabelText('2'));
+    fireEvent.press(getByLabelText('3'));
+
+    // Check accessibility label updates
+    expect(getByLabelText('PIN entry, 3 of 6 digits entered')).toBeTruthy();
+  });
+
+  it('calls onSubmit when 6 digits are entered', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Enter 6 digits
+    fireEvent.press(getByLabelText('1'));
+    fireEvent.press(getByLabelText('2'));
+    fireEvent.press(getByLabelText('3'));
+    fireEvent.press(getByLabelText('4'));
+    fireEvent.press(getByLabelText('5'));
+    fireEvent.press(getByLabelText('6'));
+
+    expect(mockOnSubmit).toHaveBeenCalledWith('123456');
+  });
+
+  it('deletes last digit when delete is pressed', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Enter some digits
+    fireEvent.press(getByLabelText('1'));
+    fireEvent.press(getByLabelText('2'));
+    fireEvent.press(getByLabelText('3'));
+
+    // Delete one
+    fireEvent.press(getByLabelText('Delete'));
+
+    // Should now have 2 digits
+    expect(getByLabelText('PIN entry, 2 of 6 digits entered')).toBeTruthy();
+  });
+
+  it('shows error message when error prop is set', () => {
+    const { getByText, rerender } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Re-render with error
+    rerender(
+      <ThemeProvider>
+        <PinEntryModal
+          visible
+          onClose={mockOnClose}
+          onSubmit={mockOnSubmit}
+          error="Invalid PIN"
+        />
+      </ThemeProvider>,
+    );
+
+    // Fast forward timers for animation
+    jest.runAllTimers();
+
+    expect(getByText('Invalid PIN')).toBeTruthy();
+  });
+
+  it('shows authenticating state when isAuthenticating is true', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal
+        visible
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        isAuthenticating
+      />,
+    );
+
+    expect(getByText('Authenticating...')).toBeTruthy();
+  });
+
+  it('disables digit buttons when authenticating', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal
+        visible
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        isAuthenticating
+      />,
+    );
+
+    // Try to enter a digit
+    fireEvent.press(getByLabelText('1'));
+
+    // Should still be 0 digits
+    expect(getByLabelText('PIN entry, 0 of 6 digits entered')).toBeTruthy();
+  });
+
+  it('disables cancel button when authenticating', () => {
+    const { getByText } = renderWithTheme(
+      <PinEntryModal
+        visible
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        isAuthenticating
+      />,
+    );
+
+    fireEvent.press(getByText('Cancel'));
+
+    // onClose should not be called because button is disabled
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('does not allow more than 6 digits', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Enter 7 digits
+    fireEvent.press(getByLabelText('1'));
+    fireEvent.press(getByLabelText('2'));
+    fireEvent.press(getByLabelText('3'));
+    fireEvent.press(getByLabelText('4'));
+    fireEvent.press(getByLabelText('5'));
+    fireEvent.press(getByLabelText('6'));
+    fireEvent.press(getByLabelText('7'));
+
+    // Should only call onSubmit once with 6 digits
+    expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+    expect(mockOnSubmit).toHaveBeenCalledWith('123456');
+  });
+
+  it('resets PIN when modal becomes visible', () => {
+    const { rerender, getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    // Enter some digits
+    fireEvent.press(getByLabelText('1'));
+    fireEvent.press(getByLabelText('2'));
+
+    // Hide modal
+    rerender(
+      <ThemeProvider>
+        <PinEntryModal visible={false} onClose={mockOnClose} onSubmit={mockOnSubmit} />
+      </ThemeProvider>,
+    );
+
+    // Show modal again
+    rerender(
+      <ThemeProvider>
+        <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />
+      </ThemeProvider>,
+    );
+
+    // Should be reset to 0 digits
+    expect(getByLabelText('PIN entry, 0 of 6 digits entered')).toBeTruthy();
+  });
+
+  it('has correct accessibility for PIN display', () => {
+    const { getByLabelText } = renderWithTheme(
+      <PinEntryModal visible onClose={mockOnClose} onSubmit={mockOnSubmit} />,
+    );
+
+    const pinDisplay = getByLabelText('PIN entry, 0 of 6 digits entered');
+    expect(pinDisplay.props.accessibilityRole).toBe('text');
+    expect(pinDisplay.props.accessibilityLiveRegion).toBe('polite');
   });
 });
