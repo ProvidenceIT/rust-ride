@@ -113,3 +113,11 @@ export type {
 // RideStatisticsSummary - displays key training stats (TSS, IF, calories) in cards
 export { RideStatisticsSummary } from './RideStatisticsSummary';
 export type { RideStatisticsSummaryProps } from './RideStatisticsSummary';
+
+// HistoryFilterBar - horizontal filter bar for filtering ride history by date/type
+export { HistoryFilterBar } from './HistoryFilterBar';
+export type { HistoryFilterBarProps } from './HistoryFilterBar';
+
+// DateRangePickerModal - modal for selecting custom date range for filtering
+export { DateRangePickerModal } from './DateRangePickerModal';
+export type { DateRangePickerModalProps } from './DateRangePickerModal';

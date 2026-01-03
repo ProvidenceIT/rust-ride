@@ -9,9 +9,10 @@
  * - Date, duration, distance, and avg power display
  * - Unit preference support (metric/imperial)
  * - Tapping a ride navigates to the detail screen
+ * - Filter by date range and workout type
  */
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -27,7 +28,12 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import type { MainTabScreenProps, RootStackNavigationProp } from '@/navigation/types';
 import type { RideSummary } from '@/types';
 import { useTheme } from '@/theme';
-import { ConnectionStatus, LoadingSpinner } from '@/components';
+import {
+  ConnectionStatus,
+  LoadingSpinner,
+  HistoryFilterBar,
+  DateRangePickerModal,
+} from '@/components';
 import {
   useHistoryStore,
   selectRides,
@@ -35,9 +41,11 @@ import {
   selectIsLoadingMore,
   selectError,
   selectHasMore,
-  selectIsEmpty,
   selectTotal,
   selectPagination,
+  selectFilters,
+  selectHasFiltersApplied,
+  getFilterDateRange,
 } from '@/stores/historyStore';
 import {
   useConnectionStore,
@@ -67,6 +75,9 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   // Track if initial load has been attempted
   const hasLoadedRef = useRef(false);
 
+  // Local state for date picker modal
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   // Connection state
   const connectionStatus = useConnectionStore(selectConnectionStatus);
   const isConnected = useConnectionStore(selectIsConnected);
@@ -77,13 +88,75 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   const isLoadingMore = useHistoryStore(selectIsLoadingMore);
   const error = useHistoryStore(selectError);
   const hasMore = useHistoryStore(selectHasMore);
-  const isEmpty = useHistoryStore(selectIsEmpty);
   const total = useHistoryStore(selectTotal);
   const pagination = useHistoryStore(selectPagination);
+
+  // Filter state
+  const filters = useHistoryStore(selectFilters);
+  const hasFiltersApplied = useHistoryStore(selectHasFiltersApplied);
+  const setDateRangeFilter = useHistoryStore(state => state.setDateRangeFilter);
 
   // Settings state
   const units = useSettingsStore(selectUnits);
   const loadSettings = useSettingsStore(state => state.loadSettings);
+
+  /**
+   * Apply client-side filtering to rides
+   * Filters by date range and workout type based on store filters
+   */
+  const filteredRides = useMemo(() => {
+    let result = [...rides];
+
+    // Apply date range filter
+    if (filters.dateRange !== 'all') {
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
+      if (filters.dateRange === 'custom' && filters.customStartDate && filters.customEndDate) {
+        startDate = new Date(filters.customStartDate);
+        endDate = new Date(filters.customEndDate);
+      } else {
+        const range = getFilterDateRange(filters.dateRange);
+        startDate = range.start;
+        endDate = range.end;
+      }
+
+      if (startDate && endDate) {
+        result = result.filter(ride => {
+          const rideDate = new Date(ride.date);
+          return rideDate >= startDate && rideDate <= endDate;
+        });
+      }
+    }
+
+    // Apply ride type filter
+    if (filters.rideType !== 'all') {
+      result = result.filter(ride => {
+        if (filters.rideType === 'workout') {
+          return ride.is_workout === true || ride.workout_name !== undefined;
+        } else {
+          // free_ride
+          return ride.is_workout !== true && ride.workout_name === undefined;
+        }
+      });
+    }
+
+    return result;
+  }, [rides, filters]);
+
+  /**
+   * Load initial rides (first page)
+   */
+  const loadRides = useCallback(async () => {
+    if (!isConnected) return;
+
+    const historyStore = useHistoryStore.getState();
+    historyStore.resetPagination();
+    historyStore.clearRides();
+
+    const connectionService = getConnectionService();
+    await connectionService.fetchRideHistory(PAGE_SIZE, 0);
+  }, [isConnected]);
 
   // Load settings on mount
   useEffect(() => {
@@ -103,20 +176,6 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
     if (!isConnected) {
       hasLoadedRef.current = false;
     }
-  }, [isConnected]);
-
-  /**
-   * Load initial rides (first page)
-   */
-  const loadRides = useCallback(async () => {
-    if (!isConnected) return;
-
-    const historyStore = useHistoryStore.getState();
-    historyStore.resetPagination();
-    historyStore.clearRides();
-
-    const connectionService = getConnectionService();
-    await connectionService.fetchRideHistory(PAGE_SIZE, 0);
   }, [isConnected]);
 
   /**
@@ -153,6 +212,17 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   const handleConnectPress = useCallback(() => {
     navigation.navigate('Connection');
   }, [navigation]);
+
+  /**
+   * Handle custom date selection from date picker
+   */
+  const handleCustomDateSelect = useCallback(
+    (startDate: string, endDate: string) => {
+      setDateRangeFilter('custom', startDate, endDate);
+      setShowDatePicker(false);
+    },
+    [setDateRangeFilter]
+  );
 
   /**
    * Format date for display
@@ -334,6 +404,27 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
       );
     }
 
+    // Show filtered empty state when filters are applied but no rides match
+    if (hasFiltersApplied && rides.length > 0) {
+      return (
+        <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
+          <Icon
+            name="filter-outline"
+            size={48}
+            color={colors.textSecondary}
+            style={styles.emptyIcon}
+          />
+          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>
+            No Matching Rides
+          </Text>
+          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+            No rides match your current filters. Try adjusting your filters or clear them to see
+            all rides.
+          </Text>
+        </View>
+      );
+    }
+
     // Show empty rides state
     return (
       <View style={[styles.emptyState, { backgroundColor: colors.surface }]}>
@@ -352,19 +443,29 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
   };
 
   /**
-   * Render list header with ride count
+   * Render list header with ride count (shows filtered vs total)
    */
   const renderListHeader = () => {
-    if (rides.length === 0) return null;
+    if (filteredRides.length === 0 && !hasFiltersApplied) return null;
+
+    // Show filtered count vs total when filters are applied
+    const headerText = hasFiltersApplied
+      ? `${filteredRides.length} of ${total > 0 ? total : rides.length} rides`
+      : total > 0
+        ? `${total} rides`
+        : `${rides.length} rides`;
 
     return (
       <View style={styles.listHeader}>
         <Text style={[styles.listHeaderText, { color: colors.textSecondary }]}>
-          {total > 0 ? `${total} rides` : `${rides.length} rides`}
+          {headerText}
         </Text>
       </View>
     );
   };
+
+  // Check if filtered list is empty (for styling purposes)
+  const isFilteredEmpty = filteredRides.length === 0 && !isLoading;
 
   return (
     <SafeAreaView
@@ -381,15 +482,22 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
         <ConnectionStatus status={connectionStatus} variant="badge" animated />
       </View>
 
+      {/* Filter bar - only show when connected and has rides */}
+      {isConnected && rides.length > 0 && (
+        <HistoryFilterBar
+          onCustomDatePress={() => setShowDatePicker(true)}
+        />
+      )}
+
       {/* Ride list */}
       <FlatList
-        data={rides}
+        data={filteredRides}
         keyExtractor={item => item.id}
         renderItem={renderRideItem}
         contentContainerStyle={[
           styles.listContent,
           { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
-          isEmpty && styles.listContentEmpty,
+          isFilteredEmpty && styles.listContentEmpty,
         ]}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmptyState}
@@ -416,6 +524,15 @@ export function HistoryScreen(_props: Props): React.JSX.Element {
           offset: 110 * index,
           index,
         })}
+      />
+
+      {/* Custom date range picker modal */}
+      <DateRangePickerModal
+        visible={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        onSelect={handleCustomDateSelect}
+        initialStartDate={filters.customStartDate}
+        initialEndDate={filters.customEndDate}
       />
     </SafeAreaView>
   );
