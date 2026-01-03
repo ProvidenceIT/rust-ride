@@ -38,6 +38,9 @@ pub mod gradient;
 pub mod power_profile;
 pub mod training_plans;
 
+// Mobile Companion modules (Feature 014)
+pub mod companion;
+
 // Headless/CLI Mode modules (Feature 009)
 #[cfg(target_os = "linux")]
 pub mod cli;

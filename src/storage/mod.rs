@@ -16,6 +16,7 @@ pub mod sync_store;
 pub mod xp_store;
 
 pub use analytics_store::AnalyticsStore;
+pub use crate::companion::types::CompanionConfig;
 pub use config::{AppConfig, DashboardLayout, MetricType, Theme, UiSettings, Units, UserProfile};
 pub use database::{Database, DatabaseError};
 pub use hardware_store::{

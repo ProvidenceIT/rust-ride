@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+android/
+ios/
+.bundle/
+
+# Generated files
+coverage/
+*.generated.*
+
+# Lock files
+package-lock.json
+yarn.lock

@@ -2,8 +2,10 @@
 //!
 //! T010: Implement Config loading from TOML
 //! T016: Define UserProfile struct with FTP, zones, preferences
+//! T008: Add CompanionConfig for mobile companion app settings
 
 use crate::audio::AudioConfig;
+use crate::companion::types::CompanionConfig;
 use crate::metrics::zones::{CadenceZones, HRZones, PowerZones};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -642,6 +644,9 @@ pub struct AppConfig {
     /// T064: Daemon settings for headless operation
     #[serde(default)]
     pub daemon: DaemonSettings,
+    /// T008: Mobile companion app server settings
+    #[serde(default)]
+    pub companion: CompanionConfig,
 }
 
 impl Default for AppConfig {
@@ -654,6 +659,7 @@ impl Default for AppConfig {
             ui: UiSettings::default(),
             audio: AudioConfig::default(),
             daemon: DaemonSettings::default(),
+            companion: CompanionConfig::default(),
         }
     }
 }
@@ -1136,6 +1142,36 @@ pub fn load_audio_config() -> AudioConfig {
     config.audio
 }
 
+/// Example TOML configuration for companion server settings.
+/// This can be used to generate a default config file.
+pub fn example_companion_config() -> &'static str {
+    r#"
+# Mobile companion app server settings
+[companion]
+# Enable the companion server for mobile app connectivity
+enabled = false
+
+# Port to listen on for WebSocket connections (default: 9876)
+port = 9876
+
+# Require PIN authentication for mobile connections
+require_pin = true
+
+# Session timeout in seconds (0 = no timeout, default: 3600 = 1 hour)
+session_timeout_secs = 3600
+
+# Maximum number of concurrent mobile connections (default: 5)
+max_connections = 5
+"#
+}
+
+/// Load companion server configuration from the config file.
+/// Returns default CompanionConfig if config file doesn't exist or is invalid.
+pub fn load_companion_config() -> CompanionConfig {
+    let config = load_config().unwrap_or_default();
+    config.companion
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1298,5 +1334,157 @@ mod tests {
         assert_eq!(config.audio.volume, 80);
         assert!(config.audio.voice_enabled);
         assert_eq!(config.audio.voice_volume, 100);
+    }
+
+    // =========================================================================
+    // T008: CompanionConfig Tests
+    // =========================================================================
+
+    #[test]
+    fn test_app_config_default_has_companion() {
+        let config = AppConfig::default();
+        // Verify companion config is included with defaults
+        assert!(!config.companion.enabled);
+        assert_eq!(config.companion.port, 9876);
+        assert!(config.companion.require_pin);
+        assert_eq!(config.companion.session_timeout_secs, 3600);
+        assert_eq!(config.companion.max_connections, 5);
+    }
+
+    #[test]
+    fn test_companion_config_serialization() {
+        let companion = CompanionConfig {
+            enabled: true,
+            port: 8080,
+            require_pin: false,
+            session_timeout_secs: 7200,
+            max_connections: 10,
+        };
+
+        let config = AppConfig {
+            companion,
+            ..Default::default()
+        };
+
+        // Serialize to TOML
+        let toml_str = toml::to_string(&config).expect("Failed to serialize");
+
+        // Verify the companion section is present
+        assert!(toml_str.contains("[companion]"));
+        assert!(toml_str.contains("enabled = true"));
+        assert!(toml_str.contains("port = 8080"));
+        assert!(toml_str.contains("require_pin = false"));
+        assert!(toml_str.contains("session_timeout_secs = 7200"));
+        assert!(toml_str.contains("max_connections = 10"));
+    }
+
+    #[test]
+    fn test_companion_config_deserialization() {
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [companion]
+            enabled = true
+            port = 9999
+            require_pin = false
+            session_timeout_secs = 1800
+            max_connections = 3
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        assert!(config.companion.enabled);
+        assert_eq!(config.companion.port, 9999);
+        assert!(!config.companion.require_pin);
+        assert_eq!(config.companion.session_timeout_secs, 1800);
+        assert_eq!(config.companion.max_connections, 3);
+    }
+
+    #[test]
+    fn test_companion_config_missing_uses_defaults() {
+        // Config without companion section should use defaults
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Should have default companion settings
+        assert!(!config.companion.enabled);
+        assert_eq!(config.companion.port, 9876);
+        assert!(config.companion.require_pin);
+        assert_eq!(config.companion.session_timeout_secs, 3600);
+        assert_eq!(config.companion.max_connections, 5);
+    }
+
+    #[test]
+    fn test_companion_config_partial_uses_defaults() {
+        // Config with partial companion section should use defaults for missing fields
+        let toml_str = r#"
+            version = "0.1.0"
+
+            [sensors]
+            auto_reconnect = true
+            discovery_timeout_secs = 30
+            connection_timeout_secs = 10
+
+            [recording]
+            autosave_interval_secs = 30
+            max_power_filter = 2000
+            record_zeros = true
+
+            [ui]
+            show_3s_power = true
+            show_normalized_power = true
+            show_zone_colors = true
+            font_scale = 1.0
+
+            [companion]
+            enabled = true
+            port = 5555
+        "#;
+
+        let config: AppConfig = toml::from_str(toml_str).expect("Failed to deserialize");
+
+        // Custom values should be preserved
+        assert!(config.companion.enabled);
+        assert_eq!(config.companion.port, 5555);
+
+        // Other fields should use defaults
+        assert!(config.companion.require_pin);
+        assert_eq!(config.companion.session_timeout_secs, 3600);
+        assert_eq!(config.companion.max_connections, 5);
     }
 }
