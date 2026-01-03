@@ -10,6 +10,7 @@
 //! - Detects when expected power meters are not found during discovery
 //! - Generates user-friendly wake-up hints
 //! - Supports multiple power meters
+//! - Extended discovery time for power meters (up to 45 seconds)
 
 use crate::sensors::cache::SensorCache;
 use crate::sensors::types::{DiscoveredSensor, Protocol, SensorType};
@@ -21,6 +22,17 @@ pub const DEFAULT_WAKE_UP_HINT_DELAY_SECS: u64 = 10;
 
 /// Default grace period after discovery before considering power meter missing (5 seconds).
 pub const DEFAULT_GRACE_PERIOD_SECS: u64 = 5;
+
+/// Default extended discovery time for power meters (45 seconds).
+/// Power meters may take longer to advertise due to sleep mode.
+pub const DEFAULT_EXTENDED_DISCOVERY_SECS: u64 = 45;
+
+/// Standard discovery time without power meter extension (30 seconds).
+pub const DEFAULT_STANDARD_DISCOVERY_SECS: u64 = 30;
+
+/// Minimum elapsed time before considering extended discovery (15 seconds).
+/// We only extend after the initial scan period has passed.
+pub const EXTENDED_DISCOVERY_THRESHOLD_SECS: u64 = 15;
 
 /// Wake-up hint for a power meter that needs user action to activate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +193,94 @@ impl PowerMeterWakeUpConfig {
     }
 }
 
+/// Configuration for extended power meter discovery.
+///
+/// Power meters often take longer to advertise than other sensors because
+/// they enter a deep sleep mode to conserve battery. This configuration
+/// allows the discovery process to extend beyond the standard timeout
+/// when a saved power meter is expected but not yet found.
+#[derive(Debug, Clone)]
+pub struct ExtendedPowerMeterDiscoveryConfig {
+    /// Whether extended discovery for power meters is enabled (default: true).
+    pub enabled: bool,
+    /// Standard discovery timeout in seconds (default: 30s).
+    pub standard_timeout_secs: u64,
+    /// Extended discovery timeout when power meters are expected (default: 45s).
+    pub extended_timeout_secs: u64,
+    /// Minimum time to wait before extending discovery (default: 15s).
+    /// Extended discovery only kicks in after this initial period.
+    pub extension_threshold_secs: u64,
+}
+
+impl Default for ExtendedPowerMeterDiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            standard_timeout_secs: DEFAULT_STANDARD_DISCOVERY_SECS,
+            extended_timeout_secs: DEFAULT_EXTENDED_DISCOVERY_SECS,
+            extension_threshold_secs: EXTENDED_DISCOVERY_THRESHOLD_SECS,
+        }
+    }
+}
+
+impl ExtendedPowerMeterDiscoveryConfig {
+    /// Create a disabled configuration (no extended discovery).
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ..Self::default()
+        }
+    }
+
+    /// Create a configuration with aggressive extension (longer timeout).
+    pub fn aggressive() -> Self {
+        Self {
+            enabled: true,
+            standard_timeout_secs: 30,
+            extended_timeout_secs: 60,
+            extension_threshold_secs: 10,
+        }
+    }
+
+    /// Create a configuration with minimal extension.
+    pub fn minimal() -> Self {
+        Self {
+            enabled: true,
+            standard_timeout_secs: 30,
+            extended_timeout_secs: 35,
+            extension_threshold_secs: 20,
+        }
+    }
+
+    /// Get the additional time added by extended discovery.
+    pub fn extension_time(&self) -> Duration {
+        Duration::from_secs(
+            self.extended_timeout_secs.saturating_sub(self.standard_timeout_secs),
+        )
+    }
+
+    /// Check if extension should be active based on elapsed time.
+    pub fn should_extend(&self, elapsed: Duration) -> bool {
+        self.enabled && elapsed.as_secs() >= self.extension_threshold_secs
+    }
+}
+
+/// Result of extended discovery decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtendedDiscoveryDecision {
+    /// Use standard discovery timeout.
+    UseStandardTimeout,
+    /// Extend discovery to find power meters.
+    ExtendForPowerMeters {
+        /// Names of the power meters we're waiting for.
+        waiting_for: Vec<String>,
+        /// The extended timeout in seconds.
+        extended_timeout_secs: u64,
+    },
+    /// Extended discovery is disabled.
+    Disabled,
+}
+
 /// Expected power meter information from cache.
 #[derive(Debug, Clone)]
 pub struct ExpectedPowerMeter {
@@ -283,6 +383,8 @@ impl WakeUpDetectionResult {
 pub struct PowerMeterWakeUpDetector {
     /// Configuration.
     config: PowerMeterWakeUpConfig,
+    /// Extended discovery configuration.
+    extended_discovery_config: ExtendedPowerMeterDiscoveryConfig,
     /// Expected power meters (device_id -> ExpectedPowerMeter).
     expected: HashMap<String, ExpectedPowerMeter>,
     /// Device IDs of power meters found during current discovery.
@@ -295,6 +397,8 @@ pub struct PowerMeterWakeUpDetector {
     session_hint_count: usize,
     /// Generated hints (device_id -> WakeUpHint).
     hints: HashMap<String, WakeUpHint>,
+    /// Whether extended discovery has been triggered this session.
+    extended_discovery_triggered: bool,
 }
 
 impl PowerMeterWakeUpDetector {
@@ -307,12 +411,32 @@ impl PowerMeterWakeUpDetector {
     pub fn with_config(config: PowerMeterWakeUpConfig) -> Self {
         Self {
             config,
+            extended_discovery_config: ExtendedPowerMeterDiscoveryConfig::default(),
             expected: HashMap::new(),
             found: HashSet::new(),
             discovery_started_at: None,
             discovery_active: false,
             session_hint_count: 0,
             hints: HashMap::new(),
+            extended_discovery_triggered: false,
+        }
+    }
+
+    /// Create a new detector with custom extended discovery configuration.
+    pub fn with_extended_config(
+        config: PowerMeterWakeUpConfig,
+        extended_config: ExtendedPowerMeterDiscoveryConfig,
+    ) -> Self {
+        Self {
+            config,
+            extended_discovery_config: extended_config,
+            expected: HashMap::new(),
+            found: HashSet::new(),
+            discovery_started_at: None,
+            discovery_active: false,
+            session_hint_count: 0,
+            hints: HashMap::new(),
+            extended_discovery_triggered: false,
         }
     }
 
@@ -321,9 +445,19 @@ impl PowerMeterWakeUpDetector {
         &self.config
     }
 
+    /// Get the extended discovery configuration.
+    pub fn extended_discovery_config(&self) -> &ExtendedPowerMeterDiscoveryConfig {
+        &self.extended_discovery_config
+    }
+
     /// Set the configuration.
     pub fn set_config(&mut self, config: PowerMeterWakeUpConfig) {
         self.config = config;
+    }
+
+    /// Set the extended discovery configuration.
+    pub fn set_extended_discovery_config(&mut self, config: ExtendedPowerMeterDiscoveryConfig) {
+        self.extended_discovery_config = config;
     }
 
     /// Load expected power meters from sensor cache.
@@ -367,6 +501,7 @@ impl PowerMeterWakeUpDetector {
         self.session_hint_count = 0;
         self.discovery_started_at = Some(Instant::now());
         self.discovery_active = true;
+        self.extended_discovery_triggered = false;
 
         // Reset hint counts for all expected power meters
         for expected in self.expected.values_mut() {
@@ -567,6 +702,105 @@ impl PowerMeterWakeUpDetector {
         self.discovery_started_at.map(|t| t.elapsed())
     }
 
+    /// Check if extended discovery should be used.
+    ///
+    /// Returns true if:
+    /// - Extended discovery is enabled
+    /// - There are expected power meters that haven't been found
+    /// - Enough time has elapsed (past the extension threshold)
+    ///
+    /// This should be called during the progressive timeout logic to determine
+    /// whether to extend the discovery period beyond the standard timeout.
+    pub fn should_use_extended_discovery(&self) -> bool {
+        // Extended discovery must be enabled
+        if !self.extended_discovery_config.enabled {
+            return false;
+        }
+
+        // Must have expected power meters that aren't found
+        if self.expected.is_empty() || self.all_found() {
+            return false;
+        }
+
+        // Must be past the extension threshold
+        if let Some(elapsed) = self.discovery_elapsed() {
+            self.extended_discovery_config.should_extend(elapsed)
+        } else {
+            false
+        }
+    }
+
+    /// Get the recommended discovery timeout based on current state.
+    ///
+    /// Returns the extended timeout if power meters are expected and not found,
+    /// otherwise returns the standard timeout.
+    pub fn get_recommended_timeout_secs(&self) -> u64 {
+        if self.extended_discovery_config.enabled && self.has_expected() && !self.all_found() {
+            self.extended_discovery_config.extended_timeout_secs
+        } else {
+            self.extended_discovery_config.standard_timeout_secs
+        }
+    }
+
+    /// Get the extended discovery decision for the current state.
+    ///
+    /// This provides detailed information about whether extended discovery
+    /// should be used and which power meters we're waiting for.
+    pub fn get_extended_discovery_decision(&self) -> ExtendedDiscoveryDecision {
+        if !self.extended_discovery_config.enabled {
+            return ExtendedDiscoveryDecision::Disabled;
+        }
+
+        if self.expected.is_empty() || self.all_found() {
+            return ExtendedDiscoveryDecision::UseStandardTimeout;
+        }
+
+        // Collect names of missing power meters
+        let waiting_for: Vec<String> = self
+            .expected
+            .iter()
+            .filter(|(id, _)| !self.found.contains(*id))
+            .map(|(_, pm)| pm.name.clone())
+            .collect();
+
+        if waiting_for.is_empty() {
+            return ExtendedDiscoveryDecision::UseStandardTimeout;
+        }
+
+        ExtendedDiscoveryDecision::ExtendForPowerMeters {
+            waiting_for,
+            extended_timeout_secs: self.extended_discovery_config.extended_timeout_secs,
+        }
+    }
+
+    /// Mark that extended discovery has been triggered.
+    ///
+    /// This is called when the discovery process extends beyond the standard
+    /// timeout specifically to find power meters.
+    pub fn mark_extended_discovery_triggered(&mut self) {
+        if !self.extended_discovery_triggered {
+            self.extended_discovery_triggered = true;
+            tracing::info!(
+                "Extended discovery triggered for {} missing power meter(s)",
+                self.missing_count()
+            );
+        }
+    }
+
+    /// Check if extended discovery has been triggered this session.
+    pub fn is_extended_discovery_triggered(&self) -> bool {
+        self.extended_discovery_triggered
+    }
+
+    /// Get names of power meters we're waiting for (missing).
+    pub fn get_missing_power_meter_names(&self) -> Vec<String> {
+        self.expected
+            .iter()
+            .filter(|(id, _)| !self.found.contains(*id))
+            .map(|(_, pm)| pm.name.clone())
+            .collect()
+    }
+
     /// Clear all state and expectations.
     pub fn clear(&mut self) {
         self.expected.clear();
@@ -575,6 +809,7 @@ impl PowerMeterWakeUpDetector {
         self.session_hint_count = 0;
         self.discovery_started_at = None;
         self.discovery_active = false;
+        self.extended_discovery_triggered = false;
     }
 
     /// Clear found sensors (for retrying discovery).

@@ -65,8 +65,11 @@ pub use dual_protocol::{
 };
 pub use manager::SensorManager;
 pub use power_meter::{
-    ExpectedPowerMeter, PowerMeterWakeUpConfig, PowerMeterWakeUpDetector, WakeUpDetectionResult,
+    ExpectedPowerMeter, ExtendedDiscoveryDecision, ExtendedPowerMeterDiscoveryConfig,
+    PowerMeterWakeUpConfig, PowerMeterWakeUpDetector, WakeUpDetectionResult,
     WakeUpHint, WakeUpHintType, is_power_protocol, provides_power_data,
+    DEFAULT_EXTENDED_DISCOVERY_SECS, DEFAULT_STANDARD_DISCOVERY_SECS,
+    EXTENDED_DISCOVERY_THRESHOLD_SECS,
 };
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,

@@ -282,6 +282,10 @@ impl Default for SensorConfig {
 /// then extends the scan if sensors are still being discovered. This
 /// balances fast discovery when sensors are readily available with
 /// longer scans when sensors are slow to respond.
+///
+/// Power meters may take longer to advertise due to sleep mode. When
+/// a saved power meter is expected but not found, discovery can extend
+/// up to `power_meter_max_secs` (default: 45 seconds).
 #[derive(Debug, Clone)]
 pub struct ProgressiveTimeoutConfig {
     /// Initial aggressive scan period in seconds (default: 10s)
@@ -290,6 +294,9 @@ pub struct ProgressiveTimeoutConfig {
     pub extension_period_secs: u64,
     /// Maximum total discovery time in seconds (default: 30s)
     pub max_total_secs: u64,
+    /// Maximum discovery time when waiting for power meters (default: 45s)
+    /// Power meters may take longer to advertise due to sleep mode.
+    pub power_meter_max_secs: u64,
     /// Time window for detecting sensor activity (default: 3s)
     /// If a sensor is discovered within this window before timeout,
     /// the scan is extended.
@@ -307,6 +314,7 @@ impl Default for ProgressiveTimeoutConfig {
             initial_scan_secs: 10,
             extension_period_secs: 5,
             max_total_secs: 30,
+            power_meter_max_secs: 45,
             activity_window_secs: 3,
             idle_threshold_secs: 5,
             enabled: true,
@@ -321,6 +329,7 @@ impl ProgressiveTimeoutConfig {
             initial_scan_secs: 5,
             extension_period_secs: 3,
             max_total_secs: 15,
+            power_meter_max_secs: 30, // Shorter extension for fast mode
             activity_window_secs: 2,
             idle_threshold_secs: 3,
             enabled: true,
@@ -333,6 +342,7 @@ impl ProgressiveTimeoutConfig {
             initial_scan_secs: 15,
             extension_period_secs: 10,
             max_total_secs: 45,
+            power_meter_max_secs: 60, // Longer extension for thorough mode
             activity_window_secs: 5,
             idle_threshold_secs: 8,
             enabled: true,

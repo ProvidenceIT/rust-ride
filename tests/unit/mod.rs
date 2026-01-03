@@ -11,6 +11,7 @@ mod connection_state_test;
 mod dual_protocol_test;
 mod dynamics_test;
 mod elevation_test;
+mod extended_power_discovery_test;
 mod failover_test;
 mod fit_export_test;
 mod ftms_parser_test;

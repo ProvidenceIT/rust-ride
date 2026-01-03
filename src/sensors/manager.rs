@@ -484,6 +484,7 @@ impl SensorManager {
         let timeout_handle = self.discovery_timeout_handle.clone();
         let progressive_state = self.progressive_timeout_state.clone();
         let discovered = self.discovered.clone();
+        let power_meter_detector = self.power_meter_detector.clone();
 
         // Initialize progressive timeout state
         *progressive_state.lock().await = Some(ProgressiveTimeoutState::new());
@@ -497,6 +498,7 @@ impl SensorManager {
                 event_tx_timeout,
                 progressive_state,
                 discovered,
+                power_meter_detector,
             )
             .await;
         });
@@ -510,7 +512,12 @@ impl SensorManager {
     /// - Initial aggressive 10s scan
     /// - Extends if sensors are still being found
     /// - Stops early if idle for too long
-    /// - Maximum 30s total scan time
+    /// - Maximum 30s total scan time (45s if waiting for power meters)
+    ///
+    /// Power meter extended discovery:
+    /// When a saved power meter is expected but not found, discovery can
+    /// extend beyond the normal max timeout to give power meters more time
+    /// to wake up and advertise.
     async fn run_progressive_timeout(
         adapter: Adapter,
         config: ProgressiveTimeoutConfig,
@@ -519,11 +526,13 @@ impl SensorManager {
         event_tx: Option<Sender<SensorEvent>>,
         state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
         discovered: Arc<Mutex<HashMap<String, DiscoveredSensor>>>,
+        power_meter_detector: Arc<Mutex<PowerMeterWakeUpDetector>>,
     ) {
         // Check interval for progressive timeout decisions
         const CHECK_INTERVAL_MS: u64 = 500;
 
         let mut last_discovered_count = 0usize;
+        let mut power_meter_extended = false;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(CHECK_INTERVAL_MS)).await;
@@ -534,9 +543,20 @@ impl SensorManager {
                 break;
             }
 
-            // Update state with new discoveries
+            // Update state with new discoveries and notify power meter detector
             {
-                let current_count = discovered.lock().await.len();
+                let discovered_sensors = discovered.lock().await;
+                let current_count = discovered_sensors.len();
+
+                // Update power meter detector with newly discovered sensors
+                {
+                    let mut pm_detector = power_meter_detector.lock().await;
+                    for sensor in discovered_sensors.values() {
+                        pm_detector.record_discovered(sensor);
+                    }
+                }
+                drop(discovered_sensors);
+
                 let mut state_guard = state.lock().await;
 
                 if let Some(ref mut timeout_state) = *state_guard {
@@ -568,16 +588,75 @@ impl SensorManager {
                             );
                         }
                         TimeoutDecision::Stop { reason } => {
-                            timeout_state.mark_completed();
                             let elapsed = timeout_state.elapsed();
+                            let elapsed_secs = elapsed.as_secs();
+
+                            // Check if we should extend for power meters
+                            if reason == StopReason::MaxTimeReached || reason == StopReason::IdleTimeout {
+                                let pm_detector = power_meter_detector.lock().await;
+                                let should_extend = pm_detector.should_use_extended_discovery();
+                                let power_meter_max = config.power_meter_max_secs;
+
+                                if should_extend && elapsed_secs < power_meter_max && !power_meter_extended {
+                                    // Extend discovery for power meters
+                                    power_meter_extended = true;
+                                    let missing_names = pm_detector.get_missing_power_meter_names();
+                                    drop(pm_detector);
+
+                                    tracing::info!(
+                                        "Progressive timeout: extending discovery for power meter(s): {:?} (up to {}s)",
+                                        missing_names,
+                                        power_meter_max
+                                    );
+
+                                    // Mark the extension in the detector
+                                    let mut pm_detector = power_meter_detector.lock().await;
+                                    pm_detector.mark_extended_discovery_triggered();
+                                    drop(pm_detector);
+
+                                    // Continue scanning in extended mode
+                                    timeout_state.apply_extension();
+                                    continue;
+                                }
+
+                                // Check if we're in power meter extended mode and still have time
+                                if power_meter_extended && elapsed_secs < power_meter_max {
+                                    let pm_detector = power_meter_detector.lock().await;
+                                    if !pm_detector.all_found() {
+                                        // Still waiting for power meters, continue
+                                        drop(pm_detector);
+                                        continue;
+                                    }
+                                    // All power meters found, proceed to stop
+                                    tracing::info!(
+                                        "Progressive timeout: all power meters found during extended discovery"
+                                    );
+                                }
+                            }
+
+                            timeout_state.mark_completed();
                             let sensors = timeout_state.sensors_discovered;
 
-                            tracing::info!(
-                                "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors",
-                                reason,
-                                elapsed,
-                                sensors
-                            );
+                            if power_meter_extended {
+                                let pm_detector = power_meter_detector.lock().await;
+                                let found_count = pm_detector.found_count();
+                                let expected_count = pm_detector.expected_count();
+                                tracing::info!(
+                                    "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors, power meters: {}/{}",
+                                    reason,
+                                    elapsed,
+                                    sensors,
+                                    found_count,
+                                    expected_count
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors",
+                                    reason,
+                                    elapsed,
+                                    sensors
+                                );
+                            }
 
                             // Stop scanning
                             drop(state_guard);
