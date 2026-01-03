@@ -16,13 +16,13 @@
 use super::backend::{AudioDeviceStatus, HotPlugConfig, Platform, RodioAudioBackend};
 use super::tts::TtsProvider;
 use super::{
-    AudioCategory, AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
-    MuteState, ThreadSafeTtsProvider,
+    AudioCategory, AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority,
+    AudioTimingConfig, AudioType, MuteState, QueueStats, ThreadSafeTtsProvider,
 };
 use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 /// Trait for audio engine implementations
@@ -176,6 +176,35 @@ pub trait AudioEngine: Send + Sync {
     /// Returns a list of troubleshooting steps for the current platform
     /// that can help users resolve audio device issues.
     fn get_troubleshooting_hints(&self) -> Vec<&'static str>;
+
+    // ========== Queue Statistics and Timing Methods ==========
+
+    /// Get the current audio timing configuration
+    fn get_timing_config(&self) -> AudioTimingConfig;
+
+    /// Update the audio timing configuration
+    fn set_timing_config(&self, config: AudioTimingConfig);
+
+    /// Get current queue statistics
+    ///
+    /// Returns information about queue size, expired/dropped items,
+    /// and pressure status. Useful for debugging and monitoring.
+    fn get_queue_stats(&self) -> QueueStats;
+
+    /// Reset queue statistics counters
+    ///
+    /// Resets the expired and dropped counts back to zero.
+    fn reset_queue_stats(&self);
+
+    /// Clean up expired items from the queue
+    ///
+    /// Manually trigger cleanup of stale items. This is normally
+    /// done automatically during queue operations when aggressive_cleanup
+    /// is enabled.
+    fn cleanup_expired(&self) -> usize;
+
+    /// Get the current queue size
+    fn queue_size(&self) -> usize;
 }
 
 /// Queue entry with priority ordering
@@ -229,6 +258,13 @@ pub struct DefaultAudioEngine {
     current_priority: Arc<Mutex<Option<AudioPriority>>>,
     /// Flag to signal that current playback should be interrupted
     interrupt_requested: Arc<AtomicBool>,
+    // ========== Queue Statistics Tracking ==========
+    /// Count of items expired before playback
+    expired_count: Arc<AtomicUsize>,
+    /// Count of items dropped due to queue pressure
+    dropped_count: Arc<AtomicUsize>,
+    /// When the last audio item finished playing (for gap enforcement)
+    last_playback_end: Arc<Mutex<Option<Instant>>>,
 }
 
 impl DefaultAudioEngine {
@@ -265,6 +301,9 @@ impl DefaultAudioEngine {
             audio_backend,
             current_priority: Arc::new(Mutex::new(None)),
             interrupt_requested: Arc::new(AtomicBool::new(false)),
+            expired_count: Arc::new(AtomicUsize::new(0)),
+            dropped_count: Arc::new(AtomicUsize::new(0)),
+            last_playback_end: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -381,15 +420,170 @@ impl DefaultAudioEngine {
 
         while let Some(entry) = queue.pop() {
             // Check if item has expired
-            let elapsed = entry.item.queued_at.elapsed();
-            if elapsed < entry.item.max_queue_time {
-                return Some(entry.item);
+            if entry.item.is_expired() {
+                let age_ms = entry.item.age_ms();
+                let type_desc = entry.item.type_description();
+                tracing::debug!(
+                    "Audio item expired after {}ms: {}",
+                    age_ms,
+                    type_desc
+                );
+                self.expired_count.fetch_add(1, Ordering::Relaxed);
+
+                // Emit expired event
+                let _ = self.event_tx.send(AudioEvent::ItemExpired {
+                    audio_type: type_desc,
+                    age_ms,
+                });
+
+                continue;
             }
-            // Item expired, try next
-            tracing::debug!("Audio item expired after {:?}", elapsed);
+            return Some(entry.item);
         }
 
         None
+    }
+
+    /// Clean up expired items from the queue and return the count
+    fn cleanup_expired_items(&self) -> usize {
+        let mut queue = self.queue.lock().unwrap();
+        let original_len = queue.len();
+
+        // Collect non-expired items
+        let entries: Vec<QueueEntry> = queue.drain().collect();
+        let mut expired_count = 0;
+
+        for entry in entries {
+            if entry.item.is_expired() {
+                let age_ms = entry.item.age_ms();
+                let type_desc = entry.item.type_description();
+                tracing::debug!(
+                    "Cleanup: expired item after {}ms: {}",
+                    age_ms,
+                    type_desc
+                );
+                expired_count += 1;
+                self.expired_count.fetch_add(1, Ordering::Relaxed);
+
+                let _ = self.event_tx.send(AudioEvent::ItemExpired {
+                    audio_type: type_desc,
+                    age_ms,
+                });
+            } else {
+                queue.push(entry);
+            }
+        }
+
+        if expired_count > 0 {
+            tracing::debug!(
+                "Cleaned up {} expired items, {} remaining",
+                expired_count,
+                queue.len()
+            );
+        }
+
+        expired_count
+    }
+
+    /// Get the current queue size
+    fn get_queue_size(&self) -> usize {
+        self.queue.lock().unwrap().len()
+    }
+
+    /// Collect queue statistics
+    fn collect_queue_stats(&self) -> QueueStats {
+        let queue = self.queue.lock().unwrap();
+        let timing_config = self.config.lock().unwrap().timing.clone();
+
+        let mut low_priority_count = 0;
+        let mut high_priority_count = 0;
+
+        for entry in queue.iter() {
+            match entry.item.priority {
+                AudioPriority::Low => low_priority_count += 1,
+                AudioPriority::High | AudioPriority::Critical => high_priority_count += 1,
+                _ => {}
+            }
+        }
+
+        let item_count = queue.len();
+        let under_pressure = timing_config.is_queue_under_pressure(item_count);
+
+        QueueStats {
+            item_count,
+            expired_count: self.expired_count.load(Ordering::Relaxed),
+            dropped_count: self.dropped_count.load(Ordering::Relaxed),
+            low_priority_count,
+            high_priority_count,
+            under_pressure,
+        }
+    }
+
+    /// Drop low-priority items when queue is under pressure
+    fn drop_low_priority_under_pressure(&self) -> usize {
+        let timing_config = {
+            let config = self.config.lock().unwrap();
+            config.timing.clone()
+        };
+
+        let mut queue = self.queue.lock().unwrap();
+        let current_size = queue.len();
+
+        if !timing_config.is_queue_under_pressure(current_size) {
+            return 0;
+        }
+
+        // Collect and filter entries
+        let entries: Vec<QueueEntry> = queue.drain().collect();
+        let mut dropped_count = 0;
+
+        for entry in entries {
+            // Drop low-priority items when under pressure
+            if entry.item.priority == AudioPriority::Low {
+                let type_desc = entry.item.type_description();
+                tracing::debug!(
+                    "Queue pressure: dropping low-priority item: {}",
+                    type_desc
+                );
+                dropped_count += 1;
+                self.dropped_count.fetch_add(1, Ordering::Relaxed);
+
+                let _ = self.event_tx.send(AudioEvent::ItemDropped {
+                    audio_type: type_desc,
+                    priority: AudioPriority::Low,
+                });
+            } else {
+                queue.push(entry);
+            }
+        }
+
+        if dropped_count > 0 {
+            tracing::debug!(
+                "Dropped {} low-priority items due to queue pressure",
+                dropped_count
+            );
+        }
+
+        dropped_count
+    }
+
+    /// Record when playback ends for gap enforcement
+    fn record_playback_end(&self) {
+        *self.last_playback_end.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Check if minimum audio gap has elapsed since last playback
+    fn min_gap_elapsed(&self) -> bool {
+        let last_end = self.last_playback_end.lock().unwrap();
+        let timing_config = self.config.lock().unwrap().timing.clone();
+
+        match *last_end {
+            Some(end_time) => {
+                let elapsed = end_time.elapsed();
+                elapsed >= Duration::from_millis(timing_config.min_audio_gap_ms)
+            }
+            None => true, // No previous playback, gap is satisfied
+        }
     }
 
     /// Process the audio queue
@@ -805,6 +999,48 @@ impl AudioEngine for DefaultAudioEngine {
 
     fn queue(&self, item: AudioItem) {
         let priority = item.priority;
+        let timing_config = self.config.lock().unwrap().timing.clone();
+
+        // Aggressive cleanup: remove expired items before adding new ones
+        if timing_config.aggressive_cleanup {
+            self.cleanup_expired_items();
+        }
+
+        // Check queue size limits
+        {
+            let queue_size = self.get_queue_size();
+            if queue_size >= timing_config.max_queue_size {
+                // Queue is full - handle based on priority
+                if priority == AudioPriority::Low {
+                    // Drop low priority items when queue is full
+                    tracing::debug!(
+                        "Queue full ({}), dropping low-priority item: {}",
+                        queue_size,
+                        item.type_description()
+                    );
+                    self.dropped_count.fetch_add(1, Ordering::Relaxed);
+                    let _ = self.event_tx.send(AudioEvent::ItemDropped {
+                        audio_type: item.type_description(),
+                        priority: item.priority,
+                    });
+                    return;
+                } else {
+                    // For higher priority items, drop low priority items to make room
+                    self.drop_low_priority_under_pressure();
+                }
+            }
+        }
+
+        // Emit queue pressure warning if needed
+        {
+            let queue_size = self.get_queue_size();
+            if timing_config.is_queue_under_pressure(queue_size) {
+                let _ = self.event_tx.send(AudioEvent::QueuePressure {
+                    current_size: queue_size,
+                    max_size: timing_config.max_queue_size,
+                });
+            }
+        }
 
         // Check if this high-priority item should interrupt current playback
         if self.should_interrupt(priority) {
@@ -1000,6 +1236,34 @@ impl AudioEngine for DefaultAudioEngine {
 
     fn get_troubleshooting_hints(&self) -> Vec<&'static str> {
         self.audio_backend.get_troubleshooting_hints()
+    }
+
+    // ========== Queue Statistics and Timing Methods ==========
+
+    fn get_timing_config(&self) -> AudioTimingConfig {
+        self.config.lock().unwrap().timing.clone()
+    }
+
+    fn set_timing_config(&self, timing_config: AudioTimingConfig) {
+        self.config.lock().unwrap().timing = timing_config;
+    }
+
+    fn get_queue_stats(&self) -> QueueStats {
+        self.collect_queue_stats()
+    }
+
+    fn reset_queue_stats(&self) {
+        self.expired_count.store(0, Ordering::Relaxed);
+        self.dropped_count.store(0, Ordering::Relaxed);
+        tracing::debug!("Queue statistics reset");
+    }
+
+    fn cleanup_expired(&self) -> usize {
+        self.cleanup_expired_items()
+    }
+
+    fn queue_size(&self) -> usize {
+        self.get_queue_size()
     }
 }
 
@@ -1757,5 +2021,326 @@ mod tests {
         // But the important thing is it doesn't panic
         let _attempted = engine.try_device_recovery();
         // Result depends on environment - just verify no panic
+    }
+
+    // ========== Timing Safeguards Tests ==========
+
+    #[test]
+    fn test_timing_config_defaults() {
+        let config = AudioConfig::default();
+        let timing = config.timing;
+
+        assert_eq!(timing.max_queue_size, 20);
+        assert_eq!(timing.countdown_max_age_ms, 500);
+        assert_eq!(timing.sound_max_age_ms, 3000);
+        assert_eq!(timing.speech_max_age_ms, 10000);
+        assert_eq!(timing.min_audio_gap_ms, 50);
+        assert!(timing.aggressive_cleanup);
+        assert_eq!(timing.queue_pressure_threshold, 70);
+    }
+
+    #[test]
+    fn test_timing_config_queue_pressure() {
+        let timing = super::super::AudioTimingConfig::default();
+
+        // 14 items = 70% of 20 max = at threshold
+        assert!(timing.is_queue_under_pressure(14));
+        // 15 items = 75% = over threshold
+        assert!(timing.is_queue_under_pressure(15));
+        // 13 items = 65% = under threshold
+        assert!(!timing.is_queue_under_pressure(13));
+        // Empty queue = not under pressure
+        assert!(!timing.is_queue_under_pressure(0));
+    }
+
+    #[test]
+    fn test_countdown_tone_has_short_expiration() {
+        let item = AudioItem::countdown_tone(440, 100);
+        assert_eq!(item.max_queue_time, Duration::from_millis(500));
+        assert!(item.is_time_critical());
+        assert_eq!(item.category, Some(AudioCategory::Countdown));
+    }
+
+    #[test]
+    fn test_countdown_tone_with_custom_timing() {
+        let item = AudioItem::countdown_tone_with_timing(440, 100, 200);
+        assert_eq!(item.max_queue_time, Duration::from_millis(200));
+        assert!(item.is_time_critical());
+    }
+
+    #[test]
+    fn test_audio_item_expiration_check() {
+        // Create item with very short max queue time
+        let item = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_millis(1));
+
+        // Wait for expiration
+        std::thread::sleep(Duration::from_millis(5));
+
+        assert!(item.is_expired());
+        assert!(item.time_remaining().is_none());
+    }
+
+    #[test]
+    fn test_audio_item_not_expired() {
+        let item = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_secs(60));
+
+        assert!(!item.is_expired());
+        assert!(item.time_remaining().is_some());
+        assert!(item.time_remaining().unwrap() > Duration::from_secs(59));
+    }
+
+    #[test]
+    fn test_audio_item_age_tracking() {
+        let item = AudioItem::tone(440, 100);
+        std::thread::sleep(Duration::from_millis(10));
+
+        let age = item.age_ms();
+        assert!(age >= 10, "Expected age >= 10ms, got {}ms", age);
+    }
+
+    #[test]
+    fn test_audio_item_type_description() {
+        let speech = AudioItem::speech("Hello world");
+        assert!(speech.type_description().contains("Speech"));
+        assert!(speech.type_description().contains("Hello"));
+
+        let sound = AudioItem::sound("beep");
+        assert!(sound.type_description().contains("Sound"));
+        assert!(sound.type_description().contains("beep"));
+
+        let tone = AudioItem::tone(440, 100);
+        assert!(tone.type_description().contains("Tone"));
+        assert!(tone.type_description().contains("440Hz"));
+    }
+
+    #[test]
+    fn test_queue_stats_initial() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        let stats = engine.get_queue_stats();
+        assert_eq!(stats.item_count, 0);
+        assert_eq!(stats.expired_count, 0);
+        assert_eq!(stats.dropped_count, 0);
+        assert!(!stats.under_pressure);
+        assert!(stats.is_healthy());
+    }
+
+    #[test]
+    fn test_queue_stats_after_queue() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Queue some items
+        engine.queue(AudioItem::speech("One"));
+        engine.queue(AudioItem::speech("Two"));
+        engine.queue(AudioItem::tone(440, 100).with_priority(AudioPriority::Low));
+
+        let stats = engine.get_queue_stats();
+        assert_eq!(stats.item_count, 3);
+        assert_eq!(stats.low_priority_count, 1);
+    }
+
+    #[test]
+    fn test_queue_size_method() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        assert_eq!(engine.queue_size(), 0);
+
+        engine.queue(AudioItem::speech("One"));
+        assert_eq!(engine.queue_size(), 1);
+
+        engine.queue(AudioItem::speech("Two"));
+        assert_eq!(engine.queue_size(), 2);
+    }
+
+    #[test]
+    fn test_reset_queue_stats() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Simulate expired count by manually incrementing
+        engine.expired_count.fetch_add(5, Ordering::Relaxed);
+        engine.dropped_count.fetch_add(3, Ordering::Relaxed);
+
+        let stats = engine.get_queue_stats();
+        assert_eq!(stats.expired_count, 5);
+        assert_eq!(stats.dropped_count, 3);
+
+        // Reset
+        engine.reset_queue_stats();
+
+        let stats = engine.get_queue_stats();
+        assert_eq!(stats.expired_count, 0);
+        assert_eq!(stats.dropped_count, 0);
+    }
+
+    #[test]
+    fn test_get_set_timing_config() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Get default config
+        let timing = engine.get_timing_config();
+        assert_eq!(timing.max_queue_size, 20);
+
+        // Set new config
+        let mut new_timing = timing;
+        new_timing.max_queue_size = 50;
+        new_timing.countdown_max_age_ms = 250;
+        engine.set_timing_config(new_timing);
+
+        // Verify change
+        let updated = engine.get_timing_config();
+        assert_eq!(updated.max_queue_size, 50);
+        assert_eq!(updated.countdown_max_age_ms, 250);
+    }
+
+    #[test]
+    fn test_cleanup_expired_items() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Queue an item with very short expiration
+        let short_lived = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_millis(1));
+        engine.queue(short_lived);
+
+        // Queue a long-lived item
+        engine.queue(AudioItem::speech("Long lived"));
+
+        assert_eq!(engine.queue_size(), 2);
+
+        // Wait for short-lived item to expire
+        std::thread::sleep(Duration::from_millis(10));
+
+        // Manual cleanup
+        let cleaned = engine.cleanup_expired();
+        assert_eq!(cleaned, 1, "Expected 1 expired item");
+        assert_eq!(engine.queue_size(), 1, "Expected 1 remaining item");
+
+        // Stats should reflect the expired item
+        let stats = engine.get_queue_stats();
+        assert!(stats.expired_count >= 1);
+    }
+
+    #[test]
+    fn test_queue_drops_low_priority_when_full() {
+        let mut config = AudioConfig::default();
+        config.timing.max_queue_size = 3;
+        let engine = DefaultAudioEngine::new(config);
+
+        // Fill the queue
+        engine.queue(AudioItem::speech("One"));
+        engine.queue(AudioItem::speech("Two"));
+        engine.queue(AudioItem::speech("Three"));
+
+        assert_eq!(engine.queue_size(), 3);
+
+        // Try to add a low-priority item when full
+        engine.queue(AudioItem::tone(440, 100).with_priority(AudioPriority::Low));
+
+        // Should have been dropped
+        assert_eq!(engine.queue_size(), 3);
+        let stats = engine.get_queue_stats();
+        assert_eq!(stats.dropped_count, 1);
+    }
+
+    #[test]
+    fn test_queue_accepts_high_priority_when_full() {
+        let mut config = AudioConfig::default();
+        config.timing.max_queue_size = 3;
+        let engine = DefaultAudioEngine::new(config);
+
+        // Fill the queue with low priority items
+        engine.queue(AudioItem::tone(440, 100).with_priority(AudioPriority::Low));
+        engine.queue(AudioItem::tone(440, 100).with_priority(AudioPriority::Low));
+        engine.queue(AudioItem::tone(440, 100).with_priority(AudioPriority::Low));
+
+        assert_eq!(engine.queue_size(), 3);
+
+        // Add a high-priority item - should make room by dropping low priority
+        engine.queue(AudioItem::speech("Important!").with_priority(AudioPriority::High));
+
+        // Queue should still work - low priority items were dropped
+        let stats = engine.get_queue_stats();
+        assert!(stats.high_priority_count >= 1);
+    }
+
+    #[test]
+    fn test_aggressive_cleanup_on_queue() {
+        let mut config = AudioConfig::default();
+        config.timing.aggressive_cleanup = true;
+        let engine = DefaultAudioEngine::new(config);
+
+        // Queue an item with very short expiration
+        let short_lived = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_millis(1));
+        engine.queue(short_lived);
+
+        // Wait for it to expire
+        std::thread::sleep(Duration::from_millis(10));
+
+        // Queue another item - this should trigger cleanup
+        engine.queue(AudioItem::speech("Trigger cleanup"));
+
+        // The expired item should have been cleaned up
+        // Only the new item should remain
+        assert_eq!(engine.queue_size(), 1);
+    }
+
+    #[test]
+    fn test_queue_stats_status_string() {
+        let stats = QueueStats::default();
+        assert!(stats.status_string().contains("OK"));
+        assert!(stats.is_healthy());
+
+        let pressure_stats = QueueStats {
+            under_pressure: true,
+            dropped_count: 5,
+            item_count: 15,
+            ..Default::default()
+        };
+        assert!(pressure_stats.status_string().contains("PRESSURE"));
+        assert!(!pressure_stats.is_healthy());
+
+        let expired_stats = QueueStats {
+            expired_count: 3,
+            item_count: 5,
+            ..Default::default()
+        };
+        assert!(expired_stats.status_string().contains("ACTIVE"));
+        assert!(!expired_stats.is_healthy());
+    }
+
+    #[test]
+    fn test_timing_config_max_queue_time_for_category() {
+        let timing = super::super::AudioTimingConfig::default();
+
+        let countdown_time = timing.max_queue_time_for_category(Some(AudioCategory::Countdown));
+        assert_eq!(countdown_time, Duration::from_millis(500));
+
+        let voice_time = timing.max_queue_time_for_category(Some(AudioCategory::Voice));
+        assert_eq!(voice_time, Duration::from_millis(10000));
+
+        let sound_time = timing.max_queue_time_for_category(Some(AudioCategory::SoundEffect));
+        assert_eq!(sound_time, Duration::from_millis(3000));
+
+        let no_category = timing.max_queue_time_for_category(None);
+        assert_eq!(no_category, Duration::from_millis(3000));
+    }
+
+    #[test]
+    fn test_is_time_critical() {
+        let countdown = AudioItem::countdown_tone(440, 100);
+        assert!(countdown.is_time_critical());
+
+        let speech = AudioItem::speech("Hello");
+        assert!(!speech.is_time_critical());
+
+        let sound = AudioItem::sound("beep");
+        assert!(!sound.is_time_critical());
+
+        let tone = AudioItem::tone(440, 100);
+        assert!(!tone.is_time_critical());
     }
 }

@@ -63,6 +63,100 @@ pub enum AudioError {
     VoiceNotAvailable(String),
 }
 
+/// Audio timing configuration for synchronization and queue management
+///
+/// These settings control how the audio engine handles timing-sensitive audio
+/// items like countdown sounds, and how it prevents audio pileup.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AudioTimingConfig {
+    /// Maximum number of items allowed in the audio queue
+    /// When exceeded, low-priority items will be dropped
+    #[serde(default = "default_max_queue_size")]
+    pub max_queue_size: usize,
+    /// Maximum age for countdown sounds before they are dropped (milliseconds)
+    /// Countdown sounds need to play at the right time or not at all
+    #[serde(default = "default_countdown_max_age_ms")]
+    pub countdown_max_age_ms: u64,
+    /// Maximum age for regular sounds before they are dropped (milliseconds)
+    #[serde(default = "default_sound_max_age_ms")]
+    pub sound_max_age_ms: u64,
+    /// Maximum age for voice/speech before it is dropped (milliseconds)
+    #[serde(default = "default_speech_max_age_ms")]
+    pub speech_max_age_ms: u64,
+    /// Minimum gap between consecutive audio items (milliseconds)
+    /// Helps prevent audio overlap
+    #[serde(default = "default_min_audio_gap_ms")]
+    pub min_audio_gap_ms: u64,
+    /// Enable aggressive cleanup of stale items during queue operations
+    #[serde(default = "default_aggressive_cleanup")]
+    pub aggressive_cleanup: bool,
+    /// Drop low-priority items when queue is over this percentage full (0-100)
+    #[serde(default = "default_queue_pressure_threshold")]
+    pub queue_pressure_threshold: u8,
+}
+
+fn default_max_queue_size() -> usize {
+    20
+}
+
+fn default_countdown_max_age_ms() -> u64 {
+    500 // Countdown sounds must play within 500ms or not at all
+}
+
+fn default_sound_max_age_ms() -> u64 {
+    3000 // Sound effects can wait up to 3 seconds
+}
+
+fn default_speech_max_age_ms() -> u64 {
+    10000 // Speech can wait up to 10 seconds
+}
+
+fn default_min_audio_gap_ms() -> u64 {
+    50 // At least 50ms between audio items
+}
+
+fn default_aggressive_cleanup() -> bool {
+    true
+}
+
+fn default_queue_pressure_threshold() -> u8 {
+    70 // Start dropping low-priority items when 70% full
+}
+
+impl Default for AudioTimingConfig {
+    fn default() -> Self {
+        Self {
+            max_queue_size: default_max_queue_size(),
+            countdown_max_age_ms: default_countdown_max_age_ms(),
+            sound_max_age_ms: default_sound_max_age_ms(),
+            speech_max_age_ms: default_speech_max_age_ms(),
+            min_audio_gap_ms: default_min_audio_gap_ms(),
+            aggressive_cleanup: default_aggressive_cleanup(),
+            queue_pressure_threshold: default_queue_pressure_threshold(),
+        }
+    }
+}
+
+impl AudioTimingConfig {
+    /// Get the maximum queue age for a given audio category
+    pub fn max_queue_time_for_category(&self, category: Option<AudioCategory>) -> Duration {
+        match category {
+            Some(AudioCategory::Countdown) => Duration::from_millis(self.countdown_max_age_ms),
+            Some(AudioCategory::Voice) => Duration::from_millis(self.speech_max_age_ms),
+            _ => Duration::from_millis(self.sound_max_age_ms),
+        }
+    }
+
+    /// Check if the queue is under pressure (high fill percentage)
+    pub fn is_queue_under_pressure(&self, current_size: usize) -> bool {
+        if self.max_queue_size == 0 {
+            return false;
+        }
+        let fill_percentage = (current_size * 100) / self.max_queue_size;
+        fill_percentage >= self.queue_pressure_threshold as usize
+    }
+}
+
 /// Audio configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AudioConfig {
@@ -123,6 +217,9 @@ pub struct AudioConfig {
     /// Milestone mute state
     #[serde(default)]
     pub milestone_muted: bool,
+    /// Timing configuration for audio synchronization
+    #[serde(default)]
+    pub timing: AudioTimingConfig,
 }
 
 fn default_countdown_enabled() -> bool {
@@ -178,6 +275,64 @@ impl Default for AudioConfig {
             countdown_muted: false,
             achievement_muted: false,
             milestone_muted: false,
+            timing: AudioTimingConfig::default(),
+        }
+    }
+}
+
+/// Queue statistics for monitoring and debugging
+///
+/// Provides insight into the audio queue state for debugging
+/// audio timing and pileup issues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueStats {
+    /// Current number of items in the queue
+    pub item_count: usize,
+    /// Number of items expired and dropped since last reset
+    pub expired_count: usize,
+    /// Number of items dropped due to queue pressure
+    pub dropped_count: usize,
+    /// Number of low-priority items in queue
+    pub low_priority_count: usize,
+    /// Number of high-priority items in queue
+    pub high_priority_count: usize,
+    /// Whether queue is currently under pressure
+    pub under_pressure: bool,
+}
+
+impl Default for QueueStats {
+    fn default() -> Self {
+        Self {
+            item_count: 0,
+            expired_count: 0,
+            dropped_count: 0,
+            low_priority_count: 0,
+            high_priority_count: 0,
+            under_pressure: false,
+        }
+    }
+}
+
+impl QueueStats {
+    /// Check if the queue is healthy (low dropped/expired counts)
+    pub fn is_healthy(&self) -> bool {
+        self.expired_count == 0 && self.dropped_count == 0 && !self.under_pressure
+    }
+
+    /// Get a status string suitable for display
+    pub fn status_string(&self) -> String {
+        if self.is_healthy() {
+            format!("Queue OK ({} items)", self.item_count)
+        } else if self.under_pressure {
+            format!(
+                "Queue PRESSURE ({} items, {} dropped)",
+                self.item_count, self.dropped_count
+            )
+        } else {
+            format!(
+                "Queue ACTIVE ({} items, {} expired)",
+                self.item_count, self.expired_count
+            )
         }
     }
 }
@@ -195,6 +350,21 @@ pub enum AudioEvent {
     AlertTriggered { alert_type: AlertType },
     /// Audio error occurred
     Error { message: String },
+    /// Audio item expired before playback
+    ItemExpired {
+        audio_type: String,
+        age_ms: u64,
+    },
+    /// Audio item dropped due to queue pressure
+    ItemDropped {
+        audio_type: String,
+        priority: AudioPriority,
+    },
+    /// Queue pressure warning
+    QueuePressure {
+        current_size: usize,
+        max_size: usize,
+    },
 }
 
 /// Priority levels for audio queue
@@ -386,7 +556,10 @@ impl AudioItem {
         }
     }
 
-    /// Create a countdown tone item
+    /// Create a countdown tone item with time-critical expiration
+    ///
+    /// Countdown tones have a very short max_queue_time (500ms by default)
+    /// because they must play at the right time or not at all.
     pub fn countdown_tone(frequency_hz: u32, duration_ms: u32) -> Self {
         Self {
             audio_type: AudioType::Tone {
@@ -395,7 +568,25 @@ impl AudioItem {
             },
             priority: AudioPriority::Normal,
             queued_at: std::time::Instant::now(),
-            max_queue_time: Duration::from_secs(5),
+            max_queue_time: Duration::from_millis(500), // Time-critical!
+            category: Some(AudioCategory::Countdown),
+        }
+    }
+
+    /// Create a countdown tone with custom max queue time
+    pub fn countdown_tone_with_timing(
+        frequency_hz: u32,
+        duration_ms: u32,
+        max_queue_ms: u64,
+    ) -> Self {
+        Self {
+            audio_type: AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            },
+            priority: AudioPriority::Normal,
+            queued_at: std::time::Instant::now(),
+            max_queue_time: Duration::from_millis(max_queue_ms),
             category: Some(AudioCategory::Countdown),
         }
     }
@@ -496,6 +687,58 @@ impl AudioItem {
         match &self.category {
             Some(category) => !category.is_muted(config),
             None => true,
+        }
+    }
+
+    // ========== Timing Methods ==========
+
+    /// Check if this audio item has expired
+    pub fn is_expired(&self) -> bool {
+        self.queued_at.elapsed() >= self.max_queue_time
+    }
+
+    /// Get the age of this audio item in milliseconds
+    pub fn age_ms(&self) -> u64 {
+        self.queued_at.elapsed().as_millis() as u64
+    }
+
+    /// Get the remaining time before expiration (None if already expired)
+    pub fn time_remaining(&self) -> Option<Duration> {
+        let elapsed = self.queued_at.elapsed();
+        if elapsed >= self.max_queue_time {
+            None
+        } else {
+            Some(self.max_queue_time - elapsed)
+        }
+    }
+
+    /// Check if this is a time-critical audio item (countdown)
+    pub fn is_time_critical(&self) -> bool {
+        matches!(self.category, Some(AudioCategory::Countdown))
+    }
+
+    /// Set the maximum queue time
+    pub fn with_max_queue_time(mut self, duration: Duration) -> Self {
+        self.max_queue_time = duration;
+        self
+    }
+
+    /// Get a string description of the audio type for logging
+    pub fn type_description(&self) -> String {
+        match &self.audio_type {
+            AudioType::Speech { text } => {
+                let preview = if text.len() > 20 {
+                    format!("{}...", &text[..20])
+                } else {
+                    text.clone()
+                };
+                format!("Speech(\"{}\")", preview)
+            }
+            AudioType::SoundEffect { name } => format!("Sound({})", name),
+            AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            } => format!("Tone({}Hz, {}ms)", frequency_hz, duration_ms),
         }
     }
 }
@@ -1203,5 +1446,195 @@ mod tests {
         assert!(config.voice_muted);
         assert!(config.countdown_muted);
         assert!(!config.sound_effects_muted);
+    }
+
+    // ========== AudioTimingConfig Tests ==========
+
+    #[test]
+    fn test_audio_timing_config_defaults() {
+        let timing = AudioTimingConfig::default();
+        assert_eq!(timing.max_queue_size, 20);
+        assert_eq!(timing.countdown_max_age_ms, 500);
+        assert_eq!(timing.sound_max_age_ms, 3000);
+        assert_eq!(timing.speech_max_age_ms, 10000);
+        assert_eq!(timing.min_audio_gap_ms, 50);
+        assert!(timing.aggressive_cleanup);
+        assert_eq!(timing.queue_pressure_threshold, 70);
+    }
+
+    #[test]
+    fn test_audio_timing_config_serde() {
+        let timing = AudioTimingConfig::default();
+        let json = serde_json::to_string(&timing).unwrap();
+
+        let deserialized: AudioTimingConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.max_queue_size, timing.max_queue_size);
+        assert_eq!(deserialized.countdown_max_age_ms, timing.countdown_max_age_ms);
+    }
+
+    #[test]
+    fn test_audio_timing_config_max_queue_time_for_category() {
+        let timing = AudioTimingConfig::default();
+
+        let countdown = timing.max_queue_time_for_category(Some(AudioCategory::Countdown));
+        assert_eq!(countdown, Duration::from_millis(500));
+
+        let voice = timing.max_queue_time_for_category(Some(AudioCategory::Voice));
+        assert_eq!(voice, Duration::from_millis(10000));
+
+        let sound = timing.max_queue_time_for_category(Some(AudioCategory::SoundEffect));
+        assert_eq!(sound, Duration::from_millis(3000));
+    }
+
+    #[test]
+    fn test_audio_timing_config_queue_pressure() {
+        let timing = AudioTimingConfig::default();
+
+        // 70% of 20 = 14
+        assert!(!timing.is_queue_under_pressure(13));
+        assert!(timing.is_queue_under_pressure(14));
+        assert!(timing.is_queue_under_pressure(20));
+    }
+
+    #[test]
+    fn test_audio_config_includes_timing() {
+        let config = AudioConfig::default();
+        assert_eq!(config.timing.max_queue_size, 20);
+    }
+
+    // ========== QueueStats Tests ==========
+
+    #[test]
+    fn test_queue_stats_default() {
+        let stats = QueueStats::default();
+        assert_eq!(stats.item_count, 0);
+        assert_eq!(stats.expired_count, 0);
+        assert_eq!(stats.dropped_count, 0);
+        assert_eq!(stats.low_priority_count, 0);
+        assert_eq!(stats.high_priority_count, 0);
+        assert!(!stats.under_pressure);
+    }
+
+    #[test]
+    fn test_queue_stats_is_healthy() {
+        let healthy = QueueStats::default();
+        assert!(healthy.is_healthy());
+
+        let unhealthy_expired = QueueStats {
+            expired_count: 1,
+            ..Default::default()
+        };
+        assert!(!unhealthy_expired.is_healthy());
+
+        let unhealthy_dropped = QueueStats {
+            dropped_count: 1,
+            ..Default::default()
+        };
+        assert!(!unhealthy_dropped.is_healthy());
+
+        let unhealthy_pressure = QueueStats {
+            under_pressure: true,
+            ..Default::default()
+        };
+        assert!(!unhealthy_pressure.is_healthy());
+    }
+
+    #[test]
+    fn test_queue_stats_status_string() {
+        let ok = QueueStats {
+            item_count: 5,
+            ..Default::default()
+        };
+        assert!(ok.status_string().contains("OK"));
+        assert!(ok.status_string().contains("5"));
+
+        let pressure = QueueStats {
+            item_count: 15,
+            dropped_count: 3,
+            under_pressure: true,
+            ..Default::default()
+        };
+        assert!(pressure.status_string().contains("PRESSURE"));
+
+        let active = QueueStats {
+            item_count: 5,
+            expired_count: 2,
+            ..Default::default()
+        };
+        assert!(active.status_string().contains("ACTIVE"));
+    }
+
+    // ========== AudioItem Timing Tests ==========
+
+    #[test]
+    fn test_audio_item_with_max_queue_time() {
+        let item = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_millis(100));
+        assert_eq!(item.max_queue_time, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_audio_item_countdown_tone_timing() {
+        let item = AudioItem::countdown_tone(440, 100);
+        assert_eq!(item.max_queue_time, Duration::from_millis(500));
+        assert!(item.is_time_critical());
+    }
+
+    #[test]
+    fn test_audio_item_countdown_tone_with_timing() {
+        let item = AudioItem::countdown_tone_with_timing(440, 100, 200);
+        assert_eq!(item.max_queue_time, Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_audio_item_type_description() {
+        let speech = AudioItem::speech("Hello world, this is a long message");
+        let desc = speech.type_description();
+        assert!(desc.contains("Speech"));
+        assert!(desc.contains("Hello world, this is..."));
+
+        let sound = AudioItem::sound("achievement_chime");
+        let desc = sound.type_description();
+        assert!(desc.contains("Sound"));
+        assert!(desc.contains("achievement_chime"));
+
+        let tone = AudioItem::tone(880, 200);
+        let desc = tone.type_description();
+        assert!(desc.contains("Tone"));
+        assert!(desc.contains("880Hz"));
+        assert!(desc.contains("200ms"));
+    }
+
+    #[test]
+    fn test_audio_item_is_time_critical() {
+        let countdown = AudioItem::countdown_tone(440, 100);
+        assert!(countdown.is_time_critical());
+
+        let regular = AudioItem::tone(440, 100);
+        assert!(!regular.is_time_critical());
+
+        let speech = AudioItem::speech("Hello");
+        assert!(!speech.is_time_critical());
+    }
+
+    #[test]
+    fn test_audio_item_time_remaining() {
+        let long_lived = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_secs(60));
+        let remaining = long_lived.time_remaining();
+        assert!(remaining.is_some());
+        assert!(remaining.unwrap() > Duration::from_secs(59));
+
+        // Very short-lived item
+        let short_lived = AudioItem::tone(440, 100).with_max_queue_time(Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(short_lived.time_remaining().is_none());
+        assert!(short_lived.is_expired());
+    }
+
+    #[test]
+    fn test_audio_item_age() {
+        let item = AudioItem::tone(440, 100);
+        std::thread::sleep(Duration::from_millis(10));
+        let age = item.age_ms();
+        assert!(age >= 10);
     }
 }
