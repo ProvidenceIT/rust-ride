@@ -24,7 +24,92 @@
       "description": "StopConfirmationModal component provides a confirmation dialog before stopping a workout/ride. Displays session info (type, name, elapsed time), Cancel and Stop Session buttons. Uses accessibilityRole=\"alert\" and integrates with useWorkoutControls hook for stop action. After stop, WorkoutScreen navigates to Dashboard tab.",
       "category": "component",
       "discovered_at": "2026-01-03T11:09:07.951762+00:00"
+    },
+    "companion-app/src/components/ResistanceControl.tsx": {
+      "description": "ResistanceControl component provides +/- buttons for adjusting trainer resistance/grade during free rides. Displays current level (-100% to +100%) with labels (Flat/Resistance/Assist). Uses useResistanceControl hook for state management and ConnectionService.adjustResistance for WebSocket commands.",
+      "category": "component",
+      "discovered_at": "2026-01-03T11:20:32.768857+00:00"
+    },
+    "companion-app/jest.setup.js": {
+      "description": "jest.setup.js includes a global mock for @react-navigation/native that provides useNavigation, useRoute, and useFocusEffect mocks. This allows components using useNavigation() hook to be tested without wrapping in NavigationContainer.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T11:31:30.293927+00:00"
+    },
+    "companion-app/src/screens/RideDetailScreen.tsx": {
+      "description": "RideDetailScreen displays full ride details with: Summary stats (duration, distance, calories, TSS), Power metrics (avg/max/NP/IF), Heart rate stats, Cadence stats. Uses historyStore for data caching, settingsStore for unit preferences, and ConnectionService.fetchRideDetails() for data fetching. Includes loading/error/disconnected states and null value handling (shows --).",
+      "category": "component",
+      "discovered_at": "2026-01-03T11:41:25.522673+00:00"
+    },
+    "companion-app/src/components/ZoneDistributionBar.tsx": {
+      "description": "ZoneDistributionBar component displays time in zones as a stacked horizontal bar chart. Uses getPowerZoneData() for 7-zone power distribution and getHrZoneData() for 5-zone HR distribution. Shows \"No zone data available\" when all zones are zero. Supports showLegend prop for legend visibility.",
+      "category": "component",
+      "discovered_at": "2026-01-03T11:53:43.066974+00:00"
+    },
+    "companion-app/src/components/RideStatisticsSummary.tsx": {
+      "description": "RideStatisticsSummary component displays TSS, Intensity Factor, and Calories in a horizontal row of cards. Shows intensity levels (Easy/Moderate/Hard/Very Hard/Epic) for TSS and descriptions (Recovery/Endurance/Tempo/Threshold/Near FTP/Above FTP) for IF. Uses color-coding based on training load.",
+      "category": "component",
+      "discovered_at": "2026-01-03T11:53:43.185526+00:00"
+    },
+    "companion-app/src/components/HistoryFilterBar.tsx": {
+      "description": "HistoryFilterBar component provides horizontal scrollable filter bar with date range chips (All Time, Week, Month, Year, Custom) and ride type chips (All Rides, Workouts, Free Rides). Uses historyStore for filter state persistence. Integrates with DateRangePickerModal for custom date selection.",
+      "category": "component",
+      "discovered_at": "2026-01-03T12:07:16.321558+00:00"
+    },
+    "companion-app/src/components/DateRangePickerModal.tsx": {
+      "description": "DateRangePickerModal provides a modal for selecting custom date ranges. Features quick preset buttons (7/14/30/60/90 days) and manual YYYY-MM-DD date input fields with validation. Returns ISO date strings to callback.",
+      "category": "component",
+      "discovered_at": "2026-01-03T12:07:16.457473+00:00"
+    },
+    "companion-app/src/services/RideCacheService.ts": {
+      "description": "RideCacheService provides offline ride caching using AsyncStorage. Caches up to 50 ride summaries and 20 ride details with LRU eviction. Exposes methods: cacheRideSummaries(), getCachedRideSummaries(), cacheRideDetail(), getCachedRideDetail(), updateLastSync(), getSyncStatus(), clearCache(). Uses singleton pattern via getRideCacheService().",
+      "category": "service",
+      "discovered_at": "2026-01-03T12:22:07.773511+00:00"
+    },
+    "companion-app/src/components/SelectPickerModal.tsx": {
+      "description": "SelectPickerModal is a generic reusable modal for selecting from a list of options. Supports typed values (generic T), option icons, descriptions, and checkmark for selected item. Used in SettingsScreen for units, theme, and haptic feedback pickers. Has radio group accessibility role with checked state for each option.",
+      "category": "component",
+      "discovered_at": "2026-01-03T12:32:54.215064+00:00"
+    },
+    "companion-app/src/hooks/useIntervalChangeHaptics.ts": {
+      "description": "useIntervalChangeHaptics hook monitors workout interval changes and triggers notification haptic feedback when the user transitions to a new interval. Respects user's haptic settings from settingsStore. Only active during structured workouts (not free rides). Automatically resets tracking when session ends.",
+      "category": "hooks",
+      "discovered_at": "2026-01-03T12:55:35.410014+00:00"
+    },
+    "companion-app/src/providers/GlobalErrorHandlerProvider.tsx": {
+      "description": "GlobalErrorHandlerProvider provides global error handling with user-friendly toast messages. Features: connection lost/failed notifications, command failure toasts (with user-friendly command names), reconnection status toasts, duplicate error prevention (5-second window). Uses ConnectionService callbacks for connection events. Provides useGlobalErrorHandler hook with handleError, notifyConnectionLost, notifyCommandFailed, notifyReconnecting, and notifyReconnected functions.",
+      "category": "pattern",
+      "discovered_at": "2026-01-03T13:04:16.449852+00:00"
+    },
+    "companion-app/src/components/EmptyState.tsx": {
+      "description": "EmptyState component for consistent empty state display across screens. Supports 8 predefined variants (no-rides, no-connection, error, no-results, offline, loading-failed, no-session, custom). Features customizable icon/title/description, primary and secondary action buttons, optional icon animation, and full accessibility support. CompactEmptyState for inline use in lists. Use variant prop for common cases, or custom variant with individual props for specialized states.",
+      "category": "component",
+      "discovered_at": "2026-01-03T13:15:41.188397+00:00"
+    },
+    "companion-app/src/hooks/useThemeSync.ts": {
+      "description": "useThemeSync hook synchronizes the persisted theme preference from settingsStore with ThemeProvider. Use it at the app root (inside ThemeProvider) to ensure theme is loaded from AsyncStorage on app launch and stays in sync when user changes settings.",
+      "category": "hooks",
+      "discovered_at": "2026-01-03T13:24:16.771081+00:00"
+    },
+    "src/ui/screens/settings.rs": {
+      "description": "Settings screen has a consistent pattern for collapsible sections: 1) ui.group() wrapper, 2) Header with title and Show/Hide button (Layout::right_to_left), 3) Master toggle checkbox, 4) Collapsible content using if show_xxx { ... } block with ui.add_enabled_ui() for enabling/disabling based on master toggle. Sections use egui::Grid for form layouts and ui.label(RichText::new(\"\").strong()) for sub-section headers.",
+      "category": "ui_pattern",
+      "discovered_at": "2026-01-03T13:31:03.293951+00:00"
+    },
+    "src/companion/qr.rs": {
+      "description": "CompanionQrCode provides to_module_data() method that returns a 2D Vec<Vec<bool>> for custom UI rendering. True = dark module, false = light module. Use with egui's allocate_painter() and rect_filled() to render QR codes without image textures. Also has url() accessor for the connection URL.",
+      "category": "patterns",
+      "discovered_at": "2026-01-03T13:36:58.985090+00:00"
+    },
+    "src/ui/widgets/companion_status.rs": {
+      "description": "CompanionStatusIndicator widget provides compact and inline display modes for showing connected companion app count in status bars. Use CompanionClientList for full device listing with disconnect buttons. The SettingsScreen has set_companion_clients() for updates and take_disconnect_companion_request() for handling disconnects.",
+      "category": "ui_pattern",
+      "discovered_at": "2026-01-03T13:44:27.295717+00:00"
+    },
+    "companion-app/__tests__/integration/ConnectionFlowIntegration.test.ts": {
+      "description": "Integration tests for full connection flow covering discovery, connect, authenticate, receive metrics, and send commands. Uses MockWebSocket and MockZeroconf. After auth_ok, must simulate subscribed_metrics and session_status responses to handle auto-subscribe behavior that happens after authentication.",
+      "category": "testing",
+      "discovered_at": "2026-01-03T14:22:33.901783+00:00"
     }
   },
-  "last_updated": "2026-01-03T11:09:07.951762+00:00"
+  "last_updated": "2026-01-03T14:22:33.901783+00:00"
 }

@@ -823,6 +823,246 @@
         }
       ],
       "status": "completed"
+    },
+    "T034": {
+      "attempts": [
+        {
+          "session": 113,
+          "timestamp": "2026-01-03T12:20:50.139437",
+          "approach": "Implemented: For free rides, add +/- buttons to adjust trainer resistance or simulated grade. Show current level.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T035": {
+      "attempts": [
+        {
+          "session": 114,
+          "timestamp": "2026-01-03T12:31:41.522840",
+          "approach": "Implemented: Show paginated list of past rides with date, duration, distance, and avg power. Pull to refresh. Inf",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T036": {
+      "attempts": [
+        {
+          "session": 115,
+          "timestamp": "2026-01-03T12:41:38.033413",
+          "approach": "Implemented: Show full ride details: all metrics, duration, distance, power stats (avg, max, NP), HR stats, caden",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T037": {
+      "attempts": [
+        {
+          "session": 116,
+          "timestamp": "2026-01-03T12:54:00.638163",
+          "approach": "Implemented: Show statistics cards: TSS, IF, calories, time in zones. Display power and HR zone distribution.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T038": {
+      "attempts": [
+        {
+          "session": 117,
+          "timestamp": "2026-01-03T13:08:05.963521",
+          "approach": "Implemented: Filter rides by date range (week, month, year, custom). Filter by workout type (free ride vs structu",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T039": {
+      "attempts": [
+        {
+          "session": 118,
+          "timestamp": "2026-01-03T13:22:28.779599",
+          "approach": "Implemented: Cache recently viewed rides in AsyncStorage. Show cached data when offline. Sync on reconnection.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T040": {
+      "attempts": [
+        {
+          "session": 119,
+          "timestamp": "2026-01-03T13:33:04.579601",
+          "approach": "Implemented: Settings screen with sections: Connection, Display, Notifications. Toggle switches and value pickers",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T041": {
+      "attempts": [
+        {
+          "session": 120,
+          "timestamp": "2026-01-03T13:40:52.832536",
+          "approach": "Implemented: Setting to choose metric (km, kg) or imperial (mi, lb) units. Apply to all metric displays.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T042": {
+      "attempts": [
+        {
+          "session": 121,
+          "timestamp": "2026-01-03T13:48:21.531128",
+          "approach": "Implemented: Option to prevent screen from sleeping during active session. Use react-native-keep-awake.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T043": {
+      "attempts": [
+        {
+          "session": 122,
+          "timestamp": "2026-01-03T13:55:47.435823",
+          "approach": "Implemented: Settings for haptic feedback intensity (off, light, medium, strong). Feedback on button presses and ",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T044": {
+      "attempts": [
+        {
+          "session": 123,
+          "timestamp": "2026-01-03T14:04:57.786635",
+          "approach": "Implemented: Global error handler with user-friendly toast messages. Toast for connection lost, command failed, e",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T045": {
+      "attempts": [
+        {
+          "session": 124,
+          "timestamp": "2026-01-03T14:16:00.031156",
+          "approach": "Implemented: Loading spinners for async operations. Empty states with helpful messages for no rides, no connectio",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T046": {
+      "attempts": [
+        {
+          "session": 125,
+          "timestamp": "2026-01-03T14:24:29.394274",
+          "approach": "Implemented: Dark mode theme following system preference or manual toggle. All screens support both themes.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T047": {
+      "attempts": [
+        {
+          "session": 126,
+          "timestamp": "2026-01-03T14:31:22.358782",
+          "approach": "Implemented: Add settings panel in desktop app for companion server configuration. Enable/disable toggle, port se",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T048": {
+      "attempts": [
+        {
+          "session": 127,
+          "timestamp": "2026-01-03T14:37:10.089507",
+          "approach": "Implemented: Show QR code in companion panel for easy mobile pairing. Include regenerate PIN button.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T049": {
+      "attempts": [
+        {
+          "session": 128,
+          "timestamp": "2026-01-03T14:44:42.985315",
+          "approach": "Implemented: Display number of connected companion apps in desktop status bar. List connected devices with discon",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T050": {
+      "attempts": [
+        {
+          "session": 129,
+          "timestamp": "2026-01-03T14:49:14.035347",
+          "approach": "Implemented: Start companion server on desktop app launch if enabled in config. Stop on app exit.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T051": {
+      "attempts": [
+        {
+          "session": 130,
+          "timestamp": "2026-01-03T14:58:32.706996",
+          "approach": "Implemented: Unit tests for message parsing, authentication, and handler logic. Mock WebSocket connections.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T052": {
+      "attempts": [
+        {
+          "session": 131,
+          "timestamp": "2026-01-03T15:09:27.764690",
+          "approach": "Implemented: Unit tests for UI components using React Native Testing Library. Test metric displays, buttons, navi",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T053": {
+      "attempts": [
+        {
+          "session": 132,
+          "timestamp": "2026-01-03T15:22:52.231236",
+          "approach": "Implemented: Integration tests for full connection flow: discovery, connect, authenticate, receive metrics, send ",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [
@@ -835,6 +1075,6 @@
   ],
   "metadata": {
     "created_at": "2026-01-03T10:31:55.416509",
-    "last_updated": "2026-01-03T12:09:30.451921"
+    "last_updated": "2026-01-03T15:22:52.231236"
   }
 }
