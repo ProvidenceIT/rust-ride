@@ -1111,4 +1111,138 @@ mod tests {
         assert_eq!(all[3].name, "Fast");
         assert_eq!(all[4].name, "Sprint");
     }
+
+    #[test]
+    fn test_zone_tracker_cadence_zone_change() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0); // Disable debounce for testing
+
+        // First update sets initial zone (no event emitted)
+        tracker.update_cadence(50); // Zone 1 (Low)
+        assert_eq!(tracker.current_cadence_zone(), 1);
+        assert!(!tracker.has_pending_events());
+
+        // Zone change should emit event
+        tracker.update_cadence(90); // Zone 3 (Natural)
+        assert_eq!(tracker.current_cadence_zone(), 3);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::CadenceZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 1);
+                assert_eq!(*new_zone, 3);
+                assert_eq!(zone_name, "Natural");
+            }
+            _ => panic!("Expected CadenceZoneChange event"),
+        }
+
+        // Another zone change to Zone 5
+        tracker.update_cadence(120); // Zone 5 (Sprint)
+        assert_eq!(tracker.current_cadence_zone(), 5);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::CadenceZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 3);
+                assert_eq!(*new_zone, 5);
+                assert_eq!(zone_name, "Sprint");
+            }
+            _ => panic!("Expected CadenceZoneChange event"),
+        }
+    }
+
+    #[test]
+    fn test_zone_tracker_no_cadence_event_for_same_zone() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Initial reading
+        tracker.update_cadence(90); // Zone 3 (Natural, 86-95 RPM)
+        assert_eq!(tracker.current_cadence_zone(), 3);
+        assert!(!tracker.has_pending_events()); // No event for initial
+
+        // Stay in same zone
+        tracker.update_cadence(86); // Still Zone 3
+        tracker.update_cadence(95); // Still Zone 3
+        tracker.update_cadence(88); // Still Zone 3
+
+        // No events should be emitted for staying in the same zone
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 3);
+    }
+
+    #[test]
+    fn test_zone_tracker_reset_clears_cadence() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Set up some cadence zone state
+        tracker.update_cadence(50); // Zone 1
+        tracker.update_cadence(100); // Zone 4 - triggers event
+
+        assert!(tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 4);
+
+        // Reset should clear everything
+        tracker.reset();
+
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 0);
+        assert!(tracker.current_cadence_zone_name().is_none());
+    }
+
+    #[test]
+    fn test_zone_tracker_cadence_zone_name() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Initially no zone name
+        assert!(tracker.current_cadence_zone_name().is_none());
+
+        // After update, zone name should be available
+        tracker.update_cadence(80); // Zone 2 (Economy)
+        assert_eq!(tracker.current_cadence_zone(), 2);
+        assert_eq!(tracker.current_cadence_zone_name(), Some("Economy".to_string()));
+
+        // Zone change updates name
+        tracker.update_cadence(110); // Zone 5 (Sprint)
+        assert_eq!(tracker.current_cadence_zone_name(), Some("Sprint".to_string()));
+    }
+
+    #[test]
+    fn test_zone_tracker_cadence_without_zones_configured() {
+        let power_zones = PowerZones::from_ftp(200);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_debounce_secs(0);
+
+        // Without cadence zones configured, update_cadence should do nothing
+        tracker.update_cadence(90);
+        assert_eq!(tracker.current_cadence_zone(), 0);
+        assert!(!tracker.has_pending_events());
+        assert!(tracker.current_cadence_zone_name().is_none());
+    }
 }
