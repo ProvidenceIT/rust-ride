@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
+use crate::integrations::mqtt::ConnectionState as MqttConnectionState;
 use crate::integrations::weather::{WeatherData, WeatherUnits};
 use crate::metrics::analytics::sweet_spot::SweetSpotRecommender;
 use crate::metrics::calculator::AggregatedMetrics;
@@ -132,6 +133,10 @@ pub struct RideScreen {
     pub video_paused: bool,
     /// T009-3.5: Connection quality state for HUD display
     pub connection_quality_state: HudConnectionState,
+    /// MQTT connection state for fan control status display
+    pub mqtt_connection_state: Option<MqttConnectionState>,
+    /// Whether MQTT is enabled in settings
+    pub mqtt_enabled: bool,
 }
 
 impl Default for RideScreen {
@@ -173,6 +178,8 @@ impl Default for RideScreen {
             video_playback_speed: 1.0,
             video_paused: false,
             connection_quality_state: HudConnectionState::default(),
+            mqtt_connection_state: None,
+            mqtt_enabled: false,
         }
     }
 }
@@ -265,6 +272,73 @@ impl RideScreen {
     /// T009-3.5: Get the number of connected sensors.
     pub fn connected_sensor_count(&self) -> usize {
         self.connection_quality_state.connected_count
+    }
+
+    /// Update MQTT connection state for status display.
+    ///
+    /// This should be called periodically with the latest connection state
+    /// from the MQTT client to show fan control status in the ride screen.
+    pub fn update_mqtt_state(&mut self, state: MqttConnectionState, enabled: bool) {
+        self.mqtt_connection_state = Some(state);
+        self.mqtt_enabled = enabled;
+    }
+
+    /// Set whether MQTT is enabled.
+    pub fn set_mqtt_enabled(&mut self, enabled: bool) {
+        self.mqtt_enabled = enabled;
+    }
+
+    /// Check if MQTT is connected.
+    pub fn is_mqtt_connected(&self) -> bool {
+        matches!(
+            self.mqtt_connection_state,
+            Some(MqttConnectionState::Connected)
+        )
+    }
+
+    /// Check if MQTT is reconnecting.
+    pub fn is_mqtt_reconnecting(&self) -> bool {
+        matches!(
+            self.mqtt_connection_state,
+            Some(MqttConnectionState::Reconnecting { .. })
+        )
+    }
+
+    /// Get the MQTT status text for display.
+    pub fn mqtt_status_text(&self) -> &str {
+        match &self.mqtt_connection_state {
+            Some(MqttConnectionState::Connected) => "Fan Connected",
+            Some(MqttConnectionState::Connecting) => "Connecting...",
+            Some(MqttConnectionState::Reconnecting { attempt }) => {
+                // Return static string, attempt can be shown separately
+                let _ = attempt; // Acknowledge we're ignoring attempt for now
+                "Reconnecting..."
+            }
+            Some(MqttConnectionState::ConnectionLost) => "Connection Lost",
+            Some(MqttConnectionState::Disconnected) | None => "Fan Disconnected",
+        }
+    }
+
+    /// Get the MQTT status color for display.
+    pub fn mqtt_status_color(&self) -> Color32 {
+        match &self.mqtt_connection_state {
+            Some(MqttConnectionState::Connected) => Color32::from_rgb(52, 168, 83), // Green
+            Some(MqttConnectionState::Connecting) => Color32::from_rgb(66, 133, 244), // Blue
+            Some(MqttConnectionState::Reconnecting { .. }) => Color32::from_rgb(251, 188, 4), // Yellow
+            Some(MqttConnectionState::ConnectionLost) => Color32::from_rgb(234, 67, 53), // Red
+            Some(MqttConnectionState::Disconnected) | None => Color32::GRAY,
+        }
+    }
+
+    /// Get the MQTT status icon for display.
+    pub fn mqtt_status_icon(&self) -> &str {
+        match &self.mqtt_connection_state {
+            Some(MqttConnectionState::Connected) => "🌀", // Fan/wind icon
+            Some(MqttConnectionState::Connecting) => "⏳",
+            Some(MqttConnectionState::Reconnecting { .. }) => "🔄",
+            Some(MqttConnectionState::ConnectionLost) => "⚠",
+            Some(MqttConnectionState::Disconnected) | None => "○",
+        }
     }
 }
 
@@ -480,6 +554,14 @@ impl RideScreen {
                 ui.separator();
                 ui.add_space(4.0);
                 InlineHudSensorStatus::from_state(self.connection_quality_state.clone()).show(ui);
+            }
+
+            // MQTT/Fan control status indicator
+            if self.mqtt_enabled {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+                self.render_mqtt_status_inline(ui);
             }
 
             // T099: Weather widget (compact, in top bar)
@@ -918,6 +1000,12 @@ impl RideScreen {
                     if self.connection_quality_state.should_show() {
                         ui.add_space(12.0);
                         InlineHudSensorStatus::from_state(self.connection_quality_state.clone()).show(ui);
+                    }
+
+                    // MQTT/Fan control status indicator in full-screen mode
+                    if self.mqtt_enabled {
+                        ui.add_space(12.0);
+                        self.render_mqtt_status_compact(ui);
                     }
                 });
             });
@@ -1549,5 +1637,43 @@ impl RideScreen {
         if ui.input(|i| i.key_pressed(egui::Key::V)) {
             self.video_panel_visible = !self.video_panel_visible;
         }
+    }
+
+    /// Render inline MQTT/fan control status indicator.
+    ///
+    /// Shows a compact status indicator in the top bar displaying
+    /// the current MQTT connection state for fan control.
+    fn render_mqtt_status_inline(&self, ui: &mut Ui) {
+        let icon = self.mqtt_status_icon();
+        let text = self.mqtt_status_text();
+        let color = self.mqtt_status_color();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(icon).size(14.0).color(color));
+            ui.label(RichText::new(text).size(12.0).color(color));
+        });
+    }
+
+    /// Render compact MQTT status for full-screen mode.
+    ///
+    /// Shows a minimal status indicator suitable for full-screen display
+    /// without cluttering the interface.
+    fn render_mqtt_status_compact(&self, ui: &mut Ui) {
+        let icon = self.mqtt_status_icon();
+        let color = self.mqtt_status_color();
+
+        // Only show non-connected states as compact indicator in full-screen
+        // Connected state can be more subtle
+        let show_text = !matches!(
+            self.mqtt_connection_state,
+            Some(MqttConnectionState::Connected)
+        );
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(icon).size(12.0).color(color));
+            if show_text {
+                ui.label(RichText::new(self.mqtt_status_text()).size(10.0).color(color));
+            }
+        });
     }
 }

@@ -20,7 +20,7 @@ use rustride::hid::{
     DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
 };
 use rustride::integrations::mqtt::{
-    DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
+    DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttClient, MqttConfig,
 };
 use rustride::integrations::streaming::{
     DefaultPinAuthenticator, DefaultStreamingServer, PinAuthenticator, StreamingConfig,
@@ -682,6 +682,16 @@ impl RustRideApp {
         });
     }
 
+    /// Update MQTT connection status on ride screen (T071/4.4).
+    ///
+    /// Gets the current connection state from the MQTT client and updates
+    /// the ride screen so it can display the fan control status.
+    fn update_mqtt_status_on_ride_screen(&mut self) {
+        let connection_state = self.mqtt_client.connection_state();
+        self.ride_screen
+            .update_mqtt_state(connection_state, self.mqtt_config.enabled);
+    }
+
     /// Update streaming server with current metrics (T080).
     ///
     /// Broadcasts metrics to all connected external displays.
@@ -1241,6 +1251,9 @@ impl eframe::App for RustRideApp {
                         // T071/4.1: Start MQTT connection and fan controller when ride begins
                         self.start_mqtt_fan_control();
                     }
+
+                    // T071/4.4: Update MQTT connection status for display
+                    self.update_mqtt_status_on_ride_screen();
 
                     // T043: Update incline controller with current gradient in World3D mode
                     if self.ride_screen.mode == rustride::ui::screens::ride::RideMode::World3D
