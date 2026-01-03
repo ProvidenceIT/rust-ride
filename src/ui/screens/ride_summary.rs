@@ -4,11 +4,33 @@
 //! T102: Implement export button with format selection
 //! T103: Implement save/discard controls
 //! T108: Add sync button with platform selection
+//! T024: Display TrainingPeaks upload status on ride summary
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::integrations::sync::{SyncPlatform, SyncRecordStatus};
 use crate::recording::types::{ExportFormat, Ride, RideSample};
+
+/// Strava brand color
+const STRAVA_ORANGE: Color32 = Color32::from_rgb(252, 82, 0);
+
+/// TrainingPeaks brand color
+const TRAININGPEAKS_TEAL: Color32 = Color32::from_rgb(0, 128, 128);
+
+/// Garmin brand color
+const GARMIN_BLUE: Color32 = Color32::from_rgb(30, 144, 255);
+
+/// Intervals.icu brand color
+const INTERVALS_PURPLE: Color32 = Color32::from_rgb(138, 43, 226);
+
+/// Success green color
+const SUCCESS_GREEN: Color32 = Color32::from_rgb(52, 168, 83);
+
+/// Error red color
+const ERROR_RED: Color32 = Color32::from_rgb(234, 67, 53);
+
+/// Warning amber color
+const WARNING_AMBER: Color32 = Color32::from_rgb(255, 152, 0);
 
 /// Ride summary screen state.
 pub struct RideSummaryScreen {
@@ -235,6 +257,9 @@ impl RideSummaryScreen {
                         action = RideSummaryAction::GoHome;
                     }
                 });
+
+                // T024: Sync status section
+                self.render_sync_status_section(ui);
             } else {
                 ui.label("No ride data to display");
             }
@@ -649,6 +674,123 @@ impl RideSummaryScreen {
     pub fn get_notes(&self) -> &str {
         &self.notes
     }
+
+    /// T024: Render the sync status section showing upload status for each platform.
+    ///
+    /// This displays an inline summary of sync status for connected platforms,
+    /// showing which platforms have synced, are syncing, or have pending syncs.
+    fn render_sync_status_section(&self, ui: &mut Ui) {
+        // Only show if there are connected platforms or sync status entries
+        if self.connected_platforms.is_empty() && self.sync_status.is_empty() {
+            return;
+        }
+
+        ui.add_space(8.0);
+
+        // Use a subtle frame for the sync status section
+        let frame_color = ui.visuals().faint_bg_color;
+        egui::Frame::new()
+            .fill(frame_color)
+            .inner_margin(12.0)
+            .corner_radius(8.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Sync Status").size(12.0).strong());
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // Show status for each connected platform
+                        // Iterate in reverse order so TrainingPeaks appears on the right side
+                        for platform in self.connected_platforms.iter().rev() {
+                            let status = self.get_sync_status(*platform);
+                            let platform_col = platform_color(*platform);
+
+                            // Create a small badge for each platform
+                            let (badge_text, badge_color) = match status {
+                                Some(SyncRecordStatus::Completed) => {
+                                    let (icon, color) = status_icon_and_color(SyncRecordStatus::Completed);
+                                    (format!("{} {}", icon, platform.display_name()), color)
+                                }
+                                Some(SyncRecordStatus::Uploading) => {
+                                    let (icon, _) = status_icon_and_color(SyncRecordStatus::Uploading);
+                                    (format!("{} {}", icon, platform.display_name()), WARNING_AMBER)
+                                }
+                                Some(SyncRecordStatus::Failed) => {
+                                    let (icon, color) = status_icon_and_color(SyncRecordStatus::Failed);
+                                    (format!("{} {}", icon, platform.display_name()), color)
+                                }
+                                Some(SyncRecordStatus::Pending) => {
+                                    let (icon, _) = status_icon_and_color(SyncRecordStatus::Pending);
+                                    (format!("{} {}", icon, platform.display_name()), Color32::GRAY)
+                                }
+                                Some(SyncRecordStatus::Cancelled) => {
+                                    let (icon, _) = status_icon_and_color(SyncRecordStatus::Cancelled);
+                                    (format!("{} {}", icon, platform.display_name()), Color32::GRAY)
+                                }
+                                None => {
+                                    // Not synced yet - show platform name with neutral indicator
+                                    (format!("○ {}", platform.display_name()), Color32::GRAY)
+                                }
+                            };
+
+                            // Draw platform badge with colored indicator
+                            ui.add_space(8.0);
+
+                            // Small colored dot for platform branding
+                            let dot_rect = ui.available_rect_before_wrap();
+                            let dot_center = egui::pos2(dot_rect.left() + 4.0, dot_rect.center().y);
+                            ui.painter().circle_filled(dot_center, 3.0, platform_col);
+
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(&badge_text)
+                                    .size(11.0)
+                                    .color(badge_color),
+                            );
+                        }
+                    });
+                });
+
+                // If there are any failures, show a retry hint
+                let has_failures = self
+                    .sync_status
+                    .iter()
+                    .any(|(_, s)| *s == SyncRecordStatus::Failed);
+                if has_failures {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("Some uploads failed. Click Sync to retry.")
+                                .size(10.0)
+                                .color(ERROR_RED)
+                                .weak(),
+                        );
+                    });
+                }
+            });
+    }
+
+    /// T024: Check if any platform has completed syncing.
+    pub fn has_completed_sync(&self) -> bool {
+        self.sync_status
+            .iter()
+            .any(|(_, s)| *s == SyncRecordStatus::Completed)
+    }
+
+    /// T024: Check if any platform is currently syncing.
+    pub fn is_syncing(&self) -> bool {
+        self.sync_status
+            .iter()
+            .any(|(_, s)| *s == SyncRecordStatus::Uploading || *s == SyncRecordStatus::Pending)
+    }
+
+    /// T024: Get platforms that have successfully synced.
+    pub fn get_synced_platforms(&self) -> Vec<SyncPlatform> {
+        self.sync_status
+            .iter()
+            .filter(|(_, s)| *s == SyncRecordStatus::Completed)
+            .map(|(p, _)| *p)
+            .collect()
+    }
 }
 
 /// Actions returned from the ride summary screen.
@@ -686,6 +828,40 @@ fn format_optional_power(power: Option<u16>) -> String {
     power.map_or("-".to_string(), |p| format!("{} W", p))
 }
 
+/// Get platform-specific brand color.
+fn platform_color(platform: SyncPlatform) -> Color32 {
+    match platform {
+        SyncPlatform::Strava => STRAVA_ORANGE,
+        SyncPlatform::GarminConnect => GARMIN_BLUE,
+        SyncPlatform::TrainingPeaks => TRAININGPEAKS_TEAL,
+        SyncPlatform::IntervalsIcu => INTERVALS_PURPLE,
+        #[cfg(target_os = "macos")]
+        SyncPlatform::HealthKit => Color32::from_rgb(255, 45, 85), // iOS red
+    }
+}
+
+/// Get status icon and color for a sync status.
+fn status_icon_and_color(status: SyncRecordStatus) -> (&'static str, Color32) {
+    match status {
+        SyncRecordStatus::Completed => ("✓", SUCCESS_GREEN),
+        SyncRecordStatus::Uploading => ("↑", WARNING_AMBER),
+        SyncRecordStatus::Pending => ("○", Color32::GRAY),
+        SyncRecordStatus::Failed => ("✗", ERROR_RED),
+        SyncRecordStatus::Cancelled => ("−", Color32::GRAY),
+    }
+}
+
+/// Get status description text.
+fn status_description(status: SyncRecordStatus) -> &'static str {
+    match status {
+        SyncRecordStatus::Completed => "Synced",
+        SyncRecordStatus::Uploading => "Uploading...",
+        SyncRecordStatus::Pending => "Pending",
+        SyncRecordStatus::Failed => "Failed",
+        SyncRecordStatus::Cancelled => "Cancelled",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -706,5 +882,189 @@ mod tests {
     fn test_format_optional_power() {
         assert_eq!(format_optional_power(Some(200)), "200 W");
         assert_eq!(format_optional_power(None), "-");
+    }
+
+    // T024: Tests for platform color helper function
+    #[test]
+    fn test_platform_color_strava() {
+        assert_eq!(platform_color(SyncPlatform::Strava), STRAVA_ORANGE);
+    }
+
+    #[test]
+    fn test_platform_color_trainingpeaks() {
+        assert_eq!(platform_color(SyncPlatform::TrainingPeaks), TRAININGPEAKS_TEAL);
+    }
+
+    #[test]
+    fn test_platform_color_garmin() {
+        assert_eq!(platform_color(SyncPlatform::GarminConnect), GARMIN_BLUE);
+    }
+
+    #[test]
+    fn test_platform_color_intervals() {
+        assert_eq!(platform_color(SyncPlatform::IntervalsIcu), INTERVALS_PURPLE);
+    }
+
+    // T024: Tests for status icon and color helper function
+    #[test]
+    fn test_status_icon_completed() {
+        let (icon, color) = status_icon_and_color(SyncRecordStatus::Completed);
+        assert_eq!(icon, "✓");
+        assert_eq!(color, SUCCESS_GREEN);
+    }
+
+    #[test]
+    fn test_status_icon_uploading() {
+        let (icon, color) = status_icon_and_color(SyncRecordStatus::Uploading);
+        assert_eq!(icon, "↑");
+        assert_eq!(color, WARNING_AMBER);
+    }
+
+    #[test]
+    fn test_status_icon_failed() {
+        let (icon, color) = status_icon_and_color(SyncRecordStatus::Failed);
+        assert_eq!(icon, "✗");
+        assert_eq!(color, ERROR_RED);
+    }
+
+    #[test]
+    fn test_status_icon_pending() {
+        let (icon, color) = status_icon_and_color(SyncRecordStatus::Pending);
+        assert_eq!(icon, "○");
+        assert_eq!(color, Color32::GRAY);
+    }
+
+    #[test]
+    fn test_status_icon_cancelled() {
+        let (icon, color) = status_icon_and_color(SyncRecordStatus::Cancelled);
+        assert_eq!(icon, "−");
+        assert_eq!(color, Color32::GRAY);
+    }
+
+    // T024: Tests for status description helper function
+    #[test]
+    fn test_status_description() {
+        assert_eq!(status_description(SyncRecordStatus::Completed), "Synced");
+        assert_eq!(status_description(SyncRecordStatus::Uploading), "Uploading...");
+        assert_eq!(status_description(SyncRecordStatus::Pending), "Pending");
+        assert_eq!(status_description(SyncRecordStatus::Failed), "Failed");
+        assert_eq!(status_description(SyncRecordStatus::Cancelled), "Cancelled");
+    }
+
+    // T024: Tests for RideSummaryScreen sync status methods
+    #[test]
+    fn test_has_completed_sync_true() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::Strava, SyncRecordStatus::Completed);
+        assert!(screen.has_completed_sync());
+    }
+
+    #[test]
+    fn test_has_completed_sync_false() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::Strava, SyncRecordStatus::Uploading);
+        assert!(!screen.has_completed_sync());
+    }
+
+    #[test]
+    fn test_has_completed_sync_empty() {
+        let screen = RideSummaryScreen::new();
+        assert!(!screen.has_completed_sync());
+    }
+
+    #[test]
+    fn test_is_syncing_uploading() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Uploading);
+        assert!(screen.is_syncing());
+    }
+
+    #[test]
+    fn test_is_syncing_pending() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Pending);
+        assert!(screen.is_syncing());
+    }
+
+    #[test]
+    fn test_is_syncing_completed() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::Strava, SyncRecordStatus::Completed);
+        assert!(!screen.is_syncing());
+    }
+
+    #[test]
+    fn test_is_syncing_empty() {
+        let screen = RideSummaryScreen::new();
+        assert!(!screen.is_syncing());
+    }
+
+    #[test]
+    fn test_get_synced_platforms_multiple() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::Strava, SyncRecordStatus::Completed);
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Completed);
+        screen.update_sync_status(SyncPlatform::GarminConnect, SyncRecordStatus::Failed);
+
+        let synced = screen.get_synced_platforms();
+        assert_eq!(synced.len(), 2);
+        assert!(synced.contains(&SyncPlatform::Strava));
+        assert!(synced.contains(&SyncPlatform::TrainingPeaks));
+        assert!(!synced.contains(&SyncPlatform::GarminConnect));
+    }
+
+    #[test]
+    fn test_get_synced_platforms_empty() {
+        let screen = RideSummaryScreen::new();
+        let synced = screen.get_synced_platforms();
+        assert!(synced.is_empty());
+    }
+
+    #[test]
+    fn test_get_synced_platforms_none_completed() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::Strava, SyncRecordStatus::Uploading);
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Failed);
+
+        let synced = screen.get_synced_platforms();
+        assert!(synced.is_empty());
+    }
+
+    // T024: Test connected platforms and sync status integration
+    #[test]
+    fn test_set_connected_platforms() {
+        let mut screen = RideSummaryScreen::new();
+        let platforms = vec![SyncPlatform::Strava, SyncPlatform::TrainingPeaks];
+        screen.set_connected_platforms(platforms.clone());
+        assert_eq!(screen.connected_platforms, platforms);
+    }
+
+    #[test]
+    fn test_update_sync_status_new() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Uploading);
+        assert_eq!(
+            screen.get_sync_status(SyncPlatform::TrainingPeaks),
+            Some(SyncRecordStatus::Uploading)
+        );
+    }
+
+    #[test]
+    fn test_update_sync_status_update_existing() {
+        let mut screen = RideSummaryScreen::new();
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Uploading);
+        screen.update_sync_status(SyncPlatform::TrainingPeaks, SyncRecordStatus::Completed);
+        assert_eq!(
+            screen.get_sync_status(SyncPlatform::TrainingPeaks),
+            Some(SyncRecordStatus::Completed)
+        );
+        // Should still only have one entry
+        assert_eq!(screen.sync_status.len(), 1);
+    }
+
+    #[test]
+    fn test_get_sync_status_not_found() {
+        let screen = RideSummaryScreen::new();
+        assert_eq!(screen.get_sync_status(SyncPlatform::TrainingPeaks), None);
     }
 }
