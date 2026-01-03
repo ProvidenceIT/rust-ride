@@ -35,11 +35,47 @@
         }
       ],
       "status": "completed"
+    },
+    "1.4": {
+      "attempts": [
+        {
+          "session": 5,
+          "timestamp": "2026-01-03T06:26:08.009371",
+          "approach": "Implemented: Add the exporter modules to workouts/mod.rs and export the public functions.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.1": {
+      "attempts": [
+        {
+          "session": 6,
+          "timestamp": "2026-01-03T06:29:59.093474",
+          "approach": "Implemented: Create helper function to convert WorkoutSegment to ZWO XML element string. Handle all segment types",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.2": {
+      "attempts": [
+        {
+          "session": 7,
+          "timestamp": "2026-01-03T06:33:43.811224",
+          "approach": "Implemented: Implement the main export_zwo function that converts a Workout to ZWO XML string. Follow the ZWO for",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [],
   "metadata": {
     "created_at": "2026-01-03T06:13:49.355404",
-    "last_updated": "2026-01-03T06:24:15.869562"
+    "last_updated": "2026-01-03T06:33:43.811224"
   }
 }

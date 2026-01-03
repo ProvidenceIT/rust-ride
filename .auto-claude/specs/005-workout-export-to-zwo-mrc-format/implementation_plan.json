@@ -132,7 +132,7 @@
           "id": "2.3",
           "title": "Implement export_zwo_to_file and generate_zwo_filename",
           "description": "Add file writing function and filename generator for ZWO exports.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/workouts/exporter_zwo.rs"
           ],
@@ -140,7 +140,9 @@
             "export_zwo_to_file writes XML content to specified path",
             "generate_zwo_filename creates filename from workout name with .zwo extension",
             "Filename sanitized to remove invalid filesystem characters"
-          ]
+          ],
+          "notes": "Functions export_zwo_to_file and generate_zwo_filename were already implemented as part of subtask 1.2 during module creation. Implementation verified: export_zwo_to_file writes XML content via std::fs::write, generate_zwo_filename creates sanitized filename with .zwo extension using sanitize_filename helper that replaces filesystem-invalid characters (/ \\\\ : * ? \\\" < > |) with underscores. Tests included: test_generate_zwo_filename_simple, test_generate_zwo_filename_sanitizes_invalid_chars, test_sanitize_filename.",
+          "updated_at": "2026-01-03T05:35:11.311733+00:00"
         },
         {
           "id": "2.4",
@@ -295,5 +297,5 @@
     "Exported ZWO files are valid XML and parseable by parse_zwo",
     "Exported MRC files follow MRC format and parseable by parse_mrc"
   ],
-  "last_updated": "2026-01-03T05:32:23.606274+00:00"
+  "last_updated": "2026-01-03T05:35:11.311733+00:00"
 }

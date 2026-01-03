@@ -30,3 +30,63 @@
 
 ---
 
+## Subtask 2.2 Complete - 2026-01-03
+
+### Implemented export_zwo function
+
+The main `export_zwo` function now converts Workout structs to ZWO XML strings:
+
+**Features:**
+- XML declaration (`<?xml version="1.0"?>`)
+- `<workout_file>` root element
+- Metadata elements: `<name>`, `<author>`, `<description>` (when present)
+- Tags as `<tag name="..."/>` elements
+- `<workout>` element containing all segment elements
+
+**Helper Functions Added:**
+- `escape_xml()` - escapes &, <, > in text content
+- `escape_xml_attr()` - escapes &, <, >, " in attribute values
+
+**Tests Added (6 new tests):**
+- `test_export_zwo_simple_workout`
+- `test_export_zwo_with_metadata`
+- `test_export_zwo_escapes_special_chars`
+- `test_export_zwo_multiple_segments`
+- `test_escape_xml`
+- `test_escape_xml_attr`
+
+---
+
+## Subtask 2.3 Complete - 2026-01-03
+
+### Verified export_zwo_to_file and generate_zwo_filename
+
+These functions were already implemented as part of subtask 1.2 during module creation.
+
+**export_zwo_to_file:**
+- Calls `export_zwo()` to generate XML content
+- Writes content to specified path using `std::fs::write()`
+- Returns `Result<(), WorkoutExportError>` with IoError on write failure
+
+**generate_zwo_filename:**
+- Creates sanitized filename from workout name
+- Appends `.zwo` extension
+- Uses `sanitize_filename()` helper to replace invalid chars
+
+**sanitize_filename helper:**
+- Replaces filesystem-invalid characters: `/ \ : * ? " < > |`
+- Replaces each with underscore `_`
+- Trims whitespace
+
+**Existing Tests (from subtask 1.2):**
+- `test_generate_zwo_filename_simple`
+- `test_generate_zwo_filename_sanitizes_invalid_chars`
+- `test_sanitize_filename`
+
+**All acceptance criteria met:**
+- ✅ export_zwo_to_file writes XML content to specified path
+- ✅ generate_zwo_filename creates filename from workout name with .zwo extension
+- ✅ Filename sanitized to remove invalid filesystem characters
+
+---
+
