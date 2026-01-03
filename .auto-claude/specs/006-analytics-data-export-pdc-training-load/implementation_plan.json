@@ -2,11 +2,14 @@
   "feature": "Analytics Data Export (PDC/Training Load)",
   "description": "Enable export of training analytics data (Power Duration Curve, training load history, CP model) to JSON/CSV formats for external analysis, backup, or sharing with coaches.",
   "created_at": "2026-01-02T22:52:58.548Z",
-  "updated_at": "2026-01-02T23:00:00.000Z",
-  "status": "in_progress",
-  "planStatus": "approved",
+  "updated_at": "2026-01-03T09:31:47.120Z",
+  "status": "completed",
+  "planStatus": "completed",
   "workflow_type": "development",
-  "services_involved": ["src/metrics/analytics", "src/storage/analytics_store.rs"],
+  "services_involved": [
+    "src/metrics/analytics",
+    "src/storage/analytics_store.rs"
+  ],
   "spec_file": "spec.md",
   "phases": [
     {
@@ -18,7 +21,9 @@
           "subtask_id": "P1.1",
           "title": "Create AnalyticsExport root structure",
           "description": "Create the main AnalyticsExport struct with metadata (exported_at, export_version, user_id) that contains all analytics data. Follow LeaderboardExport pattern from leaderboards/export.rs.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "AnalyticsExport struct with Serialize/Deserialize derives",
             "Contains exported_at: DateTime<Utc>",
@@ -34,7 +39,9 @@
           "subtask_id": "P1.2",
           "title": "Create PdcExport structure",
           "description": "Create export structure for Power Duration Curve data. Include all PDC points with optional achieved_at timestamps.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "PdcExport struct with Serialize/Deserialize",
             "Contains Vec<PdcPointExport> for all curve points",
@@ -42,14 +49,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P1.1"],
+          "dependencies": [
+            "P1.1"
+          ],
           "completion_notes": "Created PdcPointExport struct with duration_secs, power_watts, and optional achieved_at timestamp. Created PdcExport struct with Vec<PdcPointExport> sorted by duration. Added From<PdcPoint> conversion and with_pdc() builder on AnalyticsExport. Added 13 comprehensive unit tests for serialization and roundtrip."
         },
         {
           "subtask_id": "P1.3",
           "title": "Create TrainingLoadExport structure",
           "description": "Create export structure for training load history with daily ATL/CTL/TSB/TSS values.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "TrainingLoadExport struct with Serialize/Deserialize",
             "Contains Vec<DailyLoadExport> for date history",
@@ -58,14 +69,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P1.1"],
+          "dependencies": [
+            "P1.1"
+          ],
           "completion_notes": "Created DailyLoadExport struct with date, tss, atl, ctl, tsb, and optional acwr fields. Created TrainingLoadExport struct with Vec<DailyLoadExport> sorted by date. Added from_daily_load() method that auto-calculates ACWR when CTL > 0. Added with_training_load() builder on AnalyticsExport. Added 16 comprehensive unit tests covering serialization, deserialization, roundtrip, and edge cases."
         },
         {
           "subtask_id": "P1.4",
           "title": "Create CpModelExport structure",
           "description": "Create export structure for Critical Power model data including CP, W', and fit quality.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "CpModelExport struct with Serialize/Deserialize",
             "Contains cp_watts, w_prime_joules, r_squared",
@@ -73,14 +88,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P1.1"],
+          "dependencies": [
+            "P1.1"
+          ],
           "completion_notes": "Created CpModelExport struct with cp_watts, w_prime_joules, r_squared, and optional calculated_at timestamp. Added new() and with_timestamp() constructors, From<CpModel> conversion, and is_good_fit() helper method. Integrated with AnalyticsExport via with_cp_model() builder. Added 16 comprehensive unit tests covering serialization, deserialization, roundtrip, and integration with AnalyticsExport."
         },
         {
           "subtask_id": "P1.5",
           "title": "Create FitnessProfileExport structure",
           "description": "Create export structure for VO2max, FTP, and rider type/power profile data.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "FitnessProfileExport struct with Serialize/Deserialize",
             "Contains optional vo2max, ftp_watts",
@@ -89,7 +108,9 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P1.1"],
+          "dependencies": [
+            "P1.1"
+          ],
           "completion_notes": "Created Vo2maxExport struct with vo2max value, classification and method as human-readable strings, and optional calculated_at timestamp. Created PowerProfileExport struct with neuromuscular_pct, anaerobic_pct, vo2max_pct, and threshold_pct. Created FitnessProfileExport struct with optional vo2max, ftp_watts, rider_type (string), power_profile, and updated_at. Added From<Vo2maxResult> and From<PowerProfile> conversions. Added helper methods for converting enums to human-readable strings. Integrated with AnalyticsExport via with_fitness_profile() builder. Added 30+ comprehensive unit tests."
         }
       ]
@@ -103,7 +124,9 @@
           "subtask_id": "P2.1",
           "title": "Create AnalyticsExporter struct",
           "description": "Create the main exporter struct following LeaderboardExporter pattern. Takes Arc<Database> and provides methods for building exports.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "AnalyticsExporter struct with db: Arc<Database>",
             "new(db: Arc<Database>) constructor",
@@ -112,14 +135,18 @@
           ],
           "estimated_effort": "medium",
           "status": "completed",
-          "dependencies": ["P1.5"],
+          "dependencies": [
+            "P1.5"
+          ],
           "completion_notes": "Created AnalyticsExporter struct with Arc<Database> field and new() constructor. Implemented build_export(user_id) method that retrieves all analytics data using AnalyticsStore: PDC points, training load history (last 365 days), current CP model, and fitness profile (FTP, VO2max, rider type, power profile). Follows LeaderboardExporter pattern exactly."
         },
         {
           "subtask_id": "P2.2",
           "title": "Implement JSON export method",
           "description": "Implement export_json() method that serializes the full analytics export to pretty-printed JSON.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "export_json(user_id: Uuid) -> Result<String, ExportError>",
             "Uses serde_json::to_string_pretty",
@@ -128,14 +155,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.1"],
+          "dependencies": [
+            "P2.1"
+          ],
           "completion_notes": "Implemented export_json() methods: 1) AnalyticsExport::export_json() - serializes the export struct to pretty-printed JSON using serde_json::to_string_pretty, returns Result<String, ExportError>. 2) AnalyticsExporter::export_json(user_id) - convenience method that builds the export and serializes it in one call. Added 8 comprehensive unit tests covering empty exports, exports with various data types (PDC, training load, CP model, fitness profile), pretty-printing verification, and roundtrip serialization."
         },
         {
           "subtask_id": "P2.3",
           "title": "Implement PDC CSV export",
           "description": "Implement export_pdc_csv() method for Power Duration Curve data export in CSV format.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "export_pdc_csv(user_id: Uuid) -> Result<String, ExportError>",
             "CSV header: duration_secs,power_watts,achieved_at",
@@ -144,14 +175,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.1"],
+          "dependencies": [
+            "P2.1"
+          ],
           "completion_notes": "Implemented export_pdc_csv() method for Power Duration Curve CSV export: 1) Added PdcExport.to_csv() method that outputs CSV with headers 'duration_secs,power_watts,achieved_at'. 2) Added AnalyticsExporter.export_pdc_csv(user_id) method that loads PDC data from database using AnalyticsStore and exports to CSV format. 3) Returns InsufficientData error if no PDC data exists for user. 4) Timestamps are in RFC 3339/ISO 8601 format. 5) Added 8 comprehensive unit tests for CSV export: empty export, single point, multiple points, with timestamps, header format, sorted by duration, and RFC3339 format verification."
         },
         {
           "subtask_id": "P2.4",
           "title": "Implement training load CSV export",
           "description": "Implement export_training_load_csv() method for daily training load history in CSV format.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "export_training_load_csv(user_id, start_date, end_date) -> Result<String, ExportError>",
             "CSV header: date,tss,atl,ctl,tsb",
@@ -160,14 +195,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.1"],
+          "dependencies": [
+            "P2.1"
+          ],
           "completion_notes": "Implemented export_training_load_csv() method for daily training load history in CSV format: 1) Added TrainingLoadExport::to_csv() method that outputs CSV with headers 'date,tss,atl,ctl,tsb,acwr'. 2) Added AnalyticsExporter::export_training_load_csv(user_id, start_date, end_date) method that loads training load data from database using AnalyticsStore and exports to CSV format with date range filtering. 3) Dates are in ISO 8601 format (YYYY-MM-DD), floating point values formatted with 2 decimal places. 4) Returns InsufficientData error if no training load data exists for user in the specified date range. 5) Data is ordered chronologically. 6) Added 9 comprehensive unit tests covering: empty export, single day, multiple days, with/without ACWR, header format, chronological sorting, decimal precision, negative TSB, and ISO 8601 date format."
         },
         {
           "subtask_id": "P2.5",
           "title": "Create ExportError enum",
           "description": "Create error type for export operations following leaderboard ExportError pattern.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "ExportError enum with thiserror derives",
             "UserNotFound variant",
@@ -177,14 +216,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P1.1"],
+          "dependencies": [
+            "P1.1"
+          ],
           "completion_notes": "Created ExportError enum with thiserror derive and four variants: UserNotFound(Uuid), SerializationFailed(String), DatabaseError(String), and InsufficientData(String). Each variant has proper error message formatting. Implemented as part of P2.1 to complete the AnalyticsExporter implementation."
         },
         {
           "subtask_id": "P2.6",
           "title": "Add optional date range filter for exports",
           "description": "Add export_json_with_options() method that allows filtering by date range and selecting which data types to include.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "ExportOptions struct with date range and data selection flags",
             "include_pdc, include_training_load, include_cp_model, include_fitness_profile booleans",
@@ -193,7 +236,9 @@
           ],
           "estimated_effort": "medium",
           "status": "completed",
-          "dependencies": ["P2.4"],
+          "dependencies": [
+            "P2.4"
+          ],
           "completion_notes": "Implemented ExportOptions struct with include_pdc, include_training_load, include_cp_model, include_fitness_profile boolean flags and start_date/end_date Optional<NaiveDate> for date range filtering. Added builder pattern methods (with_pdc, with_training_load, etc.) and convenience constructors (pdc_only, training_load_only, etc.). Added build_export_with_options() and export_json_with_options() methods to AnalyticsExporter. Added 20 comprehensive unit tests for ExportOptions."
         }
       ]
@@ -207,7 +252,9 @@
           "subtask_id": "P3.1",
           "title": "Test JSON export serialization",
           "description": "Test that AnalyticsExport serializes correctly to JSON with all nested structures.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "Test empty export produces valid JSON",
             "Test full export with all data types",
@@ -216,14 +263,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.2"],
+          "dependencies": [
+            "P2.2"
+          ],
           "completion_notes": "Added 12 comprehensive unit tests for JSON serialization of AnalyticsExport with all nested structures. Tests verify: (1) Full roundtrip with all data types including training load, (2) Export version is '1.0', (3) Timestamps in RFC3339 format, (4) Nested structures with optional timestamp fields, (5) Optional fields omitted when None, (6) PDC sorted by duration, (7) Training load sorted chronologically, (8) Rider type as human-readable string, (9) Floating point precision, (10) Negative values, (11) Large values. All acceptance criteria met."
         },
         {
           "subtask_id": "P3.2",
           "title": "Test PDC CSV export format",
           "description": "Test PDC CSV export produces correct format with proper escaping.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "Test CSV headers are correct",
             "Test PDC points are formatted correctly",
@@ -232,14 +283,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.3"],
+          "dependencies": [
+            "P2.3"
+          ],
           "completion_notes": "Verified 8 comprehensive unit tests for PDC CSV export already exist: (1) test_pdc_export_to_csv_empty - verifies empty export produces headers only, (2) test_pdc_export_to_csv_single_point - tests single point format, (3) test_pdc_export_to_csv_multiple_points - tests multiple points, (4) test_pdc_export_to_csv_with_timestamps - tests timestamp formatting with/without timestamps, (5) test_pdc_export_to_csv_header_format - verifies exact header format, (6) test_pdc_export_to_csv_sorted_by_duration - verifies sorting by duration, (7) test_pdc_export_to_csv_timestamp_rfc3339_format - verifies RFC 3339 timestamp format. PDC data uses integers and RFC 3339 timestamps which don't require CSV escaping (no commas, quotes, or newlines). All acceptance criteria met."
         },
         {
           "subtask_id": "P3.3",
           "title": "Test training load CSV export",
           "description": "Test training load CSV export with date filtering.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "Test CSV format with all columns",
             "Test date range filtering works correctly",
@@ -248,14 +303,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.4"],
+          "dependencies": [
+            "P2.4"
+          ],
           "completion_notes": "Added filter_by_date_range() method to TrainingLoadExport for in-memory date range filtering. Added 17 comprehensive unit tests covering: (1) Basic date range filtering, (2) Inclusive boundary dates, (3) Single day filtering, (4) Empty results for out-of-range dates, (5) Data value preservation through filtering, (6) Filter then CSV export workflow, (7) All columns format verification, (8) Chronological ordering after filter, (9) Decimal precision preservation, (10) Partial overlap scenarios (start/end), (11) date_range() method after filtering. All acceptance criteria met: CSV format with all columns tested, date range filtering works correctly, chronological ordering verified, decimal precision for load values confirmed."
         },
         {
           "subtask_id": "P3.4",
           "title": "Test export error handling",
           "description": "Test error conditions are handled properly.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "Test UserNotFound for invalid user",
             "Test InsufficientData for empty analytics",
@@ -263,14 +322,18 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.5"],
+          "dependencies": [
+            "P2.5"
+          ],
           "completion_notes": "Added 15 comprehensive unit tests for ExportError enum covering all error variants: (1) UserNotFound contains UUID in error message, (2) UserNotFound display format verification, (3) InsufficientData with descriptive PDC message, (4) InsufficientData for training load with date range, (5) SerializationFailed contains error details, (6) DatabaseError contains message, (7) Debug format verification, (8) std::error::Error trait implementation check, (9) Distinct error messages for each variant, (10) Empty message handling, (11) Long message handling, (12) Special characters in messages, (13) Different UUIDs produce different messages, (14) Informative PDC error message, (15) Informative training load error message. All acceptance criteria met."
         },
         {
           "subtask_id": "P3.5",
           "title": "Test export options filtering",
           "description": "Test that ExportOptions correctly filters data.",
-          "files_to_modify": ["src/metrics/analytics/export.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/export.rs"
+          ],
           "acceptance_criteria": [
             "Test include_* flags work correctly",
             "Test date range filtering in options",
@@ -278,7 +341,9 @@
           ],
           "estimated_effort": "small",
           "status": "completed",
-          "dependencies": ["P2.6"],
+          "dependencies": [
+            "P2.6"
+          ],
           "completion_notes": "Added 20 comprehensive integration tests for ExportOptions filtering in a new export_options_filtering_tests module. Tests verify: (1) Individual include flags correctly exclude data types when disabled (PDC, training load, CP model, fitness profile), (2) *_only() convenience methods exclude all other data types, (3) Date range filtering works for training load data, (4) Partial date ranges (start only, end only) filter correctly, (5) Multiple exclusions work together, (6) All-disabled options returns empty export with metadata, (7) JSON output respects filtering options, (8) Data integrity is preserved through filtering. Tests use in-memory database with full test data to verify the complete filtering pipeline from ExportOptions through AnalyticsExporter.build_export_with_options()."
         }
       ]
@@ -292,21 +357,29 @@
           "subtask_id": "P4.1",
           "title": "Add export module to analytics mod.rs",
           "description": "Register the export module in the analytics module and add re-exports.",
-          "files_to_modify": ["src/metrics/analytics/mod.rs"],
+          "files_to_modify": [
+            "src/metrics/analytics/mod.rs"
+          ],
           "acceptance_criteria": [
             "pub mod export; added to mod.rs",
             "Re-export AnalyticsExporter, AnalyticsExport, ExportError",
             "Re-export ExportOptions for filtering"
           ],
           "estimated_effort": "small",
-          "status": "pending",
-          "dependencies": ["P3.5"]
+          "status": "completed",
+          "dependencies": [
+            "P3.5"
+          ],
+          "completion_notes": "Export module already registered and re-exported in mod.rs. Verified: 1) pub mod export; on line 17, 2) pub use export::{AnalyticsExport, AnalyticsExporter, ExportError, ExportOptions}; on line 29. All acceptance criteria met - the module was integrated as part of earlier subtask implementations."
         },
         {
           "subtask_id": "P4.2",
           "title": "Add integration test for analytics export",
           "description": "Create integration test that verifies end-to-end export functionality with real database.",
-          "files_to_modify": ["tests/integration/analytics_export_test.rs", "tests/integration/mod.rs"],
+          "files_to_modify": [
+            "tests/integration/analytics_export_test.rs",
+            "tests/integration/mod.rs"
+          ],
           "acceptance_criteria": [
             "Test creates user with PDC, training load, CP model data",
             "Test exports to JSON and verifies structure",
@@ -314,8 +387,11 @@
             "Test import/export round-trip preserves data"
           ],
           "estimated_effort": "medium",
-          "status": "pending",
-          "dependencies": ["P4.1"]
+          "status": "completed",
+          "dependencies": [
+            "P4.1"
+          ],
+          "completion_notes": "Integration tests already complete in analytics_export_test.rs with 13 comprehensive tests: (1) setup_test_database creates user with PDC, training load, CP model, FTP, VO2max, rider profile data, (2) test_export_json_full_structure verifies JSON export with all data types, (3) test_export_pdc_csv_format verifies PDC CSV format and sorting by duration, (4) test_export_training_load_csv_format verifies training load CSV with chronological date ordering, (5) test_export_json_roundtrip verifies data preservation through import/export round-trip, (6) test_export_with_options_pdc_only/training_load_only test filtering, (7) test_export_with_date_range_filter tests date range filtering, (8) test_export_empty_user_no_data tests empty data handling, (9) test_export_pdc_csv_insufficient_data_error/training_load tests error handling, (10) test_json_export_pretty_printed verifies pretty printing, (11) test_export_preserves_data_precision verifies precision. Module already registered in mod.rs line 4. All acceptance criteria met."
         }
       ]
     }
@@ -339,5 +415,6 @@
     "AnalyticsStore provides all necessary data retrieval methods",
     "CSV escaping uses existing escape_csv helper pattern",
     "Export version allows future format compatibility"
-  ]
+  ],
+  "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:46.786Z"
 }
