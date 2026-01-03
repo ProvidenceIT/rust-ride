@@ -6,7 +6,7 @@
 //! T091-T094: TSS, IF, NP, calorie calculations
 
 use crate::metrics::smoothing::{NormalizedPowerCalculator, PowerFilter, RollingAverage};
-use crate::metrics::zones::{HRZones, PowerZones};
+use crate::metrics::zones::{CadenceZones, HRZones, PowerZones};
 use crate::sensors::types::SensorReading;
 use std::time::{Duration, Instant};
 
@@ -80,6 +80,8 @@ pub struct MetricsCalculator {
     power_zones: Option<PowerZones>,
     /// HR zones
     hr_zones: Option<HRZones>,
+    /// Cadence zones
+    cadence_zones: Option<CadenceZones>,
     /// User's FTP
     ftp: u16,
     /// Total power sum for average
@@ -108,6 +110,7 @@ impl MetricsCalculator {
             np_calculator: NormalizedPowerCalculator::new(),
             power_zones: Some(PowerZones::from_ftp(ftp)),
             hr_zones: None,
+            cadence_zones: None,
             ftp,
             power_sum: 0,
             power_count: 0,
@@ -127,6 +130,11 @@ impl MetricsCalculator {
     /// Set HR zones.
     pub fn set_hr_zones(&mut self, zones: HRZones) {
         self.hr_zones = Some(zones);
+    }
+
+    /// Set cadence zones.
+    pub fn set_cadence_zones(&mut self, zones: CadenceZones) {
+        self.cadence_zones = Some(zones);
     }
 
     /// Update FTP and recalculate zones.
