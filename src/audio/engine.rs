@@ -17,7 +17,7 @@ use super::backend::RodioAudioBackend;
 use super::tts::TtsProvider;
 use super::{
     AudioCategory, AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
-    ThreadSafeTtsProvider,
+    MuteState, ThreadSafeTtsProvider,
 };
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -85,6 +85,53 @@ pub trait AudioEngine: Send + Sync {
 
     /// Subscribe to audio events
     fn subscribe_events(&self) -> broadcast::Receiver<AudioEvent>;
+
+    // ========== Mute Control Methods ==========
+
+    /// Mute all audio globally
+    ///
+    /// This silences all audio output but preserves volume settings.
+    /// Call `unmute()` to restore audio at the previous volume.
+    fn mute(&self);
+
+    /// Unmute all audio globally
+    ///
+    /// This restores audio output at the previous volume level.
+    fn unmute(&self);
+
+    /// Toggle global mute state
+    ///
+    /// If currently muted, unmutes. If currently unmuted, mutes.
+    /// Returns the new mute state (true = muted).
+    fn toggle_mute(&self) -> bool;
+
+    /// Check if audio is globally muted
+    fn is_muted(&self) -> bool;
+
+    /// Mute a specific audio category
+    ///
+    /// This silences audio for the specified category but preserves its volume setting.
+    fn mute_category(&self, category: AudioCategory);
+
+    /// Unmute a specific audio category
+    ///
+    /// This restores audio for the specified category at its previous volume level.
+    fn unmute_category(&self, category: AudioCategory);
+
+    /// Toggle mute state for a specific category
+    ///
+    /// Returns the new mute state for that category (true = muted).
+    fn toggle_category_mute(&self, category: AudioCategory) -> bool;
+
+    /// Check if a specific category is muted
+    ///
+    /// Returns true if the category is muted (either globally or category-specific).
+    fn is_category_muted(&self, category: AudioCategory) -> bool;
+
+    /// Get the current mute state for all categories
+    ///
+    /// Returns a snapshot of the mute state for UI display.
+    fn get_mute_state(&self) -> MuteState;
 }
 
 /// Queue entry with priority ordering
@@ -321,12 +368,12 @@ impl DefaultAudioEngine {
                 continue;
             }
 
-            // Check if this audio item is enabled in the config
+            // Check if this audio item should play (enabled and not muted)
             {
                 let config = self.config.lock().unwrap();
-                if !item.is_enabled(&config) {
+                if !item.should_play(&config) {
                     tracing::debug!(
-                        "Skipping disabled audio item: {:?} (category: {:?})",
+                        "Skipping audio item (disabled or muted): {:?} (category: {:?})",
                         item.audio_type,
                         item.category
                     );
@@ -766,6 +813,116 @@ impl AudioEngine for DefaultAudioEngine {
     fn subscribe_events(&self) -> broadcast::Receiver<AudioEvent> {
         self.event_tx.subscribe()
     }
+
+    // ========== Mute Control Methods ==========
+
+    fn mute(&self) {
+        tracing::debug!("Global mute requested");
+        {
+            let mut config = self.config.lock().unwrap();
+            config.muted = true;
+        }
+        // Also mute the audio backend for immediate effect
+        self.audio_backend.set_muted(true);
+    }
+
+    fn unmute(&self) {
+        tracing::debug!("Global unmute requested");
+        {
+            let mut config = self.config.lock().unwrap();
+            config.muted = false;
+        }
+        // Unmute the audio backend if the audio system is enabled
+        let enabled = self.config.lock().unwrap().enabled;
+        self.audio_backend.set_muted(!enabled);
+    }
+
+    fn toggle_mute(&self) -> bool {
+        let new_mute_state = {
+            let mut config = self.config.lock().unwrap();
+            config.muted = !config.muted;
+            config.muted
+        };
+        tracing::debug!("Global mute toggled to: {}", new_mute_state);
+
+        // Update backend mute state
+        if new_mute_state {
+            self.audio_backend.set_muted(true);
+        } else {
+            let enabled = self.config.lock().unwrap().enabled;
+            self.audio_backend.set_muted(!enabled);
+        }
+
+        new_mute_state
+    }
+
+    fn is_muted(&self) -> bool {
+        self.config.lock().unwrap().muted
+    }
+
+    fn mute_category(&self, category: AudioCategory) {
+        tracing::debug!("Muting category: {:?}", category);
+        let mut config = self.config.lock().unwrap();
+        match category {
+            AudioCategory::Voice => config.voice_muted = true,
+            AudioCategory::SoundEffect => config.sound_effects_muted = true,
+            AudioCategory::Countdown => config.countdown_muted = true,
+            AudioCategory::Achievement => config.achievement_muted = true,
+            AudioCategory::Milestone => config.milestone_muted = true,
+        }
+    }
+
+    fn unmute_category(&self, category: AudioCategory) {
+        tracing::debug!("Unmuting category: {:?}", category);
+        let mut config = self.config.lock().unwrap();
+        match category {
+            AudioCategory::Voice => config.voice_muted = false,
+            AudioCategory::SoundEffect => config.sound_effects_muted = false,
+            AudioCategory::Countdown => config.countdown_muted = false,
+            AudioCategory::Achievement => config.achievement_muted = false,
+            AudioCategory::Milestone => config.milestone_muted = false,
+        }
+    }
+
+    fn toggle_category_mute(&self, category: AudioCategory) -> bool {
+        let new_mute_state = {
+            let mut config = self.config.lock().unwrap();
+            match category {
+                AudioCategory::Voice => {
+                    config.voice_muted = !config.voice_muted;
+                    config.voice_muted
+                }
+                AudioCategory::SoundEffect => {
+                    config.sound_effects_muted = !config.sound_effects_muted;
+                    config.sound_effects_muted
+                }
+                AudioCategory::Countdown => {
+                    config.countdown_muted = !config.countdown_muted;
+                    config.countdown_muted
+                }
+                AudioCategory::Achievement => {
+                    config.achievement_muted = !config.achievement_muted;
+                    config.achievement_muted
+                }
+                AudioCategory::Milestone => {
+                    config.milestone_muted = !config.milestone_muted;
+                    config.milestone_muted
+                }
+            }
+        };
+        tracing::debug!("Category {:?} mute toggled to: {}", category, new_mute_state);
+        new_mute_state
+    }
+
+    fn is_category_muted(&self, category: AudioCategory) -> bool {
+        let config = self.config.lock().unwrap();
+        category.is_muted(&config)
+    }
+
+    fn get_mute_state(&self) -> MuteState {
+        let config = self.config.lock().unwrap();
+        MuteState::from_config(&config)
+    }
 }
 
 #[cfg(test)]
@@ -1202,5 +1359,221 @@ mod tests {
         // Verify queue has 3 items
         let queue = engine.queue.lock().unwrap();
         assert_eq!(queue.len(), 3);
+    }
+
+    // ========== Mute Control Tests ==========
+
+    #[test]
+    fn test_global_mute_unmute() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Initially not muted
+        assert!(!engine.is_muted());
+        assert!(!engine.audio_backend().is_muted());
+
+        // Mute
+        engine.mute();
+        assert!(engine.is_muted());
+        assert!(engine.audio_backend().is_muted());
+
+        // Unmute
+        engine.unmute();
+        assert!(!engine.is_muted());
+        assert!(!engine.audio_backend().is_muted());
+    }
+
+    #[test]
+    fn test_toggle_mute() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Initially not muted
+        assert!(!engine.is_muted());
+
+        // Toggle on
+        let result = engine.toggle_mute();
+        assert!(result); // Returns new state = muted
+        assert!(engine.is_muted());
+
+        // Toggle off
+        let result = engine.toggle_mute();
+        assert!(!result); // Returns new state = unmuted
+        assert!(!engine.is_muted());
+    }
+
+    #[test]
+    fn test_mute_category() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Initially no category is muted
+        assert!(!engine.is_category_muted(AudioCategory::Voice));
+        assert!(!engine.is_category_muted(AudioCategory::SoundEffect));
+
+        // Mute voice
+        engine.mute_category(AudioCategory::Voice);
+        assert!(engine.is_category_muted(AudioCategory::Voice));
+        assert!(!engine.is_category_muted(AudioCategory::SoundEffect));
+
+        // Unmute voice
+        engine.unmute_category(AudioCategory::Voice);
+        assert!(!engine.is_category_muted(AudioCategory::Voice));
+    }
+
+    #[test]
+    fn test_toggle_category_mute() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Initially not muted
+        assert!(!engine.is_category_muted(AudioCategory::Countdown));
+
+        // Toggle on
+        let result = engine.toggle_category_mute(AudioCategory::Countdown);
+        assert!(result);
+        assert!(engine.is_category_muted(AudioCategory::Countdown));
+
+        // Toggle off
+        let result = engine.toggle_category_mute(AudioCategory::Countdown);
+        assert!(!result);
+        assert!(!engine.is_category_muted(AudioCategory::Countdown));
+    }
+
+    #[test]
+    fn test_is_category_muted_respects_global_mute() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Mute globally
+        engine.mute();
+
+        // All categories should appear muted
+        assert!(engine.is_category_muted(AudioCategory::Voice));
+        assert!(engine.is_category_muted(AudioCategory::SoundEffect));
+        assert!(engine.is_category_muted(AudioCategory::Countdown));
+        assert!(engine.is_category_muted(AudioCategory::Achievement));
+        assert!(engine.is_category_muted(AudioCategory::Milestone));
+    }
+
+    #[test]
+    fn test_get_mute_state() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Initial state
+        let state = engine.get_mute_state();
+        assert!(!state.globally_muted);
+        assert!(!state.voice_muted);
+
+        // Mute globally and one category
+        engine.mute();
+        engine.mute_category(AudioCategory::Countdown);
+
+        let state = engine.get_mute_state();
+        assert!(state.globally_muted);
+        assert!(state.countdown_muted);
+        assert!(!state.voice_muted);
+    }
+
+    #[test]
+    fn test_mute_all_categories_independently() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Mute each category independently
+        engine.mute_category(AudioCategory::Voice);
+        engine.mute_category(AudioCategory::SoundEffect);
+        engine.mute_category(AudioCategory::Countdown);
+        engine.mute_category(AudioCategory::Achievement);
+        engine.mute_category(AudioCategory::Milestone);
+
+        // Verify all are muted
+        assert!(engine.is_category_muted(AudioCategory::Voice));
+        assert!(engine.is_category_muted(AudioCategory::SoundEffect));
+        assert!(engine.is_category_muted(AudioCategory::Countdown));
+        assert!(engine.is_category_muted(AudioCategory::Achievement));
+        assert!(engine.is_category_muted(AudioCategory::Milestone));
+
+        // Global is not muted
+        assert!(!engine.is_muted());
+
+        // Unmute countdown only
+        engine.unmute_category(AudioCategory::Countdown);
+        assert!(!engine.is_category_muted(AudioCategory::Countdown));
+        assert!(engine.is_category_muted(AudioCategory::Voice));
+    }
+
+    #[test]
+    fn test_mute_preserves_volume() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Set a specific volume
+        engine.set_volume(60);
+        assert_eq!(engine.get_volume(), 60);
+
+        // Mute and check volume is preserved
+        engine.mute();
+        assert_eq!(engine.get_volume(), 60);
+
+        // Unmute and check volume is still 60
+        engine.unmute();
+        assert_eq!(engine.get_volume(), 60);
+    }
+
+    #[test]
+    fn test_category_mute_preserves_category_volume() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Set a specific category volume
+        engine.set_category_volume(AudioCategory::Countdown, 75);
+        assert_eq!(engine.get_category_volume(AudioCategory::Countdown), 75);
+
+        // Mute category and check volume is preserved
+        engine.mute_category(AudioCategory::Countdown);
+        assert_eq!(engine.get_category_volume(AudioCategory::Countdown), 75);
+
+        // Unmute and check volume is still 75
+        engine.unmute_category(AudioCategory::Countdown);
+        assert_eq!(engine.get_category_volume(AudioCategory::Countdown), 75);
+    }
+
+    #[test]
+    fn test_unmute_respects_enabled_state() {
+        let mut config = AudioConfig::default();
+        config.enabled = false; // Audio is disabled
+        let engine = DefaultAudioEngine::new(config);
+
+        // Backend should be muted because audio is disabled
+        assert!(engine.audio_backend().is_muted());
+
+        // Mute and then unmute
+        engine.mute();
+        engine.unmute();
+
+        // Backend should still be muted because audio is disabled
+        assert!(engine.audio_backend().is_muted());
+    }
+
+    #[test]
+    fn test_mute_state_display_helpers() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        let state = engine.get_mute_state();
+        assert_eq!(state.display_string(), "Audio Active");
+        assert_eq!(state.icon_hint(), "volume_up");
+
+        engine.mute_category(AudioCategory::Voice);
+        let state = engine.get_mute_state();
+        assert_eq!(state.display_string(), "Some Audio Muted");
+        assert_eq!(state.icon_hint(), "volume_mute");
+
+        engine.mute();
+        let state = engine.get_mute_state();
+        assert_eq!(state.display_string(), "All Audio Muted");
+        assert_eq!(state.icon_hint(), "volume_off");
     }
 }

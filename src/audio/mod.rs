@@ -102,6 +102,24 @@ pub struct AudioConfig {
     /// Volume for achievement sounds (0-100), separate from master volume
     #[serde(default = "default_achievement_volume")]
     pub achievement_volume: u8,
+    /// Global mute state (all audio silenced, but volume preserved for unmute)
+    #[serde(default)]
+    pub muted: bool,
+    /// Voice/TTS mute state (separate from enabled - mute preserves volume)
+    #[serde(default)]
+    pub voice_muted: bool,
+    /// Sound effects mute state
+    #[serde(default)]
+    pub sound_effects_muted: bool,
+    /// Countdown mute state
+    #[serde(default)]
+    pub countdown_muted: bool,
+    /// Achievement mute state
+    #[serde(default)]
+    pub achievement_muted: bool,
+    /// Milestone mute state
+    #[serde(default)]
+    pub milestone_muted: bool,
 }
 
 fn default_countdown_enabled() -> bool {
@@ -151,6 +169,12 @@ impl Default for AudioConfig {
             personal_record_sounds_enabled: default_pr_enabled(),
             achievements_enabled: default_achievement_enabled(),
             achievement_volume: default_achievement_volume(),
+            muted: false,
+            voice_muted: false,
+            sound_effects_muted: false,
+            countdown_muted: false,
+            achievement_muted: false,
+            milestone_muted: false,
         }
     }
 }
@@ -227,11 +251,36 @@ impl AudioCategory {
         }
     }
 
+    /// Check if this category is muted in the config
+    ///
+    /// Returns true if either the global mute is on or the category-specific mute is on.
+    pub fn is_muted(&self, config: &AudioConfig) -> bool {
+        if config.muted {
+            return true;
+        }
+        match self {
+            AudioCategory::Voice => config.voice_muted,
+            AudioCategory::SoundEffect => config.sound_effects_muted,
+            AudioCategory::Countdown => config.countdown_muted,
+            AudioCategory::Achievement => config.achievement_muted,
+            AudioCategory::Milestone => config.milestone_muted,
+        }
+    }
+
+    /// Check if audio should play for this category (enabled and not muted)
+    pub fn should_play(&self, config: &AudioConfig) -> bool {
+        self.is_enabled(config) && !self.is_muted(config)
+    }
+
     /// Calculate the effective volume (0.0 - 1.0) by combining master and category volumes
     ///
     /// The formula is: (master_volume / 100) * (category_volume / 100)
     /// This ensures both volumes are respected and combined multiplicatively.
+    /// Returns 0.0 if muted.
     pub fn effective_volume(&self, config: &AudioConfig) -> f32 {
+        if self.is_muted(config) {
+            return 0.0;
+        }
         let master = config.volume as f32 / 100.0;
         let category = self.volume_from_config(config) as f32 / 100.0;
         master * category
@@ -246,6 +295,17 @@ impl AudioCategory {
             AudioCategory::Achievement => "Achievement",
             AudioCategory::Milestone => "Milestone",
         }
+    }
+
+    /// Get all audio categories
+    pub fn all() -> &'static [AudioCategory] {
+        &[
+            AudioCategory::Voice,
+            AudioCategory::SoundEffect,
+            AudioCategory::Countdown,
+            AudioCategory::Achievement,
+            AudioCategory::Milestone,
+        ]
     }
 }
 
@@ -418,6 +478,114 @@ impl AudioItem {
         match &self.category {
             Some(category) => category.is_enabled(config),
             None => true,
+        }
+    }
+
+    /// Check if this audio item should play (enabled and not muted)
+    pub fn should_play(&self, config: &AudioConfig) -> bool {
+        if !self.is_enabled(config) {
+            return false;
+        }
+        // Check mute state
+        if config.muted {
+            return false;
+        }
+        match &self.category {
+            Some(category) => !category.is_muted(config),
+            None => true,
+        }
+    }
+}
+
+/// Mute state snapshot for UI display
+///
+/// Provides a snapshot of the current mute state for all audio categories.
+/// This is useful for displaying mute indicators in the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MuteState {
+    /// Global mute is active (all audio silenced)
+    pub globally_muted: bool,
+    /// Voice/TTS is muted
+    pub voice_muted: bool,
+    /// Sound effects are muted
+    pub sound_effects_muted: bool,
+    /// Countdown sounds are muted
+    pub countdown_muted: bool,
+    /// Achievement sounds are muted
+    pub achievement_muted: bool,
+    /// Milestone sounds are muted
+    pub milestone_muted: bool,
+}
+
+impl MuteState {
+    /// Create a mute state from an AudioConfig
+    pub fn from_config(config: &AudioConfig) -> Self {
+        Self {
+            globally_muted: config.muted,
+            voice_muted: config.voice_muted,
+            sound_effects_muted: config.sound_effects_muted,
+            countdown_muted: config.countdown_muted,
+            achievement_muted: config.achievement_muted,
+            milestone_muted: config.milestone_muted,
+        }
+    }
+
+    /// Check if any audio is muted (global or any category)
+    pub fn any_muted(&self) -> bool {
+        self.globally_muted
+            || self.voice_muted
+            || self.sound_effects_muted
+            || self.countdown_muted
+            || self.achievement_muted
+            || self.milestone_muted
+    }
+
+    /// Check if a specific category is effectively muted (global or category-specific)
+    pub fn is_category_muted(&self, category: AudioCategory) -> bool {
+        if self.globally_muted {
+            return true;
+        }
+        match category {
+            AudioCategory::Voice => self.voice_muted,
+            AudioCategory::SoundEffect => self.sound_effects_muted,
+            AudioCategory::Countdown => self.countdown_muted,
+            AudioCategory::Achievement => self.achievement_muted,
+            AudioCategory::Milestone => self.milestone_muted,
+        }
+    }
+
+    /// Get a display string describing the current mute state
+    pub fn display_string(&self) -> &'static str {
+        if self.globally_muted {
+            "All Audio Muted"
+        } else if self.any_muted() {
+            "Some Audio Muted"
+        } else {
+            "Audio Active"
+        }
+    }
+
+    /// Get icon hint for UI (could be used with icon libraries)
+    pub fn icon_hint(&self) -> &'static str {
+        if self.globally_muted {
+            "volume_off"
+        } else if self.any_muted() {
+            "volume_mute"
+        } else {
+            "volume_up"
+        }
+    }
+}
+
+impl Default for MuteState {
+    fn default() -> Self {
+        Self {
+            globally_muted: false,
+            voice_muted: false,
+            sound_effects_muted: false,
+            countdown_muted: false,
+            achievement_muted: false,
+            milestone_muted: false,
         }
     }
 }
@@ -778,5 +946,259 @@ mod tests {
 
         let deserialized: AudioCategory = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, AudioCategory::Achievement);
+    }
+
+    // ========== Mute Functionality Tests ==========
+
+    #[test]
+    fn test_audio_config_mute_defaults() {
+        let config = AudioConfig::default();
+        assert!(!config.muted);
+        assert!(!config.voice_muted);
+        assert!(!config.sound_effects_muted);
+        assert!(!config.countdown_muted);
+        assert!(!config.achievement_muted);
+        assert!(!config.milestone_muted);
+    }
+
+    #[test]
+    fn test_audio_category_is_muted_global() {
+        let mut config = AudioConfig::default();
+
+        // When global mute is off, categories should not be muted
+        assert!(!AudioCategory::Voice.is_muted(&config));
+        assert!(!AudioCategory::SoundEffect.is_muted(&config));
+
+        // When global mute is on, all categories should be muted
+        config.muted = true;
+        assert!(AudioCategory::Voice.is_muted(&config));
+        assert!(AudioCategory::SoundEffect.is_muted(&config));
+        assert!(AudioCategory::Countdown.is_muted(&config));
+        assert!(AudioCategory::Achievement.is_muted(&config));
+        assert!(AudioCategory::Milestone.is_muted(&config));
+    }
+
+    #[test]
+    fn test_audio_category_is_muted_per_category() {
+        let mut config = AudioConfig::default();
+
+        // Mute only voice
+        config.voice_muted = true;
+        assert!(AudioCategory::Voice.is_muted(&config));
+        assert!(!AudioCategory::SoundEffect.is_muted(&config));
+
+        // Mute countdown
+        config.countdown_muted = true;
+        assert!(AudioCategory::Countdown.is_muted(&config));
+        assert!(!AudioCategory::Achievement.is_muted(&config));
+    }
+
+    #[test]
+    fn test_audio_category_should_play() {
+        let mut config = AudioConfig::default();
+
+        // Should play when enabled and not muted
+        assert!(AudioCategory::Voice.should_play(&config));
+
+        // Should not play when disabled
+        config.voice_enabled = false;
+        assert!(!AudioCategory::Voice.should_play(&config));
+
+        // Should not play when muted (even if enabled)
+        config.voice_enabled = true;
+        config.voice_muted = true;
+        assert!(!AudioCategory::Voice.should_play(&config));
+
+        // Should not play when globally muted
+        config.voice_muted = false;
+        config.muted = true;
+        assert!(!AudioCategory::Voice.should_play(&config));
+    }
+
+    #[test]
+    fn test_audio_category_effective_volume_when_muted() {
+        let mut config = AudioConfig::default();
+        config.volume = 80;
+        config.voice_volume = 100;
+
+        // Normal effective volume
+        let normal_vol = AudioCategory::Voice.effective_volume(&config);
+        assert!((normal_vol - 0.8).abs() < 0.001);
+
+        // When muted, effective volume should be 0
+        config.voice_muted = true;
+        assert_eq!(AudioCategory::Voice.effective_volume(&config), 0.0);
+
+        // When globally muted, also 0
+        config.voice_muted = false;
+        config.muted = true;
+        assert_eq!(AudioCategory::Voice.effective_volume(&config), 0.0);
+    }
+
+    #[test]
+    fn test_audio_category_all() {
+        let all = AudioCategory::all();
+        assert_eq!(all.len(), 5);
+        assert!(all.contains(&AudioCategory::Voice));
+        assert!(all.contains(&AudioCategory::SoundEffect));
+        assert!(all.contains(&AudioCategory::Countdown));
+        assert!(all.contains(&AudioCategory::Achievement));
+        assert!(all.contains(&AudioCategory::Milestone));
+    }
+
+    #[test]
+    fn test_audio_item_should_play() {
+        let mut config = AudioConfig::default();
+        let item = AudioItem::countdown_tone(440, 100);
+
+        // Should play by default
+        assert!(item.should_play(&config));
+
+        // Should not play when category is muted
+        config.countdown_muted = true;
+        assert!(!item.should_play(&config));
+
+        // Should not play when globally muted
+        config.countdown_muted = false;
+        config.muted = true;
+        assert!(!item.should_play(&config));
+
+        // Item without category respects global mute only
+        let generic_tone = AudioItem::tone(440, 100);
+        assert!(!generic_tone.should_play(&config));
+
+        config.muted = false;
+        assert!(generic_tone.should_play(&config));
+    }
+
+    #[test]
+    fn test_mute_state_from_config() {
+        let mut config = AudioConfig::default();
+        config.muted = true;
+        config.voice_muted = true;
+        config.sound_effects_muted = false;
+
+        let mute_state = MuteState::from_config(&config);
+        assert!(mute_state.globally_muted);
+        assert!(mute_state.voice_muted);
+        assert!(!mute_state.sound_effects_muted);
+    }
+
+    #[test]
+    fn test_mute_state_any_muted() {
+        let mut state = MuteState::default();
+        assert!(!state.any_muted());
+
+        state.voice_muted = true;
+        assert!(state.any_muted());
+
+        state = MuteState::default();
+        state.globally_muted = true;
+        assert!(state.any_muted());
+    }
+
+    #[test]
+    fn test_mute_state_is_category_muted() {
+        let mut state = MuteState::default();
+
+        // Nothing muted
+        assert!(!state.is_category_muted(AudioCategory::Voice));
+
+        // Category-specific mute
+        state.voice_muted = true;
+        assert!(state.is_category_muted(AudioCategory::Voice));
+        assert!(!state.is_category_muted(AudioCategory::SoundEffect));
+
+        // Global mute affects all categories
+        state.voice_muted = false;
+        state.globally_muted = true;
+        assert!(state.is_category_muted(AudioCategory::Voice));
+        assert!(state.is_category_muted(AudioCategory::SoundEffect));
+    }
+
+    #[test]
+    fn test_mute_state_display_string() {
+        let mut state = MuteState::default();
+        assert_eq!(state.display_string(), "Audio Active");
+
+        state.voice_muted = true;
+        assert_eq!(state.display_string(), "Some Audio Muted");
+
+        state.globally_muted = true;
+        assert_eq!(state.display_string(), "All Audio Muted");
+    }
+
+    #[test]
+    fn test_mute_state_icon_hint() {
+        let mut state = MuteState::default();
+        assert_eq!(state.icon_hint(), "volume_up");
+
+        state.sound_effects_muted = true;
+        assert_eq!(state.icon_hint(), "volume_mute");
+
+        state.globally_muted = true;
+        assert_eq!(state.icon_hint(), "volume_off");
+    }
+
+    #[test]
+    fn test_mute_state_serde() {
+        let state = MuteState {
+            globally_muted: true,
+            voice_muted: false,
+            sound_effects_muted: true,
+            countdown_muted: false,
+            achievement_muted: true,
+            milestone_muted: false,
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: MuteState = serde_json::from_str(&json).unwrap();
+        assert_eq!(state, deserialized);
+    }
+
+    #[test]
+    fn test_audio_config_mute_serde_backward_compat() {
+        // Test deserializing without mute fields (backward compatibility)
+        let json = r#"{
+            "enabled": true,
+            "volume": 80,
+            "voice_enabled": true,
+            "voice_volume": 100,
+            "preferred_voice": null,
+            "speech_rate": 1.0,
+            "sound_effects_enabled": true,
+            "sound_effects_volume": 80,
+            "min_alert_interval_ms": 3000
+        }"#;
+
+        let config: AudioConfig = serde_json::from_str(json).unwrap();
+        // Should use defaults for mute fields
+        assert!(!config.muted);
+        assert!(!config.voice_muted);
+        assert!(!config.sound_effects_muted);
+    }
+
+    #[test]
+    fn test_audio_config_mute_serde_with_values() {
+        let json = r#"{
+            "enabled": true,
+            "volume": 80,
+            "voice_enabled": true,
+            "voice_volume": 100,
+            "preferred_voice": null,
+            "speech_rate": 1.0,
+            "sound_effects_enabled": true,
+            "sound_effects_volume": 80,
+            "min_alert_interval_ms": 3000,
+            "muted": true,
+            "voice_muted": true,
+            "countdown_muted": true
+        }"#;
+
+        let config: AudioConfig = serde_json::from_str(json).unwrap();
+        assert!(config.muted);
+        assert!(config.voice_muted);
+        assert!(config.countdown_muted);
+        assert!(!config.sound_effects_muted);
     }
 }
