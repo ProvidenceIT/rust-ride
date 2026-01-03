@@ -32,6 +32,7 @@ use uuid::Uuid;
 
 use super::discovery::CompanionMdnsAdvertiser;
 use super::handlers::handle_request;
+use super::qr::{CompanionQrCode, QrCodeError};
 use super::streaming::{MetricsStreamer, MetricsStreamerConfig};
 use super::types::{
     CompanionClient, CompanionConfig, CompanionError, CompanionErrorCode, CompanionEvent,
@@ -715,6 +716,87 @@ impl CompanionServer {
         self.mdns_advertiser.protocol_version()
     }
 
+    /// Generate a QR code for mobile app pairing.
+    ///
+    /// The QR code contains the WebSocket URL and optional PIN
+    /// for easy scanning and connection from the mobile companion app.
+    ///
+    /// # Returns
+    ///
+    /// A `CompanionQrCode` that can be rendered in ASCII or SVG format,
+    /// or an error if the server is not running.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let server = CompanionServer::new(config);
+    /// server.start().await?;
+    ///
+    /// if let Ok(qr) = server.generate_qr_code() {
+    ///     // Display ASCII in terminal
+    ///     println!("{}", qr.to_ascii());
+    ///
+    ///     // Get SVG for UI rendering
+    ///     let svg = qr.to_svg();
+    /// }
+    /// ```
+    pub fn generate_qr_code(&self) -> Result<CompanionQrCode, QrCodeError> {
+        let url = self.get_url().ok_or_else(|| {
+            QrCodeError::GenerationFailed("Server not running".to_string())
+        })?;
+        let pin = self.get_pin();
+        CompanionQrCode::from_url_and_pin(url, pin)
+    }
+
+    /// Get the QR code as an ASCII string.
+    ///
+    /// Convenience method that generates and renders the QR code
+    /// as ASCII art suitable for terminal display.
+    ///
+    /// # Returns
+    ///
+    /// The ASCII representation of the QR code, or an error if
+    /// the server is not running.
+    pub fn get_qr_ascii(&self) -> Result<String, QrCodeError> {
+        Ok(self.generate_qr_code()?.to_ascii())
+    }
+
+    /// Get the QR code as an SVG string.
+    ///
+    /// Convenience method that generates and renders the QR code
+    /// as SVG suitable for desktop UI display.
+    ///
+    /// # Returns
+    ///
+    /// The SVG representation of the QR code, or an error if
+    /// the server is not running.
+    pub fn get_qr_svg(&self) -> Result<String, QrCodeError> {
+        Ok(self.generate_qr_code()?.to_svg())
+    }
+
+    /// Get the QR code as an SVG string with custom colors.
+    ///
+    /// # Arguments
+    ///
+    /// * `dark_color` - Hex color for dark modules (e.g., "#000000")
+    /// * `light_color` - Hex color for light modules (e.g., "#ffffff")
+    /// * `min_size` - Minimum dimensions in pixels
+    ///
+    /// # Returns
+    ///
+    /// The SVG representation of the QR code, or an error if
+    /// the server is not running.
+    pub fn get_qr_svg_custom(
+        &self,
+        dark_color: &str,
+        light_color: &str,
+        min_size: u32,
+    ) -> Result<String, QrCodeError> {
+        Ok(self
+            .generate_qr_code()?
+            .to_svg_custom(dark_color, light_color, min_size))
+    }
+
     /// Generate a random 6-digit PIN.
     fn generate_pin() -> String {
         use rand::Rng;
@@ -924,6 +1006,129 @@ mod tests {
 
         assert_eq!(server.client_count().await, 0);
         assert!(server.get_clients().await.is_empty());
+
+        server.stop().await.unwrap();
+    }
+
+    #[test]
+    fn test_qr_code_not_running() {
+        let config = CompanionConfig::default();
+        let server = CompanionServer::new(config);
+
+        // Should fail when server not running
+        let result = server.generate_qr_code();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_qr_code_generation_without_pin() {
+        let config = CompanionConfig {
+            enabled: true,
+            port: 0,
+            require_pin: false,
+            ..Default::default()
+        };
+        let server = CompanionServer::new(config);
+        server.start().await.unwrap();
+
+        // Should generate QR code
+        let qr = server.generate_qr_code();
+        assert!(qr.is_ok());
+
+        let qr = qr.unwrap();
+        let data = qr.connection_data();
+
+        // Should contain the URL
+        assert!(data.url.starts_with("ws://"));
+
+        // PIN should be None when not required
+        assert!(data.pin.is_none());
+
+        // ASCII and SVG should work
+        let ascii = qr.to_ascii();
+        assert!(!ascii.is_empty());
+
+        let svg = qr.to_svg();
+        assert!(svg.contains("<svg"));
+
+        server.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_qr_code_generation_with_pin() {
+        let config = CompanionConfig {
+            enabled: true,
+            port: 0,
+            require_pin: true,
+            ..Default::default()
+        };
+        let server = CompanionServer::new(config);
+        server.start().await.unwrap();
+
+        // Should generate QR code with PIN
+        let qr = server.generate_qr_code().unwrap();
+        let data = qr.connection_data();
+
+        // Should contain URL and PIN
+        assert!(data.url.starts_with("ws://"));
+        assert!(data.pin.is_some());
+        assert_eq!(data.pin.as_ref().unwrap().len(), 6);
+
+        server.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_qr_ascii_convenience() {
+        let config = CompanionConfig {
+            enabled: true,
+            port: 0,
+            require_pin: false,
+            ..Default::default()
+        };
+        let server = CompanionServer::new(config);
+        server.start().await.unwrap();
+
+        let ascii = server.get_qr_ascii();
+        assert!(ascii.is_ok());
+        assert!(!ascii.unwrap().is_empty());
+
+        server.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_qr_svg_convenience() {
+        let config = CompanionConfig {
+            enabled: true,
+            port: 0,
+            require_pin: false,
+            ..Default::default()
+        };
+        let server = CompanionServer::new(config);
+        server.start().await.unwrap();
+
+        let svg = server.get_qr_svg();
+        assert!(svg.is_ok());
+        assert!(svg.unwrap().contains("<svg"));
+
+        server.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_qr_svg_custom_colors() {
+        let config = CompanionConfig {
+            enabled: true,
+            port: 0,
+            require_pin: false,
+            ..Default::default()
+        };
+        let server = CompanionServer::new(config);
+        server.start().await.unwrap();
+
+        let svg = server.get_qr_svg_custom("#333333", "#eeeeee", 250);
+        assert!(svg.is_ok());
+        let svg = svg.unwrap();
+        assert!(svg.contains("#333333"));
+        assert!(svg.contains("#eeeeee"));
 
         server.stop().await.unwrap();
     }

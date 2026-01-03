@@ -12,6 +12,7 @@
 //! - `types`: Message types for WebSocket communication
 //! - `discovery`: mDNS service advertisement for auto-discovery
 //! - `streaming`: Real-time metrics streaming at 1Hz to connected clients
+//! - `qr`: QR code generation for easy mobile app pairing
 //!
 //! ## Authentication
 //!
@@ -35,12 +36,14 @@
 
 pub mod discovery;
 pub mod handlers;
+pub mod qr;
 pub mod server;
 pub mod streaming;
 pub mod types;
 
 // Re-export commonly used types
 pub use discovery::{CompanionMdnsAdvertiser, COMPANION_PROTOCOL_VERSION, COMPANION_SERVICE_TYPE};
+pub use qr::{generate_pairing_qr_code, CompanionConnectionData, CompanionQrCode, QrCodeError};
 pub use server::CompanionServer;
 pub use streaming::{MetricsStreamer, MetricsStreamerConfig, SensorEventProcessor, StreamingMetrics};
 pub use types::{
