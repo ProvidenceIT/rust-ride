@@ -17,8 +17,8 @@ import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { WorkoutControlBar, NoSessionState, ConnectionStatus, StopConfirmationModal } from '@/components';
-import { useWorkoutControls, useToast, useHaptics } from '@/hooks';
+import { WorkoutControlBar, NoSessionState, ConnectionStatus, StopConfirmationModal, ResistanceControl } from '@/components';
+import { useWorkoutControls, useToast, useHaptics, useResistanceControl } from '@/hooks';
 import {
   useSessionStore,
   selectIsSessionActive,
@@ -27,6 +27,7 @@ import {
   selectWorkoutName,
   selectTargetPower,
   selectIsWorkout,
+  selectIsFreeRide,
   selectCanSkip,
   selectSessionType,
 } from '@/stores/sessionStore';
@@ -71,6 +72,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
   const targetPower = useSessionStore(selectTargetPower);
   const elapsedSecs = useSessionStore(state => state.elapsedSecs);
   const isWorkout = useSessionStore(selectIsWorkout);
+  const isFreeRide = useSessionStore(selectIsFreeRide);
   const canSkip = useSessionStore(selectCanSkip);
   const sessionType = useSessionStore(selectSessionType);
 
@@ -90,6 +92,17 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
     isStopLoading,
     skipState,
   } = useWorkoutControls();
+
+  // Resistance control (for free rides)
+  const {
+    resistanceLevel,
+    canIncrease,
+    canDecrease,
+    isLoading: isResistanceLoading,
+    increaseResistance,
+    decreaseResistance,
+    stepSize: resistanceStepSize,
+  } = useResistanceControl();
 
   // Track previous interval to detect changes (for toast on skip)
   const prevIntervalRef = useRef(currentInterval?.index);
@@ -298,6 +311,21 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
                 {formatTime(elapsedSecs)}
               </Text>
             </View>
+
+            {/* Resistance control - only for free rides */}
+            {isFreeRide && (
+              <ResistanceControl
+                resistanceLevel={resistanceLevel}
+                canAdjust={!isResistanceLoading}
+                canIncrease={canIncrease}
+                canDecrease={canDecrease}
+                isLoading={isResistanceLoading}
+                onIncrease={increaseResistance}
+                onDecrease={decreaseResistance}
+                stepSize={resistanceStepSize}
+                testID="resistance-control"
+              />
+            )}
           </>
         ) : (
           /* No Session State */

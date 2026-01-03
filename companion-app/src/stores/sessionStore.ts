@@ -40,6 +40,9 @@ interface SessionStoreState {
   currentInterval: IntervalInfo | null;
   targetPowerWatts: number | null;
 
+  // Resistance/Grade control (for free rides)
+  resistanceLevel: number;
+
   // Last update
   lastStatusUpdate: number | null;
 }
@@ -64,6 +67,10 @@ interface SessionActions {
   // Time tracking
   updateElapsedTime: (secs: number) => void;
 
+  // Resistance control (for free rides)
+  setResistanceLevel: (level: number) => void;
+  adjustResistanceLevel: (delta: number) => void;
+
   // Reset store
   reset: () => void;
 }
@@ -82,6 +89,7 @@ const initialState: SessionStoreState = {
   isPaused: false,
   currentInterval: null,
   targetPowerWatts: null,
+  resistanceLevel: 0,
   lastStatusUpdate: null,
 };
 
@@ -175,6 +183,17 @@ export const useSessionStore = create<SessionStoreState & SessionActions>()(set 
     set({ elapsedSecs: secs });
   },
 
+  // Resistance control (for free rides)
+  setResistanceLevel: (level: number) => {
+    set({ resistanceLevel: level });
+  },
+
+  adjustResistanceLevel: (delta: number) => {
+    set(state => ({
+      resistanceLevel: Math.max(-100, Math.min(100, state.resistanceLevel + delta)),
+    }));
+  },
+
   // Reset store
   reset: () => {
     set(initialState);
@@ -234,3 +253,6 @@ export const selectCanSkip = (state: SessionStoreState & SessionActions): boolea
 };
 
 export const selectCanStop = (state: SessionStoreState & SessionActions) => state.isActive;
+
+export const selectResistanceLevel = (state: SessionStoreState & SessionActions) =>
+  state.resistanceLevel;

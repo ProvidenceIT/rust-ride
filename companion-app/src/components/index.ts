@@ -94,3 +94,7 @@ export type { ToastContainerProps } from './ToastContainer';
 // StopConfirmationModal - confirmation dialog before stopping session
 export { StopConfirmationModal } from './StopConfirmationModal';
 export type { StopConfirmationModalProps } from './StopConfirmationModal';
+
+// ResistanceControl - +/- buttons for adjusting trainer resistance during free rides
+export { ResistanceControl } from './ResistanceControl';
+export type { ResistanceControlProps } from './ResistanceControl';

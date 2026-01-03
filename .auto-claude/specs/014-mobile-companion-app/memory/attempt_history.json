@@ -775,6 +775,54 @@
         }
       ],
       "status": "completed"
+    },
+    "T030": {
+      "attempts": [
+        {
+          "session": 109,
+          "timestamp": "2026-01-03T11:42:44.611919",
+          "approach": "Implemented: Fixed bottom bar with play/pause, skip interval, and stop buttons. Disabled state when no session. H",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T031": {
+      "attempts": [
+        {
+          "session": 110,
+          "timestamp": "2026-01-03T11:47:25.707709",
+          "approach": "Implemented: Send workout.pause or workout.resume command via WebSocket. Update local state optimistically. Handl",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T032": {
+      "attempts": [
+        {
+          "session": 111,
+          "timestamp": "2026-01-03T11:59:06.080697",
+          "approach": "Implemented: Send workout.skip command to advance to next interval. Show toast confirmation. Disable when on last",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "T033": {
+      "attempts": [
+        {
+          "session": 112,
+          "timestamp": "2026-01-03T12:09:30.451921",
+          "approach": "Implemented: Show confirmation dialog before stopping. Send workout.stop or ride.stop command. Navigate to summar",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [
@@ -787,6 +835,6 @@
   ],
   "metadata": {
     "created_at": "2026-01-03T10:31:55.416509",
-    "last_updated": "2026-01-03T11:31:18.702360"
+    "last_updated": "2026-01-03T12:09:30.451921"
   }
 }

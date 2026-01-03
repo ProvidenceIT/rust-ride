@@ -1,0 +1,30 @@
+{
+  "discovered_files": {
+    "companion-app/src/components/WorkoutControlBar.tsx": {
+      "description": "WorkoutControlBar is a fixed bottom bar component with play/pause, skip, and stop buttons for workout control. Uses sessionStore selectors for state and useHaptics hook for haptic feedback.",
+      "category": "component",
+      "discovered_at": "2026-01-03T10:42:26.610628+00:00"
+    },
+    "companion-app/src/hooks/useHaptics.ts": {
+      "description": "useHaptics hook provides haptic feedback functionality with configurable intensity (off/light/medium/strong). Uses React Native Vibration API and respects user's haptic preference from settingsStore.",
+      "category": "hook",
+      "discovered_at": "2026-01-03T10:42:26.727643+00:00"
+    },
+    "companion-app/src/hooks/useWorkoutControls.ts": {
+      "description": "useWorkoutControls hook provides workout control actions (pause, resume, skip, stop) with optimistic state updates and error handling. Uses ConnectionService for WebSocket commands and sessionStore for state management. Returns loading states (isPauseResumeLoading, isSkipLoading, isStopLoading) and error states for each action.",
+      "category": "hooks",
+      "discovered_at": "2026-01-03T10:47:14.993269+00:00"
+    },
+    "companion-app/src/hooks/useToast.tsx": {
+      "description": "useToast hook provides toast notification functionality with ToastProvider context. Exports showToast, showSuccess, showError, showWarning, showInfo for displaying toasts and dismissToast/dismissAllToasts for clearing them. ToastProvider must wrap the app for toast context to work.",
+      "category": "patterns",
+      "discovered_at": "2026-01-03T10:58:49.997829+00:00"
+    },
+    "companion-app/src/components/StopConfirmationModal.tsx": {
+      "description": "StopConfirmationModal component provides a confirmation dialog before stopping a workout/ride. Displays session info (type, name, elapsed time), Cancel and Stop Session buttons. Uses accessibilityRole=\"alert\" and integrates with useWorkoutControls hook for stop action. After stop, WorkoutScreen navigates to Dashboard tab.",
+      "category": "component",
+      "discovered_at": "2026-01-03T11:09:07.951762+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T11:09:07.951762+00:00"
+}

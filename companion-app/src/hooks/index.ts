@@ -18,3 +18,6 @@ export type { UseWorkoutControlsReturn } from './useWorkoutControls';
 
 export { useToast, ToastProvider } from './useToast';
 export type { ToastProviderProps, ToastContextValue, ShowToastOptions } from './useToast';
+
+export { useResistanceControl } from './useResistanceControl';
+export type { UseResistanceControlReturn } from './useResistanceControl';

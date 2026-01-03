@@ -614,7 +614,7 @@
           "id": "T031",
           "title": "Implement pause/resume action",
           "description": "Send workout.pause or workout.resume command via WebSocket. Update local state optimistically. Handle error responses.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 1,
           "dependencies": [
@@ -626,13 +626,15 @@
             "Resume sends correct command",
             "Optimistic UI update",
             "Error handling with retry"
-          ]
+          ],
+          "notes": "Created useWorkoutControls hook with pause/resume/skip/stop actions. Implements optimistic updates for pause/resume with automatic rollback on error. Includes 22 comprehensive unit tests. Exported from hooks/index.ts.",
+          "updated_at": "2026-01-03T10:47:14.901181+00:00"
         },
         {
           "id": "T032",
           "title": "Implement skip interval action",
           "description": "Send workout.skip command to advance to next interval. Show toast confirmation. Disable when on last interval.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 1,
           "dependencies": [
@@ -644,13 +646,15 @@
             "Toast shows new interval",
             "Disabled at last interval",
             "UI updates immediately"
-          ]
+          ],
+          "notes": "Implemented workout.skip command with toast confirmation. Created Toast component, ToastContainer, useToast hook, and integrated into WorkoutScreen. Skip button auto-disables on last interval via selectCanSkip selector. Success toast shows new interval name, error toast on failure with haptic feedback. Added 27 unit tests. Commit: 9cf6672",
+          "updated_at": "2026-01-03T10:58:44.193030+00:00"
         },
         {
           "id": "T033",
           "title": "Implement stop session action",
           "description": "Show confirmation dialog before stopping. Send workout.stop or ride.stop command. Navigate to summary or dashboard after stop.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -662,7 +666,9 @@
             "Stop command sent",
             "Session state cleared",
             "Navigate appropriately"
-          ]
+          ],
+          "notes": "Implemented stop session confirmation dialog. Created StopConfirmationModal component with session info display (type, name, elapsed time), Cancel/Stop buttons, loading state, and accessibility support. Updated WorkoutScreen to show modal before stopping and navigate to Dashboard after session ends. Added 22 unit tests. Commit: 7643e49",
+          "updated_at": "2026-01-03T11:08:58.459462+00:00"
         },
         {
           "id": "T034",
@@ -1079,6 +1085,6 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T10:41:51.289965+00:00",
+  "last_updated": "2026-01-03T11:08:58.459462+00:00",
   "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:40.217Z"
 }
