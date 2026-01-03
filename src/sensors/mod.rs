@@ -3,6 +3,7 @@
 pub mod ant;
 pub mod cache;
 pub mod connection_queue;
+pub mod connection_state;
 pub mod dynamics;
 pub mod ftms;
 pub mod fusion;
@@ -30,6 +31,10 @@ pub use incline::{
 };
 pub use cache::{CacheError, CachedSensor, SensorCache};
 pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+pub use connection_state::{
+    ConnectionLifecycleState, ConnectionStateMachine, ConnectionStateMachineConfig,
+    ConnectionStateManager, ConnectionStateStats, InvalidTransitionError, StateTransition,
+};
 pub use health::{
     ConnectionHealth, ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus,
 };

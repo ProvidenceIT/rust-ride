@@ -64,7 +64,7 @@
           "id": "1.4",
           "title": "Implement priority-based connection queue",
           "description": "When multiple sensors discovered, connect to primary sensors first (trainers, power meters) before secondary (HR, cadence).",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/connection_queue.rs",
             "src/sensors/manager.rs",
@@ -73,7 +73,9 @@
           "tests": [
             "tests/unit/connection_queue_test.rs"
           ],
-          "acceptance": "Trainer and power meter connect before heart rate sensor"
+          "acceptance": "Trainer and power meter connect before heart rate sensor",
+          "notes": "Implemented priority-based connection queue for sensors. Added SensorPriority enum (Primary for trainers/power meters, Secondary for HR/cadence), ConnectionQueueEntry struct with priority and preferred sensor support, and ConnectionQueue with priority heap ordering. Integrated with SensorManager via queue_sensor_for_connection(), connect_next_in_queue(), connect_all_in_queue(), and connect_discovered_by_priority() methods. Created comprehensive unit tests verifying trainers and power meters connect before HR and cadence sensors.",
+          "updated_at": "2026-01-02T23:35:13.454263+00:00"
         }
       ]
     },
@@ -87,7 +89,7 @@
           "id": "2.1",
           "title": "Implement exponential backoff for reconnection",
           "description": "Replace fixed delay reconnection with exponential backoff. Start at 1s, double each attempt up to 30s max. Reset on successful connection.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/reconnection.rs",
             "src/sensors/manager.rs",
@@ -96,13 +98,15 @@
           "tests": [
             "tests/unit/reconnection_backoff_test.rs"
           ],
-          "acceptance": "Reconnection delays follow exponential pattern: 1s, 2s, 4s, 8s, 16s, 30s"
+          "acceptance": "Reconnection delays follow exponential pattern: 1s, 2s, 4s, 8s, 16s, 30s",
+          "notes": "Implemented exponential backoff for reconnection. Created ExponentialBackoff and ExponentialBackoffConfig structs with configurable initial delay (1s), max delay (30s), multiplier (2.0), and max attempts. Backoff sequence follows: 1s, 2s, 4s, 8s, 16s, 30s (capped). Integrated with SensorManager by replacing fixed reconnect_delay_secs with exponential backoff. Reset on successful connection. Added ReconnectionManager for tracking multiple devices. Comprehensive unit tests added.",
+          "updated_at": "2026-01-02T23:47:44.548575+00:00"
         },
         {
           "id": "2.2",
           "title": "Add connection health monitoring",
           "description": "Track connection health based on data reception rate. Trigger proactive reconnection if data stops arriving before BLE disconnect notification.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/health.rs",
             "src/sensors/manager.rs",
@@ -111,13 +115,15 @@
           "tests": [
             "tests/unit/connection_health_test.rs"
           ],
-          "acceptance": "Stale connections (no data for 5s) trigger reconnection before BLE timeout"
+          "acceptance": "Stale connections (no data for 5s) trigger reconnection before BLE timeout",
+          "notes": "Implemented connection health monitoring module (health.rs) with ConnectionHealthConfig, ConnectionHealth, ConnectionHealthMonitor, and HealthStatus. Integrated with SensorManager to:\n- Start health monitoring on sensor connect (strict config for trainers/power meters)\n- Record data reception for health tracking\n- Provide public API for health checks: get_sensor_health(), get_stale_connections(), reconnect_stale_connections(), check_connection_health()\n- Stale connections (no data for 5s default) trigger proactive reconnection before BLE timeout\nComprehensive unit tests added in tests/unit/connection_health_test.rs.",
+          "updated_at": "2026-01-02T23:58:14.912562+00:00"
         },
         {
           "id": "2.3",
           "title": "Implement reconnection state machine",
           "description": "Create proper state machine for connection lifecycle: Disconnected -> Connecting -> Connected -> Reconnecting. Handle edge cases and transitions cleanly.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/connection_state.rs",
             "src/sensors/types.rs",
@@ -126,7 +132,9 @@
           "tests": [
             "tests/unit/connection_state_test.rs"
           ],
-          "acceptance": "All state transitions handled correctly, no invalid state combinations"
+          "acceptance": "All state transitions handled correctly, no invalid state combinations",
+          "notes": "Implemented reconnection state machine module (connection_state.rs) with ConnectionLifecycleState enum (Disconnected, Connecting, Connected, Reconnecting), StateTransition enum for all valid transitions, ConnectionStateMachineConfig with presets (default, no_reconnect, aggressive, conservative), ConnectionStateMachine with valid transition enforcement, time tracking, reconnection attempt counting, statistics, and ConnectionStateManager for multi-device tracking. Created comprehensive unit tests in tests/unit/connection_state_test.rs covering all state transitions, edge cases, and real-world scenarios. Updated mod.rs with new exports.",
+          "updated_at": "2026-01-03T00:05:57.969588+00:00"
         },
         {
           "id": "2.4",
@@ -439,5 +447,5 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-02T23:26:52.409763+00:00"
+  "last_updated": "2026-01-03T00:05:57.969588+00:00"
 }

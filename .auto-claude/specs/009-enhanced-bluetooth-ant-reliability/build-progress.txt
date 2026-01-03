@@ -60,7 +60,77 @@
 - Created comprehensive unit tests in `tests/unit/progressive_timeout_test.rs`
 - Updated `tests/unit/mod.rs` with new test module
 
-## Status: Planning Complete
+### 1.4 - Implement priority-based connection queue (COMPLETED)
+- Created `src/sensors/connection_queue.rs` with:
+  - `SensorPriority` enum - Primary (trainers/power meters) and Secondary (HR/cadence)
+  - `ConnectionQueueEntry` struct - holds sensor with priority, preferred flag, and timing
+  - `ConnectionQueue` struct - priority heap for ordering connections:
+    - Preferred sensors connect first within their priority level
+    - Primary sensors (trainers, power meters) connect before secondary
+    - Secondary sensors (HR, cadence, speed) connect after all primary
+    - FIFO ordering within same priority/preference level
+    - Deduplication by device_id to prevent duplicate entries
+- Updated `src/sensors/manager.rs`:
+  - Added `connection_queue` field to SensorManager
+  - `queue_sensor_for_connection()` - add sensor to queue with auto-priority
+  - `queue_preferred_sensor()` - add preferred sensor with priority boost
+  - `queue_all_discovered()` - queue all discovered sensors
+  - `connect_next_in_queue()` - connect highest priority sensor
+  - `connect_all_in_queue()` - connect all sensors in priority order
+  - `connect_discovered_by_priority()` - convenience method for common flow
+  - Helper methods: `connection_queue_len()`, `is_connection_queue_empty()`,
+    `connection_queue_counts()`, `clear_connection_queue()`, `peek_connection_queue()`
+- Updated `src/sensors/mod.rs` with connection_queue exports
+- Created comprehensive unit tests in `tests/unit/connection_queue_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
+### 2.1 - Implement exponential backoff for reconnection (COMPLETED)
+- See implementation_plan.json for details
+
+### 2.2 - Add connection health monitoring (COMPLETED)
+- See implementation_plan.json for details
+
+### 2.3 - Implement reconnection state machine (COMPLETED)
+- Created `src/sensors/connection_state.rs` with:
+  - `ConnectionLifecycleState` enum - Disconnected, Connecting, Connected, Reconnecting
+  - `StateTransition` enum - all valid transitions: Connect, ConnectionSuccess, ConnectionFailed,
+    ConnectionLost, Disconnect, Reconnect, ReconnectionSuccess, ReconnectionFailed,
+    ReconnectionExhausted, Reset
+  - `InvalidTransitionError` - returned when invalid transitions are attempted
+  - `ConnectionStateMachineConfig` - configuration with presets:
+    - `default()` - auto_reconnect true, 5 max attempts, 1s initial delay, 30s max delay
+    - `no_reconnect()` - auto_reconnect false
+    - `aggressive()` - 10 attempts, 500ms initial delay, 15s max delay
+    - `conservative()` - 3 attempts, 2s initial delay, 60s max delay
+  - `ConnectionStateMachine` - per-device state machine with:
+    - Valid transition enforcement (returns error for invalid transitions)
+    - Time tracking (state entered time, connection duration)
+    - Reconnection attempt counting with exhaustion detection
+    - Statistics tracking (total connections, disconnections)
+    - Intentional vs unintentional disconnect tracking
+    - `stats()` method returns `ConnectionStateStats` for UI display
+  - `ConnectionStateManager` - manages multiple device state machines:
+    - Per-device state machine tracking
+    - Bulk queries: get_connected_devices(), get_reconnecting_devices(), get_exhausted_devices()
+    - State-based filtering: get_devices_in_state()
+- Updated `src/sensors/mod.rs` with new exports
+- Created comprehensive unit tests in `tests/unit/connection_state_test.rs`:
+  - Basic state tests and display formatting
+  - Configuration preset tests
+  - Full connection flow tests (Disconnected -> Connecting -> Connected)
+  - Reconnection flow tests (Connected -> Reconnecting -> Connected/Disconnected)
+  - Reconnection exhaustion tests
+  - Invalid transition tests
+  - Statistics tests
+  - ConnectionStateManager tests for multi-device tracking
+  - Real-world scenario tests (trainer workout, HR failure, multi-sensor)
+- Updated `tests/unit/mod.rs` with new test module
+
+## Phase 1: Enhanced Discovery & Fast Connection - COMPLETE
+
+## Phase 2: Robust Automatic Reconnection - IN PROGRESS (3/4 complete)
+
+## Status: Phase 2 In Progress
 
 ## Implementation Plan Created
 - 6 phases with 24 total subtasks

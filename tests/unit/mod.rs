@@ -5,6 +5,7 @@ mod ant_profiles_test;
 mod audio_test;
 mod career_tests;
 mod connection_queue_test;
+mod connection_state_test;
 mod dynamics_test;
 mod elevation_test;
 mod fit_export_test;
