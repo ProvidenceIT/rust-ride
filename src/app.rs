@@ -15,7 +15,9 @@ use rustride::achievements::{
     RideMetrics,
 };
 use rustride::audio::{AudioEngine, DefaultAudioEngine};
-use rustride::hid::{DefaultButtonInputHandler, DefaultHidDeviceManager, HidConfig};
+use rustride::hid::{
+    DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
+};
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttConfig,
 };
@@ -33,7 +35,7 @@ use rustride::sensors::{
 };
 use rustride::storage::config::{AppConfig, UserProfile};
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, Screen,
+    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, RideView, Screen,
     SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
@@ -121,6 +123,8 @@ pub struct RustRideApp {
     /// T091: Button input handler for mapping (reserved for future use)
     #[allow(dead_code)]
     button_input_handler: Arc<DefaultButtonInputHandler>,
+    /// T091: Executor event receiver for UI navigation actions
+    executor_event_rx: Option<tokio::sync::broadcast::Receiver<ExecutorEvent>>,
     /// Sensor event receiver
     sensor_event_rx: Option<Receiver<SensorEvent>>,
     /// Last UI update time
@@ -262,6 +266,13 @@ impl RustRideApp {
         let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config));
         let button_input_handler = Arc::new(DefaultButtonInputHandler::new());
 
+        // T091: Create executor event channel for UI navigation actions
+        // The executor_event_rx will be set when the action executor is created
+        // For now, create a placeholder channel that can receive navigation events
+        let (executor_event_tx, executor_event_rx) =
+            tokio::sync::broadcast::channel::<ExecutorEvent>(100);
+        drop(executor_event_tx); // Drop sender for now - will be replaced with actual executor integration
+
         // T135: Initialize cadence sensor fusion
         let fusion_config = SensorFusionConfig::default();
         let cadence_fusion = CadenceFusion::with_config(fusion_config);
@@ -313,6 +324,7 @@ impl RustRideApp {
             streaming_config,
             hid_device_manager,
             button_input_handler,
+            executor_event_rx: Some(executor_event_rx),
             sensor_event_rx,
             last_update: Instant::now(),
             sensor_status: "No sensors connected".to_string(),
@@ -643,6 +655,61 @@ impl RustRideApp {
         tracing::debug!("Cadence fusion state reset");
     }
 
+    /// T091: Process pending executor events for UI navigation.
+    ///
+    /// Called each frame to handle navigation and fullscreen events from HID button actions.
+    fn process_executor_events(&mut self) {
+        let Some(rx) = &mut self.executor_event_rx else {
+            return;
+        };
+
+        // Process all pending events
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutorEvent::NavigationRequest(target) => {
+                    // Only handle navigation when on the Ride screen
+                    if self.current_screen == Screen::Ride {
+                        match target {
+                            NavigationTarget::Metrics => {
+                                tracing::info!("HID action: switching to metrics view");
+                                self.ride_screen.set_view(RideView::Metrics);
+                            }
+                            NavigationTarget::Map => {
+                                tracing::info!("HID action: switching to map view");
+                                self.ride_screen.set_view(RideView::Map);
+                            }
+                            NavigationTarget::Workout => {
+                                tracing::info!("HID action: switching to workout view");
+                                self.ride_screen.show_workout_view();
+                            }
+                        }
+                    }
+                }
+                ExecutorEvent::FullscreenToggle => {
+                    // Handle fullscreen toggle when on the Ride screen
+                    if self.current_screen == Screen::Ride {
+                        tracing::info!("HID action: toggling fullscreen mode");
+                        self.ride_screen.toggle_fullscreen();
+                    }
+                }
+                ExecutorEvent::ActionExecuted(result) => {
+                    // Log action results for debugging
+                    tracing::debug!(
+                        "Action executed: {:?}, success: {}",
+                        result.action,
+                        result.success
+                    );
+                }
+                ExecutorEvent::LapMarked(lap) => {
+                    tracing::info!("Lap {} marked at {}s", lap.lap_number, lap.elapsed_seconds);
+                }
+                ExecutorEvent::CustomAction { command } => {
+                    tracing::info!("Custom action: {}", command);
+                }
+            }
+        }
+    }
+
     /// T043: Check achievements after ride completion.
     ///
     /// This analyzes the completed ride metrics and cumulative stats
@@ -865,6 +932,9 @@ impl eframe::App for RustRideApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Process sensor events each frame
         self.process_sensor_events();
+
+        // T091: Process HID executor events for UI navigation
+        self.process_executor_events();
 
         // Update ride time if recording
         self.update_ride_time();
