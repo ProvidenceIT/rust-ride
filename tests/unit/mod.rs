@@ -43,5 +43,6 @@ mod skybox_test;
 mod tcx_export_test;
 mod weather_test;
 mod workout_engine_test;
+mod workout_export_test;
 mod workout_parser_test;
 mod zones_test;
