@@ -4,7 +4,10 @@
 
 use egui::{Color32, Pos2, Rect, RichText, Ui, Vec2};
 
-use crate::metrics::zones::{Color, HRZones, PowerZones, HR_ZONE_COLORS, POWER_ZONE_COLORS};
+use crate::metrics::zones::{
+    CadenceZones, Color, HRZones, PowerZones, CADENCE_ZONE_COLORS, HR_ZONE_COLORS,
+    POWER_ZONE_COLORS,
+};
 
 /// Convert internal Color to egui Color32.
 fn to_color32(color: &Color) -> Color32 {
@@ -164,6 +167,84 @@ impl ZoneIndicator {
         }
     }
 
+    /// Render a cadence zone indicator.
+    pub fn cadence_zone(ui: &mut Ui, current_zone: Option<u8>, zones: Option<&CadenceZones>) {
+        let available_width = ui.available_width();
+        let bar_height = 24.0;
+        let zone_count = 5u8;
+
+        let zone_width = available_width / zone_count as f32;
+
+        let (response, painter) = ui.allocate_painter(
+            Vec2::new(available_width, bar_height + 20.0),
+            egui::Sense::hover(),
+        );
+
+        let rect = response.rect;
+        let bar_rect = Rect::from_min_size(rect.min, Vec2::new(available_width, bar_height));
+
+        // Draw zone color bars
+        for zone in 1..=zone_count {
+            let zone_x = rect.min.x + (zone - 1) as f32 * zone_width;
+            let zone_rect = Rect::from_min_size(
+                Pos2::new(zone_x, bar_rect.min.y),
+                Vec2::new(zone_width, bar_height),
+            );
+
+            let color = to_color32(&CADENCE_ZONE_COLORS[(zone - 1) as usize]);
+
+            let fill_color = if current_zone == Some(zone) {
+                color
+            } else {
+                color.linear_multiply(0.3)
+            };
+
+            painter.rect_filled(zone_rect, 0.0, fill_color);
+
+            // Draw zone number
+            let text_pos = zone_rect.center();
+            let text_color = if current_zone == Some(zone) {
+                Color32::WHITE
+            } else {
+                Color32::from_gray(100)
+            };
+
+            painter.text(
+                text_pos,
+                egui::Align2::CENTER_CENTER,
+                format!("Z{}", zone),
+                egui::FontId::proportional(12.0),
+                text_color,
+            );
+        }
+
+        // Draw current zone label below bar
+        if let Some(zone) = current_zone {
+            let zone_name = if let Some(zones) = zones {
+                zones.get_zone_range(zone).map(|z| z.name.clone())
+            } else {
+                Some(default_cadence_zone_name(zone))
+            };
+
+            if let Some(name) = zone_name {
+                let label_y = bar_rect.max.y + 4.0;
+                let zone_color = if zone > 0 && zone <= 5 {
+                    to_color32(&CADENCE_ZONE_COLORS[(zone - 1) as usize])
+                } else {
+                    Color32::GRAY
+                };
+
+                painter.text(
+                    Pos2::new(rect.center().x, label_y + 8.0),
+                    egui::Align2::CENTER_CENTER,
+                    name,
+                    egui::FontId::proportional(14.0),
+                    zone_color,
+                );
+            }
+        }
+    }
+
     /// Render a compact zone badge (just the zone number with color).
     pub fn zone_badge(ui: &mut Ui, label: &str, zone: Option<u8>, is_power: bool) {
         ui.horizontal(|ui| {
@@ -218,6 +299,18 @@ fn default_hr_zone_name(zone: u8) -> String {
     }
 }
 
+/// Get default cadence zone name.
+fn default_cadence_zone_name(zone: u8) -> String {
+    match zone {
+        1 => "Low".to_string(),
+        2 => "Economy".to_string(),
+        3 => "Natural".to_string(),
+        4 => "Fast".to_string(),
+        5 => "Sprint".to_string(),
+        _ => format!("Zone {}", zone),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,5 +326,14 @@ mod tests {
     fn test_default_hr_zone_names() {
         assert_eq!(default_hr_zone_name(1), "Recovery");
         assert_eq!(default_hr_zone_name(5), "Maximum");
+    }
+
+    #[test]
+    fn test_default_cadence_zone_names() {
+        assert_eq!(default_cadence_zone_name(1), "Low");
+        assert_eq!(default_cadence_zone_name(2), "Economy");
+        assert_eq!(default_cadence_zone_name(3), "Natural");
+        assert_eq!(default_cadence_zone_name(4), "Fast");
+        assert_eq!(default_cadence_zone_name(5), "Sprint");
     }
 }
