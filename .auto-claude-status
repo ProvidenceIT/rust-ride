@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "007-rider-profile-export-import",
+  "spec": "005-workout-export-to-zwo-mrc-format",
   "state": "building",
   "subtasks": {
-    "completed": 18,
-    "total": 27,
+    "completed": 14,
+    "total": 15,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "UI Integration",
+    "current": "Integration and Validation",
     "id": null,
-    "total": 4
+    "total": 2
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 20,
-    "started_at": "2026-01-02T23:53:06.451074"
+    "number": 16,
+    "started_at": "2026-01-03T06:13:49.356404"
   },
-  "last_update": "2026-01-03T00:49:31.140640"
+  "last_update": "2026-01-03T07:01:50.693440"
 }

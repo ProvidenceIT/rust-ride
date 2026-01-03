@@ -369,3 +369,23 @@ pub enum WorkoutParseError {
     #[error("IO error: {0}")]
     IoError(String),
 }
+
+/// Errors during workout file export.
+#[derive(Debug, Error)]
+pub enum WorkoutExportError {
+    /// IO error writing file
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// Invalid workout structure
+    #[error("Invalid workout: {0}")]
+    InvalidWorkout(String),
+
+    /// Empty workout (no segments to export)
+    #[error("Workout has no segments to export")]
+    EmptyWorkout,
+
+    /// Formatting error during export
+    #[error("Formatting error: {0}")]
+    FormattingError(String),
+}

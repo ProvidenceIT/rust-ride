@@ -1,0 +1,1604 @@
+//! MRC (TrainerRoad) export functionality.
+//!
+//! Provides functions to export Workout structs to TrainerRoad's MRC text format.
+
+use crate::workouts::types::{PowerTarget, SegmentType, Workout, WorkoutExportError, WorkoutSegment};
+use std::path::Path;
+
+/// A point in the MRC course data (time in minutes, power in percent FTP).
+#[derive(Debug, Clone, PartialEq)]
+struct CourseDataPoint {
+    minutes: f32,
+    power_percent: u8,
+}
+
+/// A text event entry for the MRC COURSE TEXT section.
+#[derive(Debug, Clone, PartialEq)]
+struct TextEventEntry {
+    minutes: f32,
+    text: String,
+}
+
+/// Convert a power target to percent FTP.
+///
+/// For PercentFtp targets, returns the percent directly.
+/// For Absolute targets, converts using the optional FTP value (default 200W).
+/// For Range targets, returns the start power.
+fn power_to_percent(power: &PowerTarget, ftp: Option<u16>) -> u8 {
+    let ftp_value = ftp.unwrap_or(200);
+    match power {
+        PowerTarget::PercentFtp { percent } => *percent,
+        PowerTarget::Absolute { watts } => {
+            let percent = (*watts as f32 / ftp_value as f32 * 100.0) as u8;
+            percent.min(255) // Cap at u8 max
+        }
+        PowerTarget::Range { start, .. } => power_to_percent(start, ftp),
+    }
+}
+
+/// Convert a list of workout segments to MRC COURSE DATA points.
+///
+/// Each segment is converted to time/power pairs:
+/// - SteadyState, FreeRide, Intervals: Two points at the same power (start and end)
+/// - Warmup, Cooldown, Ramp with Range: Two points at start and end power
+/// - Warmup, Cooldown, Ramp without Range: Two points at the same power
+///
+/// Time accumulates correctly across segments. Power is expressed as percent FTP.
+///
+/// # Arguments
+/// * `segments` - The workout segments to convert
+/// * `ftp` - Optional FTP value for converting absolute power targets (defaults to 200W)
+///
+/// # Returns
+/// A vector of CourseDataPoint tuples (minutes, power_percent)
+fn segments_to_course_data(segments: &[WorkoutSegment], ftp: Option<u16>) -> Vec<CourseDataPoint> {
+    let mut points = Vec::new();
+    let mut current_time_minutes: f32 = 0.0;
+
+    for segment in segments {
+        let duration_minutes = segment.duration_seconds as f32 / 60.0;
+
+        match segment.segment_type {
+            SegmentType::SteadyState | SegmentType::FreeRide | SegmentType::Intervals => {
+                // Constant power - two points at the same level
+                let power = if segment.segment_type == SegmentType::FreeRide {
+                    0 // FreeRide means no ERG target, typically 0 or low power
+                } else {
+                    power_to_percent(&segment.power_target, ftp)
+                };
+
+                points.push(CourseDataPoint {
+                    minutes: current_time_minutes,
+                    power_percent: power,
+                });
+                points.push(CourseDataPoint {
+                    minutes: current_time_minutes + duration_minutes,
+                    power_percent: power,
+                });
+            }
+            SegmentType::Warmup | SegmentType::Cooldown | SegmentType::Ramp => {
+                // Check if power target is a range
+                match &segment.power_target {
+                    PowerTarget::Range { start, end } => {
+                        // Ramp with different start/end power
+                        let start_power = power_to_percent(start, ftp);
+                        let end_power = power_to_percent(end, ftp);
+
+                        points.push(CourseDataPoint {
+                            minutes: current_time_minutes,
+                            power_percent: start_power,
+                        });
+                        points.push(CourseDataPoint {
+                            minutes: current_time_minutes + duration_minutes,
+                            power_percent: end_power,
+                        });
+                    }
+                    _ => {
+                        // Constant power even though segment type suggests ramp
+                        let power = power_to_percent(&segment.power_target, ftp);
+                        points.push(CourseDataPoint {
+                            minutes: current_time_minutes,
+                            power_percent: power,
+                        });
+                        points.push(CourseDataPoint {
+                            minutes: current_time_minutes + duration_minutes,
+                            power_percent: power,
+                        });
+                    }
+                }
+            }
+        }
+
+        current_time_minutes += duration_minutes;
+    }
+
+    points
+}
+
+/// Extract text events from workout segments for the MRC COURSE TEXT section.
+///
+/// Each segment with a text_event is converted to a TextEventEntry with:
+/// - The start time of the segment (in minutes)
+/// - The text event message
+///
+/// Segments without text events are skipped.
+///
+/// # Arguments
+/// * `segments` - The workout segments to extract text events from
+///
+/// # Returns
+/// A vector of TextEventEntry with time and text for each text event
+fn extract_text_events(segments: &[WorkoutSegment]) -> Vec<TextEventEntry> {
+    let mut events = Vec::new();
+    let mut current_time_minutes: f32 = 0.0;
+
+    for segment in segments {
+        // If segment has a text event, add it with the current start time
+        if let Some(text) = &segment.text_event {
+            events.push(TextEventEntry {
+                minutes: current_time_minutes,
+                text: text.clone(),
+            });
+        }
+
+        // Accumulate time for next segment
+        current_time_minutes += segment.duration_seconds as f32 / 60.0;
+    }
+
+    events
+}
+
+/// Format a text event entry as an MRC COURSE TEXT line.
+///
+/// Formats the entry as: `<minutes>    "<text>"`
+/// For example: `5.00    "Zone 3"`
+fn format_text_event(event: &TextEventEntry) -> String {
+    format!("{:.2}\t\"{}\"", event.minutes, event.text)
+}
+
+/// Export a workout to MRC format.
+///
+/// Returns the workout as an MRC-formatted text string.
+///
+/// The MRC format consists of:
+/// - `[COURSE HEADER]` section with FILE NAME and optional DESCRIPTION
+/// - `[COURSE DATA]` section with time/power percentage pairs
+/// - `[COURSE TEXT]` section with text events (if any exist)
+///
+/// # Arguments
+/// * `workout` - The workout to export
+///
+/// # Errors
+/// Returns `WorkoutExportError::EmptyWorkout` if the workout has no segments.
+///
+/// # Example
+/// ```ignore
+/// let workout = Workout::new("Sweet Spot", segments);
+/// let mrc_content = export_mrc(&workout)?;
+/// ```
+pub fn export_mrc(workout: &Workout) -> Result<String, WorkoutExportError> {
+    export_mrc_with_ftp(workout, None)
+}
+
+/// Export a workout to MRC format with a specific FTP value.
+///
+/// This variant allows specifying an FTP value for converting absolute power
+/// targets to percentages. Use this when the workout contains absolute watt targets.
+///
+/// # Arguments
+/// * `workout` - The workout to export
+/// * `ftp` - Optional FTP value for converting absolute power targets (defaults to 200W)
+///
+/// # Errors
+/// Returns `WorkoutExportError::EmptyWorkout` if the workout has no segments.
+pub fn export_mrc_with_ftp(workout: &Workout, ftp: Option<u16>) -> Result<String, WorkoutExportError> {
+    if workout.segments.is_empty() {
+        return Err(WorkoutExportError::EmptyWorkout);
+    }
+
+    let mut output = String::new();
+
+    // Build [COURSE HEADER] section
+    output.push_str("[COURSE HEADER]\n");
+    output.push_str(&format!("FILE NAME = {}\n", workout.name));
+    if let Some(ref desc) = workout.description {
+        output.push_str(&format!("DESCRIPTION = {}\n", desc));
+    }
+    output.push_str("[END COURSE HEADER]\n");
+
+    // Build [COURSE DATA] section
+    output.push_str("[COURSE DATA]\n");
+    let course_data = segments_to_course_data(&workout.segments, ftp);
+    for point in &course_data {
+        output.push_str(&format!("{:.2}\t{}\n", point.minutes, point.power_percent));
+    }
+    output.push_str("[END COURSE DATA]\n");
+
+    // Build [COURSE TEXT] section if there are text events
+    let text_events = extract_text_events(&workout.segments);
+    if !text_events.is_empty() {
+        output.push_str("[COURSE TEXT]\n");
+        for event in &text_events {
+            output.push_str(&format_text_event(event));
+            output.push('\n');
+        }
+        output.push_str("[END COURSE TEXT]\n");
+    }
+
+    Ok(output)
+}
+
+/// Export a workout to MRC format and write to a file.
+///
+/// # Errors
+/// Returns `WorkoutExportError::IoError` if the file cannot be written.
+/// Returns `WorkoutExportError::EmptyWorkout` if the workout has no segments.
+pub fn export_mrc_to_file(workout: &Workout, path: &Path) -> Result<(), WorkoutExportError> {
+    let content = export_mrc(workout)?;
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+/// Generate a default filename for a workout MRC export.
+///
+/// The filename is based on the workout name with invalid filesystem
+/// characters removed and a `.mrc` extension added.
+pub fn generate_mrc_filename(workout: &Workout) -> String {
+    let sanitized = sanitize_filename(&workout.name);
+    format!("{}.mrc", sanitized)
+}
+
+/// Sanitize a string for use as a filename.
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_mrc_filename_simple() {
+        let workout = Workout::new("Sweet Spot".to_string(), vec![]);
+        let filename = generate_mrc_filename(&workout);
+        assert_eq!(filename, "Sweet Spot.mrc");
+    }
+
+    #[test]
+    fn test_generate_mrc_filename_sanitizes_invalid_chars() {
+        let workout = Workout::new("Test/Workout:Name*Here".to_string(), vec![]);
+        let filename = generate_mrc_filename(&workout);
+        assert_eq!(filename, "Test_Workout_Name_Here.mrc");
+    }
+
+    #[test]
+    fn test_sanitize_filename() {
+        assert_eq!(sanitize_filename("Normal Name"), "Normal Name");
+        assert_eq!(sanitize_filename("File/With\\Bad:Chars"), "File_With_Bad_Chars");
+        assert_eq!(sanitize_filename("Has*Question?Mark"), "Has_Question_Mark");
+        assert_eq!(sanitize_filename("Quotes\"and<brackets>"), "Quotes_and_brackets_");
+    }
+
+    #[test]
+    fn test_export_mrc_empty_workout_error() {
+        let workout = Workout::new("Empty".to_string(), vec![]);
+        let result = export_mrc(&workout);
+        assert!(matches!(result, Err(WorkoutExportError::EmptyWorkout)));
+    }
+
+    // power_to_percent tests
+
+    #[test]
+    fn test_power_to_percent_ftp() {
+        assert_eq!(power_to_percent(&PowerTarget::percent_ftp(75), None), 75);
+        assert_eq!(power_to_percent(&PowerTarget::percent_ftp(100), None), 100);
+        assert_eq!(power_to_percent(&PowerTarget::percent_ftp(120), None), 120);
+    }
+
+    #[test]
+    fn test_power_to_percent_absolute_default_ftp() {
+        // Default FTP is 200W
+        assert_eq!(power_to_percent(&PowerTarget::absolute(200), None), 100);
+        assert_eq!(power_to_percent(&PowerTarget::absolute(150), None), 75);
+        assert_eq!(power_to_percent(&PowerTarget::absolute(100), None), 50);
+    }
+
+    #[test]
+    fn test_power_to_percent_absolute_with_ftp() {
+        // Using 250W FTP
+        assert_eq!(power_to_percent(&PowerTarget::absolute(250), Some(250)), 100);
+        assert_eq!(power_to_percent(&PowerTarget::absolute(125), Some(250)), 50);
+        assert_eq!(power_to_percent(&PowerTarget::absolute(187), Some(250)), 74); // 74.8% rounds down
+    }
+
+    #[test]
+    fn test_power_to_percent_range() {
+        // Range returns start power
+        let range = PowerTarget::range(
+            PowerTarget::percent_ftp(50),
+            PowerTarget::percent_ftp(100),
+        );
+        assert_eq!(power_to_percent(&range, None), 50);
+    }
+
+    // segments_to_course_data tests
+
+    #[test]
+    fn test_segments_to_course_data_steady_state() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 75);
+        assert_eq!(points[1].minutes, 5.0);
+        assert_eq!(points[1].power_percent, 75);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_warmup_with_range() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 600, // 10 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(40),
+                PowerTarget::percent_ftp(70),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 40);
+        assert_eq!(points[1].minutes, 10.0);
+        assert_eq!(points[1].power_percent, 70);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_cooldown_with_range() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(60),
+                PowerTarget::percent_ftp(40),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 60);
+        assert_eq!(points[1].minutes, 5.0);
+        assert_eq!(points[1].power_percent, 40);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_ramp_with_range() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Ramp,
+            duration_seconds: 180, // 3 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(80),
+                PowerTarget::percent_ftp(100),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 80);
+        assert_eq!(points[1].minutes, 3.0);
+        assert_eq!(points[1].power_percent, 100);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_freeride() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::FreeRide,
+            duration_seconds: 600, // 10 minutes
+            power_target: PowerTarget::percent_ftp(50), // Should be ignored for FreeRide
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 0); // FreeRide = 0 power
+        assert_eq!(points[1].minutes, 10.0);
+        assert_eq!(points[1].power_percent, 0);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_intervals() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Intervals,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(120),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 120);
+        assert_eq!(points[1].minutes, 0.5); // 30 seconds = 0.5 minutes
+        assert_eq!(points[1].power_percent, 120);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_time_accumulation() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let points = segments_to_course_data(&segments, None);
+
+        // Each segment produces 2 points
+        assert_eq!(points.len(), 6);
+
+        // First segment: 0-5 minutes at 50%
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 50);
+        assert_eq!(points[1].minutes, 5.0);
+        assert_eq!(points[1].power_percent, 50);
+
+        // Second segment: 5-15 minutes at 75%
+        assert_eq!(points[2].minutes, 5.0);
+        assert_eq!(points[2].power_percent, 75);
+        assert_eq!(points[3].minutes, 15.0);
+        assert_eq!(points[3].power_percent, 75);
+
+        // Third segment: 15-20 minutes at 50%
+        assert_eq!(points[4].minutes, 15.0);
+        assert_eq!(points[4].power_percent, 50);
+        assert_eq!(points[5].minutes, 20.0);
+        assert_eq!(points[5].power_percent, 50);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_complex_workout() {
+        let segments = vec![
+            // Warmup: 0-10 minutes, 40% -> 70%
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(70),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            // Main set: 10-25 minutes at 88%
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900,
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: None,
+            },
+            // Cooldown: 25-35 minutes, 60% -> 40%
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 6);
+
+        // Warmup
+        assert_eq!(points[0].minutes, 0.0);
+        assert_eq!(points[0].power_percent, 40);
+        assert_eq!(points[1].minutes, 10.0);
+        assert_eq!(points[1].power_percent, 70);
+
+        // Main set
+        assert_eq!(points[2].minutes, 10.0);
+        assert_eq!(points[2].power_percent, 88);
+        assert_eq!(points[3].minutes, 25.0);
+        assert_eq!(points[3].power_percent, 88);
+
+        // Cooldown
+        assert_eq!(points[4].minutes, 25.0);
+        assert_eq!(points[4].power_percent, 60);
+        assert_eq!(points[5].minutes, 35.0);
+        assert_eq!(points[5].power_percent, 40);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_absolute_power_with_ftp() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::absolute(225), // 225W with 300W FTP = 75%
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, Some(300));
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].power_percent, 75);
+        assert_eq!(points[1].power_percent, 75);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_warmup_without_range() {
+        // Edge case: Warmup segment without a range power target
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(50),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let points = segments_to_course_data(&segments, None);
+
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].power_percent, 50);
+        assert_eq!(points[1].power_percent, 50);
+    }
+
+    #[test]
+    fn test_segments_to_course_data_empty_segments() {
+        let segments: Vec<WorkoutSegment> = vec![];
+        let points = segments_to_course_data(&segments, None);
+        assert!(points.is_empty());
+    }
+
+    // extract_text_events tests
+
+    #[test]
+    fn test_extract_text_events_single_segment_with_event() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: Some("Zone 3 effort".to_string()),
+        }];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Zone 3 effort");
+    }
+
+    #[test]
+    fn test_extract_text_events_no_text_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600,
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_events_multiple_segments_mixed() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Warm up".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None, // No text event
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 2);
+        // First event at start (0 min)
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Warm up");
+        // Second event at 15 min (after warmup 5 min + steady 10 min)
+        assert_eq!(events[1].minutes, 15.0);
+        assert_eq!(events[1].text, "Sweet spot");
+    }
+
+    #[test]
+    fn test_extract_text_events_all_segments_with_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Start easy".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: Some("Main set".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(40),
+                cadence_target: None,
+                text_event: Some("Cool down".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Start easy");
+        assert_eq!(events[1].minutes, 5.0);
+        assert_eq!(events[1].text, "Main set");
+        assert_eq!(events[2].minutes, 15.0);
+        assert_eq!(events[2].text, "Cool down");
+    }
+
+    #[test]
+    fn test_extract_text_events_empty_segments() {
+        let segments: Vec<WorkoutSegment> = vec![];
+        let events = extract_text_events(&segments);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_events_fractional_minutes() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30, // 0.5 minutes
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: Some("Sprint!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 90, // 1.5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Recover".to_string()),
+            },
+        ];
+
+        let events = extract_text_events(&segments);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].minutes, 0.0);
+        assert_eq!(events[0].text, "Sprint!");
+        assert_eq!(events[1].minutes, 0.5);
+        assert_eq!(events[1].text, "Recover");
+    }
+
+    // format_text_event tests
+
+    #[test]
+    fn test_format_text_event_simple() {
+        let event = TextEventEntry {
+            minutes: 0.0,
+            text: "Zone 3".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "0.00\t\"Zone 3\"");
+    }
+
+    #[test]
+    fn test_format_text_event_with_time() {
+        let event = TextEventEntry {
+            minutes: 5.0,
+            text: "Push hard!".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "5.00\t\"Push hard!\"");
+    }
+
+    #[test]
+    fn test_format_text_event_fractional_minutes() {
+        let event = TextEventEntry {
+            minutes: 12.50,
+            text: "Halfway there".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(formatted, "12.50\t\"Halfway there\"");
+    }
+
+    #[test]
+    fn test_format_text_event_long_text() {
+        let event = TextEventEntry {
+            minutes: 0.0,
+            text: "This is a longer text message for the workout".to_string(),
+        };
+
+        let formatted = format_text_event(&event);
+
+        assert_eq!(
+            formatted,
+            "0.00\t\"This is a longer text message for the workout\""
+        );
+    }
+
+    // export_mrc tests
+
+    #[test]
+    fn test_export_mrc_simple_workout() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Simple Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify structure
+        assert!(mrc.contains("[COURSE HEADER]"));
+        assert!(mrc.contains("FILE NAME = Simple Test"));
+        assert!(mrc.contains("[END COURSE HEADER]"));
+        assert!(mrc.contains("[COURSE DATA]"));
+        assert!(mrc.contains("0.00\t75"));
+        assert!(mrc.contains("5.00\t75"));
+        assert!(mrc.contains("[END COURSE DATA]"));
+        // No text events, so no COURSE TEXT section
+        assert!(!mrc.contains("[COURSE TEXT]"));
+    }
+
+    #[test]
+    fn test_export_mrc_with_description() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let mut workout = Workout::new("Described Workout".to_string(), segments);
+        workout.description = Some("A test workout with a description".to_string());
+
+        let mrc = export_mrc(&workout).unwrap();
+
+        assert!(mrc.contains("FILE NAME = Described Workout"));
+        assert!(mrc.contains("DESCRIPTION = A test workout with a description"));
+    }
+
+    #[test]
+    fn test_export_mrc_with_text_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: Some("Warm up!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot effort".to_string()),
+            },
+        ];
+
+        let workout = Workout::new("Text Event Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify text event section exists
+        assert!(mrc.contains("[COURSE TEXT]"));
+        assert!(mrc.contains("0.00\t\"Warm up!\""));
+        assert!(mrc.contains("5.00\t\"Sweet spot effort\""));
+        assert!(mrc.contains("[END COURSE TEXT]"));
+    }
+
+    #[test]
+    fn test_export_mrc_warmup_cooldown_ramp() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(70),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900, // 15 minutes
+                power_target: PowerTarget::percent_ftp(90),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let workout = Workout::new("Ramp Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Warmup ramp: 0-10 min, 40% to 70%
+        assert!(mrc.contains("0.00\t40"));
+        assert!(mrc.contains("10.00\t70"));
+        // Main set: 10-25 min at 90%
+        assert!(mrc.contains("10.00\t90"));
+        assert!(mrc.contains("25.00\t90"));
+        // Cooldown: 25-30 min, 60% to 40%
+        assert!(mrc.contains("25.00\t60"));
+        assert!(mrc.contains("30.00\t40"));
+    }
+
+    #[test]
+    fn test_export_mrc_complete_structure() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Zone 2".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let mut workout = Workout::new("Complete Test".to_string(), segments);
+        workout.description = Some("Full MRC structure test".to_string());
+
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify complete structure order
+        let header_start = mrc.find("[COURSE HEADER]").unwrap();
+        let header_end = mrc.find("[END COURSE HEADER]").unwrap();
+        let data_start = mrc.find("[COURSE DATA]").unwrap();
+        let data_end = mrc.find("[END COURSE DATA]").unwrap();
+        let text_start = mrc.find("[COURSE TEXT]").unwrap();
+        let text_end = mrc.find("[END COURSE TEXT]").unwrap();
+
+        // Verify order of sections
+        assert!(header_start < header_end);
+        assert!(header_end < data_start);
+        assert!(data_start < data_end);
+        assert!(data_end < text_start);
+        assert!(text_start < text_end);
+    }
+
+    #[test]
+    fn test_export_mrc_with_ftp() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::absolute(225), // 225W with 300W FTP = 75%
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Absolute Power Test".to_string(), segments);
+        let mrc = export_mrc_with_ftp(&workout, Some(300)).unwrap();
+
+        // 225W with 300W FTP = 75%
+        assert!(mrc.contains("0.00\t75"));
+        assert!(mrc.contains("5.00\t75"));
+    }
+
+    // Additional segment type tests
+
+    #[test]
+    fn test_export_mrc_intervals() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes warmup
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30, // 30 second sprint
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 60, // 1 minute recovery
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30, // 30 second sprint
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let workout = Workout::new("Interval Workout".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify structure
+        assert!(mrc.contains("FILE NAME = Interval Workout"));
+        // Check that interval segments are included (as constant power)
+        assert!(mrc.contains("5.00\t120")); // Start of first interval at 5 min
+        assert!(mrc.contains("5.50\t120")); // End of first interval at 5.5 min
+    }
+
+    #[test]
+    fn test_export_mrc_freeride() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::FreeRide,
+                duration_seconds: 600, // 10 minutes free ride
+                power_target: PowerTarget::percent_ftp(50), // Ignored for FreeRide
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+
+        let workout = Workout::new("FreeRide Workout".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // FreeRide should export as 0% power
+        assert!(mrc.contains("0.00\t0"));
+        assert!(mrc.contains("10.00\t0"));
+    }
+
+    #[test]
+    fn test_export_mrc_ramp_segment() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Ramp,
+            duration_seconds: 180, // 3 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(80),
+                PowerTarget::percent_ftp(100),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Ramp Segment Test".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify ramp data points
+        assert!(mrc.contains("0.00\t80"));
+        assert!(mrc.contains("3.00\t100"));
+    }
+
+    // Edge case tests
+
+    #[test]
+    fn test_export_mrc_very_long_duration() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 7200, // 2 hours = 120 minutes
+            power_target: PowerTarget::percent_ftp(65),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Long Endurance Ride".to_string(), segments);
+
+        let mrc = export_mrc(&workout).unwrap();
+        assert!(mrc.contains("0.00\t65"));
+        assert!(mrc.contains("120.00\t65")); // 7200 seconds = 120 minutes
+    }
+
+    #[test]
+    fn test_export_mrc_high_power_value() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 30,
+            power_target: PowerTarget::percent_ftp(200), // VO2 max sprint
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Sprint Test".to_string(), segments);
+
+        let mrc = export_mrc(&workout).unwrap();
+        assert!(mrc.contains("0.00\t200"));
+        assert!(mrc.contains("0.50\t200")); // 30 seconds = 0.5 minutes
+    }
+
+    #[test]
+    fn test_export_mrc_low_power_value() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(25), // Recovery zone
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Recovery Ride".to_string(), segments);
+
+        let mrc = export_mrc(&workout).unwrap();
+        assert!(mrc.contains("0.00\t25"));
+        assert!(mrc.contains("5.00\t25"));
+    }
+
+    #[test]
+    fn test_export_mrc_many_segments() {
+        // Create a workout with many segments (20 intervals)
+        let mut segments = Vec::new();
+        for i in 0..20 {
+            segments.push(WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(if i % 2 == 0 { 120 } else { 50 }),
+                cadence_target: None,
+                text_event: None,
+            });
+        }
+
+        let workout = Workout::new("20x30s Intervals".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Each segment produces 2 points, so 20 segments = 40 data points
+        let data_lines: Vec<&str> = mrc
+            .lines()
+            .filter(|line| {
+                line.contains('\t')
+                    && !line.contains("FILE NAME")
+                    && !line.contains("DESCRIPTION")
+                    && !line.starts_with('[')
+            })
+            .collect();
+        assert_eq!(data_lines.len(), 40);
+
+        // Verify total duration: 20 segments * 30 seconds = 600 seconds = 10 minutes
+        assert!(mrc.contains("10.00\t"));
+    }
+
+    #[test]
+    fn test_export_mrc_fractional_minutes() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 45, // 0.75 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("Fractional Minutes".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        assert!(mrc.contains("0.00\t75"));
+        assert!(mrc.contains("0.75\t75")); // 45 seconds = 0.75 minutes
+    }
+
+    #[test]
+    fn test_export_mrc_no_text_events_section() {
+        // A workout without text events should not have [COURSE TEXT] section
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+
+        let workout = Workout::new("No Text Events".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        assert!(!mrc.contains("[COURSE TEXT]"));
+        assert!(!mrc.contains("[END COURSE TEXT]"));
+    }
+
+    #[test]
+    fn test_export_mrc_multiple_text_events() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(70),
+                ),
+                cadence_target: None,
+                text_event: Some("Start warming up".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 1200, // 20 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot time!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Recovery period".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(50),
+                    PowerTarget::percent_ftp(30),
+                ),
+                cadence_target: None,
+                text_event: Some("Cool down".to_string()),
+            },
+        ];
+
+        let workout = Workout::new("Multiple Text Events".to_string(), segments);
+        let mrc = export_mrc(&workout).unwrap();
+
+        // Verify all text events present with correct timing
+        assert!(mrc.contains("[COURSE TEXT]"));
+        assert!(mrc.contains("0.00\t\"Start warming up\""));
+        assert!(mrc.contains("10.00\t\"Sweet spot time!\"")); // After 10 min warmup
+        assert!(mrc.contains("30.00\t\"Recovery period\"")); // After 10 + 20 min
+        assert!(mrc.contains("40.00\t\"Cool down\"")); // After 10 + 20 + 10 min
+        assert!(mrc.contains("[END COURSE TEXT]"));
+    }
+
+    // Round-trip tests (export -> parse -> verify)
+
+    #[test]
+    fn test_round_trip_simple_steady_state() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Simple Steady State".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.name, "Simple Steady State");
+        assert_eq!(parsed.segments.len(), 1);
+        assert_eq!(parsed.segments[0].duration_seconds, 300);
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::SteadyState);
+
+        match &parsed.segments[0].power_target {
+            PowerTarget::PercentFtp { percent } => assert_eq!(*percent, 75),
+            _ => panic!("Expected PercentFtp"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_warmup_with_range() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Warmup,
+            duration_seconds: 600, // 10 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(40),
+                PowerTarget::percent_ftp(70),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Warmup Ramp".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.name, "Warmup Ramp");
+        assert_eq!(parsed.segments.len(), 1);
+        assert_eq!(parsed.segments[0].duration_seconds, 600);
+        // MRC parser interprets increasing power as Warmup
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Warmup);
+
+        match &parsed.segments[0].power_target {
+            PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        PowerTarget::PercentFtp { percent: start_pct },
+                        PowerTarget::PercentFtp { percent: end_pct },
+                    ) => {
+                        assert_eq!(*start_pct, 40);
+                        assert_eq!(*end_pct, 70);
+                    }
+                    _ => panic!("Expected PercentFtp in range"),
+                }
+            }
+            _ => panic!("Expected Range for warmup"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_cooldown_with_range() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::Cooldown,
+            duration_seconds: 300, // 5 minutes
+            power_target: PowerTarget::range(
+                PowerTarget::percent_ftp(70),
+                PowerTarget::percent_ftp(40),
+            ),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let original = Workout::new("Cooldown Ramp".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.name, "Cooldown Ramp");
+        assert_eq!(parsed.segments.len(), 1);
+        assert_eq!(parsed.segments[0].duration_seconds, 300);
+        // MRC parser interprets decreasing power as Cooldown
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Cooldown);
+
+        match &parsed.segments[0].power_target {
+            PowerTarget::Range { start, end } => {
+                match (start.as_ref(), end.as_ref()) {
+                    (
+                        PowerTarget::PercentFtp { percent: start_pct },
+                        PowerTarget::PercentFtp { percent: end_pct },
+                    ) => {
+                        assert_eq!(*start_pct, 70);
+                        assert_eq!(*end_pct, 40);
+                    }
+                    _ => panic!("Expected PercentFtp in range"),
+                }
+            }
+            _ => panic!("Expected Range for cooldown"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_with_text_events() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: Some("Warm up!".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600, // 10 minutes
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Main effort".to_string()),
+            },
+        ];
+        let original = Workout::new("Text Event Test".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.name, "Text Event Test");
+        assert_eq!(parsed.segments.len(), 2);
+
+        // Verify text events preserved
+        assert_eq!(
+            parsed.segments[0].text_event.as_deref(),
+            Some("Warm up!")
+        );
+        assert_eq!(
+            parsed.segments[1].text_event.as_deref(),
+            Some("Main effort")
+        );
+    }
+
+    #[test]
+    fn test_round_trip_with_description() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 600,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let mut original = Workout::new("Described Workout".to_string(), segments);
+        original.description = Some("A test workout with a description".to_string());
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.name, "Described Workout");
+        assert_eq!(
+            parsed.description.as_deref(),
+            Some("A test workout with a description")
+        );
+    }
+
+    #[test]
+    fn test_round_trip_complex_workout() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        let segments = vec![
+            // Warmup: 0-10 minutes, 40% -> 70%
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(70),
+                ),
+                cadence_target: None,
+                text_event: Some("Easy warmup".to_string()),
+            },
+            // Sweet spot: 10-25 minutes at 88%
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900,
+                power_target: PowerTarget::percent_ftp(88),
+                cadence_target: None,
+                text_event: Some("Sweet spot effort".to_string()),
+            },
+            // Recovery: 25-30 minutes at 50%
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+            // Threshold: 30-45 minutes at 95%
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 900,
+                power_target: PowerTarget::percent_ftp(95),
+                cadence_target: None,
+                text_event: Some("Threshold effort".to_string()),
+            },
+            // Cooldown: 45-55 minutes, 60% -> 40%
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 600,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: Some("Cool down".to_string()),
+            },
+        ];
+        let mut original = Workout::new("Complex Workout".to_string(), segments);
+        original.description = Some("A complex test workout".to_string());
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        // Verify overall structure
+        assert_eq!(parsed.name, "Complex Workout");
+        assert_eq!(parsed.description.as_deref(), Some("A complex test workout"));
+        assert_eq!(parsed.segments.len(), 5);
+
+        // Verify total duration: 600 + 900 + 300 + 900 + 600 = 3300 seconds = 55 minutes
+        assert_eq!(parsed.total_duration_seconds, 3300);
+
+        // Verify segment types preserved
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::Warmup);
+        assert_eq!(parsed.segments[1].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[2].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[3].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[4].segment_type, SegmentType::Cooldown);
+
+        // Verify durations
+        assert_eq!(parsed.segments[0].duration_seconds, 600);
+        assert_eq!(parsed.segments[1].duration_seconds, 900);
+        assert_eq!(parsed.segments[2].duration_seconds, 300);
+        assert_eq!(parsed.segments[3].duration_seconds, 900);
+        assert_eq!(parsed.segments[4].duration_seconds, 600);
+
+        // Verify text events
+        assert_eq!(parsed.segments[0].text_event.as_deref(), Some("Easy warmup"));
+        assert_eq!(parsed.segments[1].text_event.as_deref(), Some("Sweet spot effort"));
+        assert!(parsed.segments[2].text_event.is_none());
+        assert_eq!(parsed.segments[3].text_event.as_deref(), Some("Threshold effort"));
+        assert_eq!(parsed.segments[4].text_event.as_deref(), Some("Cool down"));
+    }
+
+    #[test]
+    fn test_round_trip_intervals_as_steady_state() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        // MRC format doesn't distinguish Intervals from SteadyState at constant power
+        // so Intervals segments should round-trip as SteadyState
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Intervals,
+                duration_seconds: 30,
+                power_target: PowerTarget::percent_ftp(120),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 60,
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+        let original = Workout::new("Intervals Test".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        assert_eq!(parsed.segments.len(), 2);
+        // Both should be SteadyState (constant power) after round-trip
+        assert_eq!(parsed.segments[0].segment_type, SegmentType::SteadyState);
+        assert_eq!(parsed.segments[1].segment_type, SegmentType::SteadyState);
+
+        // But power values should be preserved
+        match &parsed.segments[0].power_target {
+            PowerTarget::PercentFtp { percent } => assert_eq!(*percent, 120),
+            _ => panic!("Expected PercentFtp"),
+        }
+        match &parsed.segments[1].power_target {
+            PowerTarget::PercentFtp { percent } => assert_eq!(*percent, 50),
+            _ => panic!("Expected PercentFtp"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_preserves_timing() {
+        use crate::workouts::parser_mrc::parse_mrc;
+
+        // Create workout with specific durations to verify timing preservation
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 180, // 3 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("Start".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 420, // 7 minutes
+                power_target: PowerTarget::percent_ftp(75),
+                cadence_target: None,
+                text_event: Some("Middle".to_string()),
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 300, // 5 minutes
+                power_target: PowerTarget::percent_ftp(50),
+                cadence_target: None,
+                text_event: Some("End".to_string()),
+            },
+        ];
+        let original = Workout::new("Timing Test".to_string(), segments);
+
+        let mrc_content = export_mrc(&original).unwrap();
+        let parsed = parse_mrc(&mrc_content).unwrap();
+
+        // Verify exact durations preserved
+        assert_eq!(parsed.segments[0].duration_seconds, 180);
+        assert_eq!(parsed.segments[1].duration_seconds, 420);
+        assert_eq!(parsed.segments[2].duration_seconds, 300);
+
+        // Verify total duration
+        assert_eq!(parsed.total_duration_seconds, 900); // 15 minutes
+
+        // Verify text events at correct segments
+        assert_eq!(parsed.segments[0].text_event.as_deref(), Some("Start"));
+        assert_eq!(parsed.segments[1].text_event.as_deref(), Some("Middle"));
+        assert_eq!(parsed.segments[2].text_event.as_deref(), Some("End"));
+    }
+}
