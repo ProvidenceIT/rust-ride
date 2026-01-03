@@ -46,7 +46,7 @@ pub use onboarding::{OnboardingProfileData, OnboardingScreen};
 pub use power_profile::{PowerProfileAction, PowerProfileScreen, PowerProfileTab};
 pub use race_lobby::{RaceLobbyAction, RaceLobbyScreen};
 pub use rewards::{RewardsAction, RewardsScreen};
-pub use ride::{RideScreen, RideView};
+pub use ride::{FanControlAction, RideScreen, RideView};
 pub use ride_detail::{ExportFormat as DetailExportFormat, RideDetailAction, RideDetailScreen};
 pub use ride_history::{DateFilter, RideHistoryAction, RideHistoryScreen, RideSyncStatus, SortOrder};
 pub use ride_summary::{RideSummaryAction, RideSummaryScreen};

@@ -13,10 +13,13 @@
 //! T110: Implement full-screen mode toggle
 //! T111: Implement configurable metric panel layout
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
+use uuid::Uuid;
 
+use crate::integrations::mqtt::fan::FanState;
 use crate::integrations::mqtt::ConnectionState as MqttConnectionState;
 use crate::integrations::weather::{WeatherData, WeatherUnits};
 use crate::metrics::analytics::sweet_spot::SweetSpotRecommender;
@@ -137,6 +140,14 @@ pub struct RideScreen {
     pub mqtt_connection_state: Option<MqttConnectionState>,
     /// Whether MQTT is enabled in settings
     pub mqtt_enabled: bool,
+    /// Fan control panel expanded/collapsed state (T012/6.1)
+    pub fan_control_panel_expanded: bool,
+    /// Current fan states from the fan controller (T012/6.1)
+    pub fan_states: HashMap<Uuid, FanState>,
+    /// Manual speed override value for slider (T012/6.1)
+    pub manual_speed_value: u8,
+    /// Currently selected fan profile ID for manual control (T012/6.1)
+    pub selected_fan_id: Option<Uuid>,
 }
 
 impl Default for RideScreen {
@@ -180,6 +191,10 @@ impl Default for RideScreen {
             connection_quality_state: HudConnectionState::default(),
             mqtt_connection_state: None,
             mqtt_enabled: false,
+            fan_control_panel_expanded: false,
+            fan_states: HashMap::new(),
+            manual_speed_value: 50,
+            selected_fan_id: None,
         }
     }
 }
@@ -340,6 +355,85 @@ impl RideScreen {
             Some(MqttConnectionState::Disconnected) | None => "○",
         }
     }
+
+    /// T012/6.1: Update fan states from the fan controller.
+    ///
+    /// This should be called periodically with the latest fan states
+    /// so the ride screen can display current fan speed and status.
+    pub fn update_fan_states(&mut self, states: HashMap<Uuid, FanState>) {
+        // Select the first fan if none is selected and we have states
+        if self.selected_fan_id.is_none() && !states.is_empty() {
+            self.selected_fan_id = states.keys().next().copied();
+        }
+
+        // Update manual speed value to match current speed if in auto mode
+        if let Some(id) = self.selected_fan_id {
+            if let Some(state) = states.get(&id) {
+                if state.auto_mode {
+                    self.manual_speed_value = state.current_speed;
+                }
+            }
+        }
+
+        self.fan_states = states;
+    }
+
+    /// T012/6.1: Toggle the fan control panel visibility.
+    pub fn toggle_fan_control_panel(&mut self) {
+        self.fan_control_panel_expanded = !self.fan_control_panel_expanded;
+    }
+
+    /// T012/6.1: Set the fan control panel visibility.
+    pub fn set_fan_control_panel_expanded(&mut self, expanded: bool) {
+        self.fan_control_panel_expanded = expanded;
+    }
+
+    /// T012/6.1: Get the currently selected fan state.
+    pub fn get_selected_fan_state(&self) -> Option<&FanState> {
+        self.selected_fan_id
+            .as_ref()
+            .and_then(|id| self.fan_states.get(id))
+    }
+
+    /// T012/6.1: Get the current fan speed for display.
+    pub fn get_current_fan_speed(&self) -> u8 {
+        self.get_selected_fan_state()
+            .map(|s| s.current_speed)
+            .unwrap_or(0)
+    }
+
+    /// T012/6.1: Check if fan is in auto mode.
+    pub fn is_fan_auto_mode(&self) -> bool {
+        self.get_selected_fan_state()
+            .map(|s| s.auto_mode)
+            .unwrap_or(true)
+    }
+
+    /// T012/6.1: Check if fan is currently on.
+    pub fn is_fan_on(&self) -> bool {
+        self.get_selected_fan_state()
+            .map(|s| s.is_on)
+            .unwrap_or(false)
+    }
+
+    /// T012/6.1: Select a fan profile for manual control.
+    pub fn select_fan(&mut self, id: Uuid) {
+        if self.fan_states.contains_key(&id) {
+            self.selected_fan_id = Some(id);
+            // Update manual speed value to match selected fan
+            if let Some(state) = self.fan_states.get(&id) {
+                self.manual_speed_value = state.current_speed;
+            }
+        }
+    }
+
+    /// T012/6.1: Set the manual speed value from slider.
+    ///
+    /// This only updates the local value; the actual speed change
+    /// is triggered by the app when it processes the change.
+    pub fn set_manual_speed_value(&mut self, speed: u8) {
+        self.manual_speed_value = speed.min(100);
+    }
 }
 
 impl RideScreen {
@@ -442,6 +536,11 @@ impl RideScreen {
             }
         }
 
+        // T012/6.1: Fan control panel toggle shortcut (G key)
+        if ui.input(|i| i.key_pressed(egui::Key::G)) {
+            self.toggle_fan_control_panel();
+        }
+
         if self.full_screen_mode {
             // Full-screen mode: show only essential metrics in large format
             self.render_full_screen_mode(ui);
@@ -495,6 +594,18 @@ impl RideScreen {
                         } else {
                             SmO2Placeholder::not_connected().show(ui);
                         }
+                    });
+                }
+
+                // T012/6.1: Fan control panel (collapsible)
+                if self.mqtt_enabled && !self.fan_states.is_empty() {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space((ui.available_width() - 260.0) / 2.0);
+                        // Render the fan control panel and capture any actions
+                        // Note: Actions are returned but not handled here - app.rs will
+                        // call render_fan_control_panel separately to process actions
+                        let _ = self.render_fan_control_panel(ui);
                     });
                 }
 
@@ -1006,6 +1117,12 @@ impl RideScreen {
                     if self.mqtt_enabled {
                         ui.add_space(12.0);
                         self.render_mqtt_status_compact(ui);
+                    }
+
+                    // T012/6.1: Fan speed indicator in full-screen mode
+                    if self.mqtt_enabled && !self.fan_states.is_empty() {
+                        ui.add_space(12.0);
+                        self.render_fan_control_compact(ui);
                     }
                 });
             });
@@ -1676,4 +1793,245 @@ impl RideScreen {
             }
         });
     }
+
+    /// T012/6.1: Render collapsible fan control panel.
+    ///
+    /// Shows current fan speed, mode indicator, and manual override slider
+    /// when the panel is expanded. The header is always visible when MQTT
+    /// is enabled and connected, allowing users to expand/collapse the panel.
+    ///
+    /// Returns the new speed value if the slider was changed (for app to process).
+    pub fn render_fan_control_panel(&mut self, ui: &mut Ui) -> Option<FanControlAction> {
+        // Only show if MQTT is enabled and we have fan states
+        if !self.mqtt_enabled || self.fan_states.is_empty() {
+            return None;
+        }
+
+        let mut action = None;
+
+        let frame = egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .inner_margin(8.0)
+            .corner_radius(4.0);
+
+        frame.show(ui, |ui| {
+            ui.set_min_width(220.0);
+
+            // Collapsible header
+            ui.horizontal(|ui| {
+                // Expand/collapse toggle button
+                let toggle_icon = if self.fan_control_panel_expanded {
+                    "▼"
+                } else {
+                    "▶"
+                };
+                if ui
+                    .add(egui::Button::new(RichText::new(toggle_icon).size(10.0)).frame(false))
+                    .clicked()
+                {
+                    self.fan_control_panel_expanded = !self.fan_control_panel_expanded;
+                }
+
+                // Fan icon and title
+                ui.label(RichText::new("🌀").size(14.0));
+                ui.label(RichText::new("Fan Control").size(14.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // Current speed display
+                    let speed = self.get_current_fan_speed();
+                    let speed_color = self.fan_speed_color(speed);
+                    ui.label(
+                        RichText::new(format!("{}%", speed))
+                            .size(14.0)
+                            .strong()
+                            .color(speed_color),
+                    );
+
+                    // Mode indicator (Auto/Manual)
+                    let (mode_text, mode_color) = if self.is_fan_auto_mode() {
+                        ("AUTO", Color32::from_rgb(52, 168, 83)) // Green
+                    } else {
+                        ("MANUAL", Color32::from_rgb(251, 188, 4)) // Yellow
+                    };
+                    ui.label(RichText::new(mode_text).size(10.0).color(mode_color));
+                });
+            });
+
+            // Expanded content with slider and controls
+            if self.fan_control_panel_expanded {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                // Speed slider
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Speed:").size(12.0));
+
+                    // Slider for manual speed control
+                    let mut speed = self.manual_speed_value as f32;
+                    let slider_response = ui.add(
+                        egui::Slider::new(&mut speed, 0.0..=100.0)
+                            .step_by(5.0)
+                            .suffix("%")
+                            .clamp_to_range(true),
+                    );
+
+                    // Update value and check for changes
+                    let new_speed = speed as u8;
+                    if new_speed != self.manual_speed_value {
+                        self.manual_speed_value = new_speed;
+                    }
+
+                    // Trigger speed change when slider is released
+                    if slider_response.drag_stopped() || slider_response.lost_focus() {
+                        if let Some(id) = self.selected_fan_id {
+                            action = Some(FanControlAction::SetSpeed {
+                                fan_id: id,
+                                speed: new_speed,
+                            });
+                        }
+                    }
+                });
+
+                ui.add_space(4.0);
+
+                // Speed preset buttons
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Quick:").size(11.0).weak());
+
+                    for (label, speed) in [("Off", 0), ("Low", 25), ("Med", 50), ("High", 75), ("Max", 100)] {
+                        if ui
+                            .add(egui::Button::new(RichText::new(label).size(10.0)).min_size(Vec2::new(36.0, 20.0)))
+                            .clicked()
+                        {
+                            self.manual_speed_value = speed;
+                            if let Some(id) = self.selected_fan_id {
+                                action = Some(FanControlAction::SetSpeed {
+                                    fan_id: id,
+                                    speed,
+                                });
+                            }
+                        }
+                    }
+                });
+
+                ui.add_space(4.0);
+
+                // Auto mode toggle button
+                ui.horizontal(|ui| {
+                    let auto_mode = self.is_fan_auto_mode();
+                    let button_text = if auto_mode {
+                        "Switch to Manual"
+                    } else {
+                        "Switch to Auto"
+                    };
+
+                    if ui.button(button_text).clicked() {
+                        if let Some(id) = self.selected_fan_id {
+                            action = Some(FanControlAction::SetAutoMode {
+                                fan_id: id,
+                                enabled: !auto_mode,
+                            });
+                        }
+                    }
+
+                    // Show current zone if in auto mode
+                    if auto_mode {
+                        if let Some(state) = self.get_selected_fan_state() {
+                            ui.label(
+                                RichText::new(format!("Zone {}", state.last_zone))
+                                    .size(11.0)
+                                    .weak(),
+                            );
+                        }
+                    }
+                });
+
+                // Multiple fans selector (if more than one fan)
+                if self.fan_states.len() > 1 {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Fans:").size(11.0).weak());
+
+                        // Show buttons for each fan
+                        let fan_ids: Vec<Uuid> = self.fan_states.keys().copied().collect();
+                        for (idx, id) in fan_ids.iter().enumerate() {
+                            let is_selected = Some(*id) == self.selected_fan_id;
+                            let button = egui::Button::new(
+                                RichText::new(format!("Fan {}", idx + 1))
+                                    .size(10.0)
+                                    .color(if is_selected {
+                                        Color32::WHITE
+                                    } else {
+                                        ui.visuals().text_color()
+                                    }),
+                            )
+                            .fill(if is_selected {
+                                Color32::from_rgb(66, 133, 244)
+                            } else {
+                                ui.visuals().widgets.inactive.bg_fill
+                            });
+
+                            if ui.add(button).clicked() {
+                                self.select_fan(*id);
+                            }
+                        }
+                    });
+                }
+
+                // Hint for keyboard shortcut
+                ui.add_space(4.0);
+                ui.label(RichText::new("Press G to toggle panel").size(9.0).weak());
+            }
+        });
+
+        action
+    }
+
+    /// Get color for fan speed display based on speed percentage.
+    fn fan_speed_color(&self, speed: u8) -> Color32 {
+        if speed == 0 {
+            Color32::GRAY
+        } else if speed <= 25 {
+            Color32::from_rgb(52, 168, 83) // Green - low
+        } else if speed <= 50 {
+            Color32::from_rgb(66, 133, 244) // Blue - medium
+        } else if speed <= 75 {
+            Color32::from_rgb(251, 188, 4) // Yellow - high
+        } else {
+            Color32::from_rgb(234, 67, 53) // Red - max
+        }
+    }
+
+    /// T012/6.1: Render compact fan control indicator for full-screen mode.
+    ///
+    /// Shows just the fan speed in a minimal format suitable for full-screen display.
+    fn render_fan_control_compact(&self, ui: &mut Ui) {
+        if !self.mqtt_enabled || self.fan_states.is_empty() {
+            return;
+        }
+
+        let speed = self.get_current_fan_speed();
+        let color = self.fan_speed_color(speed);
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("🌀").size(12.0));
+            ui.label(RichText::new(format!("{}%", speed)).size(12.0).color(color));
+        });
+    }
+}
+
+/// Actions that can be triggered from the fan control panel.
+///
+/// These actions need to be processed by the app to actually
+/// communicate with the fan controller.
+#[derive(Debug, Clone)]
+pub enum FanControlAction {
+    /// Set the fan speed to a specific value (0-100%)
+    SetSpeed { fan_id: Uuid, speed: u8 },
+    /// Toggle auto/manual mode for a fan
+    SetAutoMode { fan_id: Uuid, enabled: bool },
 }
