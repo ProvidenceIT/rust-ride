@@ -21,7 +21,10 @@ pub use generic::{
     GenericHidParser, GenericReportFormat, KNOWN_GENERIC_DEVICES,
 };
 pub use input::{HidDeviceType, HidInputReader, OpenDeviceInfo};
-pub use mapping::{ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler, RawButtonEvent};
+pub use mapping::{
+    ButtonActionEvent, ButtonInputHandler, ButtonMapping, DefaultButtonInputHandler,
+    RawButtonEvent,
+};
 pub use streamdeck::{StreamDeckModel, StreamDeckParser};
 
 /// HID-related errors

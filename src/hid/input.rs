@@ -7,13 +7,13 @@ use super::generic::{
     detect_report_format, find_generic_device_profile, GenericDeviceConfig, GenericHidParser,
     GenericReportFormat,
 };
-use super::mapping::RawButtonEvent;
+use super::mapping::{DefaultButtonInputHandler, RawButtonEvent};
 use super::streamdeck::{StreamDeckModel, StreamDeckParser};
 use super::{find_known_device, HidDeviceEvent, HidError};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 /// Read timeout for HID devices in milliseconds
@@ -148,6 +148,8 @@ pub struct HidInputReader {
     is_running: Arc<RwLock<bool>>,
     /// Receiver for device events
     device_event_rx: Option<broadcast::Receiver<HidDeviceEvent>>,
+    /// Button input handler for processing events and mapping to actions
+    button_handler: Option<Arc<DefaultButtonInputHandler>>,
 }
 
 impl HidInputReader {
@@ -164,6 +166,7 @@ impl HidInputReader {
             event_tx,
             is_running: Arc::new(RwLock::new(false)),
             device_event_rx: None,
+            button_handler: None,
         }
     }
 
@@ -171,6 +174,21 @@ impl HidInputReader {
     pub fn with_device_events(mut self, rx: broadcast::Receiver<HidDeviceEvent>) -> Self {
         self.device_event_rx = Some(rx);
         self
+    }
+
+    /// Set the button input handler for processing events and mapping to actions
+    ///
+    /// When set, all raw button events will be forwarded to the handler for:
+    /// - Button mapping lookup and action emission
+    /// - Learning mode button capture
+    pub fn with_button_handler(mut self, handler: Arc<DefaultButtonInputHandler>) -> Self {
+        self.button_handler = Some(handler);
+        self
+    }
+
+    /// Get a reference to the button handler if set
+    pub fn button_handler(&self) -> Option<&Arc<DefaultButtonInputHandler>> {
+        self.button_handler.as_ref()
     }
 
     /// Subscribe to raw button events
@@ -221,6 +239,7 @@ impl HidInputReader {
         let device_handles = Arc::clone(&self.device_handles);
         let open_devices = Arc::clone(&self.open_devices);
         let event_tx = self.event_tx.clone();
+        let button_handler = self.button_handler.clone();
 
         // Spawn the input reading background task
         tokio::spawn(async move {
@@ -299,7 +318,13 @@ impl HidInputReader {
                     // Send any events that were generated
                     if let Ok(events) = read_result {
                         for event in events {
-                            let _ = tx.send(event);
+                            // Send to broadcast channel for other subscribers
+                            let _ = tx.send(event.clone());
+
+                            // Forward to button handler for mapping and action emission
+                            if let Some(ref handler) = button_handler {
+                                handler.process_event(event).await;
+                            }
                         }
                     }
                 }
@@ -1077,5 +1102,136 @@ mod tests {
 
         // Format should now be detected
         assert!(device_info.detected_format.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_input_reader_with_button_handler() {
+        let handles = Arc::new(Mutex::new(HashMap::new()));
+        let handler = Arc::new(DefaultButtonInputHandler::new());
+        let reader = HidInputReader::new(handles).with_button_handler(handler.clone());
+
+        // Verify handler is set
+        assert!(reader.button_handler().is_some());
+
+        // Verify we can get a reference to the same handler
+        let handler_ref = reader.button_handler().unwrap();
+        assert!(Arc::ptr_eq(handler_ref, &handler));
+    }
+
+    #[tokio::test]
+    async fn test_input_reader_builder_pattern() {
+        let handles = Arc::new(Mutex::new(HashMap::new()));
+        let handler = Arc::new(DefaultButtonInputHandler::new());
+
+        // Test that builder pattern methods work correctly
+        let reader = HidInputReader::new(handles)
+            .with_button_handler(handler);
+
+        assert!(reader.button_handler().is_some());
+        assert!(!reader.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn test_button_handler_receives_events() {
+        use super::actions::ButtonAction;
+        use super::mapping::ButtonMapping;
+
+        let handler = Arc::new(DefaultButtonInputHandler::new());
+        let device_id = Uuid::new_v4();
+
+        // Register a mapping for button 0
+        let mapping = ButtonMapping::new(device_id, 0, ButtonAction::AddLapMarker);
+        handler.register_mappings(&device_id, vec![mapping]);
+
+        // Subscribe to action events before processing
+        let mut action_rx = handler.subscribe_actions();
+
+        // Create a raw button event
+        let event = RawButtonEvent {
+            device_id,
+            button_code: 0,
+            pressed: true,
+            timestamp: Instant::now(),
+        };
+
+        // Process the event
+        handler.process_event(event).await;
+
+        // Should receive the mapped action
+        match tokio::time::timeout(Duration::from_millis(100), action_rx.recv()).await {
+            Ok(Ok(action_event)) => {
+                assert_eq!(action_event.device_id, device_id);
+                assert_eq!(action_event.action, ButtonAction::AddLapMarker);
+            }
+            Ok(Err(e)) => panic!("Failed to receive action event: {:?}", e),
+            Err(_) => panic!("Timed out waiting for action event"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_learning_mode_captures_button() {
+        let handler = Arc::new(DefaultButtonInputHandler::new());
+        let device_id = Uuid::new_v4();
+
+        // Start learning mode
+        handler.start_learning_mode(&device_id);
+        assert!(handler.is_learning());
+
+        // Create a raw button event
+        let event = RawButtonEvent {
+            device_id,
+            button_code: 5,
+            pressed: true,
+            timestamp: Instant::now(),
+        };
+
+        // Process the event
+        handler.process_event(event).await;
+
+        // Should have captured the button code
+        assert_eq!(handler.get_learned_button(), Some(5));
+
+        // Stop learning mode
+        handler.stop_learning_mode();
+        assert!(!handler.is_learning());
+    }
+
+    #[tokio::test]
+    async fn test_learning_mode_ignores_mappings() {
+        use super::actions::ButtonAction;
+        use super::mapping::ButtonMapping;
+
+        let handler = Arc::new(DefaultButtonInputHandler::new());
+        let device_id = Uuid::new_v4();
+
+        // Register a mapping for button 0
+        let mapping = ButtonMapping::new(device_id, 0, ButtonAction::AddLapMarker);
+        handler.register_mappings(&device_id, vec![mapping]);
+
+        // Subscribe to action events
+        let mut action_rx = handler.subscribe_actions();
+
+        // Start learning mode
+        handler.start_learning_mode(&device_id);
+
+        // Create a raw button event for the mapped button
+        let event = RawButtonEvent {
+            device_id,
+            button_code: 0,
+            pressed: true,
+            timestamp: Instant::now(),
+        };
+
+        // Process the event
+        handler.process_event(event).await;
+
+        // Should NOT receive any action event (learning mode takes priority)
+        match tokio::time::timeout(Duration::from_millis(50), action_rx.recv()).await {
+            Ok(_) => panic!("Should not receive action event during learning mode"),
+            Err(_) => {} // Expected timeout
+        }
+
+        // Button should be learned instead
+        assert_eq!(handler.get_learned_button(), Some(0));
     }
 }
