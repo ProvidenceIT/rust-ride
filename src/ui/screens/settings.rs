@@ -113,6 +113,16 @@ pub struct SettingsScreen {
     pub tv_mode_enabled: bool,
     /// T092: TV Mode font scale (1.5-3.0)
     pub tv_mode_font_scale: f32,
+    /// T047: Mobile companion app settings
+    pub companion_config: crate::companion::types::CompanionConfig,
+    /// T047: Show/hide companion section
+    show_companion: bool,
+    /// T047: Port input buffer for companion server
+    companion_port_input: String,
+    /// T047: Current PIN (for display when server running)
+    companion_current_pin: Option<String>,
+    /// T047: Server running status
+    companion_server_running: bool,
 }
 
 /// Configuration for a specific alert type (voice vs. sound)
@@ -470,6 +480,11 @@ impl SettingsScreen {
             restart_onboarding_requested: false,
             tv_mode_enabled: false,
             tv_mode_font_scale: 2.0,
+            companion_config: crate::companion::types::CompanionConfig::default(),
+            show_companion: false,
+            companion_port_input: "9876".to_string(),
+            companion_current_pin: None,
+            companion_server_running: false,
         }
     }
 
@@ -496,6 +511,25 @@ impl SettingsScreen {
     /// Get current incline configuration.
     pub fn get_incline_config(&self) -> &InclineConfig {
         &self.incline_config
+    }
+
+    /// Set companion server configuration.
+    /// T047: Configure companion server from loaded config.
+    pub fn set_companion_config(&mut self, config: crate::companion::types::CompanionConfig) {
+        self.companion_port_input = config.port.to_string();
+        self.companion_config = config;
+    }
+
+    /// Get current companion configuration.
+    pub fn get_companion_config(&self) -> &crate::companion::types::CompanionConfig {
+        &self.companion_config
+    }
+
+    /// Update companion server status.
+    /// T047: Update UI to reflect server running state and current PIN.
+    pub fn set_companion_status(&mut self, is_running: bool, current_pin: Option<String>) {
+        self.companion_server_running = is_running;
+        self.companion_current_pin = current_pin;
     }
 
     /// Set FTP confidence from auto-detection.
@@ -655,6 +689,11 @@ impl SettingsScreen {
 
             // T092: HID device settings section
             self.render_hid_section(ui);
+
+            ui.add_space(16.0);
+
+            // T047: Mobile companion app settings section
+            self.render_companion_section(ui);
 
             ui.add_space(16.0);
 
@@ -3005,6 +3044,208 @@ impl SettingsScreen {
         if self.hid_settings.learning_mode {
             self.hid_settings.learned_button_code = Some(button_code);
         }
+    }
+
+    /// Render the mobile companion app settings section.
+    /// T047: Add settings panel in desktop app for companion server configuration.
+    fn render_companion_section(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("📱 Mobile Companion App").size(18.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .button(if self.show_companion { "Hide" } else { "Show" })
+                        .clicked()
+                    {
+                        self.show_companion = !self.show_companion;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+
+            // Master enable/disable toggle
+            if ui
+                .checkbox(&mut self.companion_config.enabled, "Enable companion server")
+                .on_hover_text("Allow mobile devices to connect and control workouts over LAN")
+                .changed()
+            {
+                self.has_changes = true;
+            }
+
+            // Server status indicator
+            if self.companion_server_running {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("● Running")
+                            .color(Color32::from_rgb(50, 205, 50))
+                            .small(),
+                    );
+                });
+            }
+
+            if self.show_companion {
+                ui.add_enabled_ui(self.companion_config.enabled, |ui| {
+                    ui.add_space(8.0);
+
+                    // Server settings
+                    ui.label(RichText::new("Server Settings").strong());
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("companion_server_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 8.0])
+                        .show(ui, |ui| {
+                            // Port setting
+                            ui.label("Port:");
+                            ui.horizontal(|ui| {
+                                let port_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.companion_port_input)
+                                        .desired_width(80.0),
+                                );
+                                if port_response.changed() {
+                                    self.has_changes = true;
+                                    if let Ok(port) = self.companion_port_input.parse::<u16>() {
+                                        if port >= 1024 {
+                                            self.companion_config.port = port;
+                                            self.error_message = None;
+                                        } else {
+                                            self.error_message = Some(
+                                                "Port must be 1024 or higher".to_string(),
+                                            );
+                                        }
+                                    }
+                                }
+                                ui.label(
+                                    RichText::new("(default: 9876)")
+                                        .small()
+                                        .color(Color32::GRAY),
+                                );
+                            });
+                            ui.end_row();
+
+                            // Max connections
+                            ui.label("Max connections:");
+                            let mut max_conn = self.companion_config.max_connections as i32;
+                            if ui
+                                .add(egui::Slider::new(&mut max_conn, 1..=10))
+                                .on_hover_text("Maximum number of mobile devices that can connect")
+                                .changed()
+                            {
+                                self.companion_config.max_connections = max_conn as u8;
+                                self.has_changes = true;
+                            }
+                            ui.end_row();
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Authentication settings
+                    ui.label(RichText::new("Authentication").strong());
+                    ui.add_space(4.0);
+
+                    // Require PIN toggle
+                    if ui
+                        .checkbox(&mut self.companion_config.require_pin, "Require PIN to connect")
+                        .on_hover_text("Mobile devices must enter a PIN to access workout controls")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    // Display current PIN when server is running and PIN required
+                    if self.companion_config.require_pin && self.companion_server_running {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.label("Current PIN:");
+                            if let Some(ref pin) = self.companion_current_pin {
+                                ui.label(
+                                    RichText::new(pin)
+                                        .monospace()
+                                        .size(20.0)
+                                        .color(Color32::from_rgb(66, 133, 244)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new("------")
+                                        .monospace()
+                                        .color(Color32::GRAY),
+                                );
+                            }
+                        });
+                        ui.label(
+                            RichText::new("Share this PIN with your mobile device to connect")
+                                .small()
+                                .color(Color32::GRAY),
+                        );
+                    }
+
+                    ui.add_space(12.0);
+
+                    // Session settings
+                    ui.label(RichText::new("Session").strong());
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("companion_session_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 8.0])
+                        .show(ui, |ui| {
+                            // Session timeout
+                            ui.label("Session timeout:");
+                            let timeout_options = [
+                                (0, "No timeout"),
+                                (1800, "30 minutes"),
+                                (3600, "1 hour"),
+                                (7200, "2 hours"),
+                            ];
+                            let current_timeout = self.companion_config.session_timeout_secs;
+                            let current_label = timeout_options
+                                .iter()
+                                .find(|(v, _)| *v == current_timeout)
+                                .map(|(_, l)| *l)
+                                .unwrap_or("Custom");
+
+                            egui::ComboBox::from_id_salt("companion_timeout")
+                                .selected_text(current_label)
+                                .show_ui(ui, |ui| {
+                                    for (value, label) in timeout_options {
+                                        if ui
+                                            .selectable_label(current_timeout == value, label)
+                                            .clicked()
+                                        {
+                                            self.companion_config.session_timeout_secs = value;
+                                            self.has_changes = true;
+                                        }
+                                    }
+                                });
+                            ui.end_row();
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Info box
+                    ui.group(|ui| {
+                        ui.set_min_width(ui.available_width() - 16.0);
+                        ui.label(
+                            RichText::new("ℹ️ How to Connect")
+                                .strong()
+                                .color(Color32::from_rgb(66, 133, 244)),
+                        );
+                        ui.add_space(4.0);
+                        ui.label("1. Enable the companion server above");
+                        ui.label("2. Open the RustRide companion app on your mobile device");
+                        ui.label("3. Ensure both devices are on the same WiFi network");
+                        ui.label("4. The app will auto-discover this computer, or scan the QR code");
+                        if self.companion_config.require_pin {
+                            ui.label("5. Enter the PIN shown above when prompted");
+                        }
+                    });
+                });
+            }
+        });
     }
 
     /// Render the accessibility settings section.
