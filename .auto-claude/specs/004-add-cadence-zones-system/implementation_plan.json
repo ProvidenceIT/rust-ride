@@ -103,20 +103,22 @@
           "id": "2.1",
           "title": "Add CadenceZoneChange to ZoneEvent enum",
           "description": "Add new variant to ZoneEvent for cadence zone changes with previous_zone, new_zone, and zone_name fields.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/zones.rs"
           ],
           "acceptance_criteria": [
             "CadenceZoneChange variant with previous_zone: u8, new_zone: u8, zone_name: String",
             "Follows same pattern as PowerZoneChange and HeartRateZoneChange"
-          ]
+          ],
+          "notes": "Added CadenceZoneChange variant to ZoneEvent enum in zones.rs following the same pattern as PowerZoneChange and HeartRateZoneChange. Variant includes previous_zone: u8, new_zone: u8, zone_name: String fields with appropriate documentation comments. Committed as 50825f6.",
+          "updated_at": "2026-01-03T05:28:20.828985+00:00"
         },
         {
           "id": "2.2",
           "title": "Add cadence tracking fields to ZoneTracker",
           "description": "Add current_cadence_zone, cadence_zones, and last_cadence_zone_change fields to ZoneTracker struct.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/metrics/zones.rs"
           ],
@@ -124,7 +126,9 @@
             "current_cadence_zone: u8 field added",
             "cadence_zones: Option<CadenceZones> field added",
             "last_cadence_zone_change: Option<Instant> field added"
-          ]
+          ],
+          "notes": "Added current_cadence_zone: u8, cadence_zones: Option<CadenceZones>, and last_cadence_zone_change: Option<std::time::Instant> fields to ZoneTracker struct following the existing pattern for power and HR zone tracking. Updated ZoneTracker::new() to initialize all three new fields. Committed as c7a2d05.",
+          "updated_at": "2026-01-03T05:30:09.337655+00:00"
         },
         {
           "id": "2.3",
@@ -406,5 +410,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T05:26:38.065353+00:00"
+  "last_updated": "2026-01-03T05:30:09.337655+00:00"
 }

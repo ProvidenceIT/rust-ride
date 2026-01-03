@@ -564,6 +564,11 @@ impl ZoneTracker {
         self.power_zones = power_zones;
     }
 
+    /// Set cadence zones for cadence zone tracking.
+    pub fn set_cadence_zones(&mut self, cadence_zones: CadenceZones) {
+        self.cadence_zones = Some(cadence_zones);
+    }
+
     /// Set the debounce time for zone change alerts.
     pub fn set_debounce_secs(&mut self, secs: u32) {
         self.zone_change_debounce_secs = secs;
@@ -661,6 +666,54 @@ impl ZoneTracker {
         }
     }
 
+    /// Update with current cadence and check for zone change.
+    pub fn update_cadence(&mut self, cadence: u8) {
+        let cadence_zones = match &self.cadence_zones {
+            Some(zones) => zones,
+            None => return,
+        };
+
+        let new_zone = cadence_zones.get_zone(cadence);
+
+        if new_zone != self.current_cadence_zone {
+            // Check debounce
+            let should_emit = self
+                .last_cadence_zone_change
+                .map(|t| t.elapsed().as_secs() >= self.zone_change_debounce_secs as u64)
+                .unwrap_or(true);
+
+            if should_emit || self.current_cadence_zone == 0 {
+                let previous_zone = self.current_cadence_zone;
+                self.current_cadence_zone = new_zone;
+                self.last_cadence_zone_change = Some(std::time::Instant::now());
+
+                // Get zone name
+                let zone_name = cadence_zones
+                    .get_zone_range(new_zone)
+                    .map(|z| z.name.clone())
+                    .unwrap_or_else(|| format!("Zone {}", new_zone));
+
+                // Only emit event if not initial
+                if previous_zone > 0 {
+                    self.pending_events.push(ZoneEvent::CadenceZoneChange {
+                        previous_zone,
+                        new_zone,
+                        zone_name,
+                    });
+                    tracing::debug!(
+                        "Cadence zone changed: {} -> {} ({})",
+                        previous_zone,
+                        new_zone,
+                        cadence_zones
+                            .get_zone_range(new_zone)
+                            .map(|z| z.name.as_str())
+                            .unwrap_or("Unknown")
+                    );
+                }
+            }
+        }
+    }
+
     /// Take all pending events, clearing the queue.
     pub fn take_events(&mut self) -> Vec<ZoneEvent> {
         std::mem::take(&mut self.pending_events)
@@ -693,6 +746,19 @@ impl ZoneTracker {
         self.hr_zones
             .as_ref()
             .and_then(|zones| zones.get_zone_range(self.current_hr_zone))
+            .map(|z| z.name.clone())
+    }
+
+    /// Get the current cadence zone.
+    pub fn current_cadence_zone(&self) -> u8 {
+        self.current_cadence_zone
+    }
+
+    /// Get the name of the current cadence zone.
+    pub fn current_cadence_zone_name(&self) -> Option<String> {
+        self.cadence_zones
+            .as_ref()
+            .and_then(|zones| zones.get_zone_range(self.current_cadence_zone))
             .map(|z| z.name.clone())
     }
 
