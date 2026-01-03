@@ -1,10 +1,10 @@
 {
   "discovered_files": {
     "src/metrics/zones.rs": {
-      "description": "Added CadenceZoneRange struct following HRZoneRange pattern. Located after HRZoneRange (line 63). Has zone: u8, min_rpm: u8, max_rpm: u8, color: Color, name: String fields.",
-      "category": "struct",
-      "discovered_at": "2026-01-03T05:19:12.688948+00:00"
+      "description": "Added CADENCE_ZONE_COLORS: [Color; 5] constant after HR_ZONE_COLORS at line 368-376. Uses cyan/teal to magenta progression for visual distinction from power/HR colors.",
+      "category": "implementation",
+      "discovered_at": "2026-01-03T05:21:06.049353+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:19:12.688948+00:00"
+  "last_updated": "2026-01-03T05:21:06.049353+00:00"
 }

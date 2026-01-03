@@ -375,6 +375,23 @@ pub const CADENCE_ZONE_COLORS: [Color; 5] = [
     Color::new(255, 50, 180),  // Z5: Hot Pink (Sprint - max cadence)
 ];
 
+/// 5-zone cadence zones for tracking optimal cadence ranges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CadenceZones {
+    /// Zone 1: Low (recovery/climbing, 0-75 RPM)
+    pub z1_low: CadenceZoneRange,
+    /// Zone 2: Economy (efficient spinning, 76-85 RPM)
+    pub z2_economy: CadenceZoneRange,
+    /// Zone 3: Natural (optimal cadence, 86-95 RPM)
+    pub z3_natural: CadenceZoneRange,
+    /// Zone 4: Fast (high cadence drills, 96-105 RPM)
+    pub z4_fast: CadenceZoneRange,
+    /// Zone 5: Sprint (maximum cadence, 106+ RPM)
+    pub z5_sprint: CadenceZoneRange,
+    /// Whether zones are user-customized
+    pub custom: bool,
+}
+
 /// Events emitted when zones change.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
