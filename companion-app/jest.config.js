@@ -13,5 +13,7 @@ module.exports = {
     '^@stores/(.*)$': '<rootDir>/src/stores/$1',
     '^@utils/(.*)$': '<rootDir>/src/utils/$1',
     '^@types/(.*)$': '<rootDir>/src/types/$1',
+    // Mock for react-native-zeroconf (not installed, using manual mock)
+    '^react-native-zeroconf$': '<rootDir>/__mocks__/react-native-zeroconf.ts',
   },
 };
