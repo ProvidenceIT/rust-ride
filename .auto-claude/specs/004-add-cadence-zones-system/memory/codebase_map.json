@@ -9,7 +9,12 @@
       "description": "MetricsCalculator::process() now calculates cadence_zone when cadence_zones is set, following the same pattern as power_zone and hr_zone calculation. The zone is calculated using zones.get_zone(cadence) when cadence_rpm is present in the SensorReading.",
       "category": "metrics",
       "discovered_at": "2026-01-03T05:39:36.833458+00:00"
+    },
+    "src/ui/widgets/zone_indicator.rs": {
+      "description": "zone_badge() now accepts ZoneType enum (Power, HeartRate, Cadence) instead of is_power bool. ZoneType is exported from widgets module. This enables compact zone badge rendering for all three zone types with correct colors.",
+      "category": "ui",
+      "discovered_at": "2026-01-03T05:50:06.573404+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:39:36.833458+00:00"
+  "last_updated": "2026-01-03T05:50:06.573404+00:00"
 }

@@ -143,11 +143,143 @@
         }
       ],
       "status": "completed"
+    },
+    "4.1": {
+      "attempts": [
+        {
+          "session": 14,
+          "timestamp": "2026-01-03T06:41:17.132516",
+          "approach": "Implemented: Add CadenceZones and CADENCE_ZONE_COLORS to public exports in src/metrics/mod.rs.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.2": {
+      "attempts": [
+        {
+          "session": 15,
+          "timestamp": "2026-01-03T06:42:55.044167",
+          "approach": "Implemented: Add CadenceZone variant to MetricType enum in config.rs.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "4.3": {
+      "attempts": [
+        {
+          "session": 16,
+          "timestamp": "2026-01-03T06:44:55.413504",
+          "approach": "Implemented: Add optional cadence_zones field to UserProfile struct.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.1": {
+      "attempts": [
+        {
+          "session": 17,
+          "timestamp": "2026-01-03T06:47:42.095832",
+          "approach": "Implemented: Implement cadence_zone() method in ZoneIndicator widget following hr_zone() pattern.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.3": {
+      "attempts": [
+        {
+          "session": 18,
+          "timestamp": "2026-01-03T06:50:17.334932",
+          "approach": "Implemented: Update zone_badge() to support cadence zones in addition to power and HR.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "6.1": {
+      "attempts": [
+        {
+          "session": 19,
+          "timestamp": "2026-01-03T06:52:44.026810",
+          "approach": "Implemented: Add tests for CadenceZones default values, zone lookup, and zone ranges.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "6.2": {
+      "attempts": [
+        {
+          "session": 20,
+          "timestamp": "2026-01-03T06:55:00.541773",
+          "approach": "Implemented: Add tests for cadence zone tracking and change events in ZoneTracker.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "6.3": {
+      "attempts": [
+        {
+          "session": 21,
+          "timestamp": "2026-01-03T06:57:25.675809",
+          "approach": "Implemented: Add integration tests in tests/unit/zones_test.rs following existing pattern.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "6.4": {
+      "attempts": [
+        {
+          "session": 22,
+          "timestamp": "2026-01-03T06:59:38.823059",
+          "approach": "Implemented: Add test verifying cadence zone calculation in MetricsCalculator.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "7.1": {
+      "attempts": [
+        {
+          "session": 23,
+          "timestamp": "2026-01-03T07:01:53.634007",
+          "approach": "Implemented: Ensure all code compiles without errors or warnings.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "7.2": {
+      "attempts": [
+        {
+          "session": 24,
+          "timestamp": "2026-01-03T07:05:14.315527",
+          "approach": "Implemented: Run full test suite to verify all tests pass.",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [],
   "metadata": {
     "created_at": "2026-01-03T06:13:50.063637",
-    "last_updated": "2026-01-03T06:39:45.912702"
+    "last_updated": "2026-01-03T07:05:14.315527"
   }
 }
