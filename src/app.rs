@@ -700,6 +700,27 @@ impl RustRideApp {
         tracing::debug!("Cadence fusion state reset");
     }
 
+    /// T091: Poll for learned button from HID input handler.
+    ///
+    /// Called each frame to check if a button was learned and update the settings screen.
+    fn poll_learned_button(&mut self) {
+        // Only poll when in learning mode and on the Settings screen
+        if self.current_screen != Screen::Settings {
+            return;
+        }
+
+        // Check if the button input handler has a learned button
+        if self.button_input_handler.is_learning() {
+            if let Some(button_code) = self.button_input_handler.get_learned_button() {
+                tracing::info!("Learned button code: {}", button_code);
+                // Pass the learned button code to the settings screen
+                self.settings_screen.set_learned_button(button_code);
+                // Stop learning mode in the handler (button was captured)
+                self.button_input_handler.stop_learning_mode();
+            }
+        }
+    }
+
     /// T091: Process pending executor events for UI navigation.
     ///
     /// Called each frame to handle navigation and fullscreen events from HID button actions.
@@ -981,11 +1002,17 @@ impl eframe::App for RustRideApp {
         // T091: Process HID executor events for UI navigation
         self.process_executor_events();
 
+        // T091: Poll for learned buttons from HID input handler
+        self.poll_learned_button();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates)
-        if self.current_screen == Screen::Ride || self.current_screen == Screen::SensorSetup {
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode)
+        if self.current_screen == Screen::Ride
+            || self.current_screen == Screen::SensorSetup
+            || (self.current_screen == Screen::Settings && self.button_input_handler.is_learning())
+        {
             ctx.request_repaint();
         }
 
@@ -1218,6 +1245,16 @@ impl eframe::App for RustRideApp {
                             let devices = self.hid_device_manager.scan_devices();
                             tracing::info!("Found {} HID device(s)", devices.len());
                             self.settings_screen.set_hid_devices(devices);
+                        }
+                        SettingsAction::StartLearningMode(device_id) => {
+                            // T091: Start button learning mode for the specified device
+                            tracing::info!("Starting button learning mode for device {:?}", device_id);
+                            self.button_input_handler.start_learning_mode(&device_id);
+                        }
+                        SettingsAction::StopLearningMode => {
+                            // T091: Stop button learning mode
+                            tracing::info!("Stopping button learning mode");
+                            self.button_input_handler.stop_learning_mode();
                         }
                         SettingsAction::None => {}
                     }
