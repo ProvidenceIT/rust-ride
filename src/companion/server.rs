@@ -32,6 +32,7 @@ use uuid::Uuid;
 
 use super::discovery::CompanionMdnsAdvertiser;
 use super::handlers::handle_request;
+use super::streaming::{MetricsStreamer, MetricsStreamerConfig};
 use super::types::{
     CompanionClient, CompanionConfig, CompanionError, CompanionErrorCode, CompanionEvent,
     CompanionRequest, CompanionResponse,
@@ -613,6 +614,40 @@ impl CompanionServer {
     /// Get server configuration.
     pub fn config(&self) -> &CompanionConfig {
         &self.config
+    }
+
+    /// Create a metrics streamer connected to this server's event broadcast.
+    ///
+    /// The metrics streamer will broadcast metrics events at 1Hz to all
+    /// authenticated clients subscribed to metrics updates. The streamer
+    /// uses the server's internal event channel for broadcasting.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Optional configuration for the streamer. If None, uses defaults.
+    ///
+    /// # Returns
+    ///
+    /// A new `MetricsStreamer` instance that broadcasts to this server's clients.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let server = CompanionServer::new(config);
+    /// let streamer = server.create_metrics_streamer(None);
+    ///
+    /// // Start the streamer when a session begins
+    /// streamer.start().await;
+    ///
+    /// // Update metrics from sensor data
+    /// streamer.update_power(250).await;
+    /// streamer.update_heart_rate(145).await;
+    ///
+    /// // Stop when session ends
+    /// streamer.stop().await;
+    /// ```
+    pub fn create_metrics_streamer(&self, config: Option<MetricsStreamerConfig>) -> MetricsStreamer {
+        MetricsStreamer::new(self.event_tx.clone(), config)
     }
 
     /// Check if mDNS advertisement is active.

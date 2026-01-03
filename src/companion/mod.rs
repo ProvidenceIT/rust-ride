@@ -11,6 +11,7 @@
 //! - `handlers`: Request handlers for workout control, metrics, and history
 //! - `types`: Message types for WebSocket communication
 //! - `discovery`: mDNS service advertisement for auto-discovery
+//! - `streaming`: Real-time metrics streaming at 1Hz to connected clients
 //!
 //! ## Authentication
 //!
@@ -24,16 +25,24 @@
 //! automatic discovery by the mobile app on the same LAN. TXT records
 //! include the port number and protocol version.
 //!
+//! ## Metrics Streaming
+//!
+//! The streaming module provides 1Hz metrics broadcasting to authenticated
+//! clients. It subscribes to sensor events and aggregates power, heart rate,
+//! cadence, speed, distance, and calorie data.
+//!
 //! ## Feature: Mobile Companion App (014)
 
 pub mod discovery;
 pub mod handlers;
 pub mod server;
+pub mod streaming;
 pub mod types;
 
 // Re-export commonly used types
 pub use discovery::{CompanionMdnsAdvertiser, COMPANION_PROTOCOL_VERSION, COMPANION_SERVICE_TYPE};
 pub use server::CompanionServer;
+pub use streaming::{MetricsStreamer, MetricsStreamerConfig, SensorEventProcessor, StreamingMetrics};
 pub use types::{
     CompanionConfig, CompanionError, CompanionEvent, CompanionRequest, CompanionResponse,
 };
