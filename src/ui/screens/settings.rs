@@ -131,6 +131,10 @@ pub struct SettingsScreen {
     pub regenerate_pin_requested: bool,
     /// T048: Flag indicating URL copy was requested
     pub copy_url_requested: bool,
+    /// T049: Connected companion clients
+    companion_clients: Vec<crate::companion::types::CompanionClient>,
+    /// T049: Session ID of client to disconnect (if any)
+    pub disconnect_companion_session_id: Option<uuid::Uuid>,
 }
 
 /// Configuration for a specific alert type (voice vs. sound)
@@ -497,6 +501,8 @@ impl SettingsScreen {
             companion_connection_url: None,
             regenerate_pin_requested: false,
             copy_url_requested: false,
+            companion_clients: Vec::new(),
+            disconnect_companion_session_id: None,
         }
     }
 
@@ -572,6 +578,27 @@ impl SettingsScreen {
         } else {
             None
         }
+    }
+
+    /// T049: Update the list of connected companion clients.
+    ///
+    /// This should be called periodically from the main app to update
+    /// the connected devices display in the settings panel.
+    pub fn set_companion_clients(&mut self, clients: Vec<crate::companion::types::CompanionClient>) {
+        self.companion_clients = clients;
+    }
+
+    /// T049: Get the number of connected companion clients.
+    pub fn companion_client_count(&self) -> usize {
+        self.companion_clients.len()
+    }
+
+    /// T049: Take the disconnect request (returns session ID to disconnect).
+    ///
+    /// Call this from the main app loop to check if a disconnect was requested
+    /// and handle it by calling `CompanionServer::disconnect_client()`.
+    pub fn take_disconnect_companion_request(&mut self) -> Option<uuid::Uuid> {
+        self.disconnect_companion_session_id.take()
     }
 
     /// Set FTP confidence from auto-detection.
@@ -3118,7 +3145,7 @@ impl SettingsScreen {
                 self.has_changes = true;
             }
 
-            // Server status indicator
+            // T049: Server status indicator with connected client count
             if self.companion_server_running {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -3126,6 +3153,16 @@ impl SettingsScreen {
                             .color(Color32::from_rgb(50, 205, 50))
                             .small(),
                     );
+                    // Show connected client count
+                    let client_count = self.companion_clients.len();
+                    if client_count > 0 {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(format!("📱 {} connected", client_count))
+                                .color(Color32::from_rgb(52, 168, 83))
+                                .small(),
+                        );
+                    }
                 });
             }
 
@@ -3335,6 +3372,110 @@ impl SettingsScreen {
                                 }
                             });
                         });
+
+                        // T049: Connected Devices section
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Connected Devices").strong());
+                            ui.add_space(8.0);
+                            let client_count = self.companion_clients.len();
+                            let count_color = if client_count > 0 {
+                                Color32::from_rgb(52, 168, 83) // Green
+                            } else {
+                                Color32::GRAY
+                            };
+                            ui.label(
+                                RichText::new(format!("({})", client_count))
+                                    .color(count_color),
+                            );
+                        });
+                        ui.add_space(4.0);
+
+                        if self.companion_clients.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📱").size(18.0).weak());
+                                ui.add_space(4.0);
+                                ui.label(RichText::new("No companion apps connected").weak());
+                            });
+                            ui.label(
+                                RichText::new("Open the RustRide app on your phone to connect")
+                                    .weak()
+                                    .small(),
+                            );
+                        } else {
+                            // Show each connected client with disconnect button
+                            for client in &self.companion_clients {
+                                let bg_color = if client.is_authenticated {
+                                    Color32::from_rgba_unmultiplied(52, 168, 83, 30)
+                                } else {
+                                    Color32::from_rgba_unmultiplied(251, 188, 4, 30)
+                                };
+
+                                egui::Frame::new()
+                                    .fill(bg_color)
+                                    .inner_margin(12.0)
+                                    .corner_radius(8.0)
+                                    .show(ui, |ui| {
+                                        ui.set_min_width(ui.available_width() - 16.0);
+
+                                        ui.horizontal(|ui| {
+                                            // Icon
+                                            ui.label(RichText::new("📱").size(24.0));
+                                            ui.add_space(8.0);
+
+                                            ui.vertical(|ui| {
+                                                // IP Address with auth status
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RichText::new(&client.remote_addr).strong());
+                                                    if client.is_authenticated {
+                                                        ui.label(
+                                                            RichText::new(" ✓ Authenticated")
+                                                                .color(Color32::from_rgb(52, 168, 83))
+                                                                .small(),
+                                                        );
+                                                    } else {
+                                                        ui.label(
+                                                            RichText::new(" ○ Pending auth")
+                                                                .color(Color32::from_rgb(251, 188, 4))
+                                                                .small(),
+                                                        );
+                                                    }
+                                                });
+
+                                                // Connection details
+                                                ui.horizontal(|ui| {
+                                                    ui.label(
+                                                        RichText::new(format!("Connected: {}", client.connected_at))
+                                                            .weak()
+                                                            .small(),
+                                                    );
+                                                    if client.subscribed_to_metrics {
+                                                        ui.add_space(8.0);
+                                                        ui.label(
+                                                            RichText::new("📊 Streaming metrics")
+                                                                .color(Color32::from_rgb(66, 133, 244))
+                                                                .small(),
+                                                        );
+                                                    }
+                                                });
+                                            });
+
+                                            // Disconnect button on the right
+                                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                if ui
+                                                    .button(RichText::new("Disconnect").color(Color32::from_rgb(234, 67, 53)))
+                                                    .on_hover_text("Disconnect this device")
+                                                    .clicked()
+                                                {
+                                                    self.disconnect_companion_session_id = Some(client.session_id);
+                                                }
+                                            });
+                                        });
+                                    });
+
+                                ui.add_space(8.0);
+                            }
+                        }
                     }
 
                     ui.add_space(12.0);
