@@ -6,7 +6,7 @@
 //! T091-T094: TSS, IF, NP, calorie calculations
 
 use crate::metrics::smoothing::{NormalizedPowerCalculator, PowerFilter, RollingAverage};
-use crate::metrics::zones::{HRZones, PowerZones};
+use crate::metrics::zones::{CadenceZones, HRZones, PowerZones};
 use crate::sensors::types::SensorReading;
 use std::time::{Duration, Instant};
 
@@ -41,6 +41,8 @@ pub struct AggregatedMetrics {
     pub power_zone: Option<u8>,
     /// Current HR zone (1-5)
     pub hr_zone: Option<u8>,
+    /// Current cadence zone (1-5)
+    pub cadence_zone: Option<u8>,
     /// Running Normalized Power
     pub normalized_power: Option<u16>,
     /// Running TSS
@@ -86,6 +88,8 @@ pub struct MetricsCalculator {
     power_zones: Option<PowerZones>,
     /// HR zones
     hr_zones: Option<HRZones>,
+    /// Cadence zones
+    cadence_zones: Option<CadenceZones>,
     /// User's FTP
     ftp: u16,
     /// Total power sum for average
@@ -116,6 +120,7 @@ impl MetricsCalculator {
             np_calculator: NormalizedPowerCalculator::new(),
             power_zones: Some(PowerZones::from_ftp(ftp)),
             hr_zones: None,
+            cadence_zones: None,
             ftp,
             power_sum: 0,
             power_count: 0,
@@ -135,6 +140,11 @@ impl MetricsCalculator {
     /// Set HR zones.
     pub fn set_hr_zones(&mut self, zones: HRZones) {
         self.hr_zones = Some(zones);
+    }
+
+    /// Set cadence zones.
+    pub fn set_cadence_zones(&mut self, zones: CadenceZones) {
+        self.cadence_zones = Some(zones);
     }
 
     /// Update FTP and recalculate zones.
@@ -200,6 +210,11 @@ impl MetricsCalculator {
                 self.cadence_3s.add(cadence as u16).map(|v| v as u8);
             self.current_metrics.cadence_10s_avg =
                 self.cadence_10s.add(cadence as u16).map(|v| v as u8);
+
+            // Calculate cadence zone
+            if let Some(zones) = &self.cadence_zones {
+                self.current_metrics.cadence_zone = Some(zones.get_zone(cadence));
+            }
         }
 
         // Process speed
@@ -344,6 +359,18 @@ mod tests {
         }
     }
 
+    fn make_reading_with_cadence(cadence: u8) -> SensorReading {
+        SensorReading {
+            sensor_id: Uuid::new_v4(),
+            timestamp: Instant::now(),
+            power_watts: None,
+            cadence_rpm: Some(cadence),
+            heart_rate_bpm: None,
+            speed_kmh: None,
+            distance_delta_m: None,
+        }
+    }
+
     #[test]
     fn test_metrics_calculator_basic() {
         let mut calc = MetricsCalculator::new(200);
@@ -427,5 +454,80 @@ mod tests {
         assert_eq!(metrics.cadence, None);
         assert_eq!(metrics.cadence_3s_avg, None);
         assert_eq!(metrics.cadence_10s_avg, None);
+    }
+
+    #[test]
+    fn test_cadence_zone_calculation() {
+        let mut calc = MetricsCalculator::new(200);
+        calc.set_cadence_zones(CadenceZones::default());
+
+        // Test Zone 1 (Low: 0-75 RPM)
+        let reading = make_reading_with_cadence(60);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(60));
+        assert_eq!(metrics.cadence_zone, Some(1));
+
+        // Test Zone 3 (Natural: 86-95 RPM) - optimal cadence range
+        let reading = make_reading_with_cadence(90);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(90));
+        assert_eq!(metrics.cadence_zone, Some(3));
+
+        // Test Zone 5 (Sprint: 106+ RPM)
+        let reading = make_reading_with_cadence(110);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(110));
+        assert_eq!(metrics.cadence_zone, Some(5));
+    }
+
+    #[test]
+    fn test_cadence_zone_not_set_without_zones() {
+        let mut calc = MetricsCalculator::new(200);
+        // Don't set cadence zones
+
+        let reading = make_reading_with_cadence(90);
+        let metrics = calc.process(&reading);
+
+        assert_eq!(metrics.cadence, Some(90));
+        assert_eq!(metrics.cadence_zone, None); // No zones configured
+    }
+
+    #[test]
+    fn test_cadence_zone_boundaries() {
+        let mut calc = MetricsCalculator::new(200);
+        calc.set_cadence_zones(CadenceZones::default());
+
+        // Test exact boundary values
+        // Zone boundaries: Z1 (0-75), Z2 (76-85), Z3 (86-95), Z4 (96-105), Z5 (106+)
+
+        // Z1 upper boundary
+        let reading = make_reading_with_cadence(75);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(1));
+
+        // Z2 lower boundary
+        let reading = make_reading_with_cadence(76);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(2));
+
+        // Z2 upper boundary
+        let reading = make_reading_with_cadence(85);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(2));
+
+        // Z3 lower boundary
+        let reading = make_reading_with_cadence(86);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(3));
+
+        // Z4 lower boundary
+        let reading = make_reading_with_cadence(96);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(4));
+
+        // Z5 lower boundary
+        let reading = make_reading_with_cadence(106);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(5));
     }
 }

@@ -6,7 +6,7 @@ pub mod smoothing;
 pub mod zones;
 
 pub use calculator::MetricsCalculator;
-pub use zones::{HRZones, PowerZones, ZoneEvent, ZoneTracker};
+pub use zones::{CadenceZones, HRZones, PowerZones, ZoneEvent, ZoneTracker, CADENCE_ZONE_COLORS};
 
 // Re-export key analytics types for convenience
 pub use analytics::{

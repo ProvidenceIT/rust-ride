@@ -60,6 +60,21 @@ pub struct HRZoneRange {
     pub name: String,
 }
 
+/// A cadence zone range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CadenceZoneRange {
+    /// Zone number (1-5)
+    pub zone: u8,
+    /// Minimum RPM
+    pub min_rpm: u8,
+    /// Maximum RPM
+    pub max_rpm: u8,
+    /// Display color
+    pub color: Color,
+    /// Zone name
+    pub name: String,
+}
+
 /// Coggan 7-zone power zones.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -350,6 +365,117 @@ pub const HR_ZONE_COLORS: [Color; 5] = [
     Color::new(255, 50, 50),   // Z5: Red (Maximum)
 ];
 
+/// Default cadence zone colors (distinct from power/HR colors)
+/// Uses a cyan/teal to magenta progression for visual distinction
+pub const CADENCE_ZONE_COLORS: [Color; 5] = [
+    Color::new(120, 160, 180), // Z1: Steel Blue (Low - climbing/recovery)
+    Color::new(0, 180, 200),   // Z2: Cyan (Economy - efficient spinning)
+    Color::new(0, 170, 150),   // Z3: Teal (Natural - optimal cadence)
+    Color::new(200, 100, 180), // Z4: Orchid (Fast - high cadence)
+    Color::new(255, 50, 180),  // Z5: Hot Pink (Sprint - max cadence)
+];
+
+/// 5-zone cadence zones for tracking optimal cadence ranges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CadenceZones {
+    /// Zone 1: Low (recovery/climbing, 0-75 RPM)
+    pub z1_low: CadenceZoneRange,
+    /// Zone 2: Economy (efficient spinning, 76-85 RPM)
+    pub z2_economy: CadenceZoneRange,
+    /// Zone 3: Natural (optimal cadence, 86-95 RPM)
+    pub z3_natural: CadenceZoneRange,
+    /// Zone 4: Fast (high cadence drills, 96-105 RPM)
+    pub z4_fast: CadenceZoneRange,
+    /// Zone 5: Sprint (maximum cadence, 106+ RPM)
+    pub z5_sprint: CadenceZoneRange,
+    /// Whether zones are user-customized
+    pub custom: bool,
+}
+
+impl Default for CadenceZones {
+    fn default() -> Self {
+        Self {
+            z1_low: CadenceZoneRange {
+                zone: 1,
+                min_rpm: 0,
+                max_rpm: 75,
+                color: CADENCE_ZONE_COLORS[0],
+                name: "Low".to_string(),
+            },
+            z2_economy: CadenceZoneRange {
+                zone: 2,
+                min_rpm: 76,
+                max_rpm: 85,
+                color: CADENCE_ZONE_COLORS[1],
+                name: "Economy".to_string(),
+            },
+            z3_natural: CadenceZoneRange {
+                zone: 3,
+                min_rpm: 86,
+                max_rpm: 95,
+                color: CADENCE_ZONE_COLORS[2],
+                name: "Natural".to_string(),
+            },
+            z4_fast: CadenceZoneRange {
+                zone: 4,
+                min_rpm: 96,
+                max_rpm: 105,
+                color: CADENCE_ZONE_COLORS[3],
+                name: "Fast".to_string(),
+            },
+            z5_sprint: CadenceZoneRange {
+                zone: 5,
+                min_rpm: 106,
+                max_rpm: 255, // u8::MAX for no upper limit
+                color: CADENCE_ZONE_COLORS[4],
+                name: "Sprint".to_string(),
+            },
+            custom: false,
+        }
+    }
+}
+
+impl CadenceZones {
+    /// Get the zone for a given cadence value.
+    pub fn get_zone(&self, rpm: u8) -> u8 {
+        if rpm <= self.z1_low.max_rpm {
+            1
+        } else if rpm <= self.z2_economy.max_rpm {
+            2
+        } else if rpm <= self.z3_natural.max_rpm {
+            3
+        } else if rpm <= self.z4_fast.max_rpm {
+            4
+        } else {
+            5
+        }
+    }
+
+    /// Get the zone range for a given zone number (1-5).
+    pub fn get_zone_range(&self, zone: u8) -> Option<&CadenceZoneRange> {
+        match zone {
+            1 => Some(&self.z1_low),
+            2 => Some(&self.z2_economy),
+            3 => Some(&self.z3_natural),
+            4 => Some(&self.z4_fast),
+            5 => Some(&self.z5_sprint),
+            _ => None,
+        }
+    }
+
+    /// Get all zones as a vector.
+    pub fn all_zones(&self) -> Vec<&CadenceZoneRange> {
+        vec![
+            &self.z1_low,
+            &self.z2_economy,
+            &self.z3_natural,
+            &self.z4_fast,
+            &self.z5_sprint,
+        ]
+    }
+}
+
 /// Events emitted when zones change.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
@@ -371,9 +497,18 @@ pub enum ZoneEvent {
         /// Zone name
         zone_name: String,
     },
+    /// Cadence zone changed
+    CadenceZoneChange {
+        /// Previous zone (0 if first reading)
+        previous_zone: u8,
+        /// New zone number (1-5)
+        new_zone: u8,
+        /// Zone name
+        zone_name: String,
+    },
 }
 
-/// Tracks power and HR zones and detects zone changes.
+/// Tracks power, HR, and cadence zones and detects zone changes.
 ///
 /// T063: Zone change detection for audio alerts.
 pub struct ZoneTracker {
@@ -381,10 +516,14 @@ pub struct ZoneTracker {
     current_power_zone: u8,
     /// Current HR zone (1-5, or 0 if not yet set)
     current_hr_zone: u8,
+    /// Current cadence zone (1-5, or 0 if not yet set)
+    current_cadence_zone: u8,
     /// Power zones configuration
     power_zones: PowerZones,
     /// HR zones configuration
     hr_zones: Option<HRZones>,
+    /// Cadence zones configuration
+    cadence_zones: Option<CadenceZones>,
     /// Pending events to be consumed
     pending_events: Vec<ZoneEvent>,
     /// Minimum time between zone change alerts (debounce)
@@ -393,6 +532,8 @@ pub struct ZoneTracker {
     last_power_zone_change: Option<std::time::Instant>,
     /// Last HR zone change time
     last_hr_zone_change: Option<std::time::Instant>,
+    /// Last cadence zone change time
+    last_cadence_zone_change: Option<std::time::Instant>,
 }
 
 impl ZoneTracker {
@@ -401,12 +542,15 @@ impl ZoneTracker {
         Self {
             current_power_zone: 0,
             current_hr_zone: 0,
+            current_cadence_zone: 0,
             power_zones,
             hr_zones: None,
+            cadence_zones: None,
             pending_events: Vec::new(),
             zone_change_debounce_secs: 5,
             last_power_zone_change: None,
             last_hr_zone_change: None,
+            last_cadence_zone_change: None,
         }
     }
 
@@ -418,6 +562,11 @@ impl ZoneTracker {
     /// Update power zones (e.g., when FTP changes).
     pub fn set_power_zones(&mut self, power_zones: PowerZones) {
         self.power_zones = power_zones;
+    }
+
+    /// Set cadence zones for cadence zone tracking.
+    pub fn set_cadence_zones(&mut self, cadence_zones: CadenceZones) {
+        self.cadence_zones = Some(cadence_zones);
     }
 
     /// Set the debounce time for zone change alerts.
@@ -517,6 +666,54 @@ impl ZoneTracker {
         }
     }
 
+    /// Update with current cadence and check for zone change.
+    pub fn update_cadence(&mut self, cadence: u8) {
+        let cadence_zones = match &self.cadence_zones {
+            Some(zones) => zones,
+            None => return,
+        };
+
+        let new_zone = cadence_zones.get_zone(cadence);
+
+        if new_zone != self.current_cadence_zone {
+            // Check debounce
+            let should_emit = self
+                .last_cadence_zone_change
+                .map(|t| t.elapsed().as_secs() >= self.zone_change_debounce_secs as u64)
+                .unwrap_or(true);
+
+            if should_emit || self.current_cadence_zone == 0 {
+                let previous_zone = self.current_cadence_zone;
+                self.current_cadence_zone = new_zone;
+                self.last_cadence_zone_change = Some(std::time::Instant::now());
+
+                // Get zone name
+                let zone_name = cadence_zones
+                    .get_zone_range(new_zone)
+                    .map(|z| z.name.clone())
+                    .unwrap_or_else(|| format!("Zone {}", new_zone));
+
+                // Only emit event if not initial
+                if previous_zone > 0 {
+                    self.pending_events.push(ZoneEvent::CadenceZoneChange {
+                        previous_zone,
+                        new_zone,
+                        zone_name,
+                    });
+                    tracing::debug!(
+                        "Cadence zone changed: {} -> {} ({})",
+                        previous_zone,
+                        new_zone,
+                        cadence_zones
+                            .get_zone_range(new_zone)
+                            .map(|z| z.name.as_str())
+                            .unwrap_or("Unknown")
+                    );
+                }
+            }
+        }
+    }
+
     /// Take all pending events, clearing the queue.
     pub fn take_events(&mut self) -> Vec<ZoneEvent> {
         std::mem::take(&mut self.pending_events)
@@ -552,13 +749,28 @@ impl ZoneTracker {
             .map(|z| z.name.clone())
     }
 
+    /// Get the current cadence zone.
+    pub fn current_cadence_zone(&self) -> u8 {
+        self.current_cadence_zone
+    }
+
+    /// Get the name of the current cadence zone.
+    pub fn current_cadence_zone_name(&self) -> Option<String> {
+        self.cadence_zones
+            .as_ref()
+            .and_then(|zones| zones.get_zone_range(self.current_cadence_zone))
+            .map(|z| z.name.clone())
+    }
+
     /// Reset tracking state.
     pub fn reset(&mut self) {
         self.current_power_zone = 0;
         self.current_hr_zone = 0;
+        self.current_cadence_zone = 0;
         self.pending_events.clear();
         self.last_power_zone_change = None;
         self.last_hr_zone_change = None;
+        self.last_cadence_zone_change = None;
     }
 }
 
@@ -738,5 +950,299 @@ mod tests {
         assert!(!tracker.has_pending_events());
         assert_eq!(tracker.current_power_zone(), 0);
         assert_eq!(tracker.current_hr_zone(), 0);
+    }
+
+    #[test]
+    fn test_cadence_zones_default() {
+        let zones = CadenceZones::default();
+
+        // Z1: Low (0-75 RPM)
+        assert_eq!(zones.z1_low.zone, 1);
+        assert_eq!(zones.z1_low.min_rpm, 0);
+        assert_eq!(zones.z1_low.max_rpm, 75);
+
+        // Z2: Economy (76-85 RPM)
+        assert_eq!(zones.z2_economy.zone, 2);
+        assert_eq!(zones.z2_economy.min_rpm, 76);
+        assert_eq!(zones.z2_economy.max_rpm, 85);
+
+        // Z3: Natural (86-95 RPM)
+        assert_eq!(zones.z3_natural.zone, 3);
+        assert_eq!(zones.z3_natural.min_rpm, 86);
+        assert_eq!(zones.z3_natural.max_rpm, 95);
+
+        // Z4: Fast (96-105 RPM)
+        assert_eq!(zones.z4_fast.zone, 4);
+        assert_eq!(zones.z4_fast.min_rpm, 96);
+        assert_eq!(zones.z4_fast.max_rpm, 105);
+
+        // Z5: Sprint (106+ RPM)
+        assert_eq!(zones.z5_sprint.zone, 5);
+        assert_eq!(zones.z5_sprint.min_rpm, 106);
+        assert_eq!(zones.z5_sprint.max_rpm, 255);
+
+        // custom flag should be false by default
+        assert!(!zones.custom);
+    }
+
+    #[test]
+    fn test_cadence_zone_lookup() {
+        let zones = CadenceZones::default();
+
+        // Zone 1: Low (0-75 RPM)
+        assert_eq!(zones.get_zone(0), 1);
+        assert_eq!(zones.get_zone(50), 1);
+        assert_eq!(zones.get_zone(75), 1);
+
+        // Zone 2: Economy (76-85 RPM)
+        assert_eq!(zones.get_zone(76), 2);
+        assert_eq!(zones.get_zone(80), 2);
+        assert_eq!(zones.get_zone(85), 2);
+
+        // Zone 3: Natural (86-95 RPM)
+        assert_eq!(zones.get_zone(86), 3);
+        assert_eq!(zones.get_zone(90), 3);
+        assert_eq!(zones.get_zone(95), 3);
+
+        // Zone 4: Fast (96-105 RPM)
+        assert_eq!(zones.get_zone(96), 4);
+        assert_eq!(zones.get_zone(100), 4);
+        assert_eq!(zones.get_zone(105), 4);
+
+        // Zone 5: Sprint (106+ RPM)
+        assert_eq!(zones.get_zone(106), 5);
+        assert_eq!(zones.get_zone(120), 5);
+        assert_eq!(zones.get_zone(255), 5);
+    }
+
+    #[test]
+    fn test_cadence_zone_names() {
+        let zones = CadenceZones::default();
+
+        assert_eq!(zones.z1_low.name, "Low");
+        assert_eq!(zones.z2_economy.name, "Economy");
+        assert_eq!(zones.z3_natural.name, "Natural");
+        assert_eq!(zones.z4_fast.name, "Fast");
+        assert_eq!(zones.z5_sprint.name, "Sprint");
+    }
+
+    #[test]
+    fn test_cadence_zone_colors_defined() {
+        // Verify all 5 cadence zone colors are defined
+        assert_eq!(CADENCE_ZONE_COLORS.len(), 5);
+
+        // Verify each color has distinct values
+        let colors = &CADENCE_ZONE_COLORS;
+
+        // Z1: Steel Blue (120, 160, 180)
+        assert_eq!(colors[0].r, 120);
+        assert_eq!(colors[0].g, 160);
+        assert_eq!(colors[0].b, 180);
+
+        // Z2: Cyan (0, 180, 200)
+        assert_eq!(colors[1].r, 0);
+        assert_eq!(colors[1].g, 180);
+        assert_eq!(colors[1].b, 200);
+
+        // Z3: Teal (0, 170, 150)
+        assert_eq!(colors[2].r, 0);
+        assert_eq!(colors[2].g, 170);
+        assert_eq!(colors[2].b, 150);
+
+        // Z4: Orchid (200, 100, 180)
+        assert_eq!(colors[3].r, 200);
+        assert_eq!(colors[3].g, 100);
+        assert_eq!(colors[3].b, 180);
+
+        // Z5: Hot Pink (255, 50, 180)
+        assert_eq!(colors[4].r, 255);
+        assert_eq!(colors[4].g, 50);
+        assert_eq!(colors[4].b, 180);
+
+        // Verify zones use colors correctly
+        let zones = CadenceZones::default();
+        assert_eq!(zones.z1_low.color, colors[0]);
+        assert_eq!(zones.z2_economy.color, colors[1]);
+        assert_eq!(zones.z3_natural.color, colors[2]);
+        assert_eq!(zones.z4_fast.color, colors[3]);
+        assert_eq!(zones.z5_sprint.color, colors[4]);
+    }
+
+    #[test]
+    fn test_cadence_zone_range_lookup() {
+        let zones = CadenceZones::default();
+
+        // Valid zone lookups
+        assert!(zones.get_zone_range(1).is_some());
+        assert!(zones.get_zone_range(2).is_some());
+        assert!(zones.get_zone_range(3).is_some());
+        assert!(zones.get_zone_range(4).is_some());
+        assert!(zones.get_zone_range(5).is_some());
+
+        // Invalid zone lookups
+        assert!(zones.get_zone_range(0).is_none());
+        assert!(zones.get_zone_range(6).is_none());
+        assert!(zones.get_zone_range(255).is_none());
+
+        // Verify zone range contents
+        let z3 = zones.get_zone_range(3).unwrap();
+        assert_eq!(z3.zone, 3);
+        assert_eq!(z3.name, "Natural");
+        assert_eq!(z3.min_rpm, 86);
+        assert_eq!(z3.max_rpm, 95);
+    }
+
+    #[test]
+    fn test_cadence_all_zones() {
+        let zones = CadenceZones::default();
+        let all = zones.all_zones();
+
+        assert_eq!(all.len(), 5);
+        assert_eq!(all[0].zone, 1);
+        assert_eq!(all[1].zone, 2);
+        assert_eq!(all[2].zone, 3);
+        assert_eq!(all[3].zone, 4);
+        assert_eq!(all[4].zone, 5);
+
+        // Verify zone names in order
+        assert_eq!(all[0].name, "Low");
+        assert_eq!(all[1].name, "Economy");
+        assert_eq!(all[2].name, "Natural");
+        assert_eq!(all[3].name, "Fast");
+        assert_eq!(all[4].name, "Sprint");
+    }
+
+    #[test]
+    fn test_zone_tracker_cadence_zone_change() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0); // Disable debounce for testing
+
+        // First update sets initial zone (no event emitted)
+        tracker.update_cadence(50); // Zone 1 (Low)
+        assert_eq!(tracker.current_cadence_zone(), 1);
+        assert!(!tracker.has_pending_events());
+
+        // Zone change should emit event
+        tracker.update_cadence(90); // Zone 3 (Natural)
+        assert_eq!(tracker.current_cadence_zone(), 3);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::CadenceZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 1);
+                assert_eq!(*new_zone, 3);
+                assert_eq!(zone_name, "Natural");
+            }
+            _ => panic!("Expected CadenceZoneChange event"),
+        }
+
+        // Another zone change to Zone 5
+        tracker.update_cadence(120); // Zone 5 (Sprint)
+        assert_eq!(tracker.current_cadence_zone(), 5);
+        assert!(tracker.has_pending_events());
+
+        let events = tracker.take_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ZoneEvent::CadenceZoneChange {
+                previous_zone,
+                new_zone,
+                zone_name,
+            } => {
+                assert_eq!(*previous_zone, 3);
+                assert_eq!(*new_zone, 5);
+                assert_eq!(zone_name, "Sprint");
+            }
+            _ => panic!("Expected CadenceZoneChange event"),
+        }
+    }
+
+    #[test]
+    fn test_zone_tracker_no_cadence_event_for_same_zone() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Initial reading
+        tracker.update_cadence(90); // Zone 3 (Natural, 86-95 RPM)
+        assert_eq!(tracker.current_cadence_zone(), 3);
+        assert!(!tracker.has_pending_events()); // No event for initial
+
+        // Stay in same zone
+        tracker.update_cadence(86); // Still Zone 3
+        tracker.update_cadence(95); // Still Zone 3
+        tracker.update_cadence(88); // Still Zone 3
+
+        // No events should be emitted for staying in the same zone
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 3);
+    }
+
+    #[test]
+    fn test_zone_tracker_reset_clears_cadence() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Set up some cadence zone state
+        tracker.update_cadence(50); // Zone 1
+        tracker.update_cadence(100); // Zone 4 - triggers event
+
+        assert!(tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 4);
+
+        // Reset should clear everything
+        tracker.reset();
+
+        assert!(!tracker.has_pending_events());
+        assert_eq!(tracker.current_cadence_zone(), 0);
+        assert!(tracker.current_cadence_zone_name().is_none());
+    }
+
+    #[test]
+    fn test_zone_tracker_cadence_zone_name() {
+        let power_zones = PowerZones::from_ftp(200);
+        let cadence_zones = CadenceZones::default();
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_cadence_zones(cadence_zones);
+        tracker.set_debounce_secs(0);
+
+        // Initially no zone name
+        assert!(tracker.current_cadence_zone_name().is_none());
+
+        // After update, zone name should be available
+        tracker.update_cadence(80); // Zone 2 (Economy)
+        assert_eq!(tracker.current_cadence_zone(), 2);
+        assert_eq!(tracker.current_cadence_zone_name(), Some("Economy".to_string()));
+
+        // Zone change updates name
+        tracker.update_cadence(110); // Zone 5 (Sprint)
+        assert_eq!(tracker.current_cadence_zone_name(), Some("Sprint".to_string()));
+    }
+
+    #[test]
+    fn test_zone_tracker_cadence_without_zones_configured() {
+        let power_zones = PowerZones::from_ftp(200);
+        let mut tracker = ZoneTracker::new(power_zones);
+        tracker.set_debounce_secs(0);
+
+        // Without cadence zones configured, update_cadence should do nothing
+        tracker.update_cadence(90);
+        assert_eq!(tracker.current_cadence_zone(), 0);
+        assert!(!tracker.has_pending_events());
+        assert!(tracker.current_cadence_zone_name().is_none());
     }
 }

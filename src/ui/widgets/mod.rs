@@ -69,7 +69,7 @@ pub use voice_indicator::{
     VoiceIndicatorState,
 };
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
-pub use zone_indicator::ZoneIndicator;
+pub use zone_indicator::{ZoneIndicator, ZoneType};
 pub use hud::{
     HudConnectionQualityConfig, HudConnectionQualityIndicator, HudConnectionQualityResponse,
     HudConnectionState, InlineHudSensorStatus,
