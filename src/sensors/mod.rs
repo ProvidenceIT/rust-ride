@@ -2,6 +2,7 @@
 
 pub mod ant;
 pub mod cache;
+pub mod calibration;
 pub mod conflict;
 pub mod connection_queue;
 pub mod connection_state;
@@ -70,6 +71,12 @@ pub use power_meter::{
     WakeUpHint, WakeUpHintType, is_power_protocol, provides_power_data,
     DEFAULT_EXTENDED_DISCOVERY_SECS, DEFAULT_STANDARD_DISCOVERY_SECS,
     EXTENDED_DISCOVERY_THRESHOLD_SECS,
+};
+pub use calibration::{
+    CalibrationData, CalibrationError, CalibrationManager, CalibrationRecord,
+    CalibrationReminder, CalibrationReminderConfig, CalibrationReminderType,
+    get_calibration_path, is_calibratable_sensor, DEFAULT_CALIBRATION_REMINDER_DAYS,
+    MAX_CALIBRATION_REMINDER_DAYS, MIN_CALIBRATION_REMINDER_DAYS,
 };
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,
