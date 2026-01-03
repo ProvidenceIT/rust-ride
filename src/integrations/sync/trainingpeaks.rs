@@ -1551,6 +1551,472 @@ pub fn convert_tp_workouts(
         .collect()
 }
 
+// ============================================================================
+// TrainingPeaks Sync Manager (T014)
+// ============================================================================
+
+/// Default sync interval in hours (how often to auto-sync)
+const DEFAULT_SYNC_INTERVAL_HOURS: u64 = 6;
+
+/// Default number of days to look ahead when syncing workouts
+const DEFAULT_LOOKAHEAD_DAYS: i64 = 14;
+
+/// Default number of days to look back when syncing workouts
+const DEFAULT_LOOKBACK_DAYS: i64 = 7;
+
+/// Result of a workout sync operation
+#[derive(Debug, Clone)]
+pub struct WorkoutSyncResult {
+    /// Number of workouts fetched from TrainingPeaks
+    pub workouts_fetched: usize,
+    /// Number of workouts successfully converted
+    pub workouts_converted: usize,
+    /// Number of workouts that failed conversion
+    pub conversion_errors: usize,
+    /// Number of new workouts (not previously synced)
+    pub new_workouts: usize,
+    /// Number of workouts that were updated
+    pub updated_workouts: usize,
+    /// Number of workouts skipped (already synced, unchanged)
+    pub skipped_workouts: usize,
+    /// Timestamp of sync completion
+    pub synced_at: DateTime<Utc>,
+    /// Error messages for failed conversions
+    pub errors: Vec<String>,
+}
+
+impl WorkoutSyncResult {
+    /// Create an empty result
+    fn new() -> Self {
+        Self {
+            workouts_fetched: 0,
+            workouts_converted: 0,
+            conversion_errors: 0,
+            new_workouts: 0,
+            updated_workouts: 0,
+            skipped_workouts: 0,
+            synced_at: Utc::now(),
+            errors: Vec::new(),
+        }
+    }
+
+    /// Check if sync was successful (no errors)
+    pub fn is_success(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Get total workouts processed
+    pub fn total_processed(&self) -> usize {
+        self.workouts_converted + self.conversion_errors
+    }
+}
+
+/// Imported workout with TrainingPeaks metadata
+#[derive(Debug, Clone)]
+pub struct ImportedWorkout {
+    /// The converted internal workout
+    pub workout: Workout,
+    /// TrainingPeaks external workout ID for sync tracking
+    pub external_id: i64,
+    /// Scheduled date from TrainingPeaks
+    pub scheduled_date: Option<NaiveDate>,
+    /// TSS from TrainingPeaks plan
+    pub planned_tss: Option<f64>,
+    /// IF from TrainingPeaks plan
+    pub planned_if: Option<f64>,
+}
+
+/// Configuration for workout sync behavior
+#[derive(Debug, Clone)]
+pub struct WorkoutSyncConfig {
+    /// Number of days to look ahead for scheduled workouts
+    pub lookahead_days: i64,
+    /// Number of days to look back for scheduled workouts
+    pub lookback_days: i64,
+    /// User's FTP for power target calculations
+    pub ftp: Option<u16>,
+    /// Whether to sync automatically at interval
+    pub auto_sync_enabled: bool,
+    /// Auto-sync interval in hours
+    pub sync_interval_hours: u64,
+    /// Only sync cycling workouts
+    pub cycling_only: bool,
+}
+
+impl Default for WorkoutSyncConfig {
+    fn default() -> Self {
+        Self {
+            lookahead_days: DEFAULT_LOOKAHEAD_DAYS,
+            lookback_days: DEFAULT_LOOKBACK_DAYS,
+            ftp: None,
+            auto_sync_enabled: true,
+            sync_interval_hours: DEFAULT_SYNC_INTERVAL_HOURS,
+            cycling_only: true,
+        }
+    }
+}
+
+impl WorkoutSyncConfig {
+    /// Create a new config with specified FTP
+    pub fn with_ftp(ftp: u16) -> Self {
+        Self {
+            ftp: Some(ftp),
+            ..Default::default()
+        }
+    }
+
+    /// Set lookahead days
+    pub fn lookahead_days(mut self, days: i64) -> Self {
+        self.lookahead_days = days;
+        self
+    }
+
+    /// Set lookback days
+    pub fn lookback_days(mut self, days: i64) -> Self {
+        self.lookback_days = days;
+        self
+    }
+
+    /// Enable or disable auto sync
+    pub fn auto_sync(mut self, enabled: bool) -> Self {
+        self.auto_sync_enabled = enabled;
+        self
+    }
+
+    /// Set sync interval
+    pub fn sync_interval(mut self, hours: u64) -> Self {
+        self.sync_interval_hours = hours;
+        self
+    }
+}
+
+/// Manager for syncing workout plans from TrainingPeaks
+///
+/// The sync manager handles:
+/// - Fetching scheduled workouts for a date range
+/// - Converting to internal workout format with TrainingPeaks source marking
+/// - Tracking sync state (last sync time, synced workout IDs)
+/// - Periodic automatic syncing when enabled
+pub struct TrainingPeaksSyncManager {
+    /// TrainingPeaks API client
+    client: Arc<TrainingPeaksClient>,
+    /// Sync configuration
+    config: WorkoutSyncConfig,
+    /// Last successful sync timestamp
+    last_sync_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Set of TrainingPeaks workout IDs that have been synced
+    synced_workout_ids: Arc<RwLock<std::collections::HashSet<i64>>>,
+}
+
+impl TrainingPeaksSyncManager {
+    /// Create a new sync manager with the given client and config
+    pub fn new(client: Arc<TrainingPeaksClient>, config: WorkoutSyncConfig) -> Self {
+        Self {
+            client,
+            config,
+            last_sync_at: Arc::new(RwLock::new(None)),
+            synced_workout_ids: Arc::new(RwLock::new(std::collections::HashSet::new())),
+        }
+    }
+
+    /// Create a new sync manager with default config
+    pub fn with_defaults(client: Arc<TrainingPeaksClient>) -> Self {
+        Self::new(client, WorkoutSyncConfig::default())
+    }
+
+    /// Update the sync configuration
+    pub fn set_config(&mut self, config: WorkoutSyncConfig) {
+        self.config = config;
+    }
+
+    /// Get current sync configuration
+    pub fn config(&self) -> &WorkoutSyncConfig {
+        &self.config
+    }
+
+    /// Get last sync timestamp
+    pub async fn last_sync_at(&self) -> Option<DateTime<Utc>> {
+        *self.last_sync_at.read().await
+    }
+
+    /// Check if a sync is due based on the configured interval
+    pub async fn is_sync_due(&self) -> bool {
+        if !self.config.auto_sync_enabled {
+            return false;
+        }
+
+        let last_sync = self.last_sync_at.read().await;
+        match *last_sync {
+            None => true, // Never synced
+            Some(last) => {
+                let interval = chrono::Duration::hours(self.config.sync_interval_hours as i64);
+                Utc::now() > last + interval
+            }
+        }
+    }
+
+    /// Mark a workout as synced (for tracking already-imported workouts)
+    pub async fn mark_synced(&self, workout_id: i64) {
+        self.synced_workout_ids.write().await.insert(workout_id);
+    }
+
+    /// Mark multiple workouts as synced
+    pub async fn mark_synced_batch(&self, workout_ids: &[i64]) {
+        let mut synced = self.synced_workout_ids.write().await;
+        for id in workout_ids {
+            synced.insert(*id);
+        }
+    }
+
+    /// Check if a workout has already been synced
+    pub async fn is_synced(&self, workout_id: i64) -> bool {
+        self.synced_workout_ids.read().await.contains(&workout_id)
+    }
+
+    /// Clear all synced workout tracking (for full re-sync)
+    pub async fn clear_synced(&self) {
+        self.synced_workout_ids.write().await.clear();
+    }
+
+    /// Load previously synced workout IDs (for initialization from storage)
+    pub async fn load_synced_ids(&self, ids: Vec<i64>) {
+        let mut synced = self.synced_workout_ids.write().await;
+        synced.clear();
+        for id in ids {
+            synced.insert(id);
+        }
+    }
+
+    /// Get the date range for syncing based on config
+    fn get_sync_date_range(&self) -> (NaiveDate, NaiveDate) {
+        let today = Utc::now().date_naive();
+        let start = today - chrono::Duration::days(self.config.lookback_days);
+        let end = today + chrono::Duration::days(self.config.lookahead_days);
+        (start, end)
+    }
+
+    /// Sync workouts from TrainingPeaks
+    ///
+    /// Fetches scheduled workouts for the configured date range,
+    /// converts them to internal format, and returns the imported workouts
+    /// along with sync statistics.
+    ///
+    /// # Returns
+    /// A tuple of (imported workouts, sync result)
+    ///
+    /// # Errors
+    /// * `NotConfigured` - If no access token is configured
+    /// * `RateLimited` - If TrainingPeaks' rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `NetworkError` - If a network error occurred
+    pub async fn sync_workouts(&self) -> Result<(Vec<ImportedWorkout>, WorkoutSyncResult), SyncError> {
+        let (start_date, end_date) = self.get_sync_date_range();
+
+        tracing::info!(
+            "Starting TrainingPeaks workout sync from {} to {}",
+            start_date,
+            end_date
+        );
+
+        // Fetch workouts from TrainingPeaks
+        let tp_workouts = self.client.get_scheduled_workouts(start_date, end_date).await?;
+
+        let mut result = WorkoutSyncResult::new();
+        result.workouts_fetched = tp_workouts.len();
+
+        tracing::debug!(
+            "Fetched {} workouts from TrainingPeaks",
+            tp_workouts.len()
+        );
+
+        let mut imported_workouts = Vec::new();
+        let synced_ids = self.synced_workout_ids.read().await;
+
+        for tp_workout in tp_workouts {
+            // Skip non-cycling workouts if configured
+            if self.config.cycling_only && !Self::is_cycling_workout(&tp_workout) {
+                tracing::debug!(
+                    "Skipping non-cycling workout: {} (type: {})",
+                    tp_workout.title,
+                    tp_workout.workout_type
+                );
+                continue;
+            }
+
+            // Check if already synced
+            let already_synced = synced_ids.contains(&tp_workout.id);
+
+            // Convert to internal format
+            match tp_workout.to_workout(self.config.ftp) {
+                Ok(mut workout) => {
+                    // Mark as TrainingPeaks source
+                    workout.source_format = Some(WorkoutFormat::TrainingPeaks);
+
+                    // Parse scheduled date
+                    let scheduled_date = NaiveDate::parse_from_str(
+                        &tp_workout.workout_day.split('T').next().unwrap_or(&tp_workout.workout_day),
+                        "%Y-%m-%d",
+                    ).ok();
+
+                    let imported = ImportedWorkout {
+                        workout,
+                        external_id: tp_workout.id,
+                        scheduled_date,
+                        planned_tss: tp_workout.tss_planned,
+                        planned_if: tp_workout.if_planned,
+                    };
+
+                    imported_workouts.push(imported);
+                    result.workouts_converted += 1;
+
+                    if already_synced {
+                        result.skipped_workouts += 1;
+                    } else {
+                        result.new_workouts += 1;
+                    }
+                }
+                Err(e) => {
+                    result.conversion_errors += 1;
+                    result.errors.push(format!(
+                        "Failed to convert '{}': {}",
+                        tp_workout.title, e
+                    ));
+                    tracing::warn!(
+                        "Failed to convert TrainingPeaks workout '{}': {}",
+                        tp_workout.title,
+                        e
+                    );
+                }
+            }
+        }
+
+        // Update last sync time
+        *self.last_sync_at.write().await = Some(Utc::now());
+
+        tracing::info!(
+            "TrainingPeaks sync complete: {} fetched, {} converted, {} new, {} skipped, {} errors",
+            result.workouts_fetched,
+            result.workouts_converted,
+            result.new_workouts,
+            result.skipped_workouts,
+            result.conversion_errors
+        );
+
+        Ok((imported_workouts, result))
+    }
+
+    /// Sync workouts for a specific date range
+    ///
+    /// Similar to `sync_workouts` but allows specifying a custom date range.
+    pub async fn sync_workouts_for_range(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<(Vec<ImportedWorkout>, WorkoutSyncResult), SyncError> {
+        tracing::info!(
+            "Starting TrainingPeaks workout sync for range {} to {}",
+            start_date,
+            end_date
+        );
+
+        // Fetch workouts from TrainingPeaks
+        let tp_workouts = self.client.get_scheduled_workouts(start_date, end_date).await?;
+
+        let mut result = WorkoutSyncResult::new();
+        result.workouts_fetched = tp_workouts.len();
+
+        let mut imported_workouts = Vec::new();
+        let synced_ids = self.synced_workout_ids.read().await;
+
+        for tp_workout in tp_workouts {
+            // Skip non-cycling workouts if configured
+            if self.config.cycling_only && !Self::is_cycling_workout(&tp_workout) {
+                continue;
+            }
+
+            let already_synced = synced_ids.contains(&tp_workout.id);
+
+            match tp_workout.to_workout(self.config.ftp) {
+                Ok(mut workout) => {
+                    workout.source_format = Some(WorkoutFormat::TrainingPeaks);
+
+                    let scheduled_date = NaiveDate::parse_from_str(
+                        &tp_workout.workout_day.split('T').next().unwrap_or(&tp_workout.workout_day),
+                        "%Y-%m-%d",
+                    ).ok();
+
+                    imported_workouts.push(ImportedWorkout {
+                        workout,
+                        external_id: tp_workout.id,
+                        scheduled_date,
+                        planned_tss: tp_workout.tss_planned,
+                        planned_if: tp_workout.if_planned,
+                    });
+
+                    result.workouts_converted += 1;
+
+                    if already_synced {
+                        result.skipped_workouts += 1;
+                    } else {
+                        result.new_workouts += 1;
+                    }
+                }
+                Err(e) => {
+                    result.conversion_errors += 1;
+                    result.errors.push(format!(
+                        "Failed to convert '{}': {}",
+                        tp_workout.title, e
+                    ));
+                }
+            }
+        }
+
+        *self.last_sync_at.write().await = Some(Utc::now());
+
+        Ok((imported_workouts, result))
+    }
+
+    /// Fetch and convert a single workout by ID
+    pub async fn get_workout(&self, workout_id: i64) -> Result<ImportedWorkout, SyncError> {
+        tracing::debug!("Fetching TrainingPeaks workout {}", workout_id);
+
+        let tp_workout = self.client.get_workout_details(workout_id).await?;
+
+        let mut workout = tp_workout.to_workout(self.config.ftp).map_err(|e| {
+            SyncError::ApiError(format!("Failed to convert workout: {}", e))
+        })?;
+
+        workout.source_format = Some(WorkoutFormat::TrainingPeaks);
+
+        let scheduled_date = NaiveDate::parse_from_str(
+            &tp_workout.workout_day.split('T').next().unwrap_or(&tp_workout.workout_day),
+            "%Y-%m-%d",
+        ).ok();
+
+        Ok(ImportedWorkout {
+            workout,
+            external_id: tp_workout.id,
+            scheduled_date,
+            planned_tss: tp_workout.tss_planned,
+            planned_if: tp_workout.if_planned,
+        })
+    }
+
+    /// Check if a workout is a cycling workout
+    fn is_cycling_workout(workout: &TPWorkout) -> bool {
+        let workout_type = workout.workout_type.to_lowercase();
+        workout_type.contains("bike")
+            || workout_type.contains("cycling")
+            || workout_type.contains("ride")
+            || workout_type == "bike"
+    }
+
+    /// Get number of synced workouts
+    pub async fn synced_count(&self) -> usize {
+        self.synced_workout_ids.read().await.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3926,5 +4392,518 @@ mod http_mocked_tests {
         assert_eq!(workout.title, "Free Ride");
         assert_eq!(workout.total_time, Some(7200.0));
         assert!(workout.structure.is_none());
+    }
+
+    // ============================================================================
+    // TrainingPeaksSyncManager Tests (T014)
+    // ============================================================================
+
+    #[test]
+    fn test_workout_sync_config_default() {
+        let config = WorkoutSyncConfig::default();
+
+        assert_eq!(config.lookahead_days, DEFAULT_LOOKAHEAD_DAYS);
+        assert_eq!(config.lookback_days, DEFAULT_LOOKBACK_DAYS);
+        assert!(config.ftp.is_none());
+        assert!(config.auto_sync_enabled);
+        assert_eq!(config.sync_interval_hours, DEFAULT_SYNC_INTERVAL_HOURS);
+        assert!(config.cycling_only);
+    }
+
+    #[test]
+    fn test_workout_sync_config_with_ftp() {
+        let config = WorkoutSyncConfig::with_ftp(250);
+
+        assert_eq!(config.ftp, Some(250));
+        assert_eq!(config.lookahead_days, DEFAULT_LOOKAHEAD_DAYS);
+        assert!(config.auto_sync_enabled);
+    }
+
+    #[test]
+    fn test_workout_sync_config_builder() {
+        let config = WorkoutSyncConfig::with_ftp(300)
+            .lookahead_days(21)
+            .lookback_days(3)
+            .auto_sync(false)
+            .sync_interval(12);
+
+        assert_eq!(config.ftp, Some(300));
+        assert_eq!(config.lookahead_days, 21);
+        assert_eq!(config.lookback_days, 3);
+        assert!(!config.auto_sync_enabled);
+        assert_eq!(config.sync_interval_hours, 12);
+    }
+
+    #[test]
+    fn test_workout_sync_result_new() {
+        let result = WorkoutSyncResult::new();
+
+        assert_eq!(result.workouts_fetched, 0);
+        assert_eq!(result.workouts_converted, 0);
+        assert_eq!(result.conversion_errors, 0);
+        assert_eq!(result.new_workouts, 0);
+        assert_eq!(result.skipped_workouts, 0);
+        assert!(result.is_success());
+        assert_eq!(result.total_processed(), 0);
+    }
+
+    #[test]
+    fn test_workout_sync_result_with_errors() {
+        let mut result = WorkoutSyncResult::new();
+        result.errors.push("Test error".to_string());
+
+        assert!(!result.is_success());
+    }
+
+    #[test]
+    fn test_workout_sync_result_total_processed() {
+        let mut result = WorkoutSyncResult::new();
+        result.workouts_converted = 5;
+        result.conversion_errors = 2;
+
+        assert_eq!(result.total_processed(), 7);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_creation() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let config = WorkoutSyncConfig::with_ftp(250);
+        let manager = TrainingPeaksSyncManager::new(client, config);
+
+        assert_eq!(manager.config().ftp, Some(250));
+        assert!(manager.last_sync_at().await.is_none());
+        assert_eq!(manager.synced_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_with_defaults() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        assert!(manager.config().ftp.is_none());
+        assert!(manager.config().auto_sync_enabled);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_mark_synced() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        assert!(!manager.is_synced(12345).await);
+
+        manager.mark_synced(12345).await;
+        assert!(manager.is_synced(12345).await);
+        assert_eq!(manager.synced_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_mark_synced_batch() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        manager.mark_synced_batch(&[1, 2, 3, 4, 5]).await;
+
+        assert!(manager.is_synced(1).await);
+        assert!(manager.is_synced(3).await);
+        assert!(manager.is_synced(5).await);
+        assert!(!manager.is_synced(6).await);
+        assert_eq!(manager.synced_count().await, 5);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_clear_synced() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        manager.mark_synced_batch(&[1, 2, 3]).await;
+        assert_eq!(manager.synced_count().await, 3);
+
+        manager.clear_synced().await;
+        assert_eq!(manager.synced_count().await, 0);
+        assert!(!manager.is_synced(1).await);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_load_synced_ids() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        manager.mark_synced(999).await;
+        assert!(manager.is_synced(999).await);
+
+        // Load new IDs should replace existing
+        manager.load_synced_ids(vec![100, 200, 300]).await;
+
+        assert!(!manager.is_synced(999).await);
+        assert!(manager.is_synced(100).await);
+        assert!(manager.is_synced(200).await);
+        assert!(manager.is_synced(300).await);
+        assert_eq!(manager.synced_count().await, 3);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_is_sync_due_when_never_synced() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        // Should be due when never synced
+        assert!(manager.is_sync_due().await);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_is_sync_due_disabled() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let config = WorkoutSyncConfig::default().auto_sync(false);
+        let manager = TrainingPeaksSyncManager::new(client, config);
+
+        // Should not be due when auto-sync disabled
+        assert!(!manager.is_sync_due().await);
+    }
+
+    #[test]
+    fn test_is_cycling_workout_bike() {
+        let workout = TPWorkout {
+            id: 1,
+            title: "Sweet Spot".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2025-01-15".to_string(),
+            total_time: Some(3600.0),
+            tss_planned: Some(75.0),
+            if_planned: Some(0.85),
+            structure: None,
+        };
+
+        assert!(TrainingPeaksSyncManager::is_cycling_workout(&workout));
+    }
+
+    #[test]
+    fn test_is_cycling_workout_cycling() {
+        let workout = TPWorkout {
+            id: 1,
+            title: "Cycling Workout".to_string(),
+            description: None,
+            workout_type: "Cycling".to_string(),
+            workout_day: "2025-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: None,
+        };
+
+        assert!(TrainingPeaksSyncManager::is_cycling_workout(&workout));
+    }
+
+    #[test]
+    fn test_is_cycling_workout_ride() {
+        let workout = TPWorkout {
+            id: 1,
+            title: "Long Ride".to_string(),
+            description: None,
+            workout_type: "Indoor Ride".to_string(),
+            workout_day: "2025-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: None,
+        };
+
+        assert!(TrainingPeaksSyncManager::is_cycling_workout(&workout));
+    }
+
+    #[test]
+    fn test_is_cycling_workout_run() {
+        let workout = TPWorkout {
+            id: 1,
+            title: "Run".to_string(),
+            description: None,
+            workout_type: "Run".to_string(),
+            workout_day: "2025-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: None,
+        };
+
+        assert!(!TrainingPeaksSyncManager::is_cycling_workout(&workout));
+    }
+
+    #[test]
+    fn test_is_cycling_workout_swim() {
+        let workout = TPWorkout {
+            id: 1,
+            title: "Swim".to_string(),
+            description: None,
+            workout_type: "Swim".to_string(),
+            workout_day: "2025-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: None,
+        };
+
+        assert!(!TrainingPeaksSyncManager::is_cycling_workout(&workout));
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_sync_without_token() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        let result = manager.sync_workouts().await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_get_workout_without_token() {
+        let client = Arc::new(TrainingPeaksClient::new());
+        let manager = TrainingPeaksSyncManager::with_defaults(client);
+
+        let result = manager.get_workout(12345).await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_sync_workouts_success() {
+        use wiremock::matchers::query_param;
+
+        let mock_server = MockServer::start().await;
+
+        // Mock response with cycling and running workouts
+        let response_body = r#"[
+            {
+                "Id": 1001,
+                "Title": "Sweet Spot 2x20",
+                "Description": "2x20 minute intervals at sweet spot",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-15T00:00:00",
+                "TotalTime": 3600.0,
+                "TSSPlanned": 75.0,
+                "IFPlanned": 0.85,
+                "Structure": {
+                    "PrimaryLengthMetric": "Duration",
+                    "PrimaryIntensityMetric": "Power",
+                    "Steps": [
+                        {
+                            "Type": "SteadyState",
+                            "Name": "Warmup",
+                            "Length": 600.0,
+                            "Targets": [{"Type": "Power", "MinValue": 50.0, "MaxValue": 60.0, "Unit": "PercentFTP"}]
+                        }
+                    ]
+                }
+            },
+            {
+                "Id": 1002,
+                "Title": "Easy Run",
+                "WorkoutType": "Run",
+                "WorkoutDay": "2025-01-16T00:00:00",
+                "TotalTime": 2400.0
+            },
+            {
+                "Id": 1003,
+                "Title": "Threshold Intervals",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-17T00:00:00",
+                "TotalTime": 3600.0,
+                "TSSPlanned": 80.0,
+                "Structure": {
+                    "PrimaryLengthMetric": "Duration",
+                    "PrimaryIntensityMetric": "Power",
+                    "Steps": [
+                        {
+                            "Type": "SteadyState",
+                            "Name": "Threshold",
+                            "Length": 1200.0,
+                            "Targets": [{"Type": "Power", "MinValue": 95.0, "MaxValue": 105.0, "Unit": "PercentFTP"}]
+                        }
+                    ]
+                }
+            }
+        ]"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Arc::new(TrainingPeaksClient::with_base_url(
+            mock_server.uri(),
+            mock_server.uri(),
+        ));
+        client.set_access_token("test_token".to_string()).await;
+
+        let config = WorkoutSyncConfig::with_ftp(250).lookahead_days(7).lookback_days(1);
+        let manager = TrainingPeaksSyncManager::new(client, config);
+
+        let result = manager.sync_workouts().await;
+
+        assert!(result.is_ok());
+        let (workouts, stats) = result.unwrap();
+
+        // Should have 2 cycling workouts (run workout filtered out)
+        assert_eq!(workouts.len(), 2);
+        assert_eq!(stats.workouts_fetched, 3);
+        assert_eq!(stats.workouts_converted, 2);
+        assert_eq!(stats.new_workouts, 2);
+        assert!(stats.is_success());
+
+        // Check workout source format
+        assert_eq!(
+            workouts[0].workout.source_format,
+            Some(WorkoutFormat::TrainingPeaks)
+        );
+        assert_eq!(
+            workouts[1].workout.source_format,
+            Some(WorkoutFormat::TrainingPeaks)
+        );
+
+        // Check external IDs
+        assert_eq!(workouts[0].external_id, 1001);
+        assert_eq!(workouts[1].external_id, 1003);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_tracks_already_synced() {
+        use wiremock::matchers::query_param;
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"[
+            {
+                "Id": 2001,
+                "Title": "VO2max Intervals",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-18T00:00:00",
+                "TotalTime": 3600.0,
+                "Structure": {
+                    "PrimaryLengthMetric": "Duration",
+                    "Steps": [
+                        {
+                            "Type": "SteadyState",
+                            "Name": "Interval",
+                            "Length": 300.0,
+                            "Targets": [{"Type": "Power", "MinValue": 110.0, "MaxValue": 120.0, "Unit": "PercentFTP"}]
+                        }
+                    ]
+                }
+            }
+        ]"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Arc::new(TrainingPeaksClient::with_base_url(
+            mock_server.uri(),
+            mock_server.uri(),
+        ));
+        client.set_access_token("test_token".to_string()).await;
+
+        let config = WorkoutSyncConfig::with_ftp(250);
+        let manager = TrainingPeaksSyncManager::new(client, config);
+
+        // Pre-mark workout as synced
+        manager.mark_synced(2001).await;
+
+        let result = manager.sync_workouts().await;
+
+        assert!(result.is_ok());
+        let (workouts, stats) = result.unwrap();
+
+        assert_eq!(workouts.len(), 1);
+        assert_eq!(stats.workouts_converted, 1);
+        assert_eq!(stats.new_workouts, 0);
+        assert_eq!(stats.skipped_workouts, 1);
+    }
+
+    #[tokio::test]
+    async fn test_sync_manager_get_single_workout() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "Id": 3001,
+            "Title": "Recovery Spin",
+            "Description": "Easy recovery day",
+            "WorkoutType": "Bike",
+            "WorkoutDay": "2025-01-20T00:00:00",
+            "TotalTime": 2400.0,
+            "TSSPlanned": 25.0,
+            "IFPlanned": 0.55,
+            "Structure": {
+                "PrimaryLengthMetric": "Duration",
+                "PrimaryIntensityMetric": "Power",
+                "Steps": [
+                    {
+                        "Type": "SteadyState",
+                        "Name": "Easy spin",
+                        "Length": 2400.0,
+                        "Targets": [{"Type": "Power", "MinValue": 45.0, "MaxValue": 55.0, "Unit": "PercentFTP"}]
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts/3001"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Arc::new(TrainingPeaksClient::with_base_url(
+            mock_server.uri(),
+            mock_server.uri(),
+        ));
+        client.set_access_token("test_token".to_string()).await;
+
+        let config = WorkoutSyncConfig::with_ftp(250);
+        let manager = TrainingPeaksSyncManager::new(client, config);
+
+        let result = manager.get_workout(3001).await;
+
+        assert!(result.is_ok());
+        let imported = result.unwrap();
+
+        assert_eq!(imported.external_id, 3001);
+        assert_eq!(imported.workout.name, "Recovery Spin");
+        assert_eq!(imported.workout.source_format, Some(WorkoutFormat::TrainingPeaks));
+        assert_eq!(imported.planned_tss, Some(25.0));
+        assert_eq!(imported.planned_if, Some(0.55));
+        assert_eq!(
+            imported.scheduled_date,
+            NaiveDate::from_ymd_opt(2025, 1, 20)
+        );
+    }
+
+    #[test]
+    fn test_imported_workout_struct() {
+        let workout = Workout::new(
+            "Test Workout".to_string(),
+            vec![WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600,
+                power_target: PowerTarget::PercentFtp { percent: 75 },
+                cadence_target: None,
+                text_event: None,
+            }],
+        );
+
+        let imported = ImportedWorkout {
+            workout: workout.clone(),
+            external_id: 9999,
+            scheduled_date: NaiveDate::from_ymd_opt(2025, 2, 1),
+            planned_tss: Some(50.0),
+            planned_if: Some(0.75),
+        };
+
+        assert_eq!(imported.external_id, 9999);
+        assert_eq!(imported.workout.name, "Test Workout");
+        assert_eq!(imported.planned_tss, Some(50.0));
     }
 }

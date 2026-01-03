@@ -20,6 +20,10 @@ pub use service::{
     create_sync_service, create_sync_service_with_db, PlatformStatus, SyncEvent, SyncMessage,
     SyncService, SyncServiceHandle, UploadQueueEntry,
 };
+pub use trainingpeaks::{
+    ImportedWorkout, TrainingPeaksClient, TrainingPeaksSyncManager, WorkoutSyncConfig,
+    WorkoutSyncResult,
+};
 
 /// Sync-related errors
 #[derive(Debug, Error)]
