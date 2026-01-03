@@ -3,14 +3,20 @@
 //! T045: Implement sensor discovery list widget
 //! T046: Implement sensor pairing confirmation dialog
 //! T009-3.4: Add connection quality indicators to sensor setup screen
+//! T009-4.4: Add sensor conflict resolution dialog
 
 use std::collections::HashMap;
 
 use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::sensors::ant::dongle::{AntDongle, DongleStatus};
+use crate::sensors::conflict::{DataType, SensorConflict};
 use crate::sensors::quality::{QualityLevel, QualityStats};
 use crate::sensors::types::{ConnectionState, DiscoveredSensor, Protocol, SensorState, SensorType};
+use crate::ui::dialogs::sensor_conflict::{
+    ConflictNotificationBanner, ConflictResolutionAction, SensorConflictDialog,
+    SensorConflictDialogState,
+};
 use crate::ui::widgets::connection_quality::ConnectionQualityIndicator;
 
 use super::Screen;
@@ -38,6 +44,12 @@ pub struct SensorSetupScreen {
         Option<(String, Option<DiscoveredSensor>, Option<DiscoveredSensor>)>,
     /// Connection quality stats per device (device_id -> QualityStats)
     pub quality_stats: HashMap<String, QualityStats>,
+    /// State for the sensor conflict resolution dialog
+    pub conflict_dialog_state: SensorConflictDialogState,
+    /// Active sensor conflicts (data_type -> conflict)
+    pub active_conflicts: Vec<SensorConflict>,
+    /// Last conflict resolution action (for external handling)
+    pub last_conflict_action: Option<ConflictResolutionAction>,
 }
 
 impl Default for SensorSetupScreen {
@@ -53,6 +65,9 @@ impl Default for SensorSetupScreen {
             show_protocol_dialog: false,
             protocol_choice_sensor: None,
             quality_stats: HashMap::new(),
+            conflict_dialog_state: SensorConflictDialogState::new(),
+            active_conflicts: Vec::new(),
+            last_conflict_action: None,
         }
     }
 }
@@ -167,6 +182,77 @@ impl SensorSetupScreen {
     /// Check if any sensor has poor connection quality.
     pub fn has_poor_quality_sensors(&self) -> bool {
         self.quality_stats.values().any(|q| q.level == QualityLevel::Poor)
+    }
+
+    // =========================================================================
+    // Conflict Management
+    // =========================================================================
+
+    /// Update active conflicts from the conflict detector.
+    pub fn update_conflicts(&mut self, conflicts: Vec<SensorConflict>) {
+        self.active_conflicts = conflicts;
+    }
+
+    /// Add a new conflict or update an existing one.
+    pub fn add_conflict(&mut self, conflict: SensorConflict) {
+        // Replace if same data type exists
+        if let Some(existing) = self.active_conflicts
+            .iter_mut()
+            .find(|c| c.data_type == conflict.data_type)
+        {
+            *existing = conflict;
+        } else {
+            self.active_conflicts.push(conflict);
+        }
+    }
+
+    /// Remove a conflict by data type.
+    pub fn remove_conflict(&mut self, data_type: DataType) {
+        self.active_conflicts.retain(|c| c.data_type != data_type);
+    }
+
+    /// Get unresolved conflicts.
+    pub fn unresolved_conflicts(&self) -> Vec<&SensorConflict> {
+        self.active_conflicts
+            .iter()
+            .filter(|c| !c.is_resolved && c.is_active())
+            .collect()
+    }
+
+    /// Check if there are any unresolved conflicts.
+    pub fn has_unresolved_conflicts(&self) -> bool {
+        self.active_conflicts
+            .iter()
+            .any(|c| !c.is_resolved && c.is_active())
+    }
+
+    /// Get the number of unresolved conflicts.
+    pub fn unresolved_conflict_count(&self) -> usize {
+        self.active_conflicts
+            .iter()
+            .filter(|c| !c.is_resolved && c.is_active())
+            .count()
+    }
+
+    /// Open the conflict resolution dialog for a specific data type.
+    pub fn open_conflict_dialog(&mut self, data_type: DataType) {
+        if let Some(conflict) = self.active_conflicts
+            .iter()
+            .find(|c| c.data_type == data_type)
+            .cloned()
+        {
+            self.conflict_dialog_state.open(conflict);
+        }
+    }
+
+    /// Open the conflict resolution dialog for a specific conflict.
+    pub fn open_conflict_dialog_for(&mut self, conflict: SensorConflict) {
+        self.conflict_dialog_state.open(conflict);
+    }
+
+    /// Take the last conflict action (consumes it).
+    pub fn take_conflict_action(&mut self) -> Option<ConflictResolutionAction> {
+        self.last_conflict_action.take()
     }
 
     /// Check if a sensor with the same name exists with a different protocol.
@@ -338,6 +424,23 @@ impl SensorSetupScreen {
                     if self.connected_sensors.is_empty() {
                         ui.label(RichText::new("No sensors connected").weak());
                     } else {
+                        // Show conflict notification banner if there are unresolved conflicts
+                        let unresolved: Vec<_> = self.active_conflicts
+                            .iter()
+                            .filter(|c| !c.is_resolved && c.is_active())
+                            .cloned()
+                            .collect();
+
+                        if !unresolved.is_empty() {
+                            if let Some(data_type) = ConflictNotificationBanner::new(&unresolved).show(ui) {
+                                // User clicked on a conflict to resolve
+                                if let Some(conflict) = unresolved.into_iter().find(|c| c.data_type == data_type) {
+                                    self.conflict_dialog_state.open(conflict);
+                                }
+                            }
+                            ui.add_space(8.0);
+                        }
+
                         // Show warning banner if any sensor has poor connection quality
                         if self.has_poor_quality_sensors() {
                             self.render_poor_quality_warning(ui);
@@ -367,6 +470,27 @@ impl SensorSetupScreen {
         if self.show_protocol_dialog {
             if let Some((name, ble, ant)) = &self.protocol_choice_sensor.clone() {
                 self.render_protocol_choice_dialog(ui, name, ble.as_ref(), ant.as_ref());
+            }
+        }
+
+        // Sensor conflict resolution dialog
+        if self.conflict_dialog_state.visible {
+            let response = SensorConflictDialog::new(&mut self.conflict_dialog_state).show(ui);
+            match response.action {
+                ConflictResolutionAction::SelectPrimary { data_type, device_id, remember } => {
+                    // Store the action for external handling
+                    self.last_conflict_action = Some(ConflictResolutionAction::SelectPrimary {
+                        data_type,
+                        device_id,
+                        remember,
+                    });
+                }
+                ConflictResolutionAction::Cancel => {
+                    // Dialog was cancelled, no action needed
+                }
+                ConflictResolutionAction::None => {
+                    // Dialog still open
+                }
             }
         }
 
