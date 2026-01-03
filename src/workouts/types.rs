@@ -138,6 +138,8 @@ pub enum WorkoutFormat {
     Fit,
     /// RustRide native format (JSON)
     Native,
+    /// TrainingPeaks synced workout
+    TrainingPeaks,
 }
 
 /// A single segment within a workout.

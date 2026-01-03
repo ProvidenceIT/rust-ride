@@ -1,8 +1,12 @@
 //! TrainingPeaks API Integration
 //!
 //! T001: Create TrainingPeaks API client module with OAuth and activity upload support.
+//! T010: Create types for TrainingPeaks workout API responses and mapping to internal types.
 
 use super::{SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
+use crate::workouts::types::{
+    CadenceTarget, PowerTarget, SegmentType, Workout, WorkoutFormat, WorkoutSegment,
+};
 use chrono::Utc;
 use reqwest::multipart::{Form, Part};
 use reqwest::Client;
@@ -881,6 +885,289 @@ pub fn default_scopes() -> Vec<String> {
     ]
 }
 
+// ============================================================================
+// TrainingPeaks Workout Conversion (T010)
+// ============================================================================
+
+/// Error type for workout conversion failures
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkoutConversionError {
+    pub message: String,
+}
+
+impl std::fmt::Display for WorkoutConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Workout conversion error: {}", self.message)
+    }
+}
+
+impl std::error::Error for WorkoutConversionError {}
+
+impl WorkoutConversionError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl TPWorkout {
+    /// Convert a TrainingPeaks workout to the internal Workout format.
+    ///
+    /// This handles converting the TrainingPeaks structured workout format into
+    /// our internal representation with segments, power targets, and cadence targets.
+    ///
+    /// # Arguments
+    /// * `ftp` - Optional FTP value for calculating absolute power values. If not provided,
+    ///           percentage-based targets will be used where possible.
+    ///
+    /// # Returns
+    /// A `Workout` struct or an error if conversion fails.
+    pub fn to_workout(&self, ftp: Option<u16>) -> Result<Workout, WorkoutConversionError> {
+        let segments = self.convert_structure_to_segments(ftp)?;
+
+        if segments.is_empty() {
+            return Err(WorkoutConversionError::new(
+                "Workout has no valid segments to convert",
+            ));
+        }
+
+        let total_duration_seconds: u32 = segments.iter().map(|s| s.duration_seconds).sum();
+
+        let mut workout = Workout {
+            id: Uuid::new_v4(),
+            name: self.title.clone(),
+            description: self.description.clone(),
+            author: Some("TrainingPeaks".to_string()),
+            source_file: None,
+            source_format: Some(WorkoutFormat::TrainingPeaks),
+            segments,
+            total_duration_seconds,
+            estimated_tss: self.tss_planned.map(|v| v as f32),
+            estimated_if: self.if_planned.map(|v| v as f32),
+            tags: vec!["TrainingPeaks".to_string()],
+            created_at: Utc::now(),
+        };
+
+        // If FTP is provided, recalculate estimates
+        if let Some(ftp_value) = ftp {
+            workout.calculate_estimates(ftp_value);
+        }
+
+        Ok(workout)
+    }
+
+    /// Convert workout structure to internal segments
+    fn convert_structure_to_segments(
+        &self,
+        ftp: Option<u16>,
+    ) -> Result<Vec<WorkoutSegment>, WorkoutConversionError> {
+        let structure = match &self.structure {
+            Some(s) => s,
+            None => {
+                // If no structure, create a single segment from total time
+                if let Some(total_time) = self.total_time {
+                    let duration = total_time as u32;
+                    if duration > 0 {
+                        // Use IF to estimate power target if available
+                        let power_target = if let Some(if_planned) = self.if_planned {
+                            let percent = (if_planned * 100.0) as u8;
+                            PowerTarget::PercentFtp { percent }
+                        } else {
+                            // Default to 75% FTP (endurance)
+                            PowerTarget::PercentFtp { percent: 75 }
+                        };
+
+                        return Ok(vec![WorkoutSegment {
+                            segment_type: SegmentType::SteadyState,
+                            duration_seconds: duration,
+                            power_target,
+                            cadence_target: None,
+                            text_event: self.description.clone(),
+                        }]);
+                    }
+                }
+                return Err(WorkoutConversionError::new(
+                    "Workout has no structure and no total time",
+                ));
+            }
+        };
+
+        let mut segments = Vec::new();
+        for step in &structure.steps {
+            self.convert_step_to_segments(step, &mut segments, ftp, None)?;
+        }
+
+        Ok(segments)
+    }
+
+    /// Recursively convert a TrainingPeaks step (and any nested steps) to segments
+    fn convert_step_to_segments(
+        &self,
+        step: &TPWorkoutStep,
+        segments: &mut Vec<WorkoutSegment>,
+        ftp: Option<u16>,
+        repeat_count: Option<u32>,
+    ) -> Result<(), WorkoutConversionError> {
+        // Handle repeat steps
+        if let Some(nested_steps) = &step.steps {
+            let reps = step.reps.unwrap_or(1);
+            for _rep in 0..reps {
+                for nested_step in nested_steps {
+                    self.convert_step_to_segments(nested_step, segments, ftp, Some(reps))?;
+                }
+            }
+            return Ok(());
+        }
+
+        // Convert single step to segment
+        let segment = self.step_to_segment(step, ftp)?;
+        segments.push(segment);
+
+        Ok(())
+    }
+
+    /// Convert a single TrainingPeaks step to a WorkoutSegment
+    fn step_to_segment(
+        &self,
+        step: &TPWorkoutStep,
+        ftp: Option<u16>,
+    ) -> Result<WorkoutSegment, WorkoutConversionError> {
+        // Determine segment type
+        let segment_type = map_step_type_to_segment_type(&step.step_type);
+
+        // Get duration
+        let duration_seconds = step.length.map(|l| l as u32).unwrap_or(0);
+        if duration_seconds == 0 {
+            return Err(WorkoutConversionError::new(format!(
+                "Step '{}' has no duration",
+                step.name.as_deref().unwrap_or("unknown")
+            )));
+        }
+
+        // Convert power target
+        let power_target = self.extract_power_target(step, ftp, segment_type)?;
+
+        // Convert cadence target
+        let cadence_target = self.extract_cadence_target(step);
+
+        Ok(WorkoutSegment {
+            segment_type,
+            duration_seconds,
+            power_target,
+            cadence_target,
+            text_event: step.name.clone(),
+        })
+    }
+
+    /// Extract power target from a TrainingPeaks step
+    fn extract_power_target(
+        &self,
+        step: &TPWorkoutStep,
+        ftp: Option<u16>,
+        segment_type: SegmentType,
+    ) -> Result<PowerTarget, WorkoutConversionError> {
+        let targets = match &step.targets {
+            Some(t) if !t.is_empty() => t,
+            _ => {
+                // No explicit target, use defaults based on segment type
+                return Ok(match segment_type {
+                    SegmentType::Warmup => PowerTarget::PercentFtp { percent: 50 },
+                    SegmentType::Cooldown => PowerTarget::PercentFtp { percent: 45 },
+                    SegmentType::FreeRide => PowerTarget::PercentFtp { percent: 0 },
+                    _ => PowerTarget::PercentFtp { percent: 75 },
+                });
+            }
+        };
+
+        // Find power target (first Power type target)
+        let power_target = targets.iter().find(|t| t.target_type == "Power");
+
+        match power_target {
+            Some(target) => {
+                let min_value = target.min_value.unwrap_or(0.0);
+                let max_value = target.max_value.unwrap_or(min_value);
+
+                // Determine if values are percentages or absolute watts
+                // TrainingPeaks typically uses "PercentOfFtp" unit for percentages
+                let is_percent = target
+                    .unit
+                    .as_ref()
+                    .map(|u| u.to_lowercase().contains("percent"))
+                    .unwrap_or(false);
+
+                if is_percent {
+                    // Average the min/max for a single percent target
+                    let avg_percent = ((min_value + max_value) / 2.0) as u8;
+                    Ok(PowerTarget::PercentFtp {
+                        percent: avg_percent,
+                    })
+                } else {
+                    // Absolute watts - use midpoint of range
+                    let avg_watts = ((min_value + max_value) / 2.0) as u16;
+
+                    // If we have FTP, convert to percentage for flexibility
+                    if let Some(ftp_value) = ftp {
+                        if ftp_value > 0 {
+                            let percent = ((avg_watts as f32 / ftp_value as f32) * 100.0) as u8;
+                            return Ok(PowerTarget::PercentFtp { percent });
+                        }
+                    }
+
+                    Ok(PowerTarget::Absolute { watts: avg_watts })
+                }
+            }
+            None => {
+                // No power target found, use defaults
+                Ok(match segment_type {
+                    SegmentType::Warmup => PowerTarget::PercentFtp { percent: 50 },
+                    SegmentType::Cooldown => PowerTarget::PercentFtp { percent: 45 },
+                    SegmentType::FreeRide => PowerTarget::PercentFtp { percent: 0 },
+                    _ => PowerTarget::PercentFtp { percent: 75 },
+                })
+            }
+        }
+    }
+
+    /// Extract cadence target from a TrainingPeaks step
+    fn extract_cadence_target(&self, step: &TPWorkoutStep) -> Option<CadenceTarget> {
+        let targets = step.targets.as_ref()?;
+
+        // Find cadence target
+        let cadence_target = targets.iter().find(|t| t.target_type == "Cadence")?;
+
+        let min_rpm = cadence_target.min_value.unwrap_or(80.0) as u8;
+        let max_rpm = cadence_target.max_value.unwrap_or(min_rpm as f64 + 10.0) as u8;
+
+        Some(CadenceTarget { min_rpm, max_rpm })
+    }
+}
+
+/// Map TrainingPeaks step type string to internal SegmentType
+fn map_step_type_to_segment_type(step_type: &str) -> SegmentType {
+    match step_type.to_lowercase().as_str() {
+        "warmup" | "warm up" | "warm-up" => SegmentType::Warmup,
+        "cooldown" | "cool down" | "cool-down" => SegmentType::Cooldown,
+        "interval" | "work" | "on" => SegmentType::SteadyState,
+        "rest" | "recovery" | "off" => SegmentType::SteadyState, // Recovery is still steady state at lower power
+        "ramp" | "rampup" | "rampdown" => SegmentType::Ramp,
+        "freeride" | "free ride" | "free" => SegmentType::FreeRide,
+        "repeat" | "repetition" => SegmentType::Intervals,
+        _ => SegmentType::SteadyState, // Default to steady state
+    }
+}
+
+/// Convert a list of TrainingPeaks workouts to internal format
+pub fn convert_tp_workouts(
+    workouts: Vec<TPWorkout>,
+    ftp: Option<u16>,
+) -> Vec<Result<Workout, WorkoutConversionError>> {
+    workouts
+        .into_iter()
+        .map(|tp_workout| tp_workout.to_workout(ftp))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1342,6 +1629,486 @@ mod tests {
         assert_eq!(targets[0].target_type, "Power");
         assert_eq!(targets[0].min_value, Some(300.0));
         assert_eq!(targets[0].max_value, Some(320.0));
+    }
+
+    // ========================================================================
+    // Workout Conversion Tests (T010)
+    // ========================================================================
+
+    #[test]
+    fn test_workout_conversion_simple() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Sweet Spot".to_string(),
+            description: Some("Endurance ride".to_string()),
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: Some(3600.0),
+            tss_planned: Some(75.0),
+            if_planned: Some(0.85),
+            structure: None,
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        assert_eq!(workout.name, "Sweet Spot");
+        assert_eq!(workout.description, Some("Endurance ride".to_string()));
+        assert_eq!(workout.author, Some("TrainingPeaks".to_string()));
+        assert_eq!(
+            workout.source_format,
+            Some(crate::workouts::types::WorkoutFormat::TrainingPeaks)
+        );
+        assert!(workout.tags.contains(&"TrainingPeaks".to_string()));
+        assert_eq!(workout.segments.len(), 1);
+        assert_eq!(workout.total_duration_seconds, 3600);
+    }
+
+    #[test]
+    fn test_workout_conversion_with_structure() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "VO2max Intervals".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: Some(3600.0),
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![
+                    TPWorkoutStep {
+                        step_type: "Warmup".to_string(),
+                        name: Some("Easy spin".to_string()),
+                        length: Some(600.0),
+                        length_metric: Some("Duration".to_string()),
+                        targets: None,
+                        steps: None,
+                        reps: None,
+                    },
+                    TPWorkoutStep {
+                        step_type: "Interval".to_string(),
+                        name: Some("VO2max effort".to_string()),
+                        length: Some(180.0),
+                        length_metric: Some("Duration".to_string()),
+                        targets: Some(vec![TPWorkoutTarget {
+                            target_type: "Power".to_string(),
+                            min_value: Some(300.0),
+                            max_value: Some(320.0),
+                            unit: Some("Watts".to_string()),
+                        }]),
+                        steps: None,
+                        reps: None,
+                    },
+                    TPWorkoutStep {
+                        step_type: "Cooldown".to_string(),
+                        name: Some("Easy spin down".to_string()),
+                        length: Some(300.0),
+                        length_metric: Some("Duration".to_string()),
+                        targets: None,
+                        steps: None,
+                        reps: None,
+                    },
+                ],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        assert_eq!(workout.name, "VO2max Intervals");
+        assert_eq!(workout.segments.len(), 3);
+
+        // Check warmup segment
+        assert_eq!(
+            workout.segments[0].segment_type,
+            crate::workouts::types::SegmentType::Warmup
+        );
+        assert_eq!(workout.segments[0].duration_seconds, 600);
+        assert_eq!(workout.segments[0].text_event, Some("Easy spin".to_string()));
+
+        // Check interval segment
+        assert_eq!(
+            workout.segments[1].segment_type,
+            crate::workouts::types::SegmentType::SteadyState
+        );
+        assert_eq!(workout.segments[1].duration_seconds, 180);
+
+        // Check cooldown segment
+        assert_eq!(
+            workout.segments[2].segment_type,
+            crate::workouts::types::SegmentType::Cooldown
+        );
+        assert_eq!(workout.segments[2].duration_seconds, 300);
+    }
+
+    #[test]
+    fn test_workout_conversion_with_repeats() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "5x3min VO2max".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![
+                    TPWorkoutStep {
+                        step_type: "Warmup".to_string(),
+                        name: Some("Warmup".to_string()),
+                        length: Some(600.0),
+                        length_metric: Some("Duration".to_string()),
+                        targets: None,
+                        steps: None,
+                        reps: None,
+                    },
+                    TPWorkoutStep {
+                        step_type: "Repeat".to_string(),
+                        name: Some("Main set".to_string()),
+                        length: None,
+                        length_metric: None,
+                        targets: None,
+                        steps: Some(vec![
+                            TPWorkoutStep {
+                                step_type: "Interval".to_string(),
+                                name: Some("VO2max".to_string()),
+                                length: Some(180.0),
+                                length_metric: Some("Duration".to_string()),
+                                targets: Some(vec![TPWorkoutTarget {
+                                    target_type: "Power".to_string(),
+                                    min_value: Some(110.0),
+                                    max_value: Some(120.0),
+                                    unit: Some("PercentOfFtp".to_string()),
+                                }]),
+                                steps: None,
+                                reps: None,
+                            },
+                            TPWorkoutStep {
+                                step_type: "Rest".to_string(),
+                                name: Some("Recovery".to_string()),
+                                length: Some(180.0),
+                                length_metric: Some("Duration".to_string()),
+                                targets: Some(vec![TPWorkoutTarget {
+                                    target_type: "Power".to_string(),
+                                    min_value: Some(40.0),
+                                    max_value: Some(50.0),
+                                    unit: Some("PercentOfFtp".to_string()),
+                                }]),
+                                steps: None,
+                                reps: None,
+                            },
+                        ]),
+                        reps: Some(5),
+                    },
+                ],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        // Should have 1 warmup + 5x(interval + rest) = 11 segments
+        assert_eq!(workout.segments.len(), 11);
+        assert_eq!(workout.name, "5x3min VO2max");
+
+        // Verify first segment is warmup
+        assert_eq!(
+            workout.segments[0].segment_type,
+            crate::workouts::types::SegmentType::Warmup
+        );
+
+        // Verify repeat structure (segments 1, 3, 5, 7, 9 should be intervals)
+        for i in (1..11).step_by(2) {
+            assert_eq!(workout.segments[i].duration_seconds, 180);
+            assert_eq!(
+                workout.segments[i].text_event,
+                Some("VO2max".to_string())
+            );
+        }
+
+        // Segments 2, 4, 6, 8, 10 should be recovery
+        for i in (2..11).step_by(2) {
+            assert_eq!(workout.segments[i].duration_seconds, 180);
+            assert_eq!(
+                workout.segments[i].text_event,
+                Some("Recovery".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn test_workout_conversion_with_cadence_target() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "High Cadence".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Interval".to_string(),
+                    name: Some("High cadence drills".to_string()),
+                    length: Some(300.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![
+                        TPWorkoutTarget {
+                            target_type: "Power".to_string(),
+                            min_value: Some(200.0),
+                            max_value: Some(220.0),
+                            unit: Some("Watts".to_string()),
+                        },
+                        TPWorkoutTarget {
+                            target_type: "Cadence".to_string(),
+                            min_value: Some(100.0),
+                            max_value: Some(110.0),
+                            unit: Some("RPM".to_string()),
+                        },
+                    ]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        assert_eq!(workout.segments.len(), 1);
+        let segment = &workout.segments[0];
+
+        // Check cadence target is converted
+        assert!(segment.cadence_target.is_some());
+        let cadence = segment.cadence_target.as_ref().unwrap();
+        assert_eq!(cadence.min_rpm, 100);
+        assert_eq!(cadence.max_rpm, 110);
+    }
+
+    #[test]
+    fn test_workout_conversion_error_no_structure_no_time() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Empty Workout".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: None,
+        };
+
+        let result = tp_workout.to_workout(Some(250));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("no structure and no total time"));
+    }
+
+    #[test]
+    fn test_workout_conversion_error_empty_structure() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Empty Structure".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: None,
+                primary_intensity_metric: None,
+                steps: vec![],
+            }),
+        };
+
+        let result = tp_workout.to_workout(Some(250));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("no valid segments"));
+    }
+
+    #[test]
+    fn test_map_step_type_to_segment_type() {
+        assert_eq!(
+            map_step_type_to_segment_type("Warmup"),
+            crate::workouts::types::SegmentType::Warmup
+        );
+        assert_eq!(
+            map_step_type_to_segment_type("warm up"),
+            crate::workouts::types::SegmentType::Warmup
+        );
+        assert_eq!(
+            map_step_type_to_segment_type("Cooldown"),
+            crate::workouts::types::SegmentType::Cooldown
+        );
+        assert_eq!(
+            map_step_type_to_segment_type("Interval"),
+            crate::workouts::types::SegmentType::SteadyState
+        );
+        assert_eq!(
+            map_step_type_to_segment_type("FreeRide"),
+            crate::workouts::types::SegmentType::FreeRide
+        );
+        assert_eq!(
+            map_step_type_to_segment_type("Ramp"),
+            crate::workouts::types::SegmentType::Ramp
+        );
+        // Default case
+        assert_eq!(
+            map_step_type_to_segment_type("Unknown"),
+            crate::workouts::types::SegmentType::SteadyState
+        );
+    }
+
+    #[test]
+    fn test_workout_conversion_error_display() {
+        let error = WorkoutConversionError::new("test error message");
+        assert_eq!(
+            format!("{}", error),
+            "Workout conversion error: test error message"
+        );
+    }
+
+    #[test]
+    fn test_convert_tp_workouts_batch() {
+        let workouts = vec![
+            TPWorkout {
+                id: 1,
+                title: "Workout 1".to_string(),
+                description: None,
+                workout_type: "Bike".to_string(),
+                workout_day: "2024-01-15".to_string(),
+                total_time: Some(3600.0),
+                tss_planned: None,
+                if_planned: None,
+                structure: None,
+            },
+            TPWorkout {
+                id: 2,
+                title: "Workout 2".to_string(),
+                description: None,
+                workout_type: "Bike".to_string(),
+                workout_day: "2024-01-16".to_string(),
+                total_time: Some(5400.0),
+                tss_planned: None,
+                if_planned: None,
+                structure: None,
+            },
+        ];
+
+        let results = convert_tp_workouts(workouts, Some(250));
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(results[1].is_ok());
+
+        let w1 = results[0].as_ref().unwrap();
+        let w2 = results[1].as_ref().unwrap();
+        assert_eq!(w1.name, "Workout 1");
+        assert_eq!(w2.name, "Workout 2");
+        assert_eq!(w1.total_duration_seconds, 3600);
+        assert_eq!(w2.total_duration_seconds, 5400);
+    }
+
+    #[test]
+    fn test_power_target_absolute_watts_conversion() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Absolute Power".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Interval".to_string(),
+                    name: Some("Sweet spot".to_string()),
+                    length: Some(1200.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "Power".to_string(),
+                        min_value: Some(220.0),
+                        max_value: Some(230.0),
+                        unit: Some("Watts".to_string()),
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        // With FTP of 250, 225W avg would be 90% FTP
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        assert_eq!(workout.segments.len(), 1);
+        let segment = &workout.segments[0];
+
+        // Should be converted to percent FTP since FTP was provided
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                assert_eq!(*percent, 90); // 225 / 250 = 0.9 = 90%
+            }
+            _ => panic!("Expected PercentFtp target"),
+        }
+    }
+
+    #[test]
+    fn test_power_target_percent_ftp_conversion() {
+        let tp_workout = TPWorkout {
+            id: 12345,
+            title: "Percent FTP".to_string(),
+            description: None,
+            workout_type: "Bike".to_string(),
+            workout_day: "2024-01-15".to_string(),
+            total_time: None,
+            tss_planned: None,
+            if_planned: None,
+            structure: Some(TPWorkoutStructure {
+                primary_length_metric: Some("Duration".to_string()),
+                primary_intensity_metric: Some("Power".to_string()),
+                steps: vec![TPWorkoutStep {
+                    step_type: "Interval".to_string(),
+                    name: Some("Sweet spot".to_string()),
+                    length: Some(1200.0),
+                    length_metric: Some("Duration".to_string()),
+                    targets: Some(vec![TPWorkoutTarget {
+                        target_type: "Power".to_string(),
+                        min_value: Some(88.0),
+                        max_value: Some(94.0),
+                        unit: Some("PercentOfFtp".to_string()),
+                    }]),
+                    steps: None,
+                    reps: None,
+                }],
+            }),
+        };
+
+        let workout = tp_workout.to_workout(Some(250)).unwrap();
+
+        assert_eq!(workout.segments.len(), 1);
+        let segment = &workout.segments[0];
+
+        // Should preserve percent FTP target
+        match &segment.power_target {
+            crate::workouts::types::PowerTarget::PercentFtp { percent } => {
+                assert_eq!(*percent, 91); // (88 + 94) / 2 = 91
+            }
+            _ => panic!("Expected PercentFtp target"),
+        }
     }
 
     #[tokio::test]
