@@ -3,10 +3,11 @@
 //! Provides MQTT broker connection using rumqttc.
 
 use super::{MqttConfig, MqttError, MqttEvent, QoS};
-use rumqttc::{AsyncClient, EventLoop, MqttOptions};
+use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
+use tokio::task::JoinHandle;
 
 /// Trait for MQTT client implementations
 pub trait MqttClient: Send + Sync {
@@ -64,9 +65,8 @@ pub struct DefaultMqttClient {
     event_tx: broadcast::Sender<MqttEvent>,
     /// The rumqttc async client for publishing and subscribing
     client: Arc<RwLock<Option<AsyncClient>>>,
-    /// The event loop handle (stored so we can spawn it in a task)
-    #[allow(dead_code)]
-    event_loop: Arc<RwLock<Option<EventLoop>>>,
+    /// Handle to the spawned event loop task (for aborting on disconnect)
+    event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl Default for DefaultMqttClient {
@@ -85,7 +85,91 @@ impl DefaultMqttClient {
             config: Arc::new(RwLock::new(None)),
             event_tx,
             client: Arc::new(RwLock::new(None)),
-            event_loop: Arc::new(RwLock::new(None)),
+            event_loop_handle: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Spawn a task to poll the event loop and handle MQTT events
+    fn spawn_event_loop_task(
+        mut event_loop: EventLoop,
+        state: Arc<RwLock<ConnectionState>>,
+        event_tx: broadcast::Sender<MqttEvent>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                match event_loop.poll().await {
+                    Ok(event) => {
+                        Self::handle_event(event, &state, &event_tx).await;
+                    }
+                    Err(e) => {
+                        tracing::error!("MQTT event loop error: {:?}", e);
+                        // Update state to disconnected on error
+                        *state.write().await = ConnectionState::Disconnected;
+                        let _ = event_tx.send(MqttEvent::Error {
+                            message: format!("Connection error: {}", e),
+                        });
+                        let _ = event_tx.send(MqttEvent::Disconnected);
+                        break;
+                    }
+                }
+            }
+            tracing::debug!("MQTT event loop task ended");
+        })
+    }
+
+    /// Handle an event from the MQTT event loop
+    async fn handle_event(
+        event: Event,
+        state: &Arc<RwLock<ConnectionState>>,
+        event_tx: &broadcast::Sender<MqttEvent>,
+    ) {
+        match event {
+            Event::Incoming(incoming) => {
+                Self::handle_incoming(incoming, state, event_tx).await;
+            }
+            Event::Outgoing(outgoing) => {
+                tracing::trace!("MQTT outgoing: {:?}", outgoing);
+            }
+        }
+    }
+
+    /// Handle incoming MQTT packets
+    async fn handle_incoming(
+        incoming: Incoming,
+        state: &Arc<RwLock<ConnectionState>>,
+        event_tx: &broadcast::Sender<MqttEvent>,
+    ) {
+        match incoming {
+            Incoming::ConnAck(connack) => {
+                if connack.code == rumqttc::ConnectReturnCode::Success {
+                    tracing::info!("MQTT connection acknowledged by broker");
+                    *state.write().await = ConnectionState::Connected;
+                    let _ = event_tx.send(MqttEvent::Connected);
+                } else {
+                    tracing::error!("MQTT connection rejected: {:?}", connack.code);
+                    *state.write().await = ConnectionState::Disconnected;
+                    let _ = event_tx.send(MqttEvent::Error {
+                        message: format!("Connection rejected: {:?}", connack.code),
+                    });
+                }
+            }
+            Incoming::Publish(publish) => {
+                let topic = publish.topic.clone();
+                let payload = String::from_utf8_lossy(&publish.payload).to_string();
+                tracing::debug!("MQTT message received on '{}': {}", topic, payload);
+                let _ = event_tx.send(MqttEvent::MessageReceived { topic, payload });
+            }
+            Incoming::Disconnect => {
+                tracing::warn!("MQTT disconnect received from broker");
+                *state.write().await = ConnectionState::Disconnected;
+                let _ = event_tx.send(MqttEvent::Disconnected);
+            }
+            Incoming::PingResp => {
+                tracing::trace!("MQTT ping response received");
+            }
+            _ => {
+                tracing::trace!("MQTT incoming event: {:?}", incoming);
+            }
         }
     }
 
@@ -160,26 +244,32 @@ impl MqttClient for DefaultMqttClient {
         // Buffer size of 10 is sufficient for fan control operations
         let (client, eventloop) = AsyncClient::new(mqtt_options, 10);
 
-        // Store the client and event loop for later use
+        // Store the client for publishing/subscribing
         *self.client.write().await = Some(client);
-        *self.event_loop.write().await = Some(eventloop);
 
-        // TODO (subtask 1.2): Spawn event loop task to poll for events
-        // For now, mark as connected since the client is created
-        // The actual connection happens when the event loop is polled
+        // Spawn the event loop task to poll for MQTT events
+        // The actual connection is established when the event loop starts polling
+        let handle = Self::spawn_event_loop_task(
+            eventloop,
+            Arc::clone(&self.state),
+            self.event_tx.clone(),
+        );
+        *self.event_loop_handle.write().await = Some(handle);
 
-        *self.state.write().await = ConnectionState::Connected;
-        let _ = self.event_tx.send(MqttEvent::Connected);
-
-        tracing::info!("Connected to MQTT broker");
+        tracing::info!("MQTT event loop started, waiting for connection...");
 
         Ok(())
     }
 
     async fn disconnect(&self) -> Result<(), MqttError> {
-        // Clear the client and event loop
+        // Abort the event loop task if running
+        if let Some(handle) = self.event_loop_handle.write().await.take() {
+            handle.abort();
+            tracing::debug!("MQTT event loop task aborted");
+        }
+
+        // Clear the client
         *self.client.write().await = None;
-        *self.event_loop.write().await = None;
 
         *self.state.write().await = ConnectionState::Disconnected;
         *self.config.write().await = None;
