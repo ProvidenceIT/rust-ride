@@ -60,6 +60,21 @@ pub struct HRZoneRange {
     pub name: String,
 }
 
+/// A cadence zone range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CadenceZoneRange {
+    /// Zone number (1-5)
+    pub zone: u8,
+    /// Minimum RPM
+    pub min_rpm: u8,
+    /// Maximum RPM
+    pub max_rpm: u8,
+    /// Display color
+    pub color: Color,
+    /// Zone name
+    pub name: String,
+}
+
 /// Coggan 7-zone power zones.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
