@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
 import { WorkoutControlBar, NoSessionState, ConnectionStatus, StopConfirmationModal, ResistanceControl } from '@/components';
-import { useWorkoutControls, useToast, useHaptics, useResistanceControl } from '@/hooks';
+import { useWorkoutControls, useToast, useHaptics, useResistanceControl, useIntervalChangeHaptics } from '@/hooks';
 import {
   useSessionStore,
   selectIsSessionActive,
@@ -60,6 +60,10 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
 
   // Haptic feedback
   const { successHaptic, errorHaptic, warningHaptic } = useHaptics();
+
+  // Enable haptic feedback on interval changes
+  // This provides tactile feedback when the workout progresses to a new interval
+  useIntervalChangeHaptics();
 
   // Stop confirmation modal state
   const [showStopModal, setShowStopModal] = useState(false);

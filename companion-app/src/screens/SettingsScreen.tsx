@@ -36,6 +36,7 @@ import {
   selectIsAuthenticated,
 } from '@/stores/connectionStore';
 import { SelectPickerModal, type SelectOption } from '@/components/SelectPickerModal';
+import { triggerHapticFeedback } from '@/hooks/useHaptics';
 
 // App version (in a real app, this would come from the app config)
 const APP_VERSION = '1.0.0';
@@ -432,9 +433,13 @@ export function SettingsScreen(_props: Props): React.JSX.Element {
   );
 
   // Handle haptic feedback selection
+  // Triggers a preview haptic so users can feel the intensity they selected
   const handleHapticSelect = useCallback(
     async (value: HapticIntensity) => {
       await setHapticFeedback(value);
+      // Trigger a preview haptic with the newly selected intensity
+      // This lets the user immediately feel what the setting does
+      triggerHapticFeedback('impact', value);
     },
     [setHapticFeedback]
   );

@@ -6,10 +6,13 @@
 
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { Vibration } from 'react-native';
 import { SettingsScreen } from '../../src/screens/SettingsScreen';
 import { ThemeProvider } from '../../src/theme';
 import { useSettingsStore } from '../../src/stores/settingsStore';
 import { useConnectionStore } from '../../src/stores/connectionStore';
+
+// Vibration is mocked in jest.setup.js
 
 // Mock navigation - must mock useNavigation from @react-navigation/native
 const mockNavigate = jest.fn();
@@ -379,6 +382,111 @@ describe('SettingsScreen', () => {
 
       expect(getByTestId('setting-server').props.accessibilityHint).toContain('Opens settings');
       expect(getByTestId('setting-units').props.accessibilityHint).toContain('Opens settings');
+    });
+  });
+
+  describe('Haptic Preview', () => {
+    it('triggers preview haptic when selecting light intensity', async () => {
+      const { getByTestId } = renderWithProviders();
+
+      // Open haptic picker
+      fireEvent.press(getByTestId('setting-haptic'));
+
+      await waitFor(() => {
+        expect(getByTestId('option-light')).toBeTruthy();
+      });
+
+      // Clear any previous calls
+      (Vibration.vibrate as jest.Mock).mockClear();
+
+      // Select light
+      fireEvent.press(getByTestId('option-light'));
+
+      await waitFor(() => {
+        // Light impact = 10ms
+        expect(Vibration.vibrate).toHaveBeenCalledWith(10);
+      });
+    });
+
+    it('triggers preview haptic when selecting medium intensity', async () => {
+      // Start with light setting
+      useSettingsStore.setState({
+        settings: {
+          units: 'metric',
+          keepScreenAwake: true,
+          hapticFeedback: 'light',
+          theme: 'system',
+        },
+        isLoaded: true,
+        isSaving: false,
+      });
+
+      const { getByTestId } = renderWithProviders();
+
+      // Open haptic picker
+      fireEvent.press(getByTestId('setting-haptic'));
+
+      await waitFor(() => {
+        expect(getByTestId('option-medium')).toBeTruthy();
+      });
+
+      // Clear any previous calls
+      (Vibration.vibrate as jest.Mock).mockClear();
+
+      // Select medium
+      fireEvent.press(getByTestId('option-medium'));
+
+      await waitFor(() => {
+        // Medium impact = 25ms
+        expect(Vibration.vibrate).toHaveBeenCalledWith(25);
+      });
+    });
+
+    it('triggers preview haptic when selecting strong intensity', async () => {
+      const { getByTestId } = renderWithProviders();
+
+      // Open haptic picker
+      fireEvent.press(getByTestId('setting-haptic'));
+
+      await waitFor(() => {
+        expect(getByTestId('option-strong')).toBeTruthy();
+      });
+
+      // Clear any previous calls
+      (Vibration.vibrate as jest.Mock).mockClear();
+
+      // Select strong
+      fireEvent.press(getByTestId('option-strong'));
+
+      await waitFor(() => {
+        // Strong impact = 50ms
+        expect(Vibration.vibrate).toHaveBeenCalledWith(50);
+      });
+    });
+
+    it('does not trigger preview haptic when selecting off', async () => {
+      const { getByTestId } = renderWithProviders();
+
+      // Open haptic picker
+      fireEvent.press(getByTestId('setting-haptic'));
+
+      await waitFor(() => {
+        expect(getByTestId('option-off')).toBeTruthy();
+      });
+
+      // Clear any previous calls
+      (Vibration.vibrate as jest.Mock).mockClear();
+
+      // Select off
+      fireEvent.press(getByTestId('option-off'));
+
+      await waitFor(() => {
+        const settings = useSettingsStore.getState().settings;
+        expect(settings.hapticFeedback).toBe('off');
+      });
+
+      // Should not have triggered vibration for "off"
+      expect(Vibration.vibrate).not.toHaveBeenCalled();
     });
   });
 });

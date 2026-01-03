@@ -24,3 +24,6 @@ export type { UseResistanceControlReturn } from './useResistanceControl';
 
 export { useKeepAwake } from './useKeepAwake';
 export type { UseKeepAwakeReturn, KeepAwakeWrapperProps } from './useKeepAwake';
+
+export { useIntervalChangeHaptics } from './useIntervalChangeHaptics';
+export type { UseIntervalChangeHapticsOptions, UseIntervalChangeHapticsReturn } from './useIntervalChangeHaptics';
