@@ -13,6 +13,7 @@
 //! - `Normal` - Standard priority, queued normally
 //! - `Low` - Can be skipped if queue is full
 
+use super::backend::RodioAudioBackend;
 use super::tts::TtsProvider;
 use super::{
     AudioConfig, AudioError, AudioEvent, AudioItem, AudioPriority, AudioType,
@@ -110,6 +111,8 @@ pub struct DefaultAudioEngine {
     event_tx: broadcast::Sender<AudioEvent>,
     /// Thread-safe TTS provider for speech synthesis
     tts_provider: Arc<ThreadSafeTtsProvider>,
+    /// Rodio audio backend for sound files and tones
+    audio_backend: Arc<RodioAudioBackend>,
     /// Priority of the currently playing item (None if not playing)
     current_priority: Arc<Mutex<Option<AudioPriority>>>,
     /// Flag to signal that current playback should be interrupted
@@ -130,6 +133,16 @@ impl DefaultAudioEngine {
         tts_provider.set_volume(voice_volume);
         tts_provider.set_rate(config.speech_rate);
 
+        // Create the rodio audio backend
+        let audio_backend = Arc::new(RodioAudioBackend::new());
+
+        // Apply volume settings from config (convert 0-100 to 0.0-1.0)
+        let master_volume = config.volume as f32 / 100.0;
+        audio_backend.set_volume(master_volume);
+
+        // Apply mute state based on enabled flag
+        audio_backend.set_muted(!config.enabled);
+
         Self {
             config: Arc::new(Mutex::new(config)),
             queue: Arc::new(Mutex::new(BinaryHeap::new())),
@@ -137,6 +150,7 @@ impl DefaultAudioEngine {
             is_playing: Arc::new(Mutex::new(false)),
             event_tx,
             tts_provider,
+            audio_backend,
             current_priority: Arc::new(Mutex::new(None)),
             interrupt_requested: Arc::new(AtomicBool::new(false)),
         }
@@ -151,9 +165,24 @@ impl DefaultAudioEngine {
         self.tts_provider.set_rate(config.speech_rate);
     }
 
+    /// Update audio backend settings from the current config
+    fn update_backend_settings(&self) {
+        let config = self.config.lock().unwrap();
+        // Convert master volume from 0-100 to 0.0-1.0
+        let master_volume = config.volume as f32 / 100.0;
+        self.audio_backend.set_volume(master_volume);
+        // Mute when audio is disabled
+        self.audio_backend.set_muted(!config.enabled);
+    }
+
     /// Get access to the TTS provider for voice enumeration and configuration
     pub fn tts_provider(&self) -> &ThreadSafeTtsProvider {
         &self.tts_provider
+    }
+
+    /// Get access to the audio backend for advanced sound operations
+    pub fn audio_backend(&self) -> &RodioAudioBackend {
+        &self.audio_backend
     }
 
     /// Update audio configuration
@@ -162,6 +191,7 @@ impl DefaultAudioEngine {
         *current = config;
         drop(current);
         self.update_tts_settings();
+        self.update_backend_settings();
     }
 
     /// Check if a new item's priority should interrupt the current playback
@@ -351,9 +381,17 @@ impl AudioEngine for DefaultAudioEngine {
             }
         }
 
-        // TODO: Initialize rodio output stream
-        // let (_stream, stream_handle) = rodio::OutputStream::try_default()
-        //     .map_err(|e| AudioError::DeviceNotAvailable)?;
+        // Initialize the rodio audio backend
+        // This may fail if no audio device is available, but we log and continue
+        // to allow TTS to work even if sound effects/tones fail
+        if let Err(e) = self.audio_backend.initialize() {
+            tracing::warn!("Audio backend initialization failed: {}. Tones and sound effects will be unavailable.", e);
+        } else {
+            tracing::info!("Audio backend initialized successfully");
+        }
+
+        // Apply current config settings to the backend
+        self.update_backend_settings();
 
         Ok(())
     }
@@ -408,7 +446,7 @@ impl AudioEngine for DefaultAudioEngine {
         result
     }
 
-    async fn play_tone(&self, _frequency_hz: u32, duration_ms: u32) -> Result<(), AudioError> {
+    async fn play_tone(&self, frequency_hz: u32, duration_ms: u32) -> Result<(), AudioError> {
         {
             let config = self.config.lock().unwrap();
             if !config.enabled {
@@ -418,8 +456,28 @@ impl AudioEngine for DefaultAudioEngine {
 
         *self.is_playing.lock().unwrap() = true;
 
-        // TODO: Generate and play tone using rodio
-        tokio::time::sleep(Duration::from_millis(duration_ms as u64)).await;
+        // Play the tone using the rodio audio backend
+        // The backend handles volume, muting, and device availability
+        let duration = Duration::from_millis(duration_ms as u64);
+        let frequency = frequency_hz as f32;
+
+        // Spawn blocking task since rodio operations are blocking
+        let backend = Arc::clone(&self.audio_backend);
+        let result = tokio::task::spawn_blocking(move || {
+            backend.play_tone(frequency, duration)
+        })
+        .await
+        .map_err(|e| AudioError::PlaybackFailed(format!("Task join error: {}", e)))?;
+
+        // Convert backend error to audio error
+        if let Err(e) = result {
+            tracing::debug!("Tone playback failed: {}", e);
+            // Don't propagate the error - gracefully handle missing audio device
+        }
+
+        // Wait for the tone duration to complete
+        // This ensures the is_playing flag remains true while the tone is audible
+        tokio::time::sleep(duration).await;
 
         *self.is_playing.lock().unwrap() = false;
 
@@ -427,8 +485,13 @@ impl AudioEngine for DefaultAudioEngine {
     }
 
     fn set_volume(&self, volume: u8) {
-        let mut config = self.config.lock().unwrap();
-        config.volume = volume.min(100);
+        let clamped_volume = volume.min(100);
+        {
+            let mut config = self.config.lock().unwrap();
+            config.volume = clamped_volume;
+        }
+        // Also update the audio backend volume (convert 0-100 to 0.0-1.0)
+        self.audio_backend.set_volume(clamped_volume as f32 / 100.0);
     }
 
     fn get_volume(&self) -> u8 {
@@ -474,6 +537,9 @@ impl AudioEngine for DefaultAudioEngine {
 
         // Stop TTS playback immediately
         self.tts_provider.stop();
+
+        // Stop all audio backend playback (tones and sound effects)
+        self.audio_backend.stop_all();
 
         // Clear the queue - stop() means stop everything
         self.clear_queue();
@@ -721,6 +787,86 @@ mod tests {
         match item.audio_type {
             AudioType::Speech { text } => assert_eq!(text, "Interval change!"),
             _ => panic!("Expected Speech type"),
+        }
+    }
+
+    #[test]
+    fn test_audio_backend_created() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Audio backend should be accessible
+        let backend = engine.audio_backend();
+        // Default volume should be 0.8 (80/100)
+        assert!((backend.volume() - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_volume_propagates_to_backend() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Set volume to 50%
+        engine.set_volume(50);
+
+        // Backend should reflect the new volume (50/100 = 0.5)
+        assert!((engine.audio_backend().volume() - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_config_update_applies_to_backend() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Update config with new volume
+        let mut new_config = AudioConfig::default();
+        new_config.volume = 60;
+        engine.update_config(new_config);
+
+        // Backend should reflect the new volume (60/100 = 0.6)
+        assert!((engine.audio_backend().volume() - 0.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_disabled_audio_mutes_backend() {
+        let mut config = AudioConfig::default();
+        config.enabled = false;
+        let engine = DefaultAudioEngine::new(config);
+
+        // Backend should be muted when audio is disabled
+        assert!(engine.audio_backend().is_muted());
+    }
+
+    #[test]
+    fn test_enabled_audio_unmutes_backend() {
+        let config = AudioConfig::default(); // enabled = true by default
+        let engine = DefaultAudioEngine::new(config);
+
+        // Backend should not be muted when audio is enabled
+        assert!(!engine.audio_backend().is_muted());
+    }
+
+    #[test]
+    fn test_tone_audio_item() {
+        let item = AudioItem {
+            audio_type: AudioType::Tone {
+                frequency_hz: 440,
+                duration_ms: 200,
+            },
+            priority: AudioPriority::Normal,
+            queued_at: std::time::Instant::now(),
+            max_queue_time: Duration::from_secs(5),
+        };
+
+        match item.audio_type {
+            AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            } => {
+                assert_eq!(frequency_hz, 440);
+                assert_eq!(duration_ms, 200);
+            }
+            _ => panic!("Expected Tone type"),
         }
     }
 }

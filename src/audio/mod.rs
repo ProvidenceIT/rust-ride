@@ -173,6 +173,19 @@ impl AudioItem {
         }
     }
 
+    /// Create a tone item
+    pub fn tone(frequency_hz: u32, duration_ms: u32) -> Self {
+        Self {
+            audio_type: AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            },
+            priority: AudioPriority::Normal,
+            queued_at: std::time::Instant::now(),
+            max_queue_time: Duration::from_secs(5),
+        }
+    }
+
     /// Set priority
     pub fn with_priority(mut self, priority: AudioPriority) -> Self {
         self.priority = priority;
@@ -207,5 +220,37 @@ mod tests {
 
         let urgent = AudioItem::urgent_speech("Urgent!");
         assert_eq!(urgent.priority, AudioPriority::High);
+    }
+
+    #[test]
+    fn test_tone_audio_item_creation() {
+        let item = AudioItem::tone(440, 200);
+        assert_eq!(item.priority, AudioPriority::Normal);
+        match item.audio_type {
+            AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            } => {
+                assert_eq!(frequency_hz, 440);
+                assert_eq!(duration_ms, 200);
+            }
+            _ => panic!("Expected Tone type"),
+        }
+    }
+
+    #[test]
+    fn test_tone_with_priority() {
+        let item = AudioItem::tone(880, 100).with_priority(AudioPriority::High);
+        assert_eq!(item.priority, AudioPriority::High);
+        match item.audio_type {
+            AudioType::Tone {
+                frequency_hz,
+                duration_ms,
+            } => {
+                assert_eq!(frequency_hz, 880);
+                assert_eq!(duration_ms, 100);
+            }
+            _ => panic!("Expected Tone type"),
+        }
     }
 }
