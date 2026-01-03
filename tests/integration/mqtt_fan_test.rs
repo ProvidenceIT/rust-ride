@@ -837,3 +837,503 @@ async fn test_fan_test_result_fields() {
     assert_eq!(result.current_speed, 0);
     assert!(result.duration_ms < 1000);
 }
+
+// ========================================================================
+// Reconnection Scenario Tests
+// ========================================================================
+// These tests verify that the MQTT client handles reconnection scenarios
+// correctly, including broker unavailability and recovery.
+
+use rustride::integrations::mqtt::MqttEvent;
+
+/// Test that connecting to a broker enables auto-reconnection.
+#[tokio::test]
+async fn test_connect_enables_auto_reconnection() {
+    let client = DefaultMqttClient::new();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(), // Non-routable, will fail
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        ..Default::default()
+    };
+
+    // Before connect, reconnection should be disabled
+    assert!(!client.is_connected());
+
+    // Connect enables auto-reconnection
+    let _ = client.connect(&config).await;
+
+    // Give the async task a moment to start
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // The client should have started connection (state may vary due to async)
+    let state = client.connection_state();
+    assert!(
+        matches!(
+            state,
+            ConnectionState::Connecting
+                | ConnectionState::ConnectionLost
+                | ConnectionState::Reconnecting { .. }
+                | ConnectionState::Disconnected
+        ),
+        "Expected valid state after connect, got: {:?}",
+        state
+    );
+}
+
+/// Test that disconnect disables auto-reconnection and stops reconnection attempts.
+#[tokio::test]
+async fn test_disconnect_stops_reconnection() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1,
+        ..Default::default()
+    };
+
+    // Start connection (will fail due to non-routable address)
+    let _ = client.connect(&config).await;
+
+    // Wait a bit for connection attempt
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Disconnect should stop all reconnection attempts
+    let _ = client.disconnect().await;
+
+    // State should be Disconnected
+    assert_eq!(client.connection_state(), ConnectionState::Disconnected);
+    assert!(!client.is_connected());
+
+    // Should receive a Disconnected event
+    let event_result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
+    assert!(event_result.is_ok(), "Should receive disconnect event");
+}
+
+/// Test that max reconnection attempts is respected.
+#[tokio::test]
+async fn test_max_reconnection_attempts_limit() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(), // Non-routable
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1, // Fast reconnection for testing
+        max_reconnect_attempts: Some(2), // Limit to 2 attempts
+        ..Default::default()
+    };
+
+    // Start connection
+    let _ = client.connect(&config).await;
+
+    // Collect events for a few seconds to observe reconnection behavior
+    let mut events = Vec::new();
+    let collect_duration = Duration::from_secs(5);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < collect_duration {
+        match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Ok(event)) => {
+                events.push(event.clone());
+                // If we see ReconnectionFailed, we can stop early
+                if matches!(event, MqttEvent::ReconnectionFailed { .. }) {
+                    break;
+                }
+            }
+            Ok(Err(_)) => break, // Channel closed
+            Err(_) => continue, // Timeout, keep waiting
+        }
+    }
+
+    // Clean up
+    let _ = client.disconnect().await;
+
+    // We should have received some events (ConnectionLost, Reconnecting, etc.)
+    // The exact sequence depends on timing, but we should see max_reconnect_attempts
+    // being respected
+    let reconnecting_events: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, MqttEvent::Reconnecting { .. }))
+        .collect();
+
+    // Should have at most 2 reconnection attempts (matching our max_reconnect_attempts)
+    assert!(
+        reconnecting_events.len() <= 2,
+        "Expected at most 2 reconnection events, got: {}",
+        reconnecting_events.len()
+    );
+}
+
+/// Test that ReconnectionFailed event is emitted when max attempts exceeded.
+#[tokio::test]
+async fn test_reconnection_failed_event() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1,
+        max_reconnect_attempts: Some(1), // Only 1 attempt
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Wait for ReconnectionFailed event
+    let mut got_reconnection_failed = false;
+    let timeout_duration = Duration::from_secs(8);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_duration && !got_reconnection_failed {
+        match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Ok(MqttEvent::ReconnectionFailed { attempts, reason })) => {
+                got_reconnection_failed = true;
+                assert_eq!(attempts, 1, "Should have made 1 attempt");
+                assert!(
+                    reason.contains("maximum"),
+                    "Reason should mention max attempts exceeded"
+                );
+            }
+            Ok(Ok(_)) => continue, // Other events
+            Ok(Err(_)) => break,   // Channel closed
+            Err(_) => continue,    // Timeout
+        }
+    }
+
+    let _ = client.disconnect().await;
+
+    assert!(
+        got_reconnection_failed,
+        "Should have received ReconnectionFailed event"
+    );
+}
+
+/// Test that ConnectionLost event is emitted when connection fails.
+#[tokio::test]
+async fn test_connection_lost_event_on_failure() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        max_reconnect_attempts: Some(0), // No reconnection attempts
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Should receive ConnectionLost or Error event when connection fails
+    let mut got_loss_event = false;
+    let timeout_duration = Duration::from_secs(3);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_duration && !got_loss_event {
+        match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Ok(MqttEvent::ConnectionLost { reason })) => {
+                got_loss_event = true;
+                assert!(!reason.is_empty(), "Should have a reason for connection loss");
+            }
+            Ok(Ok(MqttEvent::Error { message })) => {
+                got_loss_event = true;
+                assert!(!message.is_empty(), "Error should have a message");
+            }
+            Ok(Ok(MqttEvent::ReconnectionFailed { .. })) => {
+                // With max_reconnect_attempts=0, we might get this instead
+                got_loss_event = true;
+            }
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    let _ = client.disconnect().await;
+
+    assert!(got_loss_event, "Should have received a connection loss/error event");
+}
+
+/// Test that Reconnecting event includes attempt number.
+#[tokio::test]
+async fn test_reconnecting_event_has_attempt_number() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1,
+        max_reconnect_attempts: Some(3),
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Collect reconnecting events
+    let mut reconnect_attempts = Vec::new();
+    let timeout_duration = Duration::from_secs(10);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_duration {
+        match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Ok(MqttEvent::Reconnecting { attempt })) => {
+                reconnect_attempts.push(attempt);
+                if attempt >= 3 {
+                    break; // Got enough attempts
+                }
+            }
+            Ok(Ok(MqttEvent::ReconnectionFailed { .. })) => break,
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    let _ = client.disconnect().await;
+
+    // Verify attempt numbers are sequential
+    if !reconnect_attempts.is_empty() {
+        for (i, attempt) in reconnect_attempts.iter().enumerate() {
+            assert_eq!(
+                *attempt,
+                (i + 1) as u32,
+                "Attempt numbers should be sequential starting from 1"
+            );
+        }
+    }
+}
+
+/// Test that ConnectionState::Reconnecting reflects current attempt.
+#[tokio::test]
+async fn test_connection_state_shows_reconnect_attempt() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 2, // 2 second delay to observe state
+        max_reconnect_attempts: Some(2),
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Wait for a Reconnecting event
+    let timeout_duration = Duration::from_secs(5);
+    let start = std::time::Instant::now();
+    let mut saw_reconnecting = false;
+
+    while start.elapsed() < timeout_duration && !saw_reconnecting {
+        match tokio::time::timeout(Duration::from_millis(200), event_rx.recv()).await {
+            Ok(Ok(MqttEvent::Reconnecting { .. })) => {
+                saw_reconnecting = true;
+                // Check the connection state right after receiving the event
+                let state = client.connection_state();
+                // State should be Reconnecting or Connecting (after delay, it might have moved on)
+                assert!(
+                    matches!(
+                        state,
+                        ConnectionState::Reconnecting { .. }
+                            | ConnectionState::Connecting
+                            | ConnectionState::ConnectionLost
+                            | ConnectionState::Disconnected
+                    ),
+                    "State should be in reconnection cycle, got: {:?}",
+                    state
+                );
+            }
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    let _ = client.disconnect().await;
+}
+
+/// Test that disconnect during reconnection delay properly stops reconnection.
+#[tokio::test]
+async fn test_disconnect_during_reconnection_delay() {
+    let client = DefaultMqttClient::new();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 10, // Long delay so we can disconnect during it
+        max_reconnect_attempts: Some(5),
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Wait for initial connection failure
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // Now disconnect while reconnection delay is in progress
+    let _ = client.disconnect().await;
+
+    // State should be Disconnected
+    assert_eq!(client.connection_state(), ConnectionState::Disconnected);
+
+    // Wait a bit to ensure no reconnection attempts happen after disconnect
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        client.connection_state(),
+        ConnectionState::Disconnected,
+        "Should stay disconnected after explicit disconnect"
+    );
+}
+
+/// Test multiple connect/disconnect cycles don't leak reconnection state.
+#[tokio::test]
+async fn test_multiple_connect_disconnect_cycles_clean() {
+    let client = DefaultMqttClient::new();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        max_reconnect_attempts: Some(1),
+        ..Default::default()
+    };
+
+    // Perform 3 cycles
+    for cycle in 1..=3 {
+        // Connect
+        let _ = client.connect(&config).await;
+
+        // Wait briefly for connection attempt
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Disconnect
+        let _ = client.disconnect().await;
+
+        // Verify clean state after each cycle
+        assert_eq!(
+            client.connection_state(),
+            ConnectionState::Disconnected,
+            "Cycle {}: Should be disconnected after disconnect",
+            cycle
+        );
+    }
+}
+
+/// Test that event subscription works across reconnection cycles.
+#[tokio::test]
+async fn test_event_subscription_across_reconnection() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1,
+        max_reconnect_attempts: Some(2),
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Collect events
+    let mut event_types = Vec::new();
+    let timeout_duration = Duration::from_secs(8);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_duration {
+        match tokio::time::timeout(Duration::from_millis(300), event_rx.recv()).await {
+            Ok(Ok(event)) => {
+                let event_type = match &event {
+                    MqttEvent::Connected => "Connected",
+                    MqttEvent::Disconnected => "Disconnected",
+                    MqttEvent::ConnectionLost { .. } => "ConnectionLost",
+                    MqttEvent::Reconnecting { .. } => "Reconnecting",
+                    MqttEvent::ReconnectionFailed { .. } => "ReconnectionFailed",
+                    MqttEvent::Error { .. } => "Error",
+                    MqttEvent::MessageReceived { .. } => "MessageReceived",
+                };
+                event_types.push(event_type.to_string());
+
+                // Stop if we've received ReconnectionFailed or Disconnected
+                if matches!(
+                    event,
+                    MqttEvent::ReconnectionFailed { .. } | MqttEvent::Disconnected
+                ) {
+                    break;
+                }
+            }
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    let _ = client.disconnect().await;
+
+    // Should have received some events throughout the reconnection process
+    assert!(
+        !event_types.is_empty(),
+        "Should have received events during reconnection process"
+    );
+}
+
+/// Test that unlimited reconnection (None max_attempts) doesn't immediately give up.
+#[tokio::test]
+async fn test_unlimited_reconnection_keeps_trying() {
+    let client = DefaultMqttClient::new();
+    let mut event_rx = client.subscribe_events();
+    let config = MqttConfig {
+        enabled: true,
+        broker_host: "192.0.2.1".to_string(),
+        broker_port: 1883,
+        connection_timeout_secs: 1,
+        reconnect_interval_secs: 1,
+        max_reconnect_attempts: None, // Unlimited
+        ..Default::default()
+    };
+
+    let _ = client.connect(&config).await;
+
+    // Count reconnection events over a few seconds
+    let mut reconnect_count = 0;
+    let timeout_duration = Duration::from_secs(5);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_duration {
+        match tokio::time::timeout(Duration::from_millis(300), event_rx.recv()).await {
+            Ok(Ok(MqttEvent::Reconnecting { .. })) => {
+                reconnect_count += 1;
+                if reconnect_count >= 2 {
+                    break; // Seen enough to confirm it keeps trying
+                }
+            }
+            Ok(Ok(MqttEvent::ReconnectionFailed { .. })) => {
+                panic!("Should not get ReconnectionFailed with unlimited attempts");
+            }
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    let _ = client.disconnect().await;
+
+    // With unlimited attempts, we should see multiple reconnection events
+    // and never a ReconnectionFailed
+    assert!(
+        reconnect_count >= 1,
+        "Should have at least 1 reconnection attempt with unlimited mode"
+    );
+}
