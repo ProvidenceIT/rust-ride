@@ -81,7 +81,7 @@ impl HidDevice {
 
     /// Get a unique identity key for tracking devices across scans
     /// Uses VID:PID:Serial (or VID:PID:Path if no serial)
-    fn identity_key(&self) -> String {
+    pub fn identity_key(&self) -> String {
         if let Some(ref serial) = self.serial_number {
             format!("{:04X}:{:04X}:{}", self.vendor_id, self.product_id, serial)
         } else if let Some(ref path) = self.device_path {
@@ -183,7 +183,7 @@ impl DefaultHidDeviceManager {
     }
 
     /// Mark a device for auto-reconnect tracking
-    fn track_for_reconnect(&self, device: &HidDevice) {
+    pub fn track_for_reconnect(&self, device: &HidDevice) {
         if let Ok(mut targets) = self.auto_reconnect_targets.lock() {
             let info = DeviceReconnectInfo {
                 vendor_id: device.vendor_id,
@@ -196,7 +196,7 @@ impl DefaultHidDeviceManager {
     }
 
     /// Remove a device from auto-reconnect tracking
-    fn untrack_for_reconnect(&self, device: &HidDevice) {
+    pub fn untrack_for_reconnect(&self, device: &HidDevice) {
         if let Ok(mut targets) = self.auto_reconnect_targets.lock() {
             targets.remove(&device.identity_key());
             tracing::debug!("Device {} removed from auto-reconnect tracking", device.identity_key());
@@ -204,7 +204,7 @@ impl DefaultHidDeviceManager {
     }
 
     /// Check if a device should be auto-reconnected
-    fn should_auto_reconnect(&self, identity_key: &str) -> bool {
+    pub fn should_auto_reconnect(&self, identity_key: &str) -> bool {
         if let Ok(targets) = self.auto_reconnect_targets.lock() {
             targets.contains_key(identity_key)
         } else {

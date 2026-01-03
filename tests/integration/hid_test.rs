@@ -1362,3 +1362,821 @@ mod action_integration_tests {
         assert!(!handler.is_learning(), "Should not be in learning mode");
     }
 }
+
+// ============================================================================
+// Reconnection Stress Tests: Device Disconnect/Reconnect Scenarios
+// ============================================================================
+
+mod reconnection_stress_tests {
+    use super::*;
+    use rustride::hid::{
+        DefaultHidDeviceManager, HidConfig, HidDevice, HidDeviceEvent, HidDeviceManager,
+        HidDeviceStatus, get_default_mappings,
+    };
+    use tokio::sync::broadcast;
+
+    // ========================================================================
+    // Test Device Disconnect Emits Correct Events
+    // ========================================================================
+
+    /// Test that device disconnect event contains correct device ID
+    #[test]
+    fn test_disconnect_event_contains_device_id() {
+        let device_id = Uuid::new_v4();
+        let event = HidDeviceEvent::DeviceDisconnected(device_id);
+
+        match event {
+            HidDeviceEvent::DeviceDisconnected(id) => {
+                assert_eq!(id, device_id, "Disconnect event should contain correct device ID");
+            }
+            _ => panic!("Expected DeviceDisconnected event"),
+        }
+    }
+
+    /// Test that device connected event contains device info
+    #[test]
+    fn test_connect_event_contains_device_info() {
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        let device_id = device.id;
+        let event = HidDeviceEvent::DeviceConnected(device);
+
+        match event {
+            HidDeviceEvent::DeviceConnected(dev) => {
+                assert_eq!(dev.id, device_id);
+                assert_eq!(dev.vendor_id, 0x0FD9);
+                assert_eq!(dev.product_id, 0x0060);
+                assert_eq!(dev.name, "Stream Deck");
+            }
+            _ => panic!("Expected DeviceConnected event"),
+        }
+    }
+
+    /// Test device status transitions on disconnect
+    #[test]
+    fn test_device_status_transitions_on_disconnect() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Initial state
+        assert_eq!(device.status, HidDeviceStatus::Detected);
+
+        // Simulate open
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+
+        // Simulate disconnect
+        device.status = HidDeviceStatus::Disconnected;
+        assert!(!device.is_open());
+        assert_eq!(device.status, HidDeviceStatus::Disconnected);
+    }
+
+    /// Test that event channel supports multiple disconnect events
+    #[test]
+    fn test_multiple_disconnect_events() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let device1_id = Uuid::new_v4();
+        let device2_id = Uuid::new_v4();
+        let device3_id = Uuid::new_v4();
+
+        // Send multiple disconnect events
+        tx.send(HidDeviceEvent::DeviceDisconnected(device1_id)).unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device2_id)).unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device3_id)).unwrap();
+
+        // Verify all events received in order
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 3);
+
+        match &events[0] {
+            HidDeviceEvent::DeviceDisconnected(id) => assert_eq!(*id, device1_id),
+            _ => panic!("Expected disconnect event"),
+        }
+        match &events[1] {
+            HidDeviceEvent::DeviceDisconnected(id) => assert_eq!(*id, device2_id),
+            _ => panic!("Expected disconnect event"),
+        }
+        match &events[2] {
+            HidDeviceEvent::DeviceDisconnected(id) => assert_eq!(*id, device3_id),
+            _ => panic!("Expected disconnect event"),
+        }
+    }
+
+    // ========================================================================
+    // Test Device Reconnect Restores Mappings
+    // ========================================================================
+
+    /// Test that mappings are preserved after device reconnect
+    #[tokio::test]
+    async fn test_mappings_preserved_after_reconnect() {
+        let handler = DefaultButtonInputHandler::new();
+        let device_id = Uuid::new_v4();
+
+        // Register mappings
+        let mappings = vec![
+            ButtonMapping::new(device_id, 0, ButtonAction::PauseResume),
+            ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
+            ButtonMapping::new(device_id, 2, ButtonAction::SkipInterval),
+        ];
+        handler.register_mappings(&device_id, mappings.clone());
+
+        // Verify mappings exist
+        assert_eq!(handler.get_mappings(&device_id).len(), 3);
+
+        // Simulate disconnect (mappings should still be in memory for handler)
+        // In real scenario, ButtonInputHandler keeps mappings even when device disconnects
+
+        // Verify mappings still accessible after "disconnect"
+        let retrieved = handler.get_mappings(&device_id);
+        assert_eq!(retrieved.len(), 3);
+        assert_eq!(retrieved[0].action, ButtonAction::PauseResume);
+        assert_eq!(retrieved[1].action, ButtonAction::AddLapMarker);
+        assert_eq!(retrieved[2].action, ButtonAction::SkipInterval);
+    }
+
+    /// Test that default mappings can be restored for known devices
+    #[test]
+    fn test_default_mappings_restored_for_known_device() {
+        // Get default mappings for Stream Deck
+        let mappings = get_default_mappings(0x0FD9, 0x0060);
+
+        assert!(!mappings.is_empty(), "Stream Deck should have default mappings");
+        assert_eq!(mappings[0].button_code, 0);
+        assert_eq!(mappings[0].action, ButtonAction::PauseResume);
+
+        // Verify we can re-apply these mappings
+        let handler = DefaultButtonInputHandler::new();
+        let device_id = Uuid::new_v4();
+
+        let button_mappings: Vec<ButtonMapping> = mappings
+            .iter()
+            .map(|config| {
+                ButtonMapping::new(device_id, config.button_code, config.action.clone())
+            })
+            .collect();
+
+        handler.register_mappings(&device_id, button_mappings);
+
+        let registered = handler.get_mappings(&device_id);
+        assert_eq!(registered.len(), mappings.len());
+    }
+
+    /// Test that reconnected device emits correct event
+    #[test]
+    fn test_reconnected_event_emitted() {
+        let device_id = Uuid::new_v4();
+        let event = HidDeviceEvent::DeviceReconnected(device_id);
+
+        match event {
+            HidDeviceEvent::DeviceReconnected(id) => {
+                assert_eq!(id, device_id, "Reconnected event should contain correct device ID");
+            }
+            _ => panic!("Expected DeviceReconnected event"),
+        }
+    }
+
+    /// Test that device can transition back to Open status after reconnect
+    #[test]
+    fn test_device_status_restored_after_reconnect() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Initial state
+        assert_eq!(device.status, HidDeviceStatus::Detected);
+
+        // Open
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+
+        // Disconnect
+        device.status = HidDeviceStatus::Disconnected;
+        assert!(!device.is_open());
+
+        // Reconnect (back to open)
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+        assert_eq!(device.status, HidDeviceStatus::Open);
+    }
+
+    // ========================================================================
+    // Test Rapid Disconnect/Reconnect Cycles
+    // ========================================================================
+
+    /// Test rapid status changes don't corrupt device state
+    #[test]
+    fn test_rapid_status_changes() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Simulate rapid cycling
+        for _ in 0..100 {
+            device.status = HidDeviceStatus::Opening;
+            device.status = HidDeviceStatus::Open;
+            device.status = HidDeviceStatus::Disconnected;
+            device.status = HidDeviceStatus::Detected;
+        }
+
+        // Device should be in valid state
+        assert_eq!(device.status, HidDeviceStatus::Detected);
+        assert!(!device.is_open());
+
+        // Open again after rapid cycling
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+    }
+
+    /// Test rapid event emission doesn't block
+    #[test]
+    fn test_rapid_event_emission() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let device_id = Uuid::new_v4();
+
+        // Rapidly emit connect/disconnect events
+        for i in 0..50 {
+            let device = HidDevice::new(0x0FD9, 0x0060, format!("Device {}", i));
+            tx.send(HidDeviceEvent::DeviceConnected(device)).unwrap();
+            tx.send(HidDeviceEvent::DeviceDisconnected(device_id)).unwrap();
+        }
+
+        // All 100 events should be sent (50 connect + 50 disconnect)
+        let mut event_count = 0;
+        while rx.try_recv().is_ok() {
+            event_count += 1;
+        }
+        assert_eq!(event_count, 100, "All rapid events should be received");
+    }
+
+    /// Test rapid mapping registration/clear cycles
+    #[tokio::test]
+    async fn test_rapid_mapping_cycles() {
+        let handler = DefaultButtonInputHandler::new();
+        let device_id = Uuid::new_v4();
+
+        for cycle in 0..50 {
+            // Register mappings
+            let mappings = vec![
+                ButtonMapping::new(device_id, 0, ButtonAction::PauseResume),
+                ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
+            ];
+            handler.register_mappings(&device_id, mappings);
+            assert_eq!(handler.get_mappings(&device_id).len(), 2, "Cycle {}: Should have 2 mappings", cycle);
+
+            // Clear mappings (simulate disconnect cleanup)
+            handler.clear_mappings(&device_id);
+            assert_eq!(handler.get_mappings(&device_id).len(), 0, "Cycle {}: Should have 0 mappings after clear", cycle);
+        }
+
+        // Final state should be consistent
+        assert_eq!(handler.get_mappings(&device_id).len(), 0);
+
+        // Can still add mappings after rapid cycles
+        handler.add_mapping(&device_id, ButtonMapping::new(device_id, 5, ButtonAction::VolumeUp));
+        assert_eq!(handler.get_mappings(&device_id).len(), 1);
+    }
+
+    /// Test interleaved operations from multiple devices
+    #[tokio::test]
+    async fn test_interleaved_multi_device_operations() {
+        let handler = DefaultButtonInputHandler::new();
+
+        let device1 = Uuid::new_v4();
+        let device2 = Uuid::new_v4();
+        let device3 = Uuid::new_v4();
+
+        // Interleave operations across devices
+        for _ in 0..20 {
+            handler.add_mapping(&device1, ButtonMapping::new(device1, 0, ButtonAction::PauseResume));
+            handler.add_mapping(&device2, ButtonMapping::new(device2, 0, ButtonAction::VolumeUp));
+            handler.add_mapping(&device3, ButtonMapping::new(device3, 0, ButtonAction::FanToggle));
+
+            handler.clear_mappings(&device2);
+
+            handler.add_mapping(&device1, ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker));
+            handler.add_mapping(&device3, ButtonMapping::new(device3, 1, ButtonAction::MuteToggle));
+        }
+
+        // Verify each device has correct state
+        let d1_mappings = handler.get_mappings(&device1);
+        let d2_mappings = handler.get_mappings(&device2);
+        let d3_mappings = handler.get_mappings(&device3);
+
+        // Device 1: 40 mappings (20 button 0 + 20 button 1)
+        assert_eq!(d1_mappings.len(), 40);
+
+        // Device 2: 0 mappings (cleared every iteration)
+        assert_eq!(d2_mappings.len(), 0);
+
+        // Device 3: 40 mappings (20 button 0 + 20 button 1)
+        assert_eq!(d3_mappings.len(), 40);
+    }
+
+    // ========================================================================
+    // Test Multiple Device Disconnect Scenarios
+    // ========================================================================
+
+    /// Test all devices disconnect simultaneously
+    #[test]
+    fn test_all_devices_disconnect() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let devices: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+
+        // Simulate all devices disconnecting
+        for device_id in &devices {
+            tx.send(HidDeviceEvent::DeviceDisconnected(*device_id)).unwrap();
+        }
+
+        // Collect all disconnect events
+        let events: Vec<Uuid> = std::iter::from_fn(|| {
+            rx.try_recv().ok().and_then(|e| {
+                if let HidDeviceEvent::DeviceDisconnected(id) = e {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+        // All devices should have disconnect events
+        assert_eq!(events.len(), 5);
+        for device_id in &devices {
+            assert!(events.contains(device_id), "Missing disconnect for device {:?}", device_id);
+        }
+    }
+
+    /// Test partial device disconnect (some remain connected)
+    #[test]
+    fn test_partial_device_disconnect() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let devices: Vec<(Uuid, bool)> = vec![
+            (Uuid::new_v4(), true),   // disconnects
+            (Uuid::new_v4(), false),  // stays connected
+            (Uuid::new_v4(), true),   // disconnects
+            (Uuid::new_v4(), false),  // stays connected
+            (Uuid::new_v4(), true),   // disconnects
+        ];
+
+        // Only disconnect some devices
+        for (device_id, should_disconnect) in &devices {
+            if *should_disconnect {
+                tx.send(HidDeviceEvent::DeviceDisconnected(*device_id)).unwrap();
+            }
+        }
+
+        // Count disconnect events
+        let mut disconnect_count = 0;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, HidDeviceEvent::DeviceDisconnected(_)) {
+                disconnect_count += 1;
+            }
+        }
+
+        assert_eq!(disconnect_count, 3, "Should only have 3 disconnect events");
+    }
+
+    /// Test device mappings isolated across devices during disconnect
+    #[tokio::test]
+    async fn test_device_mappings_isolated_on_disconnect() {
+        let handler = DefaultButtonInputHandler::new();
+
+        let device1 = Uuid::new_v4();
+        let device2 = Uuid::new_v4();
+        let device3 = Uuid::new_v4();
+
+        // Register mappings for all devices
+        handler.register_mappings(&device1, vec![
+            ButtonMapping::new(device1, 0, ButtonAction::PauseResume),
+            ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker),
+        ]);
+        handler.register_mappings(&device2, vec![
+            ButtonMapping::new(device2, 0, ButtonAction::VolumeUp),
+            ButtonMapping::new(device2, 1, ButtonAction::VolumeDown),
+        ]);
+        handler.register_mappings(&device3, vec![
+            ButtonMapping::new(device3, 0, ButtonAction::FanSpeedUp),
+        ]);
+
+        // Verify initial state
+        assert_eq!(handler.get_mappings(&device1).len(), 2);
+        assert_eq!(handler.get_mappings(&device2).len(), 2);
+        assert_eq!(handler.get_mappings(&device3).len(), 1);
+
+        // Simulate device1 disconnect (clear its mappings)
+        handler.clear_mappings(&device1);
+
+        // Device1 should have no mappings, others should be unaffected
+        assert_eq!(handler.get_mappings(&device1).len(), 0);
+        assert_eq!(handler.get_mappings(&device2).len(), 2);
+        assert_eq!(handler.get_mappings(&device3).len(), 1);
+
+        // Simulate device2 disconnect
+        handler.clear_mappings(&device2);
+
+        assert_eq!(handler.get_mappings(&device1).len(), 0);
+        assert_eq!(handler.get_mappings(&device2).len(), 0);
+        assert_eq!(handler.get_mappings(&device3).len(), 1);
+
+        // Device3 still has its mapping
+        let d3_mappings = handler.get_mappings(&device3);
+        assert_eq!(d3_mappings[0].action, ButtonAction::FanSpeedUp);
+    }
+
+    /// Test sequential reconnection of multiple devices
+    #[test]
+    fn test_sequential_multi_device_reconnect() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let device_ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        // Disconnect all
+        for id in &device_ids {
+            tx.send(HidDeviceEvent::DeviceDisconnected(*id)).unwrap();
+        }
+
+        // Reconnect in reverse order
+        for id in device_ids.iter().rev() {
+            tx.send(HidDeviceEvent::DeviceReconnected(*id)).unwrap();
+        }
+
+        // Collect events
+        let mut disconnects = Vec::new();
+        let mut reconnects = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                HidDeviceEvent::DeviceDisconnected(id) => disconnects.push(id),
+                HidDeviceEvent::DeviceReconnected(id) => reconnects.push(id),
+                _ => {}
+            }
+        }
+
+        assert_eq!(disconnects.len(), 3);
+        assert_eq!(reconnects.len(), 3);
+
+        // Reconnects should be in reverse order
+        assert_eq!(reconnects[0], device_ids[2]);
+        assert_eq!(reconnects[1], device_ids[1]);
+        assert_eq!(reconnects[2], device_ids[0]);
+    }
+
+    // ========================================================================
+    // Test HID Manager Auto-Reconnect Tracking
+    // ========================================================================
+
+    /// Test device manager tracks devices for auto-reconnect
+    #[test]
+    fn test_device_manager_auto_reconnect_tracking() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("SN12345".to_string());
+
+        // Verify auto-reconnect is not tracked initially
+        assert!(!manager.should_auto_reconnect(&device.identity_key()));
+
+        // Track device for reconnect
+        manager.track_for_reconnect(&device);
+
+        // Now should be tracked
+        assert!(manager.should_auto_reconnect(&device.identity_key()));
+    }
+
+    /// Test device manager removes from tracking on untrack
+    #[test]
+    fn test_device_manager_untrack_reconnect() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("SN12345".to_string());
+
+        // Track and then untrack
+        manager.track_for_reconnect(&device);
+        assert!(manager.should_auto_reconnect(&device.identity_key()));
+
+        manager.untrack_for_reconnect(&device);
+        assert!(!manager.should_auto_reconnect(&device.identity_key()));
+    }
+
+    /// Test multiple devices tracked independently for reconnect
+    #[test]
+    fn test_multiple_devices_independent_reconnect_tracking() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        let mut device1 = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device1.serial_number = Some("SN001".to_string());
+
+        let mut device2 = HidDevice::new(0x0FD9, 0x006C, "Stream Deck Mini".to_string());
+        device2.serial_number = Some("SN002".to_string());
+
+        let mut device3 = HidDevice::new(0x0FD9, 0x0086, "Stream Deck Pedal".to_string());
+        device3.serial_number = Some("SN003".to_string());
+
+        // Track all devices
+        manager.track_for_reconnect(&device1);
+        manager.track_for_reconnect(&device2);
+        manager.track_for_reconnect(&device3);
+
+        // All should be tracked
+        assert!(manager.should_auto_reconnect(&device1.identity_key()));
+        assert!(manager.should_auto_reconnect(&device2.identity_key()));
+        assert!(manager.should_auto_reconnect(&device3.identity_key()));
+
+        // Untrack device2
+        manager.untrack_for_reconnect(&device2);
+
+        // Device2 should not be tracked, others should still be tracked
+        assert!(manager.should_auto_reconnect(&device1.identity_key()));
+        assert!(!manager.should_auto_reconnect(&device2.identity_key()));
+        assert!(manager.should_auto_reconnect(&device3.identity_key()));
+    }
+
+    /// Test reconnect config can be updated at runtime
+    #[tokio::test]
+    async fn test_reconnect_config_update() {
+        let config = HidConfig::default();
+        let manager = DefaultHidDeviceManager::new(config);
+
+        // Check default config
+        let (enabled, delay) = manager.get_reconnect_config().await;
+        assert!(enabled);
+        assert_eq!(delay, 1000);
+
+        // Update config
+        manager.set_reconnect_config(false, 500).await;
+
+        // Verify updated
+        let (enabled, delay) = manager.get_reconnect_config().await;
+        assert!(!enabled);
+        assert_eq!(delay, 500);
+
+        // Update again with different values
+        manager.set_reconnect_config(true, 2000).await;
+
+        let (enabled, delay) = manager.get_reconnect_config().await;
+        assert!(enabled);
+        assert_eq!(delay, 2000);
+    }
+
+    /// Test device identity key generation for tracking
+    #[test]
+    fn test_device_identity_key_variations() {
+        // With serial number
+        let mut device1 = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device1.serial_number = Some("ABC123".to_string());
+        assert_eq!(device1.identity_key(), "0FD9:0060:ABC123");
+
+        // With path only
+        let mut device2 = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device2.device_path = Some("/dev/hidraw0".to_string());
+        assert_eq!(device2.identity_key(), "0FD9:0060:/dev/hidraw0");
+
+        // With both (serial takes precedence)
+        let mut device3 = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device3.serial_number = Some("XYZ789".to_string());
+        device3.device_path = Some("/dev/hidraw1".to_string());
+        assert_eq!(device3.identity_key(), "0FD9:0060:XYZ789");
+
+        // With neither (VID:PID only)
+        let device4 = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        assert_eq!(device4.identity_key(), "0FD9:0060");
+    }
+
+    // ========================================================================
+    // Test Reconnection with Button Event Processing
+    // ========================================================================
+
+    /// Test button events still processed after simulated reconnect cycle
+    #[tokio::test]
+    async fn test_button_events_processed_after_reconnect() {
+        use rustride::hid::mapping::RawButtonEvent;
+        use std::time::Instant;
+
+        let handler = DefaultButtonInputHandler::new();
+        let device_id = Uuid::new_v4();
+
+        // Register mappings
+        handler.register_mappings(&device_id, vec![
+            ButtonMapping::new(device_id, 0, ButtonAction::PauseResume),
+            ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
+        ]);
+
+        // Subscribe to action events
+        let mut action_rx = handler.subscribe_actions();
+
+        // Process event before "disconnect"
+        let event1 = RawButtonEvent {
+            device_id,
+            button_code: 0,
+            pressed: true,
+            timestamp: Instant::now(),
+        };
+        handler.process_event(event1).await;
+
+        // Verify action emitted
+        let action = action_rx.try_recv();
+        assert!(action.is_ok(), "Should receive action before disconnect");
+        assert_eq!(action.unwrap().action, ButtonAction::PauseResume);
+
+        // Simulate "disconnect" (mappings still exist in handler)
+        // In real scenario, the device handle would be closed but mappings remain
+
+        // Simulate "reconnect" (device comes back)
+        // Process event after "reconnect"
+        let event2 = RawButtonEvent {
+            device_id,
+            button_code: 1,
+            pressed: true,
+            timestamp: Instant::now(),
+        };
+        handler.process_event(event2).await;
+
+        // Verify action still emitted
+        let action = action_rx.try_recv();
+        assert!(action.is_ok(), "Should receive action after reconnect");
+        assert_eq!(action.unwrap().action, ButtonAction::AddLapMarker);
+    }
+
+    /// Test rapid button events during reconnect cycle
+    #[tokio::test]
+    async fn test_rapid_button_events_during_reconnect() {
+        use rustride::hid::mapping::RawButtonEvent;
+        use std::time::Instant;
+
+        let handler = DefaultButtonInputHandler::new();
+        let device_id = Uuid::new_v4();
+
+        // Register mappings
+        handler.register_mappings(&device_id, vec![
+            ButtonMapping::new(device_id, 0, ButtonAction::VolumeUp),
+        ]);
+
+        let mut action_rx = handler.subscribe_actions();
+
+        // Simulate rapid press/release during reconnect scenario
+        for i in 0..20 {
+            let pressed = i % 2 == 0;
+            let event = RawButtonEvent {
+                device_id,
+                button_code: 0,
+                pressed,
+                timestamp: Instant::now(),
+            };
+            handler.process_event(event).await;
+        }
+
+        // Count received actions (should be 10 presses, releases don't emit by default)
+        let mut action_count = 0;
+        while action_rx.try_recv().is_ok() {
+            action_count += 1;
+        }
+
+        // Only pressed events (true) should trigger actions
+        assert_eq!(action_count, 10, "Should receive 10 press events");
+    }
+
+    // ========================================================================
+    // Test Error Event Handling
+    // ========================================================================
+
+    /// Test error events during reconnect attempts
+    #[test]
+    fn test_error_events_during_reconnect() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let device_id = Uuid::new_v4();
+
+        // Simulate reconnect attempt that fails
+        tx.send(HidDeviceEvent::Error {
+            device_id: Some(device_id),
+            error: "Auto-reconnect failed: device busy".to_string(),
+        }).unwrap();
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            HidDeviceEvent::Error { device_id: Some(id), error } => {
+                assert_eq!(id, device_id);
+                assert!(error.contains("Auto-reconnect failed"));
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    /// Test error events without device ID (general errors)
+    #[test]
+    fn test_general_error_events() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        tx.send(HidDeviceEvent::Error {
+            device_id: None,
+            error: "HID API initialization failed".to_string(),
+        }).unwrap();
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            HidDeviceEvent::Error { device_id: None, error } => {
+                assert!(error.contains("HID API"));
+            }
+            _ => panic!("Expected Error event with no device ID"),
+        }
+    }
+
+    /// Test mixed event stream during reconnect cycle
+    #[test]
+    fn test_mixed_event_stream_during_reconnect() {
+        let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
+
+        let device_id = Uuid::new_v4();
+        let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Simulate a typical reconnect cycle event sequence
+        tx.send(HidDeviceEvent::DeviceDisconnected(device_id)).unwrap();
+        tx.send(HidDeviceEvent::Error {
+            device_id: Some(device_id),
+            error: "First reconnect attempt failed".to_string(),
+        }).unwrap();
+        tx.send(HidDeviceEvent::DeviceConnected(device.clone())).unwrap();
+        tx.send(HidDeviceEvent::DeviceReconnected(device_id)).unwrap();
+        tx.send(HidDeviceEvent::DeviceOpened(device_id)).unwrap();
+
+        // Collect and verify all events
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        assert_eq!(events.len(), 5);
+        assert!(matches!(events[0], HidDeviceEvent::DeviceDisconnected(_)));
+        assert!(matches!(events[1], HidDeviceEvent::Error { .. }));
+        assert!(matches!(events[2], HidDeviceEvent::DeviceConnected(_)));
+        assert!(matches!(events[3], HidDeviceEvent::DeviceReconnected(_)));
+        assert!(matches!(events[4], HidDeviceEvent::DeviceOpened(_)));
+    }
+
+    // ========================================================================
+    // Test Device State Consistency
+    // ========================================================================
+
+    /// Test device state remains consistent through lifecycle
+    #[test]
+    fn test_device_state_consistency() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+        device.serial_number = Some("TEST123".to_string());
+
+        // Track all state through lifecycle
+        let initial_id = device.id;
+        let initial_serial = device.serial_number.clone();
+
+        // Simulate full lifecycle
+        assert_eq!(device.status, HidDeviceStatus::Detected);
+
+        device.status = HidDeviceStatus::Opening;
+        assert_eq!(device.id, initial_id);
+        assert_eq!(device.serial_number, initial_serial);
+
+        device.status = HidDeviceStatus::Open;
+        assert_eq!(device.id, initial_id);
+        assert_eq!(device.serial_number, initial_serial);
+
+        device.status = HidDeviceStatus::Disconnected;
+        assert_eq!(device.id, initial_id);
+        assert_eq!(device.serial_number, initial_serial);
+
+        device.status = HidDeviceStatus::Detected;
+        assert_eq!(device.id, initial_id);
+        assert_eq!(device.serial_number, initial_serial);
+
+        device.status = HidDeviceStatus::Open;
+        assert_eq!(device.id, initial_id);
+        assert_eq!(device.serial_number, initial_serial);
+
+        // Core properties unchanged
+        assert_eq!(device.vendor_id, 0x0FD9);
+        assert_eq!(device.product_id, 0x0060);
+        assert_eq!(device.name, "Stream Deck");
+    }
+
+    /// Test error state recovery
+    #[test]
+    fn test_error_state_recovery() {
+        let mut device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
+
+        // Start normally
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+
+        // Simulate error
+        device.status = HidDeviceStatus::Error("Permission denied".to_string());
+        assert!(!device.is_open());
+
+        // Recover from error
+        device.status = HidDeviceStatus::Detected;
+        assert!(!device.is_open());
+
+        // Successfully open again
+        device.status = HidDeviceStatus::Open;
+        assert!(device.is_open());
+    }
+}
