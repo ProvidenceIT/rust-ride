@@ -190,8 +190,8 @@ describe('RideDetailScreen', () => {
   describe('Not Connected State', () => {
     it('shows not connected message when disconnected', () => {
       const { getByText } = renderWithProviders();
-      expect(getByText('Not Connected')).toBeTruthy();
-      expect(getByText('Connect to your desktop app to view ride details')).toBeTruthy();
+      expect(getByText('Not Available Offline')).toBeTruthy();
+      expect(getByText(/Connect to your desktop app/)).toBeTruthy();
     });
 
     it('shows Connect button when disconnected', () => {
