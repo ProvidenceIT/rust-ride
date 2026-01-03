@@ -12,12 +12,12 @@
  * - Toast notifications on skip success/failure
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { WorkoutControlBar, NoSessionState, ConnectionStatus } from '@/components';
+import { WorkoutControlBar, NoSessionState, ConnectionStatus, StopConfirmationModal } from '@/components';
 import { useWorkoutControls, useToast, useHaptics } from '@/hooks';
 import {
   useSessionStore,
@@ -28,6 +28,7 @@ import {
   selectTargetPower,
   selectIsWorkout,
   selectCanSkip,
+  selectSessionType,
 } from '@/stores/sessionStore';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import { useNavigation } from '@react-navigation/native';
@@ -57,7 +58,10 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
   const { showSuccess, showError } = useToast();
 
   // Haptic feedback
-  const { successHaptic, errorHaptic } = useHaptics();
+  const { successHaptic, errorHaptic, warningHaptic } = useHaptics();
+
+  // Stop confirmation modal state
+  const [showStopModal, setShowStopModal] = useState(false);
 
   // Session state
   const isSessionActive = useSessionStore(selectIsSessionActive);
@@ -68,6 +72,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
   const elapsedSecs = useSessionStore(state => state.elapsedSecs);
   const isWorkout = useSessionStore(selectIsWorkout);
   const canSkip = useSessionStore(selectCanSkip);
+  const sessionType = useSessionStore(selectSessionType);
 
   // Connection state
   const connectionStatus = useConnectionStore(selectConnectionStatus);
@@ -89,6 +94,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
   // Track previous interval to detect changes (for toast on skip)
   const prevIntervalRef = useRef(currentInterval?.index);
   const skipPendingRef = useRef(false);
+  const stopPendingRef = useRef(false);
 
   // Show toast when interval changes after skip
   useEffect(() => {
@@ -116,6 +122,18 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
     }
   }, [skipState.error, showError, errorHaptic]);
 
+  // Handle session end after stop - navigate to Dashboard
+  useEffect(() => {
+    if (stopPendingRef.current && !isSessionActive) {
+      stopPendingRef.current = false;
+      setShowStopModal(false);
+      showSuccess('Session saved');
+      successHaptic();
+      // Navigate to Dashboard tab
+      navigation.navigate('Main', { screen: 'Dashboard' });
+    }
+  }, [isSessionActive, navigation, showSuccess, successHaptic]);
+
   // Handle connect press
   const handleConnectPress = useCallback(() => {
     navigation.navigate('Connection');
@@ -137,10 +155,30 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
     await skip();
   }, [skip]);
 
-  // Handle stop
-  const handleStop = useCallback(async () => {
-    await stop();
-  }, [stop]);
+  // Handle stop button press - show confirmation modal
+  const handleStopPress = useCallback(() => {
+    warningHaptic();
+    setShowStopModal(true);
+  }, [warningHaptic]);
+
+  // Handle stop modal close
+  const handleStopModalClose = useCallback(() => {
+    setShowStopModal(false);
+  }, []);
+
+  // Handle stop confirmation - actually stop the session
+  const handleStopConfirm = useCallback(async () => {
+    stopPendingRef.current = true;
+    try {
+      await stop();
+      // Navigation happens in the effect above when isSessionActive becomes false
+    } catch {
+      stopPendingRef.current = false;
+      setShowStopModal(false);
+      showError('Failed to stop session');
+      errorHaptic();
+    }
+  }, [stop, showError, errorHaptic]);
 
   // Calculate interval progress
   const intervalProgress = currentInterval
@@ -180,10 +218,10 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
           <>
             {/* Workout info card */}
             <View style={[styles.card, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.workoutName, typography.textStyles.heading2, { color: colors.textPrimary }]}>
+              <Text style={[styles.workoutName, typography.textStyles.sectionTitle, { color: colors.textPrimary }]}>
                 {workoutName || (isWorkout ? 'Structured Workout' : 'Free Ride')}
               </Text>
-              <Text style={[styles.workoutStatus, typography.textStyles.bodySmall, { color: colors.textSecondary }]}>
+              <Text style={[styles.workoutStatus, typography.textStyles.bodySecondary, { color: colors.textSecondary }]}>
                 {isPaused ? 'Paused' : 'In Progress'}
               </Text>
             </View>
@@ -192,7 +230,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
             {isWorkout && currentInterval && (
               <View style={[styles.card, { backgroundColor: colors.surface }]}>
                 <View style={styles.intervalHeader}>
-                  <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+                  <Text style={[styles.sectionTitle, typography.textStyles.label, { color: colors.textSecondary }]}>
                     Current Interval
                   </Text>
                   <Text style={[styles.intervalCount, typography.textStyles.body, { color: colors.textSecondary }]}>
@@ -211,14 +249,14 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
                   />
                 </View>
                 <View style={styles.intervalDetails}>
-                  <Text style={[styles.intervalName, typography.textStyles.bodyLarge, { color: colors.textPrimary }]}>
+                  <Text style={[styles.intervalName, typography.textStyles.listTitle, { color: colors.textPrimary }]}>
                     {currentInterval.name || `Interval ${currentInterval.index + 1}`}
                   </Text>
                   {currentInterval.remainingSecs != null && (
                     <Text
                       style={[
                         styles.intervalTime,
-                        typography.textStyles.bodyLarge,
+                        typography.textStyles.listTitle,
                         { color: colors.textSecondary },
                       ]}
                     >
@@ -237,7 +275,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
             {/* Target power - only for workouts */}
             {isWorkout && targetPower != null && (
               <View style={[styles.card, { backgroundColor: colors.surface }]}>
-                <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+                <Text style={[styles.sectionTitle, typography.textStyles.label, { color: colors.textSecondary }]}>
                   Target Power
                 </Text>
                 <View style={styles.targetValue}>
@@ -253,7 +291,7 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
 
             {/* Elapsed time */}
             <View style={[styles.card, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.sectionTitle, typography.textStyles.labelLarge, { color: colors.textSecondary }]}>
+              <Text style={[styles.sectionTitle, typography.textStyles.label, { color: colors.textSecondary }]}>
                 Elapsed Time
               </Text>
               <Text style={[styles.elapsedTime, { color: colors.textPrimary }]}>
@@ -277,13 +315,24 @@ export function WorkoutScreen(_props: Props): React.JSX.Element {
           onPause={handlePause}
           onResume={handleResume}
           onSkip={handleSkip}
-          onStop={handleStop}
+          onStop={handleStopPress}
           isPauseLoading={isPauseResumeLoading}
           isSkipLoading={isSkipLoading}
           isStopLoading={isStopLoading}
           testID="workout-control-bar"
         />
       )}
+
+      {/* Stop confirmation modal */}
+      <StopConfirmationModal
+        visible={showStopModal}
+        onClose={handleStopModalClose}
+        onConfirm={handleStopConfirm}
+        isStopping={isStopLoading}
+        sessionType={sessionType}
+        workoutName={workoutName}
+        elapsedSecs={elapsedSecs}
+      />
     </SafeAreaView>
   );
 }

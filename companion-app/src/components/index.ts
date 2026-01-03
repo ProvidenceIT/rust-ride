@@ -90,3 +90,7 @@ export type { ToastProps, ToastData, ToastVariant } from './Toast';
 // ToastContainer - renders all active toasts
 export { ToastContainer } from './ToastContainer';
 export type { ToastContainerProps } from './ToastContainer';
+
+// StopConfirmationModal - confirmation dialog before stopping session
+export { StopConfirmationModal } from './StopConfirmationModal';
+export type { StopConfirmationModalProps } from './StopConfirmationModal';
