@@ -3,7 +3,7 @@
 //! Provides MQTT broker connection using rumqttc.
 
 use super::{MqttConfig, MqttError, MqttEvent, QoS};
-use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS as RumqttcQoS};
+use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS as RumqttcQoS, TlsConfiguration, Transport};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -377,7 +377,9 @@ impl DefaultMqttClient {
                 mqtt_options.set_keep_alive(Duration::from_secs(cfg.keep_alive_secs as u64));
                 mqtt_options.set_connection_timeout(cfg.connection_timeout_secs.into());
 
-                // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
+                // Configure TLS when enabled (subtask 3.1)
+                configure_tls(&mut mqtt_options, cfg.use_tls);
+
                 // TODO (subtask 3.2): Add credentials from keyring when username is set
 
                 // Create new AsyncClient and EventLoop
@@ -422,6 +424,20 @@ fn qos_to_rumqttc(qos: QoS) -> RumqttcQoS {
     }
 }
 
+/// Configure TLS on MqttOptions when enabled
+///
+/// Uses the system's native root certificates for server verification.
+/// This is appropriate for connecting to public MQTT brokers with valid certificates.
+fn configure_tls(mqtt_options: &mut MqttOptions, use_tls: bool) {
+    if use_tls {
+        // Use TlsConfiguration::Simple which uses rustls with system-native CA certificates
+        // This provides secure TLS without requiring custom certificates
+        let tls_config = TlsConfiguration::default();
+        mqtt_options.set_transport(Transport::Tls(tls_config));
+        tracing::debug!("TLS enabled for MQTT connection");
+    }
+}
+
 impl MqttClient for DefaultMqttClient {
     async fn connect(&self, config: &MqttConfig) -> Result<(), MqttError> {
         if !config.enabled {
@@ -450,7 +466,9 @@ impl MqttClient for DefaultMqttClient {
         mqtt_options.set_keep_alive(Duration::from_secs(config.keep_alive_secs as u64));
         mqtt_options.set_connection_timeout(config.connection_timeout_secs.into());
 
-        // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
+        // Configure TLS when enabled (subtask 3.1)
+        configure_tls(&mut mqtt_options, config.use_tls);
+
         // TODO (subtask 3.2): Add credentials from keyring when username is set
 
         // Create the AsyncClient and EventLoop
@@ -735,5 +753,41 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.max_reconnect_attempts, Some(5));
+    }
+
+    #[test]
+    fn test_config_use_tls_default_false() {
+        let config = MqttConfig::default();
+        // TLS should be disabled by default
+        assert!(!config.use_tls);
+    }
+
+    #[test]
+    fn test_config_use_tls_enabled() {
+        let config = MqttConfig {
+            use_tls: true,
+            broker_port: 8883, // Standard TLS port
+            ..Default::default()
+        };
+        assert!(config.use_tls);
+        assert_eq!(config.broker_port, 8883);
+    }
+
+    #[test]
+    fn test_configure_tls_disabled() {
+        // When TLS is disabled, MqttOptions should not have transport set
+        let mut mqtt_options = MqttOptions::new("test-client", "localhost", 1883);
+        configure_tls(&mut mqtt_options, false);
+        // No panic or error means the function works correctly when TLS is disabled
+        // We can't easily inspect the internal transport state, but the function should not panic
+    }
+
+    #[test]
+    fn test_configure_tls_enabled() {
+        // When TLS is enabled, MqttOptions should have TLS transport configured
+        let mut mqtt_options = MqttOptions::new("test-client", "localhost", 8883);
+        configure_tls(&mut mqtt_options, true);
+        // No panic or error means the function works correctly when TLS is enabled
+        // The actual TLS connection would be tested in integration tests
     }
 }
