@@ -26,6 +26,18 @@ pub mod frequencies {
     pub const SUCCESS: f32 = 1046.50; // C6
     /// Error tone for issues
     pub const ERROR: f32 = 220.00; // A3
+
+    // Countdown-specific frequencies with escalating urgency
+    /// Countdown tick at 10 seconds - gentle reminder (G4)
+    pub const COUNTDOWN_10: f32 = 392.00; // G4
+    /// Countdown tick at 5 seconds - attention (A4)
+    pub const COUNTDOWN_5: f32 = 440.00; // A4
+    /// Final countdown 3 seconds - preparation (B4)
+    pub const COUNTDOWN_3: f32 = 493.88; // B4
+    /// Final countdown 2 seconds - alert (C5)
+    pub const COUNTDOWN_2: f32 = 523.25; // C5
+    /// Final countdown 1 second - urgent (D5)
+    pub const COUNTDOWN_1: f32 = 587.33; // D5
 }
 
 /// T078: Standard tone durations in milliseconds.
@@ -40,6 +52,18 @@ pub mod durations {
     pub const LONG: u64 = 500;
     /// Very long tone (1000ms)
     pub const VERY_LONG: u64 = 1000;
+
+    // Countdown-specific durations (all under 200ms to not overlap with speech)
+    /// Countdown tick at 10 seconds - brief (60ms)
+    pub const COUNTDOWN_TICK_10: u64 = 60;
+    /// Countdown tick at 5 seconds - slightly longer (80ms)
+    pub const COUNTDOWN_TICK_5: u64 = 80;
+    /// Final countdown 3 seconds (100ms)
+    pub const COUNTDOWN_FINAL_3: u64 = 100;
+    /// Final countdown 2 seconds (120ms)
+    pub const COUNTDOWN_FINAL_2: u64 = 120;
+    /// Final countdown 1 second - most impactful (150ms)
+    pub const COUNTDOWN_FINAL_1: u64 = 150;
 }
 
 /// T078: Predefined cue patterns.
@@ -63,8 +87,20 @@ pub enum CuePattern {
     Success,
     /// Error tone
     Error,
-    /// Countdown tick
+    /// Generic countdown tick (legacy, use specific countdown patterns for new code)
     CountdownTick,
+
+    // Countdown-specific patterns with escalating urgency
+    /// Countdown tick at 10 seconds - gentle reminder
+    CountdownTick10,
+    /// Countdown tick at 5 seconds - attention
+    CountdownTick5,
+    /// Final countdown 3 seconds - preparation begins
+    CountdownFinal3,
+    /// Final countdown 2 seconds - almost there
+    CountdownFinal2,
+    /// Final countdown 1 second - imminent transition
+    CountdownFinal1,
 }
 
 impl CuePattern {
@@ -128,12 +164,88 @@ impl CuePattern {
             CuePattern::Error => vec![Tone::new(frequencies::ERROR, durations::LONG)],
 
             CuePattern::CountdownTick => vec![Tone::new(frequencies::MEDIUM, durations::BEEP)],
+
+            // Countdown-specific patterns with escalating urgency
+            // Each pattern has a distinct frequency and duration for clear differentiation
+            CuePattern::CountdownTick10 => vec![
+                Tone::new(frequencies::COUNTDOWN_10, durations::COUNTDOWN_TICK_10),
+            ],
+
+            CuePattern::CountdownTick5 => vec![
+                Tone::new(frequencies::COUNTDOWN_5, durations::COUNTDOWN_TICK_5),
+            ],
+
+            // Final countdown patterns have double-tone patterns for increased urgency
+            CuePattern::CountdownFinal3 => vec![
+                Tone::new(frequencies::COUNTDOWN_3, durations::COUNTDOWN_FINAL_3),
+            ],
+
+            CuePattern::CountdownFinal2 => vec![
+                Tone::new(frequencies::COUNTDOWN_2, durations::COUNTDOWN_FINAL_2 / 2),
+                Tone::pause(20),
+                Tone::new(frequencies::COUNTDOWN_2, durations::COUNTDOWN_FINAL_2 / 2),
+            ],
+
+            CuePattern::CountdownFinal1 => vec![
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+                Tone::pause(15),
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+                Tone::pause(15),
+                Tone::new(frequencies::COUNTDOWN_1, durations::COUNTDOWN_FINAL_1 / 3),
+            ],
         }
     }
 
     /// Get total duration of the pattern in milliseconds.
     pub fn total_duration_ms(&self) -> u64 {
         self.tones().iter().map(|t| t.duration_ms).sum()
+    }
+
+    /// Get the appropriate countdown pattern for a given number of seconds remaining.
+    ///
+    /// Returns `Some(CuePattern)` for countdown-relevant seconds (10, 5, 3, 2, 1),
+    /// or `None` for other values that don't have specific countdown patterns.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rustride::audio::tones::CuePattern;
+    ///
+    /// assert!(CuePattern::for_countdown_seconds(10).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(5).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(3).is_some());
+    /// assert!(CuePattern::for_countdown_seconds(7).is_none()); // No pattern for 7 seconds
+    /// ```
+    pub fn for_countdown_seconds(seconds: u32) -> Option<Self> {
+        match seconds {
+            10 => Some(CuePattern::CountdownTick10),
+            5 => Some(CuePattern::CountdownTick5),
+            3 => Some(CuePattern::CountdownFinal3),
+            2 => Some(CuePattern::CountdownFinal2),
+            1 => Some(CuePattern::CountdownFinal1),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a countdown-related pattern.
+    pub fn is_countdown_pattern(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::CountdownTick
+                | CuePattern::CountdownTick10
+                | CuePattern::CountdownTick5
+                | CuePattern::CountdownFinal3
+                | CuePattern::CountdownFinal2
+                | CuePattern::CountdownFinal1
+        )
+    }
+
+    /// Check if this is a final countdown pattern (3, 2, or 1 second).
+    pub fn is_final_countdown(&self) -> bool {
+        matches!(
+            self,
+            CuePattern::CountdownFinal3 | CuePattern::CountdownFinal2 | CuePattern::CountdownFinal1
+        )
     }
 }
 
@@ -530,5 +642,142 @@ mod tests {
             direction: ZoneDirection::Descending,
         };
         assert_eq!(descending.cue_pattern(), CuePattern::Descending);
+    }
+
+    #[test]
+    fn test_countdown_pattern_for_seconds() {
+        // Test that we get the correct pattern for each countdown second
+        assert_eq!(
+            CuePattern::for_countdown_seconds(10),
+            Some(CuePattern::CountdownTick10)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(5),
+            Some(CuePattern::CountdownTick5)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(3),
+            Some(CuePattern::CountdownFinal3)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(2),
+            Some(CuePattern::CountdownFinal2)
+        );
+        assert_eq!(
+            CuePattern::for_countdown_seconds(1),
+            Some(CuePattern::CountdownFinal1)
+        );
+
+        // Test that other seconds return None
+        assert_eq!(CuePattern::for_countdown_seconds(0), None);
+        assert_eq!(CuePattern::for_countdown_seconds(4), None);
+        assert_eq!(CuePattern::for_countdown_seconds(6), None);
+        assert_eq!(CuePattern::for_countdown_seconds(7), None);
+        assert_eq!(CuePattern::for_countdown_seconds(15), None);
+    }
+
+    #[test]
+    fn test_countdown_pattern_durations_under_200ms() {
+        // All countdown patterns should be under 200ms to not overlap with speech
+        let countdown_patterns = [
+            CuePattern::CountdownTick10,
+            CuePattern::CountdownTick5,
+            CuePattern::CountdownFinal3,
+            CuePattern::CountdownFinal2,
+            CuePattern::CountdownFinal1,
+        ];
+
+        for pattern in countdown_patterns {
+            let duration = pattern.total_duration_ms();
+            assert!(
+                duration < 200,
+                "{:?} has duration {}ms which is >= 200ms",
+                pattern,
+                duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_countdown_pattern_escalating_frequencies() {
+        // Verify that final countdown frequencies escalate (higher frequency = more urgent)
+        let freq_3 = frequencies::COUNTDOWN_3;
+        let freq_2 = frequencies::COUNTDOWN_2;
+        let freq_1 = frequencies::COUNTDOWN_1;
+
+        assert!(
+            freq_2 > freq_3,
+            "Countdown 2 frequency ({}) should be > Countdown 3 frequency ({})",
+            freq_2,
+            freq_3
+        );
+        assert!(
+            freq_1 > freq_2,
+            "Countdown 1 frequency ({}) should be > Countdown 2 frequency ({})",
+            freq_1,
+            freq_2
+        );
+    }
+
+    #[test]
+    fn test_is_countdown_pattern() {
+        // Test positive cases
+        assert!(CuePattern::CountdownTick.is_countdown_pattern());
+        assert!(CuePattern::CountdownTick10.is_countdown_pattern());
+        assert!(CuePattern::CountdownTick5.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal3.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal2.is_countdown_pattern());
+        assert!(CuePattern::CountdownFinal1.is_countdown_pattern());
+
+        // Test negative cases
+        assert!(!CuePattern::SingleBeep.is_countdown_pattern());
+        assert!(!CuePattern::Alert.is_countdown_pattern());
+        assert!(!CuePattern::Success.is_countdown_pattern());
+    }
+
+    #[test]
+    fn test_is_final_countdown() {
+        // Test positive cases
+        assert!(CuePattern::CountdownFinal3.is_final_countdown());
+        assert!(CuePattern::CountdownFinal2.is_final_countdown());
+        assert!(CuePattern::CountdownFinal1.is_final_countdown());
+
+        // Test negative cases (including other countdown patterns)
+        assert!(!CuePattern::CountdownTick.is_final_countdown());
+        assert!(!CuePattern::CountdownTick10.is_final_countdown());
+        assert!(!CuePattern::CountdownTick5.is_final_countdown());
+        assert!(!CuePattern::SingleBeep.is_final_countdown());
+    }
+
+    #[test]
+    fn test_countdown_patterns_have_distinct_sounds() {
+        // Verify each countdown pattern produces different tones
+        let patterns = [
+            CuePattern::CountdownTick10,
+            CuePattern::CountdownTick5,
+            CuePattern::CountdownFinal3,
+            CuePattern::CountdownFinal2,
+            CuePattern::CountdownFinal1,
+        ];
+
+        for i in 0..patterns.len() {
+            for j in (i + 1)..patterns.len() {
+                let tones_i = patterns[i].tones();
+                let tones_j = patterns[j].tones();
+
+                // They should differ in either frequency, duration, or number of tones
+                let different = tones_i.len() != tones_j.len()
+                    || tones_i.iter().zip(tones_j.iter()).any(|(a, b)| {
+                        (a.frequency_hz - b.frequency_hz).abs() > 0.01
+                            || a.duration_ms != b.duration_ms
+                    });
+
+                assert!(
+                    different,
+                    "{:?} and {:?} should have distinct sounds",
+                    patterns[i], patterns[j]
+                );
+            }
+        }
     }
 }
