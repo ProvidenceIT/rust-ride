@@ -485,61 +485,161 @@ ui.group(|ui| {
         });
     }
 
-    /// 3.4: Render the sync status section.
+    /// 3.4: Render sync status section with retry button for failed syncs.
     fn render_sync_section(&self, ui: &mut Ui) -> Option<RideDetailAction> {
+        let mut action = None;
+
         ui.group(|ui| {
             ui.set_min_width(ui.available_width() - 16.0);
 
-            ui.label(RichText::new("Sync Status").size(18.0).strong());
+            ui.label(RichText::new("Strava Sync").size(18.0).strong());
             ui.add_space(8.0);
 
             match &self.sync_status {
-                RideSyncStatus::Synced { platform } => {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::GREEN, "✓");
-                        ui.label(format!("Synced to {}", platform));
-                    });
-                }
-                RideSyncStatus::Syncing { platform } => {
-                    ui.horizontal(|ui| {
-                        ui.label("⟳ Syncing to");
-                        ui.colored_label(STRAVA_ORANGE, platform);
-                    });
-                }
-                RideSyncStatus::Failed { platform, error } => {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::RED, "✕");
-                        ui.vertical(|ui| {
-                            ui.label(format!("Failed to sync to {}", platform));
-                            ui.label(RichText::new(error).weak().small());
-                        });
-                    });
-
-                    ui.add_space(8.0);
-
-                    // Retry button
-                    if ui
-                        .button(
-                            RichText::new("Retry").color(Color32::WHITE)
-                                .background_color(STRAVA_ORANGE),
-                        )
-                        .on_hover_cursor(CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        return Some(RideDetailAction::RetrySync {
-                            platform: platform.clone(),
-                        });
-                    }
-                }
                 RideSyncStatus::NotSynced => {
-                    // Should not render when NotSynced, but handle it just in case
-                    ui.label("Not synced");
+                    // This shouldn't be rendered, but handle it gracefully
+                    ui.label(RichText::new("Not synced").weak());
+                }
+                RideSyncStatus::Pending { platform } => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            RichText::new(format!("Uploading to {}...", platform))
+                                .color(self.sync_status.color()),
+                        );
+                    });
+                }
+                RideSyncStatus::Synced {
+                    activity_id,
+                    platform,
+                } => {
+                    ui.horizontal(|ui| {
+                        // Strava icon
+                        if platform.to_lowercase() == "strava" {
+                            ui.label(RichText::new("S").color(STRAVA_ORANGE).size(18.0).strong());
+                        } else {
+                            ui.label(
+                                RichText::new("✓")
+                                    .color(self.sync_status.color())
+                                    .size(18.0),
+                            );
+                        }
+                        ui.add_space(8.0);
+
+                        ui.label(
+                            RichText::new(format!("Synced to {}", platform))
+                                .color(self.sync_status.color()),
+                        );
+
+                        ui.add_space(16.0);
+
+                        // View on Strava button
+                        if let Some(url) = self.sync_status.activity_url() {
+                            let view_button = egui::Button::new(
+                                RichText::new("View on Strava")
+                                    .size(12.0)
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(STRAVA_ORANGE)
+                            .min_size(Vec2::new(100.0, 24.0));
+
+                            if ui
+                                .add(view_button)
+                                .on_hover_text(&url)
+                                .on_hover_cursor(CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                if let Err(e) = open::that(&url) {
+                                    tracing::warn!("Failed to open Strava activity: {}", e);
+                                }
+                            }
+                        } else {
+                            ui.label(
+                                RichText::new(format!("Activity ID: {}", activity_id))
+                                    .size(12.0)
+                                    .weak(),
+                            );
+                        }
+                    });
+                }
+                RideSyncStatus::Failed {
+                    error,
+                    retry_count,
+                    platform,
+                } => {
+                    ui.vertical(|ui| {
+                        // Error message
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("!")
+                                    .color(self.sync_status.color())
+                                    .size(18.0)
+                                    .strong(),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(format!("Upload to {} failed", platform))
+                                    .color(self.sync_status.color()),
+                            );
+                        });
+
+                        ui.add_space(8.0);
+
+                        // Error details
+                        ui.horizontal(|ui| {
+                            ui.add_space(26.0); // Align with text above
+                            ui.label(RichText::new(format!("Error: {}", error)).weak().size(12.0));
+                        });
+
+                        if *retry_count > 0 {
+                            ui.horizontal(|ui| {
+                                ui.add_space(26.0);
+                                ui.label(
+                                    RichText::new(format!("Retry attempts: {}", retry_count))
+                                        .weak()
+                                        .size(12.0),
+                                );
+                            });
+                        }
+
+                        ui.add_space(12.0);
+
+                        // Retry button
+                        ui.horizontal(|ui| {
+                            ui.add_space(26.0);
+                            let retry_button = egui::Button::new(
+                                RichText::new("↻ Retry Upload")
+                                    .size(14.0)
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(STRAVA_ORANGE)
+                            .min_size(Vec2::new(120.0, 32.0));
+
+                            if ui
+                                .add(retry_button)
+                                .on_hover_text(format!("Retry upload to {}", platform))
+                                .clicked()
+                            {
+                                action = Some(RideDetailAction::RetrySync {
+                                    platform: platform.clone(),
+                                });
+                            }
+                        });
+                    });
+                }
+                RideSyncStatus::Retrying { platform } => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            RichText::new(format!("Retrying upload to {}...", platform))
+                                .color(self.sync_status.color()),
+                        );
+                    });
                 }
             }
+        });
 
-            None
-        })
-        .inner
+        action
     }
 
     /// Render motion visualization section.
