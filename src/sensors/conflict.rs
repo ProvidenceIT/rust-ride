@@ -309,6 +309,37 @@ fn sensor_type_priority(sensor_type: SensorType) -> u8 {
     }
 }
 
+/// Result of a primary sensor failover operation.
+///
+/// When the primary sensor for a data type disconnects and a secondary
+/// sensor is available, the secondary is automatically promoted to primary.
+/// This struct captures the details of that failover for user notification.
+#[derive(Debug, Clone)]
+pub struct FailoverResult {
+    /// The data type that experienced failover.
+    pub data_type: DataType,
+    /// The device ID of the sensor that disconnected (former primary).
+    pub from_device_id: String,
+    /// The name of the sensor that disconnected.
+    pub from_sensor_name: String,
+    /// The device ID of the sensor that was promoted to primary.
+    pub to_device_id: String,
+    /// The name of the sensor that was promoted to primary.
+    pub to_sensor_name: String,
+}
+
+impl FailoverResult {
+    /// Get a human-readable message describing the failover.
+    pub fn message(&self) -> String {
+        format!(
+            "{} source switched from {} to {}",
+            self.data_type.display_name(),
+            self.from_sensor_name,
+            self.to_sensor_name
+        )
+    }
+}
+
 /// Configuration for the conflict detector.
 #[derive(Debug, Clone)]
 pub struct ConflictDetectorConfig {
@@ -657,6 +688,197 @@ impl ConflictDetector {
     /// Save preferences to disk.
     pub fn save_preferences(&mut self) -> Result<(), ConflictError> {
         self.preferences.save()
+    }
+
+    // =========================================================================
+    // Failover Methods
+    // =========================================================================
+
+    /// Update the connection status of a sensor in all conflicts.
+    ///
+    /// Call this when a sensor's connection state changes to keep
+    /// conflict sources accurate.
+    pub fn update_connection_status(&mut self, device_id: &str, is_connected: bool) {
+        for conflict in self.conflicts.values_mut() {
+            for source in &mut conflict.sources {
+                if source.device_id == device_id {
+                    source.is_connected = is_connected;
+                }
+            }
+        }
+    }
+
+    /// Handle a primary sensor disconnection with automatic failover.
+    ///
+    /// When the primary sensor for a data type disconnects, this method
+    /// attempts to promote a connected secondary sensor to primary.
+    /// If successful, returns failover details for user notification.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID of the sensor that disconnected
+    ///
+    /// # Returns
+    /// A list of failover results for each data type that was affected.
+    /// Empty if no failovers occurred (no connected secondary available).
+    pub fn handle_primary_disconnect(&mut self, device_id: &str) -> Vec<FailoverResult> {
+        let mut failovers = Vec::new();
+
+        // First, update the connection status
+        self.update_connection_status(device_id, false);
+
+        // Find all data types where this device was primary
+        let primary_data_types: Vec<DataType> = self.primary_for(device_id);
+
+        if primary_data_types.is_empty() {
+            return failovers;
+        }
+
+        tracing::info!(
+            "Primary sensor {} disconnected, checking failover for {:?}",
+            device_id,
+            primary_data_types
+        );
+
+        // For each data type, try to find a connected secondary to promote
+        for data_type in primary_data_types {
+            if let Some(failover) = self.try_failover(data_type, device_id) {
+                failovers.push(failover);
+            }
+        }
+
+        failovers
+    }
+
+    /// Try to perform a failover for a specific data type.
+    ///
+    /// Looks for connected secondary sensors that can be promoted to primary.
+    fn try_failover(&mut self, data_type: DataType, from_device_id: &str) -> Option<FailoverResult> {
+        let conflict = self.conflicts.get_mut(&data_type)?;
+
+        // Get info about the disconnected primary before we clear it
+        let from_sensor_name = conflict
+            .primary_source()
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        // Find a connected secondary sensor to promote
+        // Prioritize by sensor type priority, then by signal quality
+        let secondary = conflict
+            .sources
+            .iter()
+            .filter(|s| s.device_id != from_device_id && s.is_connected)
+            .min_by_key(|s| sensor_type_priority(s.sensor_type));
+
+        let secondary = match secondary {
+            Some(s) => s.clone(),
+            None => {
+                tracing::info!(
+                    "No connected secondary available for {} failover",
+                    data_type.display_name()
+                );
+                // Clear the primary since it's no longer connected
+                conflict.clear_primary();
+                return None;
+            }
+        };
+
+        tracing::info!(
+            "Failover: {} switching from {} to {}",
+            data_type.display_name(),
+            from_sensor_name,
+            secondary.name
+        );
+
+        // Promote the secondary to primary
+        let new_primary_id = secondary.device_id.clone();
+        let new_primary_name = secondary.name.clone();
+
+        conflict.set_primary(&new_primary_id);
+
+        // Save the new preference
+        if self.config.persist_resolutions {
+            self.preferences.set_preference(ConflictPreference {
+                data_type,
+                primary_device_id: new_primary_id.clone(),
+                primary_sensor_name: new_primary_name.clone(),
+                updated_at: Utc::now(),
+                user_set: false, // This was an automatic failover
+            });
+        }
+
+        Some(FailoverResult {
+            data_type,
+            from_device_id: from_device_id.to_string(),
+            from_sensor_name,
+            to_device_id: new_primary_id,
+            to_sensor_name: new_primary_name,
+        })
+    }
+
+    /// Get available failover targets for a data type.
+    ///
+    /// Returns a list of connected sensors that could take over if the
+    /// current primary disconnects, sorted by priority.
+    pub fn get_failover_targets(&self, data_type: DataType) -> Vec<&DataSource> {
+        if let Some(conflict) = self.conflicts.get(&data_type) {
+            let current_primary = conflict.primary_device_id.as_deref();
+
+            let mut targets: Vec<_> = conflict
+                .sources
+                .iter()
+                .filter(|s| {
+                    s.is_connected && Some(s.device_id.as_str()) != current_primary
+                })
+                .collect();
+
+            // Sort by priority (lower = higher priority)
+            targets.sort_by_key(|s| sensor_type_priority(s.sensor_type));
+            targets
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Check if failover is available for a data type.
+    ///
+    /// Returns true if there's at least one connected secondary sensor
+    /// that could take over if the primary disconnects.
+    pub fn has_failover_available(&self, data_type: DataType) -> bool {
+        !self.get_failover_targets(data_type).is_empty()
+    }
+
+    /// Get data types that have failover protection.
+    ///
+    /// Returns a list of data types where at least one secondary sensor
+    /// is connected and could take over if the primary fails.
+    pub fn get_protected_data_types(&self) -> Vec<DataType> {
+        self.conflicts
+            .keys()
+            .filter(|dt| self.has_failover_available(**dt))
+            .copied()
+            .collect()
+    }
+
+    /// Get data types that are at risk (primary connected, no failover).
+    ///
+    /// These are data types where losing the primary would result in
+    /// no data for that type.
+    pub fn get_at_risk_data_types(&self) -> Vec<DataType> {
+        self.conflicts
+            .iter()
+            .filter_map(|(data_type, conflict)| {
+                // Has a connected primary but no failover targets
+                let has_primary = conflict.primary_device_id.as_ref()
+                    .and_then(|id| conflict.sources.iter().find(|s| &s.device_id == id))
+                    .map_or(false, |s| s.is_connected);
+
+                if has_primary && !self.has_failover_available(*data_type) {
+                    Some(*data_type)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Get conflict summary for display.

@@ -229,6 +229,21 @@ pub enum SensorEvent {
     ScanStopped,
     /// Error occurred
     Error(String),
+    /// Primary sensor failover occurred.
+    /// When the primary sensor for a data type disconnects and a secondary
+    /// sensor is available, the secondary is automatically promoted to primary.
+    FailoverActivated {
+        /// The data type that experienced failover (e.g., Power, HeartRate)
+        data_type: String,
+        /// The device ID of the sensor that disconnected (former primary)
+        from_device_id: String,
+        /// The name of the sensor that disconnected
+        from_sensor_name: String,
+        /// The device ID of the sensor that was promoted to primary
+        to_device_id: String,
+        /// The name of the sensor that was promoted to primary
+        to_sensor_name: String,
+    },
 }
 
 /// Configuration for the sensor manager.

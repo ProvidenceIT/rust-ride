@@ -10,6 +10,7 @@
 use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleManager};
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
 use crate::sensors::cache::SensorCache;
+use crate::sensors::conflict::{ConflictDetector, ConflictDetectorConfig, DataType, FailoverResult};
 use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
 use crate::sensors::persistence::{ConnectionSessionManager, SessionSensor};
@@ -93,6 +94,8 @@ pub struct SensorManager {
     quality_monitor: Arc<Mutex<ConnectionQualityMonitor>>,
     /// Handle for the RSSI polling task (for cancellation)
     rssi_polling_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Conflict detector for managing sensor conflicts and failover
+    conflict_detector: Arc<Mutex<ConflictDetector>>,
 }
 
 impl SensorManager {
@@ -145,6 +148,7 @@ impl SensorManager {
             session_manager: Arc::new(Mutex::new(session_manager)),
             quality_monitor: Arc::new(Mutex::new(ConnectionQualityMonitor::new())),
             rssi_polling_handle: Arc::new(Mutex::new(None)),
+            conflict_detector: Arc::new(Mutex::new(ConflictDetector::new())),
         }
     }
 
@@ -1104,6 +1108,16 @@ impl SensorManager {
             quality_monitor.start_monitoring_with_config(device_id, quality_config);
         }
 
+        // Register sensor with conflict detector and mark as connected
+        {
+            let discovered = self.discovered.lock().await;
+            if let Some(disc_sensor) = discovered.get(device_id) {
+                let mut detector = self.conflict_detector.lock().await;
+                detector.register_sensor(disc_sensor);
+                detector.update_connection_status(device_id, true);
+            }
+        }
+
         // Start RSSI polling if not already running
         self.start_rssi_polling().await;
 
@@ -1394,6 +1408,19 @@ impl SensorManager {
 
     /// Disconnect from a sensor.
     pub async fn disconnect(&mut self, device_id: &str) -> Result<(), SensorError> {
+        self.disconnect_with_failover(device_id, true).await
+    }
+
+    /// Disconnect from a sensor with optional failover handling.
+    ///
+    /// When `trigger_failover` is true, the disconnect will check if the sensor
+    /// was a primary for any data type and automatically promote a secondary
+    /// sensor if available, notifying the user of the failover.
+    async fn disconnect_with_failover(
+        &mut self,
+        device_id: &str,
+        trigger_failover: bool,
+    ) -> Result<(), SensorError> {
         tracing::info!("Disconnecting from sensor: {}", device_id);
 
         let mut connected = self.connected.lock().await;
@@ -1404,6 +1431,7 @@ impl SensorManager {
                 .await
                 .map_err(|e| SensorError::BleError(e.to_string()))?;
         }
+        drop(connected);
 
         // Stop health monitoring for this sensor
         self.health_monitor.lock().await.stop_monitoring(device_id);
@@ -1414,6 +1442,43 @@ impl SensorManager {
         // Update sensor state
         if let Some(state) = self.sensor_states.lock().await.get_mut(device_id) {
             state.connection_state = ConnectionState::Disconnected;
+        }
+
+        // Handle automatic failover if this was a primary sensor
+        if trigger_failover {
+            let failovers = {
+                let mut detector = self.conflict_detector.lock().await;
+                detector.handle_primary_disconnect(device_id)
+            };
+
+            // Send failover events to notify the user
+            for failover in failovers {
+                tracing::info!(
+                    "Failover: {} switching from {} to {}",
+                    failover.data_type.display_name(),
+                    failover.from_sensor_name,
+                    failover.to_sensor_name
+                );
+
+                // Update the new primary's is_primary flag in sensor states
+                if let Some(state) = self.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                    state.is_primary = true;
+                }
+
+                self.send_event(SensorEvent::FailoverActivated {
+                    data_type: failover.data_type.display_name().to_string(),
+                    from_device_id: failover.from_device_id,
+                    from_sensor_name: failover.from_sensor_name,
+                    to_device_id: failover.to_device_id,
+                    to_sensor_name: failover.to_sensor_name,
+                });
+            }
+        } else {
+            // Just update connection status without failover
+            self.conflict_detector
+                .lock()
+                .await
+                .update_connection_status(device_id, false);
         }
 
         // Remove from session (intentional disconnect)
@@ -2373,5 +2438,137 @@ impl SensorManager {
     /// Check if quality monitoring is running for a sensor.
     pub async fn is_quality_monitoring(&self, device_id: &str) -> bool {
         self.quality_monitor.lock().await.is_monitoring(device_id)
+    }
+
+    // =========================================================================
+    // Conflict Detection and Failover Methods
+    // =========================================================================
+
+    /// Set a sensor as primary for a data type.
+    ///
+    /// This marks the sensor as the preferred source for the specified data type
+    /// (e.g., Power, HeartRate). The preference is persisted across sessions.
+    pub async fn set_primary_sensor(&self, data_type: DataType, device_id: &str) -> bool {
+        self.conflict_detector.lock().await.set_primary(data_type, device_id)
+    }
+
+    /// Get the primary sensor for a data type.
+    ///
+    /// Returns the device ID of the primary sensor, if one is set.
+    pub async fn get_primary_sensor(&self, data_type: DataType) -> Option<String> {
+        self.conflict_detector
+            .lock()
+            .await
+            .get_primary(data_type)
+            .map(|s| s.to_string())
+    }
+
+    /// Check if a sensor is the primary source for any data type.
+    pub async fn is_primary_sensor(&self, device_id: &str) -> bool {
+        self.conflict_detector.lock().await.is_primary(device_id)
+    }
+
+    /// Check if failover is available for a data type.
+    ///
+    /// Returns true if there's at least one connected secondary sensor that
+    /// could take over if the primary disconnects.
+    pub async fn has_failover_available(&self, data_type: DataType) -> bool {
+        self.conflict_detector.lock().await.has_failover_available(data_type)
+    }
+
+    /// Get data types that have failover protection.
+    ///
+    /// Returns a list of data types where at least one secondary sensor
+    /// is connected and could take over if the primary fails.
+    pub async fn get_protected_data_types(&self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.get_protected_data_types()
+    }
+
+    /// Get data types that are at risk (primary connected, no failover).
+    ///
+    /// These are data types where losing the primary would result in
+    /// no data for that type.
+    pub async fn get_at_risk_data_types(&self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.get_at_risk_data_types()
+    }
+
+    /// Check if there are any active sensor conflicts.
+    ///
+    /// Returns true if multiple sensors are providing the same data type.
+    pub async fn has_conflicts(&self) -> bool {
+        self.conflict_detector.lock().await.has_conflicts()
+    }
+
+    /// Get the number of active conflicts.
+    pub async fn conflict_count(&self) -> usize {
+        self.conflict_detector.lock().await.conflict_count()
+    }
+
+    /// Get the number of unresolved conflicts.
+    pub async fn unresolved_conflict_count(&self) -> usize {
+        self.conflict_detector.lock().await.unresolved_count()
+    }
+
+    /// Get a summary of all conflicts for UI display.
+    pub async fn get_conflict_summary(&self) -> crate::sensors::conflict::ConflictSummary {
+        self.conflict_detector.lock().await.summary()
+    }
+
+    /// Register a sensor for conflict detection.
+    ///
+    /// Call this when a sensor is discovered to track potential conflicts.
+    /// Returns a list of new data types that now have conflicts.
+    pub async fn register_sensor_for_conflicts(&self, sensor: &DiscoveredSensor) -> Vec<DataType> {
+        self.conflict_detector.lock().await.register_sensor(sensor)
+    }
+
+    /// Unregister a sensor from conflict detection.
+    ///
+    /// Call this when a sensor is forgotten or removed.
+    /// Returns a list of data types that are no longer in conflict.
+    pub async fn unregister_sensor_from_conflicts(&self, device_id: &str) -> Vec<DataType> {
+        self.conflict_detector.lock().await.unregister_sensor(device_id)
+    }
+
+    /// Manually trigger failover for a sensor.
+    ///
+    /// This is useful when you want to test failover or when the automatic
+    /// failover didn't trigger (e.g., sensor still appears connected but
+    /// is not sending data).
+    pub async fn trigger_failover(&mut self, device_id: &str) -> Vec<FailoverResult> {
+        let failovers = {
+            let mut detector = self.conflict_detector.lock().await;
+            detector.handle_primary_disconnect(device_id)
+        };
+
+        // Send failover events
+        for failover in &failovers {
+            tracing::info!(
+                "Manual failover: {} switching from {} to {}",
+                failover.data_type.display_name(),
+                failover.from_sensor_name,
+                failover.to_sensor_name
+            );
+
+            // Update the new primary's is_primary flag
+            if let Some(state) = self.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                state.is_primary = true;
+            }
+
+            self.send_event(SensorEvent::FailoverActivated {
+                data_type: failover.data_type.display_name().to_string(),
+                from_device_id: failover.from_device_id.clone(),
+                from_sensor_name: failover.from_sensor_name.clone(),
+                to_device_id: failover.to_device_id.clone(),
+                to_sensor_name: failover.to_sensor_name.clone(),
+            });
+        }
+
+        failovers
+    }
+
+    /// Clear the primary selection for a data type.
+    pub async fn clear_primary_sensor(&self, data_type: DataType) {
+        self.conflict_detector.lock().await.clear_primary(data_type);
     }
 }

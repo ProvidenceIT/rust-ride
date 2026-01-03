@@ -36,8 +36,8 @@ pub use incline::{
 pub use cache::{CacheError, CachedSensor, SensorCache};
 pub use conflict::{
     ConflictDetector, ConflictDetectorConfig, ConflictError, ConflictInfo, ConflictPreference,
-    ConflictPreferenceManager, ConflictSummary, DataSource, DataType, ResolutionStrategy,
-    SensorConflict, get_conflict_preference_path,
+    ConflictPreferenceManager, ConflictSummary, DataSource, DataType, FailoverResult,
+    ResolutionStrategy, SensorConflict, get_conflict_preference_path,
 };
 pub use connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 pub use connection_state::{
