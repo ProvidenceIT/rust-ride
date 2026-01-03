@@ -1,6 +1,171 @@
-//! Audio & Voice Alerts Module
+//! # Audio & Voice Alerts Module
 //!
-//! Provides audio cues and voice alerts for workouts and training zones.
+//! Provides comprehensive audio feedback for RustRide workouts, including sound effects,
+//! voice announcements, countdown tones, achievement chimes, and milestone celebrations.
+//!
+//! ## Features
+//!
+//! - **Countdown Sounds**: Escalating tones for interval transitions (10, 5, 3, 2, 1 seconds)
+//! - **Voice Announcements**: TTS for workout instructions and zone changes
+//! - **Achievement Chimes**: Tiered celebration sounds (Bronze, Silver, Gold, Platinum)
+//! - **Milestone Audio**: Subtle notifications for distance, time, and calorie milestones
+//! - **Zone Change Alerts**: Ascending/descending tones for power zone transitions
+//! - **Platform Support**: Windows (WASAPI), macOS (CoreAudio), Linux (ALSA/PulseAudio)
+//!
+//! ## Quick Start
+//!
+//! ```rust,no_run
+//! use rustride::audio::{AudioConfig, AudioEngine, DefaultAudioEngine};
+//!
+//! // Create and configure the audio engine
+//! let config = AudioConfig::default();
+//! let engine = DefaultAudioEngine::new(config);
+//!
+//! // Initialize (connects to audio devices)
+//! engine.initialize()?;
+//!
+//! // Play audio
+//! engine.play_tone(440, 200).await?;     // Play a 440Hz tone for 200ms
+//! engine.speak("Interval starting").await?;  // TTS announcement
+//! engine.play_sound("countdown_tick").await?; // Play sound effect
+//! # Ok::<(), rustride::audio::AudioError>(())
+//! ```
+//!
+//! ## Architecture
+//!
+//! The audio system is organized into layers:
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────┐
+//! │               Application Bridges                        │
+//! │  WorkoutAudioBridge | AchievementAudioBridge | etc.     │
+//! ├─────────────────────────────────────────────────────────┤
+//! │               Audio Engine (DefaultAudioEngine)          │
+//! │  Priority queue, volume mixing, mute control, timing    │
+//! ├─────────────────────────────────────────────────────────┤
+//! │               Audio Backends                             │
+//! │  RodioAudioBackend (tones/sounds) | TtsProvider (voice) │
+//! └─────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Configuration
+//!
+//! Use [`AudioConfig`] to configure the audio system:
+//!
+//! ```rust
+//! use rustride::audio::AudioConfig;
+//!
+//! let mut config = AudioConfig::default();
+//! config.volume = 80;              // Master volume (0-100)
+//! config.voice_enabled = true;     // Enable TTS
+//! config.countdown_enabled = true; // Enable countdown sounds
+//! config.countdown_volume = 100;   // Countdown volume (0-100)
+//! config.achievements_enabled = true;
+//! config.milestones_enabled = true;
+//! config.milestone_volume = 70;    // Milestones are subtle (70%)
+//! ```
+//!
+//! ## Audio Categories
+//!
+//! Audio is organized into categories for independent volume control:
+//!
+//! | Category | Description | Default Volume |
+//! |----------|-------------|----------------|
+//! | [`AudioCategory::Voice`] | TTS announcements | 100% |
+//! | [`AudioCategory::SoundEffect`] | General sound effects | 80% |
+//! | [`AudioCategory::Countdown`] | Interval countdown tones | 100% |
+//! | [`AudioCategory::Achievement`] | Achievement chimes | 100% |
+//! | [`AudioCategory::Milestone`] | Milestone notifications | 70% |
+//!
+//! ## Priority System
+//!
+//! Audio items have priority levels for queue ordering and interruption:
+//!
+//! - [`AudioPriority::Critical`] - Interrupts everything (emergency alerts)
+//! - [`AudioPriority::High`] - Interrupts normal/low priority (interval changes)
+//! - [`AudioPriority::Normal`] - Standard priority (most sounds)
+//! - [`AudioPriority::Low`] - Can be dropped if queue is full (milestones)
+//!
+//! ## Mute Control
+//!
+//! Both global and per-category muting is supported:
+//!
+//! ```rust,no_run
+//! use rustride::audio::{AudioEngine, AudioCategory, DefaultAudioEngine, AudioConfig};
+//!
+//! let engine = DefaultAudioEngine::new(AudioConfig::default());
+//!
+//! // Global mute
+//! engine.mute();
+//! engine.toggle_mute();
+//!
+//! // Category-specific mute
+//! engine.mute_category(AudioCategory::Milestone);
+//! engine.unmute_category(AudioCategory::Milestone);
+//!
+//! // Check mute state for UI
+//! let state = engine.get_mute_state();
+//! println!("{}", state.display_string());
+//! ```
+//!
+//! ## Using Audio Bridges
+//!
+//! Bridges connect application events to audio feedback:
+//!
+//! ```rust,no_run
+//! use std::sync::Arc;
+//! use rustride::audio::{
+//!     DefaultAudioEngine, AudioConfig,
+//!     WorkoutAudioBridge, WorkoutAudioBridgeConfig,
+//! };
+//!
+//! let engine = Arc::new(DefaultAudioEngine::new(AudioConfig::default()));
+//! engine.initialize().ok();
+//!
+//! let bridge_config = WorkoutAudioBridgeConfig::default();
+//! let bridge = WorkoutAudioBridge::new(bridge_config, engine);
+//!
+//! // Bridge handles workout events and produces appropriate audio
+//! ```
+//!
+//! ## Timing and Synchronization
+//!
+//! The audio queue includes safeguards for timing-sensitive audio:
+//!
+//! - Countdown sounds expire after 500ms (must play at correct time)
+//! - Regular sounds expire after 3 seconds
+//! - Voice/speech expires after 10 seconds
+//! - Queue size limits with low-priority dropping
+//! - Automatic cleanup of expired items
+//!
+//! Use [`AudioTimingConfig`] to customize timing behavior.
+//!
+//! ## Platform-Specific Notes
+//!
+//! - **Windows**: Uses WASAPI. Ensure audio drivers are current.
+//! - **macOS**: Uses CoreAudio. Grant audio permissions if needed.
+//! - **Linux**: Uses ALSA/PulseAudio. Install `pulseaudio` and add user to `audio` group.
+//!
+//! See [`Platform::troubleshooting_hints()`] for platform-specific troubleshooting.
+//!
+//! ## Module Organization
+//!
+//! - [`engine`] - AudioEngine trait and DefaultAudioEngine implementation
+//! - [`backend`] - RodioAudioBackend for low-level audio playback
+//! - [`tones`] - ToneGenerator, CuePattern, and frequency definitions
+//! - [`sounds`] - SoundAsset catalog with fallback tones
+//! - [`tts`] - Text-to-speech provider
+//! - [`alerts`] - Alert types and manager
+//! - [`cues`] - Cue templates and builder
+//! - [`workout_bridge`] - Workout event to audio mapping
+//! - [`achievement_bridge`] - Achievement audio handling
+//! - [`milestone_bridge`] - Milestone celebration audio
+//!
+//! ## Documentation
+//!
+//! For detailed documentation with examples, see `docs/audio.md`.
+//!
+//! ### Legacy Task References
 //!
 //! T077: ToneGenerator for audio cues
 //! T078: Tone frequencies and patterns
