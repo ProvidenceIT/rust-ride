@@ -951,4 +951,164 @@ mod tests {
         assert_eq!(tracker.current_power_zone(), 0);
         assert_eq!(tracker.current_hr_zone(), 0);
     }
+
+    #[test]
+    fn test_cadence_zones_default() {
+        let zones = CadenceZones::default();
+
+        // Z1: Low (0-75 RPM)
+        assert_eq!(zones.z1_low.zone, 1);
+        assert_eq!(zones.z1_low.min_rpm, 0);
+        assert_eq!(zones.z1_low.max_rpm, 75);
+
+        // Z2: Economy (76-85 RPM)
+        assert_eq!(zones.z2_economy.zone, 2);
+        assert_eq!(zones.z2_economy.min_rpm, 76);
+        assert_eq!(zones.z2_economy.max_rpm, 85);
+
+        // Z3: Natural (86-95 RPM)
+        assert_eq!(zones.z3_natural.zone, 3);
+        assert_eq!(zones.z3_natural.min_rpm, 86);
+        assert_eq!(zones.z3_natural.max_rpm, 95);
+
+        // Z4: Fast (96-105 RPM)
+        assert_eq!(zones.z4_fast.zone, 4);
+        assert_eq!(zones.z4_fast.min_rpm, 96);
+        assert_eq!(zones.z4_fast.max_rpm, 105);
+
+        // Z5: Sprint (106+ RPM)
+        assert_eq!(zones.z5_sprint.zone, 5);
+        assert_eq!(zones.z5_sprint.min_rpm, 106);
+        assert_eq!(zones.z5_sprint.max_rpm, 255);
+
+        // custom flag should be false by default
+        assert!(!zones.custom);
+    }
+
+    #[test]
+    fn test_cadence_zone_lookup() {
+        let zones = CadenceZones::default();
+
+        // Zone 1: Low (0-75 RPM)
+        assert_eq!(zones.get_zone(0), 1);
+        assert_eq!(zones.get_zone(50), 1);
+        assert_eq!(zones.get_zone(75), 1);
+
+        // Zone 2: Economy (76-85 RPM)
+        assert_eq!(zones.get_zone(76), 2);
+        assert_eq!(zones.get_zone(80), 2);
+        assert_eq!(zones.get_zone(85), 2);
+
+        // Zone 3: Natural (86-95 RPM)
+        assert_eq!(zones.get_zone(86), 3);
+        assert_eq!(zones.get_zone(90), 3);
+        assert_eq!(zones.get_zone(95), 3);
+
+        // Zone 4: Fast (96-105 RPM)
+        assert_eq!(zones.get_zone(96), 4);
+        assert_eq!(zones.get_zone(100), 4);
+        assert_eq!(zones.get_zone(105), 4);
+
+        // Zone 5: Sprint (106+ RPM)
+        assert_eq!(zones.get_zone(106), 5);
+        assert_eq!(zones.get_zone(120), 5);
+        assert_eq!(zones.get_zone(255), 5);
+    }
+
+    #[test]
+    fn test_cadence_zone_names() {
+        let zones = CadenceZones::default();
+
+        assert_eq!(zones.z1_low.name, "Low");
+        assert_eq!(zones.z2_economy.name, "Economy");
+        assert_eq!(zones.z3_natural.name, "Natural");
+        assert_eq!(zones.z4_fast.name, "Fast");
+        assert_eq!(zones.z5_sprint.name, "Sprint");
+    }
+
+    #[test]
+    fn test_cadence_zone_colors_defined() {
+        // Verify all 5 cadence zone colors are defined
+        assert_eq!(CADENCE_ZONE_COLORS.len(), 5);
+
+        // Verify each color has distinct values
+        let colors = &CADENCE_ZONE_COLORS;
+
+        // Z1: Steel Blue (120, 160, 180)
+        assert_eq!(colors[0].r, 120);
+        assert_eq!(colors[0].g, 160);
+        assert_eq!(colors[0].b, 180);
+
+        // Z2: Cyan (0, 180, 200)
+        assert_eq!(colors[1].r, 0);
+        assert_eq!(colors[1].g, 180);
+        assert_eq!(colors[1].b, 200);
+
+        // Z3: Teal (0, 170, 150)
+        assert_eq!(colors[2].r, 0);
+        assert_eq!(colors[2].g, 170);
+        assert_eq!(colors[2].b, 150);
+
+        // Z4: Orchid (200, 100, 180)
+        assert_eq!(colors[3].r, 200);
+        assert_eq!(colors[3].g, 100);
+        assert_eq!(colors[3].b, 180);
+
+        // Z5: Hot Pink (255, 50, 180)
+        assert_eq!(colors[4].r, 255);
+        assert_eq!(colors[4].g, 50);
+        assert_eq!(colors[4].b, 180);
+
+        // Verify zones use colors correctly
+        let zones = CadenceZones::default();
+        assert_eq!(zones.z1_low.color, colors[0]);
+        assert_eq!(zones.z2_economy.color, colors[1]);
+        assert_eq!(zones.z3_natural.color, colors[2]);
+        assert_eq!(zones.z4_fast.color, colors[3]);
+        assert_eq!(zones.z5_sprint.color, colors[4]);
+    }
+
+    #[test]
+    fn test_cadence_zone_range_lookup() {
+        let zones = CadenceZones::default();
+
+        // Valid zone lookups
+        assert!(zones.get_zone_range(1).is_some());
+        assert!(zones.get_zone_range(2).is_some());
+        assert!(zones.get_zone_range(3).is_some());
+        assert!(zones.get_zone_range(4).is_some());
+        assert!(zones.get_zone_range(5).is_some());
+
+        // Invalid zone lookups
+        assert!(zones.get_zone_range(0).is_none());
+        assert!(zones.get_zone_range(6).is_none());
+        assert!(zones.get_zone_range(255).is_none());
+
+        // Verify zone range contents
+        let z3 = zones.get_zone_range(3).unwrap();
+        assert_eq!(z3.zone, 3);
+        assert_eq!(z3.name, "Natural");
+        assert_eq!(z3.min_rpm, 86);
+        assert_eq!(z3.max_rpm, 95);
+    }
+
+    #[test]
+    fn test_cadence_all_zones() {
+        let zones = CadenceZones::default();
+        let all = zones.all_zones();
+
+        assert_eq!(all.len(), 5);
+        assert_eq!(all[0].zone, 1);
+        assert_eq!(all[1].zone, 2);
+        assert_eq!(all[2].zone, 3);
+        assert_eq!(all[3].zone, 4);
+        assert_eq!(all[4].zone, 5);
+
+        // Verify zone names in order
+        assert_eq!(all[0].name, "Low");
+        assert_eq!(all[1].name, "Economy");
+        assert_eq!(all[2].name, "Natural");
+        assert_eq!(all[3].name, "Fast");
+        assert_eq!(all[4].name, "Sprint");
+    }
 }
