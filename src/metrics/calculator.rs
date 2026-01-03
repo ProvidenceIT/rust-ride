@@ -356,4 +356,91 @@ mod tests {
         let calories = estimate_calories(200, 3600);
         assert_eq!(calories, 720);
     }
+
+    fn make_reading_with_cadence(cadence: u8) -> SensorReading {
+        SensorReading {
+            sensor_id: Uuid::new_v4(),
+            timestamp: Instant::now(),
+            power_watts: None,
+            cadence_rpm: Some(cadence),
+            heart_rate_bpm: None,
+            speed_kmh: None,
+            distance_delta_m: None,
+        }
+    }
+
+    #[test]
+    fn test_cadence_zone_calculation() {
+        let mut calc = MetricsCalculator::new(200);
+        calc.set_cadence_zones(CadenceZones::default());
+
+        // Test Zone 1 (Low: 0-75 RPM)
+        let reading = make_reading_with_cadence(60);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(60));
+        assert_eq!(metrics.cadence_zone, Some(1));
+
+        // Test Zone 3 (Natural: 86-95 RPM) - optimal cadence range
+        let reading = make_reading_with_cadence(90);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(90));
+        assert_eq!(metrics.cadence_zone, Some(3));
+
+        // Test Zone 5 (Sprint: 106+ RPM)
+        let reading = make_reading_with_cadence(110);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence, Some(110));
+        assert_eq!(metrics.cadence_zone, Some(5));
+    }
+
+    #[test]
+    fn test_cadence_zone_not_set_without_zones() {
+        let mut calc = MetricsCalculator::new(200);
+        // Don't set cadence zones
+
+        let reading = make_reading_with_cadence(90);
+        let metrics = calc.process(&reading);
+
+        assert_eq!(metrics.cadence, Some(90));
+        assert_eq!(metrics.cadence_zone, None); // No zones configured
+    }
+
+    #[test]
+    fn test_cadence_zone_boundaries() {
+        let mut calc = MetricsCalculator::new(200);
+        calc.set_cadence_zones(CadenceZones::default());
+
+        // Test exact boundary values
+        // Zone boundaries: Z1 (0-75), Z2 (76-85), Z3 (86-95), Z4 (96-105), Z5 (106+)
+
+        // Z1 upper boundary
+        let reading = make_reading_with_cadence(75);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(1));
+
+        // Z2 lower boundary
+        let reading = make_reading_with_cadence(76);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(2));
+
+        // Z2 upper boundary
+        let reading = make_reading_with_cadence(85);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(2));
+
+        // Z3 lower boundary
+        let reading = make_reading_with_cadence(86);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(3));
+
+        // Z4 lower boundary
+        let reading = make_reading_with_cadence(96);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(4));
+
+        // Z5 lower boundary
+        let reading = make_reading_with_cadence(106);
+        let metrics = calc.process(&reading);
+        assert_eq!(metrics.cadence_zone, Some(5));
+    }
 }
