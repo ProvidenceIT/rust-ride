@@ -148,6 +148,8 @@ pub struct RideScreen {
     pub manual_speed_value: u8,
     /// Currently selected fan profile ID for manual control (T012/6.1)
     pub selected_fan_id: Option<Uuid>,
+    /// Pending fan control action to be processed by the app (T012/6.2)
+    pending_fan_action: Option<FanControlAction>,
 }
 
 impl Default for RideScreen {
@@ -195,6 +197,7 @@ impl Default for RideScreen {
             fan_states: HashMap::new(),
             manual_speed_value: 50,
             selected_fan_id: None,
+            pending_fan_action: None,
         }
     }
 }
@@ -434,6 +437,15 @@ impl RideScreen {
     pub fn set_manual_speed_value(&mut self, speed: u8) {
         self.manual_speed_value = speed.min(100);
     }
+
+    /// T012/6.2: Take the pending fan control action if any.
+    ///
+    /// Returns and clears the pending action. The app should call this
+    /// each frame to check for and process user interactions with the
+    /// fan control panel.
+    pub fn take_pending_fan_action(&mut self) -> Option<FanControlAction> {
+        self.pending_fan_action.take()
+    }
 }
 
 impl RideScreen {
@@ -598,14 +610,13 @@ impl RideScreen {
                 }
 
                 // T012/6.1: Fan control panel (collapsible)
+                // T012/6.2: Actions from the panel are stored in pending_fan_action
+                // and processed by the app via take_pending_fan_action()
                 if self.mqtt_enabled && !self.fan_states.is_empty() {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.add_space((ui.available_width() - 260.0) / 2.0);
-                        // Render the fan control panel and capture any actions
-                        // Note: Actions are returned but not handled here - app.rs will
-                        // call render_fan_control_panel separately to process actions
-                        let _ = self.render_fan_control_panel(ui);
+                        self.render_fan_control_panel(ui);
                     });
                 }
 
@@ -1800,11 +1811,12 @@ impl RideScreen {
     /// when the panel is expanded. The header is always visible when MQTT
     /// is enabled and connected, allowing users to expand/collapse the panel.
     ///
-    /// Returns the new speed value if the slider was changed (for app to process).
-    pub fn render_fan_control_panel(&mut self, ui: &mut Ui) -> Option<FanControlAction> {
+    /// T012/6.2: Actions are stored in pending_fan_action and can be retrieved
+    /// via take_pending_fan_action() for the app to process.
+    pub fn render_fan_control_panel(&mut self, ui: &mut Ui) {
         // Only show if MQTT is enabled and we have fan states
         if !self.mqtt_enabled || self.fan_states.is_empty() {
-            return None;
+            return;
         }
 
         let mut action = None;
@@ -1988,7 +2000,10 @@ impl RideScreen {
             }
         });
 
-        action
+        // T012/6.2: Store the action for the app to retrieve
+        if action.is_some() {
+            self.pending_fan_action = action;
+        }
     }
 
     /// Get color for fan speed display based on speed percentage.

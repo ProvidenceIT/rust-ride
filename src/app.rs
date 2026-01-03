@@ -38,8 +38,8 @@ use rustride::sensors::{
 use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
 use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, HomeScreen, OnboardingScreen, RideScreen, RideView, Screen,
-    SensorSetupScreen, SettingsScreen, WorldSelectScreen,
+    AnalyticsScreen, AvatarScreen, FanControlAction, HomeScreen, OnboardingScreen, RideScreen,
+    RideView, Screen, SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
 use rustride::ui::widgets::AchievementNotificationWidget;
@@ -714,6 +714,44 @@ impl RustRideApp {
             .update_mqtt_state(connection_state, self.mqtt_config.enabled);
     }
 
+    /// Update fan states on ride screen (T012/6.2).
+    ///
+    /// Gets the current fan states from the fan controller and updates
+    /// the ride screen so it can display fan speed and mode status.
+    fn update_fan_states_on_ride_screen(&mut self) {
+        if self.mqtt_config.enabled {
+            let fan_states = self.fan_controller.get_states();
+            self.ride_screen.update_fan_states(fan_states);
+        }
+    }
+
+    /// Process fan control action from ride screen (T012/6.2).
+    ///
+    /// Handles user interactions with the fan control panel:
+    /// - SetSpeed: Sets manual fan speed and disables auto mode
+    /// - SetAutoMode: Toggles between automatic zone-based and manual control
+    fn process_fan_control_action(&mut self, action: FanControlAction) {
+        match action {
+            FanControlAction::SetSpeed { fan_id, speed } => {
+                tracing::info!("Setting fan {} speed to {}%", fan_id, speed);
+                let fan_controller = self.fan_controller.clone();
+                self.tokio_runtime.spawn(async move {
+                    if let Err(e) = fan_controller.set_speed(&fan_id, speed).await {
+                        tracing::error!("Failed to set fan speed: {}", e);
+                    }
+                });
+            }
+            FanControlAction::SetAutoMode { fan_id, enabled } => {
+                tracing::info!(
+                    "Setting fan {} auto mode to {}",
+                    fan_id,
+                    if enabled { "AUTO" } else { "MANUAL" }
+                );
+                self.fan_controller.set_auto_mode(&fan_id, enabled);
+            }
+        }
+    }
+
     /// Update streaming server with current metrics (T080).
     ///
     /// Broadcasts metrics to all connected external displays.
@@ -1276,6 +1314,14 @@ impl eframe::App for RustRideApp {
 
                     // T071/4.4: Update MQTT connection status for display
                     self.update_mqtt_status_on_ride_screen();
+
+                    // T012/6.2: Update fan states on ride screen for UI display
+                    self.update_fan_states_on_ride_screen();
+
+                    // T012/6.2: Process any pending fan control actions from user interaction
+                    if let Some(action) = self.ride_screen.take_pending_fan_action() {
+                        self.process_fan_control_action(action);
+                    }
 
                     // T043: Update incline controller with current gradient in World3D mode
                     if self.ride_screen.mode == rustride::ui::screens::ride::RideMode::World3D
