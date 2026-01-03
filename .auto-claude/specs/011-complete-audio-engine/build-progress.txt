@@ -27,12 +27,22 @@ The implementation plan has been created with 5 phases and 17 subtasks total.
 - Added comprehensive tests for backend integration
 - stop() now properly stops all audio including tones
 
+### Subtask 1.3: Implement sound file loading and caching in AudioEngine (COMPLETED)
+- Replaced play_sound() TODO stub with actual backend integration
+- play_sound('name') now loads and plays corresponding audio files via RodioAudioBackend
+- Sound files are cached after first load (backend.load_sound() handles caching)
+- Volume controls affect sound playback (backend applies master volume)
+- Unknown sound names log a warning and don't crash (graceful error handling)
+- Uses spawn_blocking for non-blocking async playback
+- Waits for sound duration to complete before returning
+- Added unit tests for sound audio items and sound effects configuration
+
 ## Plan Summary
 
 ### Phase 1: Core Rodio Integration (4 subtasks)
 - 1.1: Implement RodioAudioBackend for sound file playback ✓
 - 1.2: Integrate ToneGenerator with AudioEngine ✓
-- 1.3: Implement sound file loading and caching in AudioEngine
+- 1.3: Implement sound file loading and caching in AudioEngine ✓
 - 1.4: Create sound asset definitions and placeholder files
 
 ### Phase 2: Countdown Sound System (3 subtasks)
@@ -67,8 +77,8 @@ The implementation plan has been created with 5 phases and 17 subtasks total.
 6. **AudioEngine trait** (`src/audio/engine.rs`): Interface with priority queue
 
 ### What Needs Completion:
-1. **play_sound()** - Currently a TODO stub, needs actual rodio file playback
-2. **play_tone()** - Currently a TODO stub, needs ToneGenerator integration
+1. ~~**play_sound()** - Currently a TODO stub, needs actual rodio file playback~~ ✓ DONE
+2. ~~**play_tone()** - Currently a TODO stub, needs ToneGenerator integration~~ ✓ DONE
 3. **Sound assets** - No audio files exist in assets/
 4. **Achievement audio bridge** - Not yet created
 5. **Audio settings UI** - Not implemented
@@ -88,4 +98,4 @@ The implementation plan has been created with 5 phases and 17 subtasks total.
 - tts 0.26
 
 ## Next Steps
-Ready to begin Phase 1, Subtask 1.1: Implement RodioAudioBackend for sound file playback.
+Ready to continue with Phase 1, Subtask 1.4: Create sound asset definitions and placeholder files.

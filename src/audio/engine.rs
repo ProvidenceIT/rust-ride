@@ -410,9 +410,29 @@ impl AudioEngine for DefaultAudioEngine {
             name: name.to_string(),
         });
 
-        // TODO: Actually play the sound using rodio
-        // For now, just simulate a short delay
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Play the sound using the rodio audio backend
+        // The backend handles volume, muting, caching, and device availability
+        let backend = Arc::clone(&self.audio_backend);
+        let sound_name = name.to_string();
+
+        let result = tokio::task::spawn_blocking(move || backend.play_sound(&sound_name))
+            .await
+            .map_err(|e| AudioError::PlaybackFailed(format!("Task join error: {}", e)))?;
+
+        // Handle the result - log warnings for missing sounds but don't crash
+        match result {
+            Ok(duration) => {
+                // Wait for the sound to finish playing
+                // This ensures is_playing flag reflects actual playback
+                if !duration.is_zero() {
+                    tokio::time::sleep(duration).await;
+                }
+            }
+            Err(e) => {
+                // Log the error but don't propagate - gracefully handle missing sounds
+                tracing::warn!("Sound playback failed for '{}': {}", name, e);
+            }
+        }
 
         *self.is_playing.lock().unwrap() = false;
 
@@ -868,5 +888,53 @@ mod tests {
             }
             _ => panic!("Expected Tone type"),
         }
+    }
+
+    #[test]
+    fn test_sound_audio_item() {
+        let item = AudioItem::sound("countdown_tick");
+        assert_eq!(item.priority, AudioPriority::Normal);
+        match item.audio_type {
+            AudioType::SoundEffect { name } => {
+                assert_eq!(name, "countdown_tick");
+            }
+            _ => panic!("Expected SoundEffect type"),
+        }
+    }
+
+    #[test]
+    fn test_sound_with_priority() {
+        let item = AudioItem::sound("achievement_chime").with_priority(AudioPriority::High);
+        assert_eq!(item.priority, AudioPriority::High);
+        match item.audio_type {
+            AudioType::SoundEffect { name } => {
+                assert_eq!(name, "achievement_chime");
+            }
+            _ => panic!("Expected SoundEffect type"),
+        }
+    }
+
+    #[test]
+    fn test_sound_effects_disabled_config() {
+        let mut config = AudioConfig::default();
+        config.sound_effects_enabled = false;
+        let engine = DefaultAudioEngine::new(config);
+
+        // With sound effects disabled, the config should reflect this
+        let current_config = engine.config.lock().unwrap();
+        assert!(!current_config.sound_effects_enabled);
+    }
+
+    #[test]
+    fn test_backend_is_accessible_for_sound_operations() {
+        let config = AudioConfig::default();
+        let engine = DefaultAudioEngine::new(config);
+
+        // Backend should be accessible
+        let backend = engine.audio_backend();
+
+        // Initially no sounds are cached
+        assert_eq!(backend.cache_size(), 0);
+        assert!(!backend.is_cached("test_sound"));
     }
 }
