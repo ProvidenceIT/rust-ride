@@ -621,3 +621,184 @@ fn test_scenario_discovery_restart() {
     // Power meter needs to be found again
     assert!(!detector.all_found());
 }
+
+// ============================================================================
+// Integration tests for ProgressiveTimeoutConfig and extended discovery
+// ============================================================================
+
+#[test]
+fn test_progressive_config_power_meter_max_greater_than_normal_max() {
+    let config = ProgressiveTimeoutConfig::default();
+
+    // Power meter max should always be greater than normal max
+    assert!(config.power_meter_max_secs > config.max_total_secs);
+
+    // Default: power_meter_max (45) > max_total (30)
+    assert_eq!(config.power_meter_max_secs - config.max_total_secs, 15);
+}
+
+#[test]
+fn test_progressive_config_fast_still_extends_for_power_meters() {
+    let config = ProgressiveTimeoutConfig::fast();
+
+    // Even in fast mode, power meters get extended time
+    assert!(config.power_meter_max_secs > config.max_total_secs);
+    assert_eq!(config.max_total_secs, 15);
+    assert_eq!(config.power_meter_max_secs, 30);
+}
+
+#[test]
+fn test_progressive_config_thorough_has_longest_extension() {
+    let config = ProgressiveTimeoutConfig::thorough();
+
+    assert!(config.power_meter_max_secs > config.max_total_secs);
+    assert_eq!(config.max_total_secs, 45);
+    assert_eq!(config.power_meter_max_secs, 60);
+}
+
+#[test]
+fn test_extended_config_matches_progressive_timeout_defaults() {
+    let extended_config = ExtendedPowerMeterDiscoveryConfig::default();
+    let progressive_config = ProgressiveTimeoutConfig::default();
+
+    // Extended discovery config should align with progressive timeout
+    assert_eq!(
+        extended_config.standard_timeout_secs,
+        progressive_config.max_total_secs
+    );
+    assert_eq!(
+        extended_config.extended_timeout_secs,
+        progressive_config.power_meter_max_secs
+    );
+}
+
+// ============================================================================
+// Power meter specific timeout extension scenarios
+// ============================================================================
+
+#[test]
+fn test_scenario_extension_window_timing() {
+    // Test that extension only kicks in after the threshold
+    let config = ExtendedPowerMeterDiscoveryConfig::default();
+
+    // At 10 seconds - too early to extend
+    assert!(!config.should_extend(Duration::from_secs(10)));
+
+    // At 14 seconds - still too early
+    assert!(!config.should_extend(Duration::from_secs(14)));
+
+    // At 15 seconds - threshold met
+    assert!(config.should_extend(Duration::from_secs(15)));
+
+    // At 30 seconds - standard timeout reached, but extension still valid
+    assert!(config.should_extend(Duration::from_secs(30)));
+
+    // At 44 seconds - within extended window
+    assert!(config.should_extend(Duration::from_secs(44)));
+}
+
+#[test]
+fn test_scenario_aggressive_extension_timing() {
+    let config = ExtendedPowerMeterDiscoveryConfig::aggressive();
+
+    // Aggressive has shorter threshold (10s)
+    assert!(!config.should_extend(Duration::from_secs(5)));
+    assert!(!config.should_extend(Duration::from_secs(9)));
+    assert!(config.should_extend(Duration::from_secs(10)));
+
+    // And longer extended timeout (60s)
+    assert_eq!(config.extended_timeout_secs, 60);
+}
+
+#[test]
+fn test_scenario_minimal_extension_timing() {
+    let config = ExtendedPowerMeterDiscoveryConfig::minimal();
+
+    // Minimal has longer threshold (20s)
+    assert!(!config.should_extend(Duration::from_secs(15)));
+    assert!(!config.should_extend(Duration::from_secs(19)));
+    assert!(config.should_extend(Duration::from_secs(20)));
+
+    // And shorter extended timeout (35s)
+    assert_eq!(config.extended_timeout_secs, 35);
+}
+
+#[test]
+fn test_scenario_power_meter_found_during_extended_discovery() {
+    let mut detector = PowerMeterWakeUpDetector::new();
+
+    detector.register_expected(
+        "pm1".to_string(),
+        "Assioma Duo".to_string(),
+        Protocol::BleCyclingPower,
+    );
+
+    detector.start_discovery();
+
+    // User hasn't pedaled yet, power meter not found
+    assert!(!detector.all_found());
+
+    // Decision should be to extend
+    let decision = detector.get_extended_discovery_decision();
+    match decision {
+        ExtendedDiscoveryDecision::ExtendForPowerMeters { extended_timeout_secs, .. } => {
+            assert_eq!(extended_timeout_secs, 45);
+        }
+        _ => panic!("Expected ExtendForPowerMeters"),
+    }
+
+    // Simulate extended discovery being triggered
+    detector.mark_extended_discovery_triggered();
+    assert!(detector.is_extended_discovery_triggered());
+
+    // User finally pedals, power meter wakes up
+    detector.record_discovered(&make_power_meter("Assioma Duo", "pm1"));
+
+    // Now decision should be standard timeout
+    let decision = detector.get_extended_discovery_decision();
+    assert_eq!(decision, ExtendedDiscoveryDecision::UseStandardTimeout);
+}
+
+#[test]
+fn test_scenario_dual_power_meter_one_found_during_extension() {
+    let mut detector = PowerMeterWakeUpDetector::new();
+
+    // User has two power meters
+    detector.register_expected(
+        "left".to_string(),
+        "4iiii Precision".to_string(),
+        Protocol::BleCyclingPower,
+    );
+    detector.register_expected(
+        "right".to_string(),
+        "Stages Power R".to_string(),
+        Protocol::BleCyclingPower,
+    );
+
+    detector.start_discovery();
+
+    // Left power meter found quickly
+    detector.record_discovered(&make_power_meter("4iiii Precision", "left"));
+
+    // But right is still missing
+    assert!(!detector.all_found());
+    assert_eq!(detector.found_count(), 1);
+    assert_eq!(detector.missing_count(), 1);
+
+    // Should still want to extend for the right power meter
+    let decision = detector.get_extended_discovery_decision();
+    match decision {
+        ExtendedDiscoveryDecision::ExtendForPowerMeters { waiting_for, .. } => {
+            assert_eq!(waiting_for.len(), 1);
+            assert!(waiting_for.contains(&"Stages Power R".to_string()));
+        }
+        _ => panic!("Expected ExtendForPowerMeters"),
+    }
+
+    // Right power meter eventually found
+    detector.record_discovered(&make_power_meter("Stages Power R", "right"));
+
+    // Now all found
+    assert!(detector.all_found());
+    assert_eq!(detector.found_count(), 2);
+}

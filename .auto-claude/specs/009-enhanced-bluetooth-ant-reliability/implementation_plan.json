@@ -279,7 +279,7 @@
           "id": "4.3",
           "title": "Implement sensor conflict detector",
           "description": "Detect when multiple sensors provide the same data type (e.g., two power meters). Alert user and allow selection of primary sensor.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/conflict.rs",
             "src/sensors/manager.rs",
@@ -288,26 +288,30 @@
           "tests": [
             "tests/unit/sensor_conflict_test.rs"
           ],
-          "acceptance": "Conflicts detected when multiple sensors provide same data type"
+          "acceptance": "Conflicts detected when multiple sensors provide same data type",
+          "notes": "Implemented sensor conflict detection with user alerting and primary sensor selection. Extended SensorManager with methods for conflict management: get_conflicts_needing_attention(), mark_conflict_notified(), mark_all_conflicts_notified(), get_conflict(), get_active_conflicts(), has_conflict(), auto_resolve_conflicts(), apply_saved_conflict_preferences(), save_conflict_preferences(). Added comprehensive unit tests for failover, alerting workflow, and resolution workflow.",
+          "updated_at": "2026-01-03T10:09:31.008624+00:00"
         },
         {
           "id": "4.4",
           "title": "Create conflict resolution dialog UI",
           "description": "UI dialog to resolve sensor conflicts. Show both sensors, allow user to select primary, with option to remember choice.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/dialogs/sensor_conflict.rs",
             "src/ui/dialogs/mod.rs",
             "src/ui/screens/sensor_setup.rs"
           ],
           "tests": [],
-          "acceptance": "Conflict dialog allows selection of primary sensor"
+          "acceptance": "Conflict dialog allows selection of primary sensor",
+          "notes": "Sensor conflict resolution dialog fully implemented with:\n\n- SensorConflictDialogState for managing dialog visibility and selection state\n- SensorConflictDialog modal widget showing conflict data type, sensor list with icons/protocol badges, selection UI\n- ConflictResolutionAction enum (SelectPrimary with remember choice, Cancel, None)\n- ConflictNotificationBanner for showing unresolved conflicts in sensor setup screen\n- ConflictIndicator for compact status bar display\n- Integration in SensorSetupScreen with conflict_dialog_state field and handling methods\n- User can select primary sensor from clickable cards with visual selection feedback\n- Remember choice checkbox (defaults to true) for persisting preference\n- Comprehensive unit tests for dialog state, selection, and actions\n\nCommit: a8bc035 auto-claude: 4.4 - UI dialog to resolve sensor conflicts",
+          "updated_at": "2026-01-03T10:11:47.700637+00:00"
         },
         {
           "id": "4.5",
           "title": "Add automatic primary sensor failover",
           "description": "When primary sensor disconnects, automatically promote secondary sensor if available. Notify user of failover.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/manager.rs",
             "src/sensors/conflict.rs"
@@ -315,7 +319,9 @@
           "tests": [
             "tests/unit/failover_test.rs"
           ],
-          "acceptance": "Secondary sensor automatically becomes primary on disconnect"
+          "acceptance": "Secondary sensor automatically becomes primary on disconnect",
+          "notes": "Implemented automatic primary sensor failover on disconnect. When a primary sensor disconnects unexpectedly (BLE connection drops, reconnection attempts exhausted, or auto-reconnect disabled), the system automatically promotes a connected secondary sensor to primary and notifies the user via FailoverActivated event.\n\nImplementation details:\n- Added conflict_detector to NotificationContext for failover handling in spawned notification tasks\n- Integrated failover trigger in handle_notifications when sensor finally disconnects after reconnection attempts are exhausted\n- Secondary sensors are promoted based on priority (dedicated sensors preferred over multi-function ones)\n- FailoverActivated event sent for each data type that experiences failover, containing from/to sensor names for user notification\n- Added 3 new integration tests documenting the auto-failover behavior\n\nCommit: 0e337fc auto-claude: 4.5 - Automatic primary sensor failover on disconnect",
+          "updated_at": "2026-01-03T10:17:46.119329+00:00"
         }
       ]
     },
@@ -329,7 +335,7 @@
           "id": "5.1",
           "title": "Add power meter wake-up detection",
           "description": "Power meters often need pedaling to wake up. Detect this and prompt user to pedal if power meter not found but expected.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/power_meter.rs",
             "src/sensors/manager.rs",
@@ -338,13 +344,15 @@
           "tests": [
             "tests/unit/power_meter_test.rs"
           ],
-          "acceptance": "User prompted to pedal if saved power meter not discovered"
+          "acceptance": "User prompted to pedal if saved power meter not discovered",
+          "notes": "Power meter wake-up detection fully implemented. Created PowerMeterWakeUpDetector in power_meter.rs with:\n\n- WakeUpHint struct with user-friendly messages for prompting users to pedal\n- WakeUpHintType enum (PedalToWake, CheckBattery, MoveSensor, ExtendedSearch)\n- PowerMeterWakeUpConfig for configurable timing (hint_delay, grace_period, max_hints_per_session)\n- ExpectedPowerMeter tracking with hint generation based on elapsed time\n- load_from_cache() to automatically load expected power meters from sensor cache\n- check_for_hints() to generate hints for missing power meters after configurable delay\n- Extended discovery configuration for power meters (up to 45 seconds)\n\nIntegrated with SensorManager:\n- Automatic loading from cache during start_discovery()\n- record_power_meter_discovered() for tracking found power meters\n- Public API: check_power_meter_hints(), get_power_meter_hints(), mark_power_meter_hint_shown(), has_missing_power_meters(), etc.\n\nComprehensive unit tests in tests/unit/power_meter_test.rs covering all scenarios.\n\nCommit: 1349b7f auto-claude: 5.1 - Add power meter wake-up detection",
+          "updated_at": "2026-01-03T10:20:14.895547+00:00"
         },
         {
           "id": "5.2",
           "title": "Implement extended discovery for power meters",
           "description": "Power meters may take longer to advertise. Extend discovery time specifically for power meters if user has one saved.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/manager.rs",
             "src/sensors/power_meter.rs"
@@ -352,7 +360,9 @@
           "tests": [
             "tests/unit/extended_power_discovery_test.rs"
           ],
-          "acceptance": "Discovery extends up to 45s when looking for saved power meter"
+          "acceptance": "Discovery extends up to 45s when looking for saved power meter",
+          "notes": "Extended discovery for power meters fully implemented. Core logic in run_progressive_timeout() extends discovery up to 45s (configurable) when saved power meters are expected but not found. Added SensorManager public API methods for configuration and status. Comprehensive unit tests added to extended_power_discovery_test.rs covering configurations, timing, and real-world scenarios.",
+          "updated_at": "2026-01-03T10:25:11.286749+00:00"
         },
         {
           "id": "5.3",
@@ -463,6 +473,6 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-03T10:02:08.680151+00:00",
+  "last_updated": "2026-01-03T10:25:11.286749+00:00",
   "recoveryNote": "Task recovered from stuck state at 2026-01-03T09:31:42.303Z"
 }

@@ -2915,4 +2915,101 @@ impl SensorManager {
     pub async fn clear_power_meter_detection(&self) {
         self.power_meter_detector.lock().await.clear();
     }
+
+    // =========================================================================
+    // Extended Power Meter Discovery API
+    // =========================================================================
+
+    /// Get the extended power meter discovery configuration.
+    ///
+    /// Extended discovery allows the discovery process to extend beyond the
+    /// standard timeout (30s) up to 45s when saved power meters are expected
+    /// but not yet found. This gives power meters more time to wake up from
+    /// sleep mode.
+    pub async fn extended_power_meter_discovery_config(
+        &self,
+    ) -> crate::sensors::power_meter::ExtendedPowerMeterDiscoveryConfig {
+        self.power_meter_detector
+            .lock()
+            .await
+            .extended_discovery_config()
+            .clone()
+    }
+
+    /// Set the extended power meter discovery configuration.
+    ///
+    /// Use `ExtendedPowerMeterDiscoveryConfig::default()` for standard behavior,
+    /// `ExtendedPowerMeterDiscoveryConfig::aggressive()` for longer waits,
+    /// or `ExtendedPowerMeterDiscoveryConfig::disabled()` to disable extension.
+    pub async fn set_extended_power_meter_discovery_config(
+        &self,
+        config: crate::sensors::power_meter::ExtendedPowerMeterDiscoveryConfig,
+    ) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .set_extended_discovery_config(config);
+    }
+
+    /// Check if extended discovery should be used based on current state.
+    ///
+    /// Returns true if:
+    /// - Extended discovery is enabled
+    /// - There are expected power meters that haven't been found
+    /// - Enough time has elapsed (past the extension threshold of 15s)
+    ///
+    /// This can be used by UI to show extended discovery status.
+    pub async fn should_use_extended_power_meter_discovery(&self) -> bool {
+        self.power_meter_detector
+            .lock()
+            .await
+            .should_use_extended_discovery()
+    }
+
+    /// Check if extended discovery has been triggered this session.
+    ///
+    /// Returns true if the discovery process has already extended beyond
+    /// the standard timeout specifically to find power meters.
+    pub async fn is_extended_power_meter_discovery_triggered(&self) -> bool {
+        self.power_meter_detector
+            .lock()
+            .await
+            .is_extended_discovery_triggered()
+    }
+
+    /// Get the extended discovery decision for the current state.
+    ///
+    /// Returns detailed information about whether extended discovery should
+    /// be used and which power meters we're waiting for.
+    pub async fn get_extended_power_meter_discovery_decision(
+        &self,
+    ) -> crate::sensors::power_meter::ExtendedDiscoveryDecision {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_extended_discovery_decision()
+    }
+
+    /// Get the recommended discovery timeout in seconds based on current state.
+    ///
+    /// Returns 45s if power meters are expected but not found, otherwise 30s.
+    /// This considers whether extended discovery is enabled and if there are
+    /// saved power meters that need more time to wake up.
+    pub async fn get_recommended_discovery_timeout_secs(&self) -> u64 {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_recommended_timeout_secs()
+    }
+
+    /// Get names of power meters we're still waiting for.
+    ///
+    /// Returns empty vector if all expected power meters have been found
+    /// or if no power meters were expected.
+    pub async fn get_missing_power_meter_names(&self) -> Vec<String> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_missing_power_meter_names()
+    }
 }

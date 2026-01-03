@@ -244,10 +244,41 @@
   - Preference persistence tests
 
 ### Phase 5: Power Meter Pairing Improvements (4 subtasks)
-- Power meter wake-up detection
-- Extended discovery for power meters
+- Power meter wake-up detection (COMPLETED - 5.1)
+- Extended discovery for power meters (COMPLETED - 5.2)
 - Calibration reminder system
 - Zero-offset calibration flow
+
+### 5.2 - Implement extended discovery for power meters (COMPLETED)
+- Extended the progressive timeout logic in `src/sensors/manager.rs` to extend
+  discovery up to 45 seconds (configurable) when saved power meters are expected
+- Core implementation in `run_progressive_timeout()`:
+  - Checks `pm_detector.should_use_extended_discovery()` when standard timeout is reached
+  - Extends to `power_meter_max_secs` (45s default) if power meters are missing
+  - Logs which power meters we're waiting for
+  - Stops early if all power meters are found during extended period
+  - Calls `pm_detector.mark_extended_discovery_triggered()` to track state
+- Added `power_meter_max_secs` field to `ProgressiveTimeoutConfig` in `types.rs`:
+  - Default: 45s (15s more than standard 30s max)
+  - Fast preset: 30s
+  - Thorough preset: 60s
+- `ExtendedPowerMeterDiscoveryConfig` in `power_meter.rs` provides detailed control:
+  - `enabled`, `standard_timeout_secs`, `extended_timeout_secs`, `extension_threshold_secs`
+  - Presets: `default()`, `aggressive()`, `minimal()`, `disabled()`
+  - Helper methods: `extension_time()`, `should_extend(elapsed)`
+- Added SensorManager public API methods:
+  - `extended_power_meter_discovery_config()` - get current config
+  - `set_extended_power_meter_discovery_config()` - configure behavior
+  - `should_use_extended_power_meter_discovery()` - check if extension needed
+  - `is_extended_power_meter_discovery_triggered()` - check if already extended
+  - `get_extended_power_meter_discovery_decision()` - get detailed decision
+  - `get_recommended_discovery_timeout_secs()` - get timeout based on state
+  - `get_missing_power_meter_names()` - names of missing power meters
+- Comprehensive unit tests in `tests/unit/extended_power_discovery_test.rs`:
+  - Configuration tests for all presets
+  - ProgressiveTimeoutConfig integration tests
+  - Extension timing tests for different scenarios
+  - Real-world scenario tests (single PM, dual PM, partial discovery)
 
 ### Phase 6: Integration & Testing (4 subtasks)
 - Full discovery flow integration test
