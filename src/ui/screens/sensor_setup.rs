@@ -75,6 +75,10 @@ pub struct SensorSetupScreen {
     pub last_calibration_action: Option<CalibrationDialogAction>,
     /// Pending calibration requests
     pub pending_calibration_requests: Vec<CalibrationRequest>,
+    /// Whether to show the help/troubleshooting panel
+    pub show_help_panel: bool,
+    /// Index of the expanded issue in the help panel
+    pub expanded_help_issue: Option<usize>,
 }
 
 impl Default for SensorSetupScreen {
@@ -99,6 +103,8 @@ impl Default for SensorSetupScreen {
             calibration_dialog_state: CalibrationDialogState::new(),
             last_calibration_action: None,
             pending_calibration_requests: Vec::new(),
+            show_help_panel: false,
+            expanded_help_issue: None,
         }
     }
 }
@@ -496,6 +502,13 @@ impl SensorSetupScreen {
                     next_screen = Some(Screen::Home);
                 }
                 ui.heading("Sensor Setup");
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let help_text = if self.show_help_panel { "Hide Help" } else { "❓ Help" };
+                    if ui.button(help_text).on_hover_text("Show connection troubleshooting guide").clicked() {
+                        self.show_help_panel = !self.show_help_panel;
+                    }
+                });
             });
 
             ui.add_space(16.0);
@@ -569,11 +582,21 @@ impl SensorSetupScreen {
                     if self.discovered_sensors.is_empty() {
                         if self.is_scanning {
                             ui.label(RichText::new("Searching...").weak());
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new("Tip: If sensors don't appear, try waking them up by moving or pedaling.").weak().small(),
+                            );
                         } else {
                             ui.label(RichText::new("No sensors found").weak());
                             ui.label(
                                 RichText::new("Start scanning to discover nearby sensors").weak(),
                             );
+                        }
+
+                        // Show ANT+ troubleshooting if no dongle available
+                        if !self.is_scanning && self.ant_dongles.is_empty() {
+                            ui.add_space(12.0);
+                            self.render_troubleshooting_tips_panel(ui, TroubleshootingContext::AntPlus);
                         }
 
                         // T009-6.4: Troubleshooting tips
@@ -595,6 +618,12 @@ impl SensorSetupScreen {
 
                     if self.connected_sensors.is_empty() {
                         ui.label(RichText::new("No sensors connected").weak());
+
+                        // Show contextual troubleshooting tips when issues are detected
+                        if self.has_issues() {
+                            ui.add_space(8.0);
+                            self.render_contextual_troubleshooting(ui);
+                        }
                     } else {
                         // Show conflict notification banner if there are unresolved conflicts
                         let unresolved: Vec<_> = self.active_conflicts
@@ -624,9 +653,22 @@ impl SensorSetupScreen {
                         for sensor in &connected {
                             self.render_connected_sensor(ui, sensor);
                         }
+
+                        // Show contextual troubleshooting tips when issues detected with connected sensors
+                        if self.has_issues() {
+                            ui.add_space(12.0);
+                            self.render_contextual_troubleshooting(ui);
+                        }
                     }
                 });
             });
+
+            // Help Panel (expanded troubleshooting guide)
+            if self.show_help_panel {
+                ui.add_space(16.0);
+                ui.separator();
+                self.render_help_panel(ui);
+            }
         });
 
         // Pairing confirmation dialog
@@ -1075,6 +1117,159 @@ impl SensorSetupScreen {
         ui.add_space(4.0);
     }
 
+    /// Render the help panel with comprehensive troubleshooting guide.
+    fn render_help_panel(&mut self, ui: &mut Ui) {
+        let issues = get_connection_issues();
+
+        let header_bg = Color32::from_rgba_unmultiplied(66, 133, 244, 20);
+        let header_border = Color32::from_rgb(66, 133, 244);
+
+        egui::Frame::new()
+            .fill(header_bg)
+            .stroke(egui::Stroke::new(1.0, header_border))
+            .inner_margin(12.0)
+            .corner_radius(6.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("📖").size(20.0));
+                    ui.add_space(8.0);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Connection Troubleshooting Guide").size(16.0).strong().color(header_border));
+                        ui.label(RichText::new("Click on an issue to see detailed solutions").weak().small());
+                    });
+                });
+            });
+
+        ui.add_space(12.0);
+
+        for (index, issue) in issues.iter().enumerate() {
+            let is_expanded = self.expanded_help_issue == Some(index);
+            self.render_help_issue(ui, issue, index, is_expanded);
+        }
+
+        // Quick Reference Section
+        ui.add_space(12.0);
+        egui::CollapsingHeader::new(RichText::new("📋 Quick Reference").strong())
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Common Sensor Battery Types").strong());
+                        ui.label("• Power Meters: CR2032 (most), AAA (some)");
+                        ui.label("• Heart Rate Straps: CR2032");
+                        ui.label("• Cadence/Speed: CR2032");
+                        ui.label("• Trainers: Usually powered by outlet");
+                    });
+                    ui.add_space(32.0);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Optimal Distances").strong());
+                        ui.label("• BLE: Within 10m / 30ft");
+                        ui.label("• ANT+: Within 3m / 10ft for best signal");
+                        ui.label("• Position ANT+ dongle with clear line of sight");
+                    });
+                });
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Before Every Ride").strong());
+                        ui.label("• Have sensors nearby during connection");
+                        ui.label("• Calibrate power meter after warm-up");
+                        ui.label("• Check battery levels on long rides");
+                    });
+                    ui.add_space(32.0);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("When Things Go Wrong").strong());
+                        ui.label("• Power cycle sensor (remove/reinsert battery)");
+                        ui.label("• Restart Bluetooth on your computer");
+                        ui.label("• Try the other protocol (BLE ↔ ANT+)");
+                    });
+                });
+            });
+    }
+
+    /// Render a single help issue as an expandable section.
+    fn render_help_issue(&mut self, ui: &mut Ui, issue: &ConnectionIssueHelp, index: usize, is_expanded: bool) {
+        let (bg_color, border_color) = if is_expanded {
+            (
+                Color32::from_rgba_unmultiplied(66, 133, 244, 15),
+                Color32::from_rgb(66, 133, 244),
+            )
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(160, 160, 170, 10),
+                Color32::from_gray(80),
+            )
+        };
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .inner_margin(10.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+
+                let toggle_text = if is_expanded { "▼" } else { "▶" };
+                let header_response = ui.horizontal(|ui| {
+                    ui.label(RichText::new(toggle_text).color(border_color));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(issue.title).strong());
+                }).response;
+
+                // Toggle on click
+                if header_response.interact(egui::Sense::click()).clicked() {
+                    if is_expanded {
+                        self.expanded_help_issue = None;
+                    } else {
+                        self.expanded_help_issue = Some(index);
+                    }
+                }
+
+                if is_expanded {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Symptoms
+                    ui.label(RichText::new("Symptoms:").small().strong().color(Color32::from_rgb(251, 188, 4)));
+                    for symptom in issue.symptoms {
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            ui.label(RichText::new("•").color(Color32::GRAY));
+                            ui.label(RichText::new(*symptom).small());
+                        });
+                    }
+
+                    ui.add_space(6.0);
+
+                    // Causes
+                    ui.label(RichText::new("Likely Causes:").small().strong().color(Color32::from_rgb(234, 67, 53)));
+                    for cause in issue.causes {
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            ui.label(RichText::new("•").color(Color32::GRAY));
+                            ui.label(RichText::new(*cause).small());
+                        });
+                    }
+
+                    ui.add_space(6.0);
+
+                    // Resolution
+                    ui.label(RichText::new("How to Fix:").small().strong().color(Color32::from_rgb(52, 168, 83)));
+                    for (i, step) in issue.resolution.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            ui.label(RichText::new(format!("{}.", i + 1)).color(Color32::from_rgb(52, 168, 83)));
+                            ui.label(RichText::new(*step).small());
+                        });
+                    }
+                }
+            });
+
+        ui.add_space(4.0);
+    }
+
     /// Render the pairing confirmation dialog.
     fn render_pairing_dialog(&mut self, ui: &mut Ui, sensor: &DiscoveredSensor) {
         egui::Window::new("Connect Sensor")
@@ -1226,6 +1421,164 @@ pub enum TroubleshootingContext {
     PowerMeterMissing,
     /// ANT+ specific issues.
     AntPlus,
+}
+
+/// Common connection issues and their resolutions for the help system.
+pub struct ConnectionIssueHelp {
+    /// Issue title
+    pub title: &'static str,
+    /// Symptoms the user might see
+    pub symptoms: &'static [&'static str],
+    /// Likely causes
+    pub causes: &'static [&'static str],
+    /// Step-by-step resolution
+    pub resolution: &'static [&'static str],
+}
+
+/// Get all documented connection issues for the help system.
+pub fn get_connection_issues() -> Vec<ConnectionIssueHelp> {
+    vec![
+        ConnectionIssueHelp {
+            title: "Sensor Not Found During Discovery",
+            symptoms: &[
+                "Sensor doesn't appear in the discovered list",
+                "Scanning completes without finding your device",
+            ],
+            causes: &[
+                "Sensor is in sleep mode (especially power meters)",
+                "Sensor battery is depleted",
+                "Another app is connected to the sensor",
+                "Sensor is out of range",
+            ],
+            resolution: &[
+                "For power meters: pedal briefly (2-3 rotations) to wake the sensor",
+                "Check that the sensor has fresh batteries",
+                "Close other apps that might be connected (Zwift, Garmin Connect, etc.)",
+                "Move closer to the sensor (within 10 meters / 30 feet)",
+                "Try removing and reinserting the sensor battery to reset it",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "Connection Keeps Dropping",
+            symptoms: &[
+                "Sensor connects but disconnects during use",
+                "Data stops appearing mid-ride",
+                "Frequent reconnection attempts",
+            ],
+            causes: &[
+                "Low battery in sensor",
+                "Radio interference (WiFi, other Bluetooth devices)",
+                "Sensor too far from computer",
+                "USB 3.0 interference with ANT+ dongle",
+            ],
+            resolution: &[
+                "Replace sensor battery (even if showing OK, try fresh batteries)",
+                "Move WiFi router away or switch to 5GHz network",
+                "Reduce distance to sensor during ride",
+                "For ANT+: use USB 2.0 port or USB extension cable",
+                "Try switching between BLE and ANT+ if sensor supports both",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "Weak or Intermittent Signal",
+            symptoms: &[
+                "Signal bars show 1-2 bars (yellow/red)",
+                "Quality indicator shows 'Fair' or 'Poor'",
+                "Occasional data dropouts",
+            ],
+            causes: &[
+                "Distance too far from sensor",
+                "Physical obstacles (body, equipment) blocking signal",
+                "Environmental interference",
+                "Low sensor battery affecting transmit power",
+            ],
+            resolution: &[
+                "Position yourself closer to the computer/ANT+ dongle",
+                "Move the ANT+ dongle to a position with clear line of sight",
+                "For BLE: ensure your Bluetooth adapter has good antenna placement",
+                "Check and replace sensor battery if needed",
+                "Remove or power off other wireless devices nearby",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "Power Meter Not Waking Up",
+            symptoms: &[
+                "Power meter doesn't appear after 30+ seconds of scanning",
+                "Used to work but now doesn't show up",
+            ],
+            causes: &[
+                "Power meter is in deep sleep mode",
+                "Battery is critically low or depleted",
+                "Firmware issue requiring reset",
+            ],
+            resolution: &[
+                "Pedal the cranks continuously for 10-15 seconds",
+                "For Wahoo/Stages: spin cranks faster (some need higher RPM to wake)",
+                "Replace battery with fresh CR2032 or manufacturer-specified type",
+                "Try resetting: remove battery, wait 30 seconds, reinstall",
+                "Check manufacturer's app for firmware updates",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "ANT+ Dongle Not Detected",
+            symptoms: &[
+                "No ANT+ option shown in sensor setup",
+                "ANT+ sensors not discoverable",
+            ],
+            causes: &[
+                "Dongle not plugged in",
+                "USB port issue or driver problem",
+                "Another app is exclusively using the dongle",
+            ],
+            resolution: &[
+                "Ensure ANT+ USB dongle is firmly plugged in",
+                "Try a different USB port (prefer USB 2.0 over 3.0)",
+                "On Windows: check Device Manager for driver issues",
+                "Close other apps that might be using ANT+ (Zwift, TrainerRoad)",
+                "Try unplugging and replugging the dongle",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "Inaccurate Power Readings",
+            symptoms: &[
+                "Power values seem too high or too low",
+                "Power readings are unstable or jumpy",
+                "Power doesn't match perceived effort",
+            ],
+            causes: &[
+                "Power meter needs calibration",
+                "Temperature change since last calibration",
+                "Crank not properly torqued",
+                "Low battery affecting accuracy",
+            ],
+            resolution: &[
+                "Perform a zero-offset calibration before your ride",
+                "Let the power meter warm up (5-10 min) before calibrating",
+                "Ensure crank bolts are tightened to manufacturer specifications",
+                "Replace battery if below 20%",
+                "Calibrate more frequently in extreme temperatures",
+            ],
+        },
+        ConnectionIssueHelp {
+            title: "Multiple Sensors of Same Type Conflicting",
+            symptoms: &[
+                "Two power sources showing in settings",
+                "Data from wrong sensor being recorded",
+                "Sensor conflict warning displayed",
+            ],
+            causes: &[
+                "Trainer and power meter both providing power data",
+                "Dual-protocol sensor showing as two devices",
+                "Previous sensor still paired",
+            ],
+            resolution: &[
+                "Use the conflict resolution dialog to select primary sensor",
+                "For dual-protocol: choose either BLE or ANT+ (not both)",
+                "Disconnect sensors you don't want to use for this session",
+                "Your preference will be remembered for future sessions",
+            ],
+        },
+    ]
 }
 
 /// Get an icon for a sensor type.

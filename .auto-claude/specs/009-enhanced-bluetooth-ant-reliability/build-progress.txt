@@ -284,7 +284,34 @@
 - Full discovery flow integration test (COMPLETED - 6.1)
 - Reconnection stress test (COMPLETED - 6.2)
 - CLI commands update (COMPLETED - 6.3)
-- Troubleshooting documentation
+- Troubleshooting documentation (COMPLETED - 6.4)
+
+### 6.4 - Add troubleshooting documentation (COMPLETED)
+- Comprehensive troubleshooting module in `src/sensors/troubleshooting.rs`:
+  - Documentation of common connection issues and resolutions in module docstring
+  - TroubleshootingCategory enum: Signal, Connection, Discovery, PowerMeter, Battery, Protocol, Interference, Calibration, General
+  - TipPriority enum: Low, Medium, High, Critical
+  - TroubleshootingTip struct with title, issue description, resolution steps, icon, category
+  - TroubleshootingGuide with 16+ standard tips covering all categories
+  - IssueDetector for context-aware issue detection and tip generation
+  - DetectedIssue struct for tracking specific issues with device/sensor context
+  - ContextualTip struct linking tips to detected issues
+  - Quick tip functions: get_no_sensors_tips(), get_poor_signal_tips(), get_connection_drop_tips(),
+    get_power_meter_tips(), get_ant_plus_tips(), get_calibration_tips(), get_protocol_specific_tips()
+
+- In-app troubleshooting tips in `src/ui/screens/sensor_setup.rs`:
+  - IssueDetector integrated for tracking quality, health, discovery, battery issues
+  - Contextual tips displayed when no sensors connected and issues detected
+  - Contextual tips displayed after connected sensors when issues detected
+  - Tips shown during discovery when scanning with no sensors found
+  - ANT+ troubleshooting tips shown when no ANT+ dongle available
+  - Poor quality warning banner with quick troubleshooting tips
+  - Help button in header to show/hide comprehensive troubleshooting guide
+  - ConnectionIssueHelp struct documenting 7 common issues with symptoms, causes, resolutions
+  - Expandable help panel with clickable issues showing detailed solutions
+  - Quick Reference section with battery types, optimal distances, pre-ride tips
+  - TroubleshootingContext enum for different tip contexts (NoSensors, PoorSignal, PowerMeterMissing, AntPlus)
+  - Dismissable tip cards with priority-based styling (Critical=red, High=yellow, Medium=blue, Low=gray)
 
 ### 6.3 - Update sensor CLI commands (COMPLETED)
 - CLI commands already implemented in `src/cli/commands/sensors.rs`:
