@@ -8,6 +8,7 @@ pub mod dynamics_display;
 pub mod ftp_notification;
 pub mod gradient_display;
 pub mod gradient_settings;
+pub mod hud;
 pub mod level_up_notification;
 pub mod metric_display;
 pub mod participant_list;
@@ -64,3 +65,7 @@ pub use voice_indicator::{
 };
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
 pub use zone_indicator::ZoneIndicator;
+pub use hud::{
+    HudConnectionQualityConfig, HudConnectionQualityIndicator, HudConnectionQualityResponse,
+    HudConnectionState, InlineHudSensorStatus,
+};
