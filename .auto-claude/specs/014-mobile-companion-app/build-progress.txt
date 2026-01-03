@@ -113,8 +113,12 @@ Date: 2026-01-03
 - [x] Implementation plan created
 - [x] T001: Create companion module structure - COMPLETED (fd8ff10)
 - [x] T002: Define companion API types - COMPLETED (68c5771)
-- [x] T003: Implement companion WebSocket server - COMPLETED
-- [ ] Phase 1 in progress (3/10 subtasks)
+- [x] T003: Implement companion WebSocket server - COMPLETED (a46ebce)
+- [x] T004: Implement mDNS service advertisement - COMPLETED (a6b908e)
+- [x] T005: Implement metrics streaming handler - COMPLETED (cea141c)
+- [x] T006: Implement workout control handlers - COMPLETED (7a89c33)
+- [x] T007: Implement ride history API handlers - COMPLETED
+- [ ] Phase 1 in progress (7/10 subtasks)
 - [ ] Phase 2 not started
 
 ## Completed Subtasks
@@ -144,7 +148,48 @@ Date: 2026-01-03
 - Added rand and tokio net dependencies to Cargo.toml
 - Comprehensive unit tests for server lifecycle
 
+### T004: Implement mDNS service advertisement
+- Created CompanionMdnsAdvertiser in src/companion/discovery.rs
+- Service advertised as '_rustride._tcp.local.' with TXT records
+- TXT records include port, version (1.0.0), and protocol
+- Integrated with CompanionServer start/stop lifecycle
+- Mobile apps can auto-discover the companion server on LAN
+- Commit: a6b908e
+
+### T005: Implement metrics streaming handler
+- Created MetricsStreamer component in src/companion/streaming.rs
+- StreamingMetrics struct for aggregating power, HR, cadence, speed, distance, calories
+- MetricsStreamer broadcasts at 1Hz via CompanionServer's event channel
+- SensorEventProcessor adapter for processing SensorEvent::Data from SensorManager
+- Added create_metrics_streamer() method to CompanionServer for easy integration
+- Only authenticated subscribed clients receive metrics events (filtering in server.rs)
+- Comprehensive unit tests for metrics updates and streaming lifecycle
+- Commit: cea141c
+
+### T006: Implement workout control handlers
+- Implemented workout control handlers (pause, resume, skip, stop) in handlers.rs
+- Full DaemonState integration via with_daemon_state() constructor
+- Handlers validate session state and return proper error responses
+- Comprehensive unit tests for all workout control scenarios
+- Commit: 7a89c33
+
+### T007: Implement ride history API handlers
+- Updated handle_request() to accept database and user_id parameters
+- Implemented handle_get_ride_history() with pagination support
+  - Queries rides from SQLite database
+  - Returns paginated RideSummary list with total count
+  - Includes workout name lookup for structured workouts
+  - Limit clamped to 1-100 for safety
+- Implemented handle_get_ride_details() for single ride queries
+  - Returns full RideDetailInfo with all statistics
+  - TSS, IF, normalized power, avg/max HR, cadence
+  - Proper error handling for invalid/missing ride IDs
+- Added helper functions ride_to_summary() and ride_to_detail()
+- Comprehensive unit tests for ride history operations
+  - Tests for pagination, empty results, invalid IDs
+  - Tests for database unavailable scenarios
+
 ## Next Steps
-1. Implement mDNS service advertisement (T004)
-2. Implement metrics streaming handler (T005)
-3. Implement workout control handlers (T006)
+1. Add companion server configuration (T008)
+2. Add connection QR code generation (T009)
+3. Add session status endpoint (T010)

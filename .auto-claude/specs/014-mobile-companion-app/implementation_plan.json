@@ -51,7 +51,7 @@
           "id": "T003",
           "title": "Implement companion WebSocket server",
           "description": "Create CompanionServer struct using tokio-tungstenite. Handle client connections, PIN authentication, and message routing. Bind to configurable port with LAN accessibility.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 4,
           "dependencies": [
@@ -62,13 +62,15 @@
             "Accepts WebSocket connections",
             "Handles multiple concurrent clients",
             "PIN authentication before allowing commands"
-          ]
+          ],
+          "notes": "Implemented full WebSocket server with tokio-tungstenite. Features: LAN binding (0.0.0.0:port), concurrent client handling, PIN authentication, message routing to handlers, event broadcasting for metrics, local IP detection, graceful shutdown. Added rand and tokio net dependencies. Commit: a46ebce",
+          "updated_at": "2026-01-03T05:33:57.648577+00:00"
         },
         {
           "id": "T004",
           "title": "Implement mDNS service advertisement",
           "description": "Use mdns-sd crate to advertise the companion server on LAN as '_rustride._tcp.local'. Include port and protocol version in TXT records for auto-discovery by mobile apps.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -78,13 +80,15 @@
             "Service advertised as _rustride._tcp.local",
             "TXT records include port and version",
             "Service can be discovered from mobile device on same LAN"
-          ]
+          ],
+          "notes": "Implemented mDNS service advertisement using mdns-sd crate. Created CompanionMdnsAdvertiser in src/companion/discovery.rs. Service advertised as '_rustride._tcp.local.' with TXT records for port, version, and protocol. Integrated with CompanionServer start/stop lifecycle. Mobile apps can now auto-discover the companion server on LAN. Commit: a6b908e",
+          "updated_at": "2026-01-03T05:39:22.626063+00:00"
         },
         {
           "id": "T005",
           "title": "Implement metrics streaming handler",
           "description": "Create handler that pushes real-time metrics (power, HR, cadence, speed) to connected mobile clients. Subscribe to sensor events and broadcast at 1Hz to authenticated clients.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 3,
           "dependencies": [
@@ -95,13 +99,15 @@
             "Includes power, HR, cadence, speed, distance",
             "Only authenticated clients receive metrics",
             "Efficient broadcast to multiple clients"
-          ]
+          ],
+          "notes": "Implemented MetricsStreamer component in src/companion/streaming.rs. Features: 1) StreamingMetrics struct for aggregating power, HR, cadence, speed, distance, calories metrics. 2) MetricsStreamer that broadcasts at 1Hz via CompanionServer's event channel. 3) SensorEventProcessor adapter to process SensorEvent::Data from SensorManager. 4) create_metrics_streamer() method added to CompanionServer. 5) Comprehensive unit tests for metrics updates and streaming lifecycle. Only authenticated subscribed clients receive events (filtering handled by existing server code).",
+          "updated_at": "2026-01-03T05:44:54.158541+00:00"
         },
         {
           "id": "T006",
           "title": "Implement workout control handlers",
           "description": "Create handlers for workout.pause, workout.resume, workout.skip, workout.stop commands from mobile clients. Integrate with existing daemon handler logic.",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "estimated_hours": 2,
           "dependencies": [
@@ -113,13 +119,15 @@
             "Skip command advances to next interval",
             "Stop command ends the session",
             "Proper error responses for invalid states"
-          ]
+          ],
+          "notes": "Implemented workout control handlers (pause, resume, skip, stop) with full DaemonState integration. Added CompanionServer.with_daemon_state() constructor and set_daemon_state() method for integration. Handlers validate session state and return proper error responses. Comprehensive unit tests added for all scenarios. Commit: 7a89c33",
+          "updated_at": "2026-01-03T05:53:19.270455+00:00"
         },
         {
           "id": "T007",
           "title": "Implement ride history API handlers",
           "description": "Create handlers to list rides, get ride details, and get ride statistics. Query from SQLite database and return paginated results.",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "estimated_hours": 3,
           "dependencies": [
@@ -130,7 +138,9 @@
             "Get single ride with full details",
             "Include summary stats (avg power, duration, distance)",
             "Filter rides by date range"
-          ]
+          ],
+          "notes": "Implemented ride history API handlers. Updated handle_request() to accept database and user_id parameters. Implemented handle_get_ride_history() with pagination support (queries SQLite, returns paginated RideSummary list, includes workout name lookup). Implemented handle_get_ride_details() for full RideDetailInfo with all statistics (TSS, IF, NP, HR, cadence). Added ride_to_summary() and ride_to_detail() helper functions. Comprehensive unit tests for all ride history operations.",
+          "updated_at": "2026-01-03T06:01:06.602156+00:00"
         },
         {
           "id": "T008",
@@ -1023,5 +1033,5 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T05:26:41.003394+00:00"
+  "last_updated": "2026-01-03T06:01:06.602156+00:00"
 }
