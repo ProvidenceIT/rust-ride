@@ -16,8 +16,61 @@ pub fn export_zwo(workout: &Workout) -> Result<String, WorkoutExportError> {
         return Err(WorkoutExportError::EmptyWorkout);
     }
 
-    // TODO: Implement ZWO XML generation in phase 2.2
-    todo!("ZWO export implementation")
+    let mut xml = String::new();
+
+    // XML declaration
+    xml.push_str("<?xml version=\"1.0\"?>\n");
+
+    // Root element
+    xml.push_str("<workout_file>\n");
+
+    // Metadata elements
+    xml.push_str(&format!("    <name>{}</name>\n", escape_xml(&workout.name)));
+
+    if let Some(ref author) = workout.author {
+        xml.push_str(&format!("    <author>{}</author>\n", escape_xml(author)));
+    }
+
+    if let Some(ref description) = workout.description {
+        xml.push_str(&format!(
+            "    <description>{}</description>\n",
+            escape_xml(description)
+        ));
+    }
+
+    // Tags
+    for tag in &workout.tags {
+        xml.push_str(&format!("    <tag name=\"{}\"/>\n", escape_xml_attr(tag)));
+    }
+
+    // Workout element with segments
+    xml.push_str("    <workout>\n");
+    for segment in &workout.segments {
+        // Indent segment XML
+        let segment_xml = segment_to_xml(segment);
+        xml.push_str(&format!("        {}", segment_xml));
+    }
+    xml.push_str("    </workout>\n");
+
+    // Close root element
+    xml.push_str("</workout_file>\n");
+
+    Ok(xml)
+}
+
+/// Escape special XML characters in text content.
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Escape special XML characters in attribute values.
+fn escape_xml_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Convert a power target to ZWO decimal format (0.75 = 75% FTP).
@@ -425,5 +478,128 @@ mod tests {
             PowerTarget::percent_ftp(100),
         );
         assert_eq!(power_to_decimal(&range), 0.5);
+    }
+
+    // export_zwo tests
+
+    #[test]
+    fn test_export_zwo_simple_workout() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 300,
+            power_target: PowerTarget::percent_ftp(75),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let workout = Workout::new("Simple Test".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(result.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(result.contains("<workout_file>"));
+        assert!(result.contains("<name>Simple Test</name>"));
+        assert!(result.contains("<workout>"));
+        assert!(result.contains("<SteadyState Duration=\"300\" Power=\"0.75\"/>"));
+        assert!(result.contains("</workout>"));
+        assert!(result.contains("</workout_file>"));
+    }
+
+    #[test]
+    fn test_export_zwo_with_metadata() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 60,
+            power_target: PowerTarget::percent_ftp(80),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let mut workout = Workout::new("Full Metadata Test".to_string(), segments);
+        workout.author = Some("Test Author".to_string());
+        workout.description = Some("Test Description".to_string());
+        workout.tags = vec!["Tag1".to_string(), "Tag2".to_string()];
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(result.contains("<name>Full Metadata Test</name>"));
+        assert!(result.contains("<author>Test Author</author>"));
+        assert!(result.contains("<description>Test Description</description>"));
+        assert!(result.contains("<tag name=\"Tag1\"/>"));
+        assert!(result.contains("<tag name=\"Tag2\"/>"));
+    }
+
+    #[test]
+    fn test_export_zwo_escapes_special_chars() {
+        let segments = vec![WorkoutSegment {
+            segment_type: SegmentType::SteadyState,
+            duration_seconds: 60,
+            power_target: PowerTarget::percent_ftp(100),
+            cadence_target: None,
+            text_event: None,
+        }];
+        let mut workout = Workout::new("Test & <Name>".to_string(), segments);
+        workout.author = Some("Author \"Quote\"".to_string());
+        workout.tags = vec!["Tag & Special".to_string()];
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(result.contains("<name>Test &amp; &lt;Name&gt;</name>"));
+        assert!(result.contains("<author>Author \"Quote\"</author>")); // quotes only escaped in attrs
+        assert!(result.contains("<tag name=\"Tag &amp; Special\"/>"));
+    }
+
+    #[test]
+    fn test_export_zwo_multiple_segments() {
+        let segments = vec![
+            WorkoutSegment {
+                segment_type: SegmentType::Warmup,
+                duration_seconds: 300,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(40),
+                    PowerTarget::percent_ftp(60),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::SteadyState,
+                duration_seconds: 600,
+                power_target: PowerTarget::percent_ftp(85),
+                cadence_target: None,
+                text_event: None,
+            },
+            WorkoutSegment {
+                segment_type: SegmentType::Cooldown,
+                duration_seconds: 300,
+                power_target: PowerTarget::range(
+                    PowerTarget::percent_ftp(60),
+                    PowerTarget::percent_ftp(40),
+                ),
+                cadence_target: None,
+                text_event: None,
+            },
+        ];
+        let workout = Workout::new("Multi-Segment".to_string(), segments);
+
+        let result = export_zwo(&workout).unwrap();
+
+        assert!(result.contains("<Warmup Duration=\"300\" PowerLow=\"0.40\" PowerHigh=\"0.60\"/>"));
+        assert!(result.contains("<SteadyState Duration=\"600\" Power=\"0.85\"/>"));
+        assert!(result.contains("<Cooldown Duration=\"300\" PowerLow=\"0.60\" PowerHigh=\"0.40\"/>"));
+    }
+
+    #[test]
+    fn test_escape_xml() {
+        assert_eq!(escape_xml("Hello World"), "Hello World");
+        assert_eq!(escape_xml("A & B"), "A &amp; B");
+        assert_eq!(escape_xml("<tag>"), "&lt;tag&gt;");
+        assert_eq!(escape_xml("A < B > C & D"), "A &lt; B &gt; C &amp; D");
+    }
+
+    #[test]
+    fn test_escape_xml_attr() {
+        assert_eq!(escape_xml_attr("Hello World"), "Hello World");
+        assert_eq!(escape_xml_attr("A & B"), "A &amp; B");
+        assert_eq!(escape_xml_attr("<tag>"), "&lt;tag&gt;");
+        assert_eq!(escape_xml_attr("Say \"Hello\""), "Say &quot;Hello&quot;");
     }
 }

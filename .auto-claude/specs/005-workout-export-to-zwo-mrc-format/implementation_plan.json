@@ -68,7 +68,7 @@
           "id": "1.4",
           "title": "Update mod.rs to export new modules",
           "description": "Add the exporter modules to workouts/mod.rs and export the public functions.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/workouts/mod.rs"
           ],
@@ -76,7 +76,9 @@
             "exporter_zwo and exporter_mrc modules declared",
             "Export functions and types re-exported with pub use",
             "WorkoutExportError exported from types"
-          ]
+          ],
+          "notes": "Added pub use exports for exporter_mrc (export_mrc, export_mrc_to_file, generate_mrc_filename) and exporter_zwo (export_zwo, export_zwo_to_file, generate_zwo_filename) to src/workouts/mod.rs. Module declarations were already in place from previous subtasks. WorkoutExportError was already exported from types. All acceptance criteria met.",
+          "updated_at": "2026-01-03T05:25:49.894919+00:00"
         }
       ]
     },
@@ -89,7 +91,7 @@
           "id": "2.1",
           "title": "Implement segment-to-XML conversion helper",
           "description": "Create helper function to convert WorkoutSegment to ZWO XML element string. Handle all segment types: Warmup, Cooldown, SteadyState, Intervals, FreeRide, Ramp.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/workouts/exporter_zwo.rs"
           ],
@@ -103,13 +105,15 @@
             "Ramp segments exported as Ramp element with range",
             "Duration always included in seconds",
             "Cadence attributes included when cadence_target present"
-          ]
+          ],
+          "notes": "Implemented segment_to_xml helper function and power_to_decimal helper. Handles all segment types: Warmup, Cooldown, SteadyState, Intervals (as SteadyState), FreeRide, and Ramp. Power values converted to ZWO decimal format (0.75 = 75% FTP). Duration in seconds, cadence attributes included when present (Cadence for single value, CadenceLow/CadenceHigh for range). Added 18 unit tests covering all segment types and edge cases.",
+          "updated_at": "2026-01-03T05:29:38.024503+00:00"
         },
         {
           "id": "2.2",
           "title": "Implement export_zwo function",
           "description": "Implement the main export_zwo function that converts a Workout to ZWO XML string. Follow the ZWO format with workout_file root, metadata elements (name, author, description), and workout element containing segments.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/workouts/exporter_zwo.rs"
           ],
@@ -120,7 +124,9 @@
             "Tags exported as <tag name=\"...\"/> elements",
             "All segments converted within <workout> element",
             "Returns Result<String, WorkoutExportError>"
-          ]
+          ],
+          "notes": "Implemented export_zwo function that converts Workout to ZWO XML string. Features: XML declaration (<?xml version=\"1.0\"?>), workout_file root element, name/author/description metadata elements (when present), tags as <tag name=\"...\"/> elements, workout element containing all segments. Added escape_xml and escape_xml_attr helper functions for XML special character escaping. Added 6 unit tests covering simple workout, metadata, special character escaping, and multiple segments.",
+          "updated_at": "2026-01-03T05:32:23.606274+00:00"
         },
         {
           "id": "2.3",
@@ -289,5 +295,5 @@
     "Exported ZWO files are valid XML and parseable by parse_zwo",
     "Exported MRC files follow MRC format and parseable by parse_mrc"
   ],
-  "last_updated": "2026-01-03T05:24:06.185882+00:00"
+  "last_updated": "2026-01-03T05:32:23.606274+00:00"
 }
