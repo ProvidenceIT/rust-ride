@@ -52,3 +52,17 @@ export type { HeartRateDisplayProps } from './HeartRateDisplay';
 // CadenceDisplay - cadence display with target and visual warning when outside range
 export { CadenceDisplay } from './CadenceDisplay';
 export type { CadenceDisplayProps } from './CadenceDisplay';
+
+// Secondary Metrics - smaller cards for speed, distance, time, and calories
+export {
+  SpeedDisplay,
+  DistanceDisplay,
+  ElapsedTimeDisplay,
+  CaloriesDisplay,
+} from './SecondaryMetrics';
+export type {
+  SpeedDisplayProps,
+  DistanceDisplayProps,
+  ElapsedTimeDisplayProps,
+  CaloriesDisplayProps,
+} from './SecondaryMetrics';

@@ -82,3 +82,29 @@ export {
   type DateRangeFilter,
   type RideTypeFilter,
 } from './historyStore';
+
+// Settings store - User preferences including unit system
+export {
+  useSettingsStore,
+  selectSettings,
+  selectUnits,
+  selectIsMetric,
+  selectIsImperial,
+  selectKeepScreenAwake,
+  selectHapticFeedback,
+  selectTheme,
+  selectIsLoaded as selectSettingsIsLoaded,
+  selectIsSaving as selectSettingsIsSaving,
+  // Unit conversion utilities
+  convertSpeed,
+  convertDistance,
+  getSpeedUnit,
+  getDistanceUnit,
+  formatSpeed,
+  formatDistance,
+  formatElapsedTime,
+  formatCalories,
+  type UnitSystem,
+  type HapticIntensity,
+  type ThemePreference,
+} from './settingsStore';

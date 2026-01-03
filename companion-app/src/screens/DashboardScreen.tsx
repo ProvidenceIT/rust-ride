@@ -9,9 +9,10 @@
  * - Connection status indicator in the header
  * - Real-time metrics from metricsStore
  * - Power zone color coding
+ * - Unit preference support (metric/imperial) for speed and distance
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -23,7 +24,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MainTabScreenProps } from '@/navigation/types';
 import { useTheme } from '@/theme';
-import { MetricCard, ConnectionStatus, PowerDisplay, HeartRateDisplay, CadenceDisplay } from '@/components';
+import {
+  ConnectionStatus,
+  PowerDisplay,
+  HeartRateDisplay,
+  CadenceDisplay,
+  SpeedDisplay,
+  DistanceDisplay,
+  ElapsedTimeDisplay,
+  CaloriesDisplay,
+} from '@/components';
 import { useConnectionStore, selectConnectionStatus, selectCurrentServer } from '@/stores/connectionStore';
 import {
   useMetricsStore,
@@ -41,6 +51,7 @@ import {
   getHeartRateZone,
 } from '@/stores/metricsStore';
 import { useSessionStore, selectIsSessionActive } from '@/stores/sessionStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 /**
  * Orientation type for layout calculations
@@ -77,32 +88,6 @@ function getGridConfig(width: number, height: number): GridConfig {
   };
 }
 
-/**
- * Format elapsed time as HH:MM:SS
- */
-function formatElapsedTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
-}
-
-/**
- * Format distance with appropriate precision
- */
-function formatDistance(km: number): string {
-  if (km < 10) {
-    return km.toFixed(2);
-  }
-  if (km < 100) {
-    return km.toFixed(1);
-  }
-  return km.toFixed(0);
-}
 
 /**
  * Default FTP for zone calculations (should come from user settings)
@@ -129,6 +114,12 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
   // Session state
   const isSessionActive = useSessionStore(selectIsSessionActive);
   const elapsedSecs = useSessionStore(state => state.elapsedSecs);
+
+  // Settings state - load settings on mount
+  const loadSettings = useSettingsStore(state => state.loadSettings);
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   // Metrics state
   const power = useMetricsStore(selectCurrentPower);
@@ -244,43 +235,32 @@ export function DashboardScreen(_props: Props): React.JSX.Element {
             style={{ width: cardWidth }}
           />
 
-          {/* Speed */}
-          <MetricCard
-            value={showMetrics ? speed.toFixed(1) : '--'}
-            unit="km/h"
-            label="Speed"
-            size="medium"
+          {/* Speed - with unit preference support */}
+          <SpeedDisplay
+            speedKph={speed}
+            showMetrics={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Speed: ${showMetrics ? speed.toFixed(1) : 'no data'} kilometers per hour`}
           />
 
-          {/* Distance */}
-          <MetricCard
-            value={showMetrics ? formatDistance(distance) : '0.00'}
-            unit="km"
-            label="Distance"
-            size="medium"
+          {/* Distance - with unit preference support */}
+          <DistanceDisplay
+            distanceKm={distance}
+            showMetrics={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Distance: ${showMetrics ? formatDistance(distance) : '0'} kilometers`}
           />
 
-          {/* Time */}
-          <MetricCard
-            value={showMetrics ? formatElapsedTime(elapsedSecs) : '0:00'}
-            label="Time"
-            size="medium"
+          {/* Elapsed Time */}
+          <ElapsedTimeDisplay
+            elapsedSecs={elapsedSecs}
+            showMetrics={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Elapsed time: ${showMetrics ? formatElapsedTime(elapsedSecs) : '0 minutes'}`}
           />
 
           {/* Calories */}
-          <MetricCard
-            value={showMetrics ? calories : 0}
-            unit="kcal"
-            label="Calories"
-            size="medium"
+          <CaloriesDisplay
+            calories={calories}
+            showMetrics={showMetrics}
             style={{ width: cardWidth }}
-            accessibilityLabel={`Calories: ${showMetrics ? calories : '0'} kilocalories`}
           />
         </View>
 
