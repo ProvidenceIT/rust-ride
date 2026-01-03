@@ -121,3 +121,7 @@ export type { HistoryFilterBarProps } from './HistoryFilterBar';
 // DateRangePickerModal - modal for selecting custom date range for filtering
 export { DateRangePickerModal } from './DateRangePickerModal';
 export type { DateRangePickerModalProps } from './DateRangePickerModal';
+
+// SelectPickerModal - generic picker modal for selecting from a list of options
+export { SelectPickerModal } from './SelectPickerModal';
+export type { SelectPickerModalProps, SelectOption } from './SelectPickerModal';
