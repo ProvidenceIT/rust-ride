@@ -8,6 +8,7 @@ mod connection_health_test;
 mod connection_quality_test;
 mod connection_queue_test;
 mod connection_state_test;
+mod dual_protocol_test;
 mod dynamics_test;
 mod elevation_test;
 mod fit_export_test;

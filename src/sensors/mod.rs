@@ -4,6 +4,7 @@ pub mod ant;
 pub mod cache;
 pub mod connection_queue;
 pub mod connection_state;
+pub mod dual_protocol;
 pub mod dynamics;
 pub mod ftms;
 pub mod fusion;
@@ -49,6 +50,10 @@ pub use quality::{
 };
 pub use reconnection::{
     ExponentialBackoff, ExponentialBackoffConfig, ReconnectionManager, ReconnectionStats,
+};
+pub use dual_protocol::{
+    DetectionResult, DualProtocolBinding, DualProtocolDetector, MatchConfidence,
+    SensorIdentifier, SensorManufacturer,
 };
 pub use manager::SensorManager;
 pub use smo2::{

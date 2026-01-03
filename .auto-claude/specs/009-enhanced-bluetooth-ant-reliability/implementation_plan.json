@@ -165,7 +165,7 @@
           "id": "3.1",
           "title": "Create ConnectionQuality tracking module",
           "description": "Track RSSI, data rate, packet loss rate, and latency for each connected sensor. Calculate overall connection quality score (0-100).",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/quality.rs",
             "src/sensors/types.rs",
@@ -174,13 +174,15 @@
           "tests": [
             "tests/unit/connection_quality_test.rs"
           ],
-          "acceptance": "ConnectionQuality struct tracks RSSI, data rate, and computes quality score"
+          "acceptance": "ConnectionQuality struct tracks RSSI, data rate, and computes quality score",
+          "notes": "Implemented ConnectionQuality tracking module (quality.rs) for monitoring RSSI, data rate, packet loss rate, and latency for each connected sensor. Module includes:\n- ConnectionQualityConfig with configurable thresholds and metric weights (RSSI 35%, data rate 30%, packet loss 20%, latency 15%)\n- ConnectionQuality per-sensor tracking with quality score (0-100) calculation\n- QualityLevel enum (Excellent 85-100, Good 65-84, Fair 40-64, Poor 0-39)\n- QualityMetrics struct with component scores for each metric\n- QualityStats for UI display including signal_bars (1-4) method\n- ConnectionQualityMonitor for multi-device management\n- Preset configurations: strict (trainers/power meters), relaxed (HR/cadence), disabled\n- Comprehensive unit tests in tests/unit/connection_quality_test.rs\n- Added exports to src/sensors/mod.rs",
+          "updated_at": "2026-01-03T00:26:47.926898+00:00"
         },
         {
           "id": "3.2",
           "title": "Add RSSI polling for connected sensors",
           "description": "Periodically poll RSSI values for connected BLE sensors. Update connection quality metrics every 2 seconds.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/manager.rs",
             "src/sensors/quality.rs"
@@ -188,42 +190,50 @@
           "tests": [
             "tests/unit/rssi_polling_test.rs"
           ],
-          "acceptance": "RSSI values updated every 2 seconds for connected BLE sensors"
+          "acceptance": "RSSI values updated every 2 seconds for connected BLE sensors",
+          "notes": "Implemented RSSI polling for connected BLE sensors:\\n\\n- Added ConnectionQualityMonitor field to SensorManager\\n- Created RSSI polling task that polls every 2 seconds (RSSI_POLL_INTERVAL_MS = 2000)\\n- Poll RSSI values from connected peripherals using btleplug's properties() method\\n- Update quality monitor with polled RSSI for quality score calculation\\n- Update sensor_states with current RSSI for UI display\\n- Start quality monitoring on connect with config based on sensor type:\\n  - Strict config for trainers/power meters (critical for power data)\\n  - Relaxed config for HR/cadence sensors\\n- Stop quality monitoring on disconnect\\n- Clean up on shutdown (stop polling, clear monitors)\\n- Added public API: get_quality_score(), get_quality_level(), get_quality_stats(), get_all_quality_stats(), get_poor_quality_devices(), get_degraded_quality_devices(), is_quality_acceptable(), reset_quality(), quality_monitoring_count(), is_quality_monitoring()\\n- Created comprehensive unit tests in tests/unit/rssi_polling_test.rs",
+          "updated_at": "2026-01-03T00:33:01.239843+00:00"
         },
         {
           "id": "3.3",
           "title": "Create ConnectionQualityIndicator UI widget",
           "description": "Visual indicator showing connection quality with signal bars (1-4 bars), color coding (green/yellow/red), and tooltip with details.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/widgets/connection_quality.rs",
             "src/ui/widgets/mod.rs"
           ],
           "tests": [],
-          "acceptance": "Connection quality displayed as signal bars with appropriate colors"
+          "acceptance": "Connection quality displayed as signal bars with appropriate colors",
+          "notes": "Implemented ConnectionQualityIndicator UI widget (connection_quality.rs) with:\\n\\n- Signal bars (1-4) visualization based on QualityLevel\\n- Color coding: green (Excellent/Good), yellow (Fair), red (Poor)\\n- Detailed tooltip showing RSSI, data rate, packet loss, latency, and component scores\\n- Pulsing animation for poor quality connections to draw attention\\n- Configuration presets: default, compact, large\\n- CompactConnectionQualityIndicator for status bars\\n- ConnectionQualityPreview for testing/demo\\n- Builder pattern with with_stats(), with_bars(), with_level(), with_label() methods\\n- Full unit tests for colors, configs, formatting, and indicator behavior\\n\\nIntegrated with sensors/quality.rs types (QualityLevel, QualityStats).",
+          "updated_at": "2026-01-03T00:37:56.709318+00:00"
         },
         {
           "id": "3.4",
           "title": "Integrate quality indicators into sensor setup screen",
           "description": "Add connection quality indicators to the sensor setup screen for each connected sensor. Show warnings for poor connections.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/screens/sensor_setup.rs",
             "src/ui/widgets/sensor_status.rs"
           ],
           "tests": [],
-          "acceptance": "Sensor setup screen shows quality indicators and warns on poor connections"
+          "acceptance": "Sensor setup screen shows quality indicators and warns on poor connections",
+          "notes": "Integrated connection quality indicators into the sensor setup screen:\\n\\n- Added quality_stats HashMap to SensorSetupScreen for tracking per-sensor quality\\n- Added methods for managing quality stats: update_quality_stats, update_all_quality_stats, clear_quality_stats, get_quality_stats, get_poor_quality_sensors, has_poor_quality_sensors\\n- Modified render_connected_sensor to display ConnectionQualityIndicator widget with color-coded quality levels (Excellent/Good/Fair/Poor)\\n- Added visual indicators: red background tint, warning icon (\u26a0), and pulsing animation for poor quality connections\\n- Added render_poor_quality_warning banner that appears when any sensor has poor quality, showing sensor names and troubleshooting tips\\n- Updated SensorConnectionCard widget with optional quality stats support via with_quality() method\\n- Updated SensorStatusSummary with poor_quality_count, fair_quality_count fields and helper methods (has_quality_issues, has_degraded_quality)\\n- Status message now reflects connection quality issues (\"Connection issues detected\")",
+          "updated_at": "2026-01-03T00:43:33.531437+00:00"
         },
         {
           "id": "3.5",
           "title": "Add quality indicator to ride HUD",
           "description": "Show minimal connection quality indicator during active rides. Flash warning when connection quality degrades.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/ui/widgets/hud.rs"
           ],
           "tests": [],
-          "acceptance": "HUD shows sensor connection quality with visual warning on degradation"
+          "acceptance": "HUD shows sensor connection quality with visual warning on degradation",
+          "notes": "Implemented HUD connection quality indicator for active rides:\\n\\n- Created src/ui/widgets/hud.rs with:\\n  - HudConnectionState for aggregating sensor quality data\\n  - HudConnectionQualityIndicator for overlay display with signal bars (1-4)\\n  - InlineHudSensorStatus for compact top-bar display\\n  - Flashing warning animation (2.0 Hz) when connection quality is poor\\n  - Color-coded indicators: green (Good/Excellent), yellow (Fair), red (Poor)\\n  - Tooltip showing per-sensor quality details with RSSI, data rate, etc.\\n\\n- Integrated into RideScreen:\\n  - Added connection_quality_state field to track sensor quality\\n  - update_connection_quality() method for external updates from SensorManager\\n  - Inline indicator appears in top bar next to recording status\\n  - Indicator also shows in full-screen mode header\\n  - Shows worst sensor quality as overall indicator\\n  - Warning flash draws attention to degraded connections\\n\\n- Updated src/ui/widgets/mod.rs with new HUD module exports\\n\\nThe indicator is minimal and unobtrusive during normal operation (green signal bars), but becomes attention-grabbing when connection quality degrades (flashing red with warning icon).",
+          "updated_at": "2026-01-03T00:49:37.857661+00:00"
         }
       ]
     },
@@ -237,7 +247,7 @@
           "id": "4.1",
           "title": "Implement DualProtocolDetector",
           "description": "Detect when a sensor is available on both BLE and ANT+ by matching device names and serial numbers. Create bindings between dual-protocol instances.",
-          "status": "pending",
+          "status": "completed",
           "files": [
             "src/sensors/dual_protocol.rs",
             "src/sensors/mod.rs"
@@ -245,7 +255,9 @@
           "tests": [
             "tests/unit/dual_protocol_test.rs"
           ],
-          "acceptance": "Sensors with same name on BLE and ANT+ are detected as dual-protocol"
+          "acceptance": "Sensors with same name on BLE and ANT+ are detected as dual-protocol",
+          "notes": "Implemented DualProtocolDetector module for detecting sensors available on both BLE and ANT+ protocols. Key features:\\n\\n- SensorIdentifier: Extracts normalized name, serial number, and manufacturer from sensor names for matching\\n- SensorManufacturer enum: Detects known manufacturers (Wahoo, Garmin, Tacx, Stages, Elite, 4iiii, Favero, Quarq, SRAM, Polar, Zwift) from name patterns\\n- DualProtocolBinding: Links BLE and ANT+ instances of the same physical sensor with confidence level\\n- MatchConfidence: Low/Medium/High based on match quality (serial > manufacturer+name > name only)\\n- DualProtocolDetector: Main API for processing sensors and managing bindings\\n- process_sensor(): Automatically detects matches and creates/updates bindings\\n- get_alternate_device_id(): Returns the other protocol's device ID for failover\\n- Comprehensive unit tests covering identifier matching, binding creation, detector operations, and real-world scenarios",
+          "updated_at": "2026-01-03T00:56:53.791248+00:00"
         },
         {
           "id": "4.2",
@@ -449,5 +461,5 @@
   },
   "estimated_effort": "3-4 days",
   "notes": "Existing codebase has foundation for discovery and reconnection. Focus on improving reliability, adding quality monitoring, and better UX for conflict resolution.",
-  "last_updated": "2026-01-03T00:18:27.986208+00:00"
+  "last_updated": "2026-01-03T00:56:53.791248+00:00"
 }
