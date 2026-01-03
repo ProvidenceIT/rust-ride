@@ -3,10 +3,12 @@
 pub mod accessible_button;
 pub mod achievement_notification;
 pub mod chat_panel;
+pub mod connection_quality;
 pub mod dynamics_display;
 pub mod ftp_notification;
 pub mod gradient_display;
 pub mod gradient_settings;
+pub mod hud;
 pub mod level_up_notification;
 pub mod metric_display;
 pub mod participant_list;
@@ -30,6 +32,10 @@ pub use achievement_notification::{
     AchievementBadge, AchievementNotificationConfig, AchievementNotificationWidget,
 };
 pub use chat_panel::{ChatMessage, ChatOverlay, ChatPanel, ChatPanelAction, ChatPanelConfig};
+pub use connection_quality::{
+    CompactConnectionQualityIndicator, ConnectionQualityIndicator,
+    ConnectionQualityIndicatorConfig, ConnectionQualityIndicatorResponse, ConnectionQualityPreview,
+};
 pub use dynamics_display::{BalanceBar, DynamicsDisplay};
 pub use ftp_notification::{FtpNotification, FtpNotificationAction};
 pub use gradient_display::{GradientDisplay, GradientDisplayConfig, GradientPreview};
@@ -59,3 +65,7 @@ pub use voice_indicator::{
 };
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
 pub use zone_indicator::ZoneIndicator;
+pub use hud::{
+    HudConnectionQualityConfig, HudConnectionQualityIndicator, HudConnectionQualityResponse,
+    HudConnectionState, InlineHudSensorStatus,
+};

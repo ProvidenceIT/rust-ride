@@ -25,9 +25,10 @@ use crate::sensors::smo2::SmO2Reading;
 use crate::sensors::{CyclingDynamicsData, DynamicsAverages};
 use crate::storage::config::{DashboardLayout, MetricType};
 use crate::ui::theme::zone_colors;
+use crate::sensors::quality::QualityStats;
 use crate::ui::widgets::{
-    BalanceBar, MetricDisplay, MetricSize, SmO2Display, SmO2Placeholder, SmO2WidgetSize,
-    WeatherPlaceholder, WeatherWidget, WeatherWidgetSize,
+    BalanceBar, HudConnectionState, InlineHudSensorStatus, MetricDisplay, MetricSize, SmO2Display,
+    SmO2Placeholder, SmO2WidgetSize, WeatherPlaceholder, WeatherWidget, WeatherWidgetSize,
 };
 use crate::video::{VideoFrame, VideoTextureManager};
 use crate::workouts::types::{SegmentProgress, SegmentType, Workout, WorkoutStatus};
@@ -113,6 +114,8 @@ pub struct RideScreen {
     pub video_playback_speed: f32,
     /// T125: Whether video is paused
     pub video_paused: bool,
+    /// T009-3.5: Connection quality state for HUD display
+    pub connection_quality_state: HudConnectionState,
 }
 
 impl Default for RideScreen {
@@ -152,6 +155,7 @@ impl Default for RideScreen {
             video_texture_manager: VideoTextureManager::new(),
             video_playback_speed: 1.0,
             video_paused: false,
+            connection_quality_state: HudConnectionState::default(),
         }
     }
 }
@@ -221,6 +225,29 @@ impl RideScreen {
     /// T125: Set video paused state.
     pub fn set_video_paused(&mut self, paused: bool) {
         self.video_paused = paused;
+    }
+
+    /// T009-3.5: Update sensor connection quality for HUD display.
+    ///
+    /// This should be called periodically with the latest quality stats
+    /// from all connected sensors.
+    pub fn update_connection_quality(&mut self, stats: Vec<QualityStats>) {
+        self.connection_quality_state = HudConnectionState::from_stats(stats);
+    }
+
+    /// T009-3.5: Check if any sensor has poor connection quality.
+    pub fn has_poor_connection_quality(&self) -> bool {
+        self.connection_quality_state.has_poor_quality
+    }
+
+    /// T009-3.5: Check if any sensor has degraded connection quality (fair or poor).
+    pub fn has_degraded_connection_quality(&self) -> bool {
+        self.connection_quality_state.has_degraded_quality
+    }
+
+    /// T009-3.5: Get the number of connected sensors.
+    pub fn connected_sensor_count(&self) -> usize {
+        self.connection_quality_state.connected_count
     }
 }
 
@@ -429,6 +456,14 @@ impl RideScreen {
                 _ => ("○", Color32::GRAY),
             };
             ui.label(RichText::new(status_icon).color(status_color));
+
+            // T009-3.5: Inline sensor connection quality indicator
+            if self.connection_quality_state.should_show() {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+                InlineHudSensorStatus::from_state(self.connection_quality_state.clone()).show(ui);
+            }
 
             // T099: Weather widget (compact, in top bar)
             if self.weather_enabled {
@@ -860,6 +895,12 @@ impl RideScreen {
                         );
                     } else {
                         ui.label(RichText::new("●").color(Color32::from_rgb(234, 67, 53)));
+                    }
+
+                    // T009-3.5: Connection quality indicator in full-screen mode
+                    if self.connection_quality_state.should_show() {
+                        ui.add_space(12.0);
+                        InlineHudSensorStatus::from_state(self.connection_quality_state.clone()).show(ui);
                     }
                 });
             });

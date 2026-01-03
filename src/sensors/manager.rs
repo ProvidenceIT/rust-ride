@@ -9,14 +9,23 @@
 
 use crate::sensors::ant::dongle::{AntDongle, AntDongleManager, DefaultDongleManager};
 use crate::sensors::ant::{AntConfig, AntDeviceType, AntEvent};
+use crate::sensors::cache::SensorCache;
+use crate::sensors::conflict::{ConflictDetector, ConflictDetectorConfig, DataType, FailoverResult};
+use crate::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
+use crate::sensors::health::{ConnectionHealthConfig, ConnectionHealthMonitor, HealthStats, HealthStatus};
+use crate::sensors::persistence::{ConnectionSessionManager, SessionSensor};
+use crate::sensors::power_meter::{PowerMeterWakeUpConfig, PowerMeterWakeUpDetector, WakeUpHint};
+use crate::sensors::quality::{ConnectionQualityConfig, ConnectionQualityMonitor, QualityLevel, QualityStats};
+use crate::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use crate::sensors::ftms::{
     parse_cycling_power_measurement, parse_heart_rate_measurement, parse_indoor_bike_data,
     CYCLING_POWER_MEASUREMENT_UUID, CYCLING_POWER_SERVICE_UUID, FTMS_SERVICE_UUID,
     HEART_RATE_MEASUREMENT_UUID, HEART_RATE_SERVICE_UUID, INDOOR_BIKE_DATA_UUID,
 };
 use crate::sensors::types::{
-    ConnectionState, DiscoveredSensor, Protocol, SensorConfig, SensorError, SensorEvent,
-    SensorReading, SensorState, SensorType,
+    ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress, ParallelDiscoveryResult,
+    ProgressiveTimeoutConfig, ProgressiveTimeoutState, Protocol, SensorConfig, SensorError,
+    SensorEvent, SensorReading, SensorState, SensorType, StopReason, TimeoutDecision,
 };
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -34,10 +43,13 @@ struct NotificationContext {
     event_tx: Option<Sender<SensorEvent>>,
     sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
     device_id: String,
-    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
-    max_reconnect_attempts: u32,
-    reconnect_delay_secs: u64,
+    /// Per-device exponential backoff state for reconnection attempts.
+    reconnection_backoff: Arc<Mutex<HashMap<String, ExponentialBackoff>>>,
+    /// Configuration for exponential backoff reconnection.
+    backoff_config: ExponentialBackoffConfig,
     auto_reconnect: bool,
+    /// Connection health monitor for proactive reconnection.
+    health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
 }
 
 /// Manages BLE and ANT+ sensor discovery, connection, and data streaming.
@@ -64,13 +76,60 @@ pub struct SensorManager {
     is_scanning: Arc<Mutex<bool>>,
     /// Discovery timeout handle (for cancellation)
     discovery_timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Reconnection attempts (device_id -> attempt count)
-    reconnect_attempts: Arc<Mutex<HashMap<String, u32>>>,
+    /// Per-device exponential backoff state for reconnection attempts.
+    /// Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped).
+    reconnection_backoff: Arc<Mutex<HashMap<String, ExponentialBackoff>>>,
+    /// Configuration for exponential backoff reconnection.
+    backoff_config: ExponentialBackoffConfig,
+    /// Cache of previously connected sensors for fast reconnection
+    sensor_cache: Arc<Mutex<SensorCache>>,
+    /// Progressive timeout state for current discovery
+    progressive_timeout_state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
+    /// Priority-based connection queue for discovered sensors
+    connection_queue: Arc<Mutex<ConnectionQueue>>,
+    /// Connection health monitor for proactive stale detection
+    health_monitor: Arc<Mutex<ConnectionHealthMonitor>>,
+    /// Session manager for persisting connection state across app restarts
+    session_manager: Arc<Mutex<ConnectionSessionManager>>,
+    /// Connection quality monitor for tracking RSSI, data rate, packet loss, and latency
+    quality_monitor: Arc<Mutex<ConnectionQualityMonitor>>,
+    /// Handle for the RSSI polling task (for cancellation)
+    rssi_polling_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Conflict detector for managing sensor conflicts and failover
+    conflict_detector: Arc<Mutex<ConflictDetector>>,
+    /// Power meter wake-up detector for prompting users to pedal
+    power_meter_detector: Arc<Mutex<PowerMeterWakeUpDetector>>,
 }
 
 impl SensorManager {
     /// Create a new sensor manager.
     pub fn new(config: SensorConfig) -> Self {
+        // Load sensor cache from disk
+        let sensor_cache = SensorCache::load();
+        tracing::debug!(
+            "Loaded {} cached sensors for fast reconnection",
+            sensor_cache.len()
+        );
+
+        // Load session manager for persistent reconnection
+        let session_manager = ConnectionSessionManager::load();
+        if session_manager.has_reconnectable_session() {
+            tracing::info!(
+                "Found previous session with {} sensors for potential reconnection",
+                session_manager.sensor_count()
+            );
+        }
+
+        // Create exponential backoff config from sensor config
+        // Uses the max_reconnect_attempts from config
+        let backoff_config = ExponentialBackoffConfig {
+            initial_delay: std::time::Duration::from_secs(1),
+            max_delay: std::time::Duration::from_secs(30),
+            multiplier: 2.0,
+            max_attempts: config.max_reconnect_attempts,
+            jitter_factor: 0.0,
+        };
+
         Self {
             config,
             adapter: None,
@@ -83,7 +142,17 @@ impl SensorManager {
             sensor_states: Arc::new(Mutex::new(HashMap::new())),
             is_scanning: Arc::new(Mutex::new(false)),
             discovery_timeout_handle: Arc::new(Mutex::new(None)),
-            reconnect_attempts: Arc::new(Mutex::new(HashMap::new())),
+            reconnection_backoff: Arc::new(Mutex::new(HashMap::new())),
+            backoff_config,
+            sensor_cache: Arc::new(Mutex::new(sensor_cache)),
+            progressive_timeout_state: Arc::new(Mutex::new(None)),
+            connection_queue: Arc::new(Mutex::new(ConnectionQueue::new())),
+            health_monitor: Arc::new(Mutex::new(ConnectionHealthMonitor::new())),
+            session_manager: Arc::new(Mutex::new(session_manager)),
+            quality_monitor: Arc::new(Mutex::new(ConnectionQualityMonitor::new())),
+            rssi_polling_handle: Arc::new(Mutex::new(None)),
+            conflict_detector: Arc::new(Mutex::new(ConflictDetector::new())),
+            power_meter_detector: Arc::new(Mutex::new(PowerMeterWakeUpDetector::new())),
         }
     }
 
@@ -189,7 +258,11 @@ impl SensorManager {
         }
     }
 
-    /// Start scanning for BLE and ANT+ sensors.
+    /// Start scanning for BLE and ANT+ sensors concurrently.
+    ///
+    /// When both BLE and ANT+ are enabled, both protocols scan simultaneously
+    /// to reduce total discovery time. This is significantly faster than
+    /// sequential scanning.
     pub async fn start_discovery(&mut self) -> Result<(), SensorError> {
         let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
 
@@ -201,41 +274,39 @@ impl SensorManager {
             *is_scanning = true;
         }
 
-        tracing::info!("Starting sensor discovery");
+        tracing::info!("Starting sensor discovery (concurrent BLE/ANT+ scanning)");
 
         // Clear previous discoveries
         self.discovered.lock().await.clear();
 
-        // Start ANT+ discovery if enabled
-        if *self.ant_enabled.lock().await {
-            self.start_ant_discovery().await?;
+        // Initialize power meter wake-up detection from cache
+        {
+            let cache = self.sensor_cache.lock().await;
+            let mut detector = self.power_meter_detector.lock().await;
+            detector.load_from_cache(&cache);
+            detector.start_discovery();
         }
 
-        // Create scan filter for fitness services
-        let scan_filter = ScanFilter {
-            services: vec![
-                FTMS_SERVICE_UUID,
-                CYCLING_POWER_SERVICE_UUID,
-                HEART_RATE_SERVICE_UUID,
-            ],
-        };
+        // Check if ANT+ should be enabled for concurrent scanning
+        let ant_enabled = *self.ant_enabled.lock().await;
 
-        adapter
-            .start_scan(scan_filter)
-            .await
-            .map_err(|e| SensorError::ScanFailed(e.to_string()))?;
+        // Run BLE and ANT+ discovery concurrently using tokio::join!
+        // This reduces total discovery time compared to sequential scanning
+        let ble_result = self.start_ble_discovery(adapter.clone()).await;
+
+        if ant_enabled {
+            // Start ANT+ discovery concurrently with BLE event processing
+            let ant_result = self.start_ant_discovery().await;
+            if let Err(e) = ant_result {
+                tracing::warn!("ANT+ discovery failed to start: {}", e);
+                // Continue with BLE-only discovery
+            }
+        }
+
+        // Check BLE result
+        ble_result?;
 
         self.send_event(SensorEvent::ScanStarted);
-
-        // Start event processing in background
-        let adapter_clone = adapter.clone();
-        let discovered = self.discovered.clone();
-        let event_tx = self.event_tx.clone();
-        let is_scanning = self.is_scanning.clone();
-
-        tokio::spawn(async move {
-            Self::process_discovery_events(adapter_clone, discovered, event_tx, is_scanning).await;
-        });
 
         // Start discovery timeout (T030)
         let timeout_secs = self.config.discovery_timeout_secs;
@@ -272,6 +343,374 @@ impl SensorManager {
         *timeout_handle.lock().await = Some(handle);
 
         Ok(())
+    }
+
+    /// Start BLE sensor discovery.
+    ///
+    /// Internal helper that starts BLE scanning and event processing.
+    async fn start_ble_discovery(&self, adapter: Adapter) -> Result<(), SensorError> {
+        // Create scan filter for fitness services
+        let scan_filter = ScanFilter {
+            services: vec![
+                FTMS_SERVICE_UUID,
+                CYCLING_POWER_SERVICE_UUID,
+                HEART_RATE_SERVICE_UUID,
+            ],
+        };
+
+        adapter
+            .start_scan(scan_filter)
+            .await
+            .map_err(|e| SensorError::ScanFailed(e.to_string()))?;
+
+        tracing::debug!("BLE scan started");
+
+        // Start event processing in background
+        let adapter_clone = adapter.clone();
+        let discovered = self.discovered.clone();
+        let event_tx = self.event_tx.clone();
+        let is_scanning = self.is_scanning.clone();
+
+        tokio::spawn(async move {
+            Self::process_discovery_events(adapter_clone, discovered, event_tx, is_scanning).await;
+        });
+
+        Ok(())
+    }
+
+    /// Start truly concurrent BLE and ANT+ discovery using tokio::join!
+    ///
+    /// This method ensures both protocols start scanning at exactly the same time,
+    /// maximizing the parallelism and reducing total discovery time.
+    pub async fn start_concurrent_discovery(&mut self) -> Result<ParallelDiscoveryResult, SensorError> {
+        let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
+
+        {
+            let mut is_scanning = self.is_scanning.lock().await;
+            if *is_scanning {
+                return Ok(ParallelDiscoveryResult {
+                    ble_started: false,
+                    ant_started: false,
+                    ble_error: None,
+                    ant_error: None,
+                }); // Already scanning
+            }
+            *is_scanning = true;
+        }
+
+        let start_time = Instant::now();
+        tracing::info!("Starting concurrent BLE/ANT+ discovery");
+
+        // Clear previous discoveries
+        self.discovered.lock().await.clear();
+
+        // Initialize power meter wake-up detection from cache
+        {
+            let cache = self.sensor_cache.lock().await;
+            let mut detector = self.power_meter_detector.lock().await;
+            detector.load_from_cache(&cache);
+            detector.start_discovery();
+        }
+
+        let ant_enabled = *self.ant_enabled.lock().await;
+
+        // Create futures for both discovery types
+        let ble_future = self.start_ble_discovery(adapter.clone());
+
+        // Run both discoveries concurrently
+        let result = if ant_enabled {
+            // Create ANT+ discovery future
+            let ant_future = self.prepare_ant_discovery();
+
+            // Use tokio::join! to run both concurrently
+            let (ble_result, ant_result) = tokio::join!(ble_future, ant_future);
+
+            let ble_started = ble_result.is_ok();
+            let ant_started = ant_result.is_ok();
+
+            ParallelDiscoveryResult {
+                ble_started,
+                ant_started,
+                ble_error: ble_result.err().map(|e| e.to_string()),
+                ant_error: ant_result.err().map(|e| e.to_string()),
+            }
+        } else {
+            // BLE only
+            let ble_result = ble_future.await;
+            ParallelDiscoveryResult {
+                ble_started: ble_result.is_ok(),
+                ant_started: false,
+                ble_error: ble_result.err().map(|e| e.to_string()),
+                ant_error: None,
+            }
+        };
+
+        let elapsed = start_time.elapsed();
+        tracing::info!(
+            "Concurrent discovery started in {:?} (BLE: {}, ANT+: {})",
+            elapsed,
+            if result.ble_started { "OK" } else { "Failed" },
+            if result.ant_started { "OK" } else { "Disabled/Failed" }
+        );
+
+        self.send_event(SensorEvent::ScanStarted);
+
+        // Start discovery timeout
+        self.start_discovery_timeout(adapter.clone()).await;
+
+        // Return error only if both protocols failed
+        if !result.ble_started && !result.ant_started && ant_enabled {
+            return Err(SensorError::ScanFailed(
+                "Both BLE and ANT+ discovery failed to start".to_string()
+            ));
+        }
+
+        Ok(result)
+    }
+
+    /// Prepare ANT+ discovery for concurrent execution.
+    ///
+    /// This is a wrapper that can be used with tokio::join! for parallel scanning.
+    async fn prepare_ant_discovery(&self) -> Result<(), SensorError> {
+        self.start_ant_discovery().await
+    }
+
+    /// Start discovery timeout task with progressive timeout support.
+    async fn start_discovery_timeout(&self, adapter: Adapter) {
+        let timeout_secs = self.config.discovery_timeout_secs;
+        let progressive_config = self.config.progressive_timeout.clone();
+        let is_scanning_timeout = self.is_scanning.clone();
+        let event_tx_timeout = self.event_tx.clone();
+        let timeout_handle = self.discovery_timeout_handle.clone();
+        let progressive_state = self.progressive_timeout_state.clone();
+        let discovered = self.discovered.clone();
+        let power_meter_detector = self.power_meter_detector.clone();
+
+        // Initialize progressive timeout state
+        *progressive_state.lock().await = Some(ProgressiveTimeoutState::new());
+
+        let handle = tokio::spawn(async move {
+            Self::run_progressive_timeout(
+                adapter,
+                progressive_config,
+                timeout_secs,
+                is_scanning_timeout,
+                event_tx_timeout,
+                progressive_state,
+                discovered,
+                power_meter_detector,
+            )
+            .await;
+        });
+
+        *timeout_handle.lock().await = Some(handle);
+    }
+
+    /// Run the progressive timeout logic.
+    ///
+    /// This monitors sensor discovery activity and adjusts the timeout:
+    /// - Initial aggressive 10s scan
+    /// - Extends if sensors are still being found
+    /// - Stops early if idle for too long
+    /// - Maximum 30s total scan time (45s if waiting for power meters)
+    ///
+    /// Power meter extended discovery:
+    /// When a saved power meter is expected but not found, discovery can
+    /// extend beyond the normal max timeout to give power meters more time
+    /// to wake up and advertise.
+    async fn run_progressive_timeout(
+        adapter: Adapter,
+        config: ProgressiveTimeoutConfig,
+        fallback_timeout_secs: u64,
+        is_scanning: Arc<Mutex<bool>>,
+        event_tx: Option<Sender<SensorEvent>>,
+        state: Arc<Mutex<Option<ProgressiveTimeoutState>>>,
+        discovered: Arc<Mutex<HashMap<String, DiscoveredSensor>>>,
+        power_meter_detector: Arc<Mutex<PowerMeterWakeUpDetector>>,
+    ) {
+        // Check interval for progressive timeout decisions
+        const CHECK_INTERVAL_MS: u64 = 500;
+
+        let mut last_discovered_count = 0usize;
+        let mut power_meter_extended = false;
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(CHECK_INTERVAL_MS)).await;
+
+            // Check if still scanning
+            if !*is_scanning.lock().await {
+                tracing::debug!("Progressive timeout: scanning stopped externally");
+                break;
+            }
+
+            // Update state with new discoveries and notify power meter detector
+            {
+                let discovered_sensors = discovered.lock().await;
+                let current_count = discovered_sensors.len();
+
+                // Update power meter detector with newly discovered sensors
+                {
+                    let mut pm_detector = power_meter_detector.lock().await;
+                    for sensor in discovered_sensors.values() {
+                        pm_detector.record_discovered(sensor);
+                    }
+                }
+                drop(discovered_sensors);
+
+                let mut state_guard = state.lock().await;
+
+                if let Some(ref mut timeout_state) = *state_guard {
+                    // Record new discoveries
+                    while last_discovered_count < current_count {
+                        timeout_state.record_discovery();
+                        last_discovered_count += 1;
+                        tracing::debug!(
+                            "Progressive timeout: recorded discovery #{}, phase: {}",
+                            timeout_state.sensors_discovered,
+                            timeout_state.phase
+                        );
+                    }
+
+                    // Calculate decision
+                    let decision = timeout_state.calculate_decision(&config);
+
+                    match decision {
+                        TimeoutDecision::Continue => {
+                            // Keep scanning
+                            continue;
+                        }
+                        TimeoutDecision::Extend => {
+                            timeout_state.apply_extension();
+                            tracing::info!(
+                                "Progressive timeout: extending scan (extension #{}, {} sensors found)",
+                                timeout_state.extensions_count,
+                                timeout_state.sensors_discovered
+                            );
+                        }
+                        TimeoutDecision::Stop { reason } => {
+                            let elapsed = timeout_state.elapsed();
+                            let elapsed_secs = elapsed.as_secs();
+
+                            // Check if we should extend for power meters
+                            if reason == StopReason::MaxTimeReached || reason == StopReason::IdleTimeout {
+                                let pm_detector = power_meter_detector.lock().await;
+                                let should_extend = pm_detector.should_use_extended_discovery();
+                                let power_meter_max = config.power_meter_max_secs;
+
+                                if should_extend && elapsed_secs < power_meter_max && !power_meter_extended {
+                                    // Extend discovery for power meters
+                                    power_meter_extended = true;
+                                    let missing_names = pm_detector.get_missing_power_meter_names();
+                                    drop(pm_detector);
+
+                                    tracing::info!(
+                                        "Progressive timeout: extending discovery for power meter(s): {:?} (up to {}s)",
+                                        missing_names,
+                                        power_meter_max
+                                    );
+
+                                    // Mark the extension in the detector
+                                    let mut pm_detector = power_meter_detector.lock().await;
+                                    pm_detector.mark_extended_discovery_triggered();
+                                    drop(pm_detector);
+
+                                    // Continue scanning in extended mode
+                                    timeout_state.apply_extension();
+                                    continue;
+                                }
+
+                                // Check if we're in power meter extended mode and still have time
+                                if power_meter_extended && elapsed_secs < power_meter_max {
+                                    let pm_detector = power_meter_detector.lock().await;
+                                    if !pm_detector.all_found() {
+                                        // Still waiting for power meters, continue
+                                        drop(pm_detector);
+                                        continue;
+                                    }
+                                    // All power meters found, proceed to stop
+                                    tracing::info!(
+                                        "Progressive timeout: all power meters found during extended discovery"
+                                    );
+                                }
+                            }
+
+                            timeout_state.mark_completed();
+                            let sensors = timeout_state.sensors_discovered;
+
+                            if power_meter_extended {
+                                let pm_detector = power_meter_detector.lock().await;
+                                let found_count = pm_detector.found_count();
+                                let expected_count = pm_detector.expected_count();
+                                tracing::info!(
+                                    "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors, power meters: {}/{}",
+                                    reason,
+                                    elapsed,
+                                    sensors,
+                                    found_count,
+                                    expected_count
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Progressive timeout: stopping scan ({:?}), elapsed: {:?}, found: {} sensors",
+                                    reason,
+                                    elapsed,
+                                    sensors
+                                );
+                            }
+
+                            // Stop scanning
+                            drop(state_guard);
+                            Self::stop_discovery_internal(
+                                &adapter,
+                                &is_scanning,
+                                &event_tx,
+                                reason,
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                } else {
+                    // No progressive state - use fallback timeout
+                    let elapsed = std::time::Instant::now();
+                    if elapsed.elapsed() >= std::time::Duration::from_secs(fallback_timeout_secs) {
+                        drop(state_guard);
+                        Self::stop_discovery_internal(
+                            &adapter,
+                            &is_scanning,
+                            &event_tx,
+                            StopReason::MaxTimeReached,
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Internal helper to stop discovery.
+    async fn stop_discovery_internal(
+        adapter: &Adapter,
+        is_scanning: &Arc<Mutex<bool>>,
+        event_tx: &Option<Sender<SensorEvent>>,
+        reason: StopReason,
+    ) {
+        let mut scanning = is_scanning.lock().await;
+        if *scanning {
+            *scanning = false;
+            drop(scanning);
+
+            tracing::info!("Discovery stopped: {:?}", reason);
+
+            if let Err(e) = adapter.stop_scan().await {
+                tracing::warn!("Failed to stop scan: {}", e);
+            }
+
+            if let Some(tx) = event_tx {
+                let _ = tx.send(SensorEvent::ScanStopped);
+            }
+        }
     }
 
     /// Process discovery events from the adapter.
@@ -627,6 +1066,9 @@ impl SensorManager {
 
         tracing::info!("Stopping sensor discovery");
 
+        // Stop power meter wake-up detection
+        self.power_meter_detector.lock().await.stop_discovery();
+
         adapter
             .stop_scan()
             .await
@@ -681,26 +1123,56 @@ impl SensorManager {
             .await
             .insert(device_id.to_string(), peripheral.clone());
 
-        // Create sensor state
-        let discovered = self.discovered.lock().await;
-        if let Some(disc_sensor) = discovered.get(device_id) {
-            let state = SensorState {
-                id: Uuid::new_v4(),
-                device_id: device_id.to_string(),
-                name: disc_sensor.name.clone(),
-                sensor_type: disc_sensor.sensor_type,
-                protocol: disc_sensor.protocol,
-                connection_state: ConnectionState::Connected,
-                signal_strength: disc_sensor.signal_strength,
-                battery_level: None,
-                last_data_at: None,
-                is_primary: false,
-            };
+        // Create sensor state and cache the sensor
+        let sensor_type_for_health: Option<SensorType>;
+        {
+            let discovered = self.discovered.lock().await;
+            if let Some(disc_sensor) = discovered.get(device_id) {
+                sensor_type_for_health = Some(disc_sensor.sensor_type);
+                let state = SensorState {
+                    id: Uuid::new_v4(),
+                    device_id: device_id.to_string(),
+                    name: disc_sensor.name.clone(),
+                    sensor_type: disc_sensor.sensor_type,
+                    protocol: disc_sensor.protocol,
+                    connection_state: ConnectionState::Connected,
+                    signal_strength: disc_sensor.signal_strength,
+                    battery_level: None,
+                    last_data_at: None,
+                    is_primary: false,
+                };
 
-            self.sensor_states
-                .lock()
-                .await
-                .insert(device_id.to_string(), state);
+                self.sensor_states
+                    .lock()
+                    .await
+                    .insert(device_id.to_string(), state);
+
+                // Cache the sensor for fast reconnection
+                let mut cache = self.sensor_cache.lock().await;
+                cache.cache_sensor(
+                    device_id.to_string(),
+                    disc_sensor.name.clone(),
+                    disc_sensor.sensor_type,
+                    disc_sensor.protocol,
+                );
+                if let Err(e) = cache.save() {
+                    tracing::warn!("Failed to save sensor cache: {}", e);
+                }
+
+                // Record in session for reconnection across app restarts
+                let mut session_mgr = self.session_manager.lock().await;
+                session_mgr.sensor_connected(
+                    device_id.to_string(),
+                    disc_sensor.name.clone(),
+                    disc_sensor.sensor_type,
+                    disc_sensor.protocol,
+                    disc_sensor.sensor_type == SensorType::Trainer
+                        || disc_sensor.sensor_type == SensorType::SmartTrainer
+                        || disc_sensor.sensor_type == SensorType::PowerMeter,
+                );
+            } else {
+                sensor_type_for_health = None;
+            }
         }
 
         // Send connected state
@@ -709,15 +1181,58 @@ impl SensorManager {
             state: ConnectionState::Connected,
         });
 
+        // Start health monitoring for this connection
+        {
+            let mut health_monitor = self.health_monitor.lock().await;
+            // Use strict config for trainers and power meters, relaxed for others
+            let health_config = match sensor_type_for_health {
+                Some(SensorType::Trainer) | Some(SensorType::SmartTrainer) | Some(SensorType::PowerMeter) => {
+                    ConnectionHealthConfig::strict()
+                }
+                _ => ConnectionHealthConfig::default()
+            };
+            health_monitor.start_monitoring_with_config(device_id, health_config);
+        }
+
+        // Start quality monitoring for this connection
+        {
+            let mut quality_monitor = self.quality_monitor.lock().await;
+            // Use strict config for trainers and power meters, relaxed for others
+            let quality_config = match sensor_type_for_health {
+                Some(SensorType::Trainer) | Some(SensorType::SmartTrainer) | Some(SensorType::PowerMeter) => {
+                    ConnectionQualityConfig::strict()
+                }
+                Some(SensorType::HeartRate) | Some(SensorType::Cadence) | Some(SensorType::CadenceSensor) => {
+                    ConnectionQualityConfig::relaxed()
+                }
+                _ => ConnectionQualityConfig::default()
+            };
+            quality_monitor.start_monitoring_with_config(device_id, quality_config);
+        }
+
+        // Register sensor with conflict detector and mark as connected
+        {
+            let discovered = self.discovered.lock().await;
+            if let Some(disc_sensor) = discovered.get(device_id) {
+                let mut detector = self.conflict_detector.lock().await;
+                detector.register_sensor(disc_sensor);
+                detector.update_connection_status(device_id, true);
+            }
+        }
+
+        // Start RSSI polling if not already running
+        self.start_rssi_polling().await;
+
         // Start notification handler with auto-reconnect support (T029)
+        // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
         let ctx = NotificationContext {
             event_tx: self.event_tx.clone(),
             sensor_states: self.sensor_states.clone(),
             device_id: device_id.to_string(),
-            reconnect_attempts: self.reconnect_attempts.clone(),
-            max_reconnect_attempts: self.config.max_reconnect_attempts,
-            reconnect_delay_secs: self.config.reconnect_delay_secs,
+            reconnection_backoff: self.reconnection_backoff.clone(),
+            backoff_config: self.backoff_config.clone(),
             auto_reconnect: self.config.auto_reconnect,
+            health_monitor: self.health_monitor.clone(),
         };
 
         tokio::spawn(async move {
@@ -789,8 +1304,16 @@ impl SensorManager {
                     state.last_data_at = Some(Instant::now());
                 }
 
-                // Reset reconnect attempts on successful data
-                ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
+                // Record data for health monitoring
+                {
+                    let mut health_monitor = ctx.health_monitor.lock().await;
+                    health_monitor.record_data(&ctx.device_id);
+                }
+
+                // Reset exponential backoff on successful data
+                if let Some(backoff) = ctx.reconnection_backoff.lock().await.get_mut(&ctx.device_id) {
+                    backoff.reset();
+                }
 
                 // Send data event
                 if let Some(tx) = &ctx.event_tx {
@@ -811,20 +1334,32 @@ impl SensorManager {
         }
 
         // Check if we should attempt auto-reconnect (T029)
+        // Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
         if ctx.auto_reconnect {
-            let mut attempts = ctx.reconnect_attempts.lock().await;
-            let attempt_count = attempts.entry(ctx.device_id.clone()).or_insert(0);
+            // Get or create backoff state for this device
+            let (delay, current_attempt, is_exhausted, max_attempts) = {
+                let mut backoffs = ctx.reconnection_backoff.lock().await;
+                let backoff = backoffs
+                    .entry(ctx.device_id.clone())
+                    .or_insert_with(|| ExponentialBackoff::with_config(ctx.backoff_config.clone()));
 
-            if *attempt_count < ctx.max_reconnect_attempts {
-                *attempt_count += 1;
-                let current_attempt = *attempt_count;
-                drop(attempts);
+                // Check if exhausted before recording attempt
+                if backoff.is_exhausted() {
+                    (std::time::Duration::ZERO, backoff.current_attempt(), true, ctx.backoff_config.max_attempts)
+                } else {
+                    // Record attempt and get delay with exponential backoff
+                    let delay = backoff.record_attempt();
+                    (delay, backoff.current_attempt(), false, ctx.backoff_config.max_attempts)
+                }
+            };
 
+            if !is_exhausted {
                 tracing::info!(
-                    "Auto-reconnect attempt {}/{} for sensor {}",
+                    "Auto-reconnect attempt {}/{} for sensor {} (waiting {:?})",
                     current_attempt,
-                    ctx.max_reconnect_attempts,
-                    ctx.device_id
+                    max_attempts,
+                    ctx.device_id,
+                    delay
                 );
 
                 // Send reconnecting state
@@ -840,15 +1375,21 @@ impl SensorManager {
                     state.connection_state = ConnectionState::Reconnecting;
                 }
 
-                // Wait before reconnect attempt
-                tokio::time::sleep(std::time::Duration::from_secs(ctx.reconnect_delay_secs)).await;
+                // Wait with exponential backoff delay before reconnect attempt
+                tokio::time::sleep(delay).await;
 
                 // Try to reconnect
                 if let Err(e) = peripheral.connect().await {
                     tracing::warn!("Reconnection failed for {}: {}", ctx.device_id, e);
 
+                    // Check if we're now exhausted after this failed attempt
+                    let now_exhausted = {
+                        let backoffs = ctx.reconnection_backoff.lock().await;
+                        backoffs.get(&ctx.device_id).map_or(false, |b| b.is_exhausted())
+                    };
+
                     // Send final disconnected state if all attempts exhausted
-                    if current_attempt >= ctx.max_reconnect_attempts {
+                    if now_exhausted {
                         if let Some(tx) = &ctx.event_tx {
                             let _ = tx.send(SensorEvent::ConnectionChanged {
                                 device_id: ctx.device_id.clone(),
@@ -856,7 +1397,7 @@ impl SensorManager {
                             });
                             let _ = tx.send(SensorEvent::Error(format!(
                                 "Failed to reconnect to {} after {} attempts",
-                                ctx.device_id, ctx.max_reconnect_attempts
+                                ctx.device_id, max_attempts
                             )));
                         }
                     }
@@ -894,8 +1435,10 @@ impl SensorManager {
                         });
                     }
 
-                    // Reset attempts on successful reconnect
-                    ctx.reconnect_attempts.lock().await.remove(&ctx.device_id);
+                    // Reset backoff on successful reconnect
+                    if let Some(backoff) = ctx.reconnection_backoff.lock().await.get_mut(&ctx.device_id) {
+                        backoff.reset();
+                    }
 
                     // Recursively handle notifications again
                     Box::pin(Self::handle_notifications(peripheral, ctx)).await;
@@ -905,7 +1448,7 @@ impl SensorManager {
                 // Max attempts reached
                 tracing::warn!(
                     "Max reconnect attempts ({}) reached for sensor {}",
-                    ctx.max_reconnect_attempts,
+                    max_attempts,
                     ctx.device_id
                 );
             }
@@ -967,6 +1510,19 @@ impl SensorManager {
 
     /// Disconnect from a sensor.
     pub async fn disconnect(&mut self, device_id: &str) -> Result<(), SensorError> {
+        self.disconnect_with_failover(device_id, true).await
+    }
+
+    /// Disconnect from a sensor with optional failover handling.
+    ///
+    /// When `trigger_failover` is true, the disconnect will check if the sensor
+    /// was a primary for any data type and automatically promote a secondary
+    /// sensor if available, notifying the user of the failover.
+    async fn disconnect_with_failover(
+        &mut self,
+        device_id: &str,
+        trigger_failover: bool,
+    ) -> Result<(), SensorError> {
         tracing::info!("Disconnecting from sensor: {}", device_id);
 
         let mut connected = self.connected.lock().await;
@@ -977,11 +1533,58 @@ impl SensorManager {
                 .await
                 .map_err(|e| SensorError::BleError(e.to_string()))?;
         }
+        drop(connected);
+
+        // Stop health monitoring for this sensor
+        self.health_monitor.lock().await.stop_monitoring(device_id);
+
+        // Stop quality monitoring for this sensor
+        self.quality_monitor.lock().await.stop_monitoring(device_id);
 
         // Update sensor state
         if let Some(state) = self.sensor_states.lock().await.get_mut(device_id) {
             state.connection_state = ConnectionState::Disconnected;
         }
+
+        // Handle automatic failover if this was a primary sensor
+        if trigger_failover {
+            let failovers = {
+                let mut detector = self.conflict_detector.lock().await;
+                detector.handle_primary_disconnect(device_id)
+            };
+
+            // Send failover events to notify the user
+            for failover in failovers {
+                tracing::info!(
+                    "Failover: {} switching from {} to {}",
+                    failover.data_type.display_name(),
+                    failover.from_sensor_name,
+                    failover.to_sensor_name
+                );
+
+                // Update the new primary's is_primary flag in sensor states
+                if let Some(state) = self.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                    state.is_primary = true;
+                }
+
+                self.send_event(SensorEvent::FailoverActivated {
+                    data_type: failover.data_type.display_name().to_string(),
+                    from_device_id: failover.from_device_id,
+                    from_sensor_name: failover.from_sensor_name,
+                    to_device_id: failover.to_device_id,
+                    to_sensor_name: failover.to_sensor_name,
+                });
+            }
+        } else {
+            // Just update connection status without failover
+            self.conflict_detector
+                .lock()
+                .await
+                .update_connection_status(device_id, false);
+        }
+
+        // Remove from session (intentional disconnect)
+        self.session_manager.lock().await.sensor_disconnected(device_id);
 
         // Send disconnected event
         self.send_event(SensorEvent::ConnectionChanged {
@@ -1045,6 +1648,39 @@ impl SensorManager {
         *self.is_scanning.lock().await
     }
 
+    /// Get the current discovery phase.
+    pub async fn get_discovery_phase(&self) -> Option<DiscoveryPhase> {
+        self.progressive_timeout_state
+            .lock()
+            .await
+            .as_ref()
+            .map(|s| s.phase)
+    }
+
+    /// Get detailed discovery progress information.
+    pub async fn get_discovery_progress(&self) -> Option<DiscoveryProgress> {
+        let state = self.progressive_timeout_state.lock().await;
+        state.as_ref().map(|s| DiscoveryProgress {
+            phase: s.phase,
+            elapsed: s.elapsed(),
+            sensors_discovered: s.sensors_discovered,
+            extensions_count: s.extensions_count,
+            is_active: s.phase != DiscoveryPhase::Completed,
+        })
+    }
+
+    /// Get the progressive timeout configuration.
+    pub fn get_progressive_timeout_config(&self) -> &ProgressiveTimeoutConfig {
+        &self.config.progressive_timeout
+    }
+
+    /// Set the progressive timeout configuration.
+    ///
+    /// Note: This only affects future discovery scans, not the current one.
+    pub fn set_progressive_timeout_config(&mut self, config: ProgressiveTimeoutConfig) {
+        self.config.progressive_timeout = config;
+    }
+
     /// Get all sensor states (connected and recently seen).
     pub async fn get_sensor_states(&self) -> Vec<SensorState> {
         self.sensor_states.lock().await.values().cloned().collect()
@@ -1092,6 +1728,472 @@ impl SensorManager {
         Ok(())
     }
 
+    // =========================================================================
+    // Sensor Cache Methods for Fast Reconnection
+    // =========================================================================
+
+    /// Get cached sensors for fast reconnection.
+    ///
+    /// Returns sensors sorted by reconnection priority:
+    /// 1. Preferred sensors first
+    /// 2. Then by connection count (most used)
+    /// 3. Then by last connected (most recent)
+    pub async fn get_cached_sensors(&self) -> Vec<crate::sensors::cache::CachedSensor> {
+        let cache = self.sensor_cache.lock().await;
+        cache.reconnection_priority().into_iter().cloned().collect()
+    }
+
+    /// Get cached sensors of a specific type.
+    pub async fn get_cached_sensors_of_type(
+        &self,
+        sensor_type: SensorType,
+    ) -> Vec<crate::sensors::cache::CachedSensor> {
+        let cache = self.sensor_cache.lock().await;
+        cache.sensors_of_type(sensor_type).into_iter().cloned().collect()
+    }
+
+    /// Check if a sensor is in the cache.
+    pub async fn is_sensor_cached(&self, device_id: &str) -> bool {
+        let cache = self.sensor_cache.lock().await;
+        cache.contains(device_id)
+    }
+
+    /// Attempt fast reconnection to cached sensors.
+    ///
+    /// Tries to connect to sensors that were previously connected without
+    /// requiring a full discovery scan. This is significantly faster for
+    /// known sensors.
+    ///
+    /// Returns a list of device IDs that were successfully found and added
+    /// to discovered sensors (ready for connection).
+    pub async fn fast_reconnect_cached(&mut self) -> Result<Vec<String>, SensorError> {
+        let adapter = self.adapter.as_ref().ok_or(SensorError::AdapterNotFound)?;
+
+        let cached_sensors: Vec<_> = {
+            let cache = self.sensor_cache.lock().await;
+            cache.reconnection_priority().into_iter().cloned().collect()
+        };
+
+        if cached_sensors.is_empty() {
+            tracing::debug!("No cached sensors for fast reconnection");
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Attempting fast reconnection to {} cached sensors",
+            cached_sensors.len()
+        );
+
+        let start = Instant::now();
+        let mut found_sensors = Vec::new();
+
+        // Get all currently visible peripherals
+        let peripherals = adapter
+            .peripherals()
+            .await
+            .map_err(|e| SensorError::BleError(e.to_string()))?;
+
+        for peripheral in peripherals {
+            let peripheral_id = peripheral.id().to_string();
+
+            // Check if this peripheral matches any cached sensor
+            for cached in &cached_sensors {
+                if cached.device_id == peripheral_id {
+                    // Found a cached sensor! Add it to discovered
+                    let sensor = DiscoveredSensor {
+                        device_id: cached.device_id.clone(),
+                        name: cached.name.clone(),
+                        sensor_type: cached.sensor_type,
+                        protocol: cached.protocol,
+                        signal_strength: None,
+                        last_seen: Instant::now(),
+                    };
+
+                    self.discovered
+                        .lock()
+                        .await
+                        .insert(cached.device_id.clone(), sensor.clone());
+
+                    self.send_event(SensorEvent::Discovered(sensor));
+                    found_sensors.push(cached.device_id.clone());
+
+                    tracing::info!(
+                        "Fast reconnect: found cached sensor {} ({})",
+                        cached.display_name(),
+                        cached.device_id
+                    );
+                    break;
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+        tracing::info!(
+            "Fast reconnection found {}/{} cached sensors in {:?}",
+            found_sensors.len(),
+            cached_sensors.len(),
+            elapsed
+        );
+
+        Ok(found_sensors)
+    }
+
+    /// Try to connect to all preferred cached sensors.
+    ///
+    /// This method attempts fast reconnection and then connects to any
+    /// preferred sensors that were found.
+    pub async fn connect_preferred_sensors(&mut self) -> Result<Vec<String>, SensorError> {
+        // First try fast reconnection
+        let found = self.fast_reconnect_cached().await?;
+
+        // Get preferred sensors that were found
+        let preferred_ids: Vec<String> = {
+            let cache = self.sensor_cache.lock().await;
+            cache
+                .preferred_sensors()
+                .iter()
+                .filter(|s| found.contains(&s.device_id))
+                .map(|s| s.device_id.clone())
+                .collect()
+        };
+
+        // Connect to each preferred sensor
+        let mut connected_ids = Vec::new();
+        for device_id in preferred_ids {
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    connected_ids.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect to preferred sensor {}: {}", device_id, e);
+                }
+            }
+        }
+
+        Ok(connected_ids)
+    }
+
+    /// Set a sensor as preferred for auto-reconnection.
+    pub async fn set_sensor_preferred(&self, device_id: &str, preferred: bool) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let result = cache.set_preferred(device_id, preferred);
+        if result {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        result
+    }
+
+    /// Set a nickname for a cached sensor.
+    pub async fn set_sensor_nickname(&self, device_id: &str, nickname: Option<String>) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let result = cache.set_nickname(device_id, nickname);
+        if result {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        result
+    }
+
+    /// Remove a sensor from the cache.
+    pub async fn remove_cached_sensor(&self, device_id: &str) -> bool {
+        let mut cache = self.sensor_cache.lock().await;
+        let removed = cache.remove(device_id).is_some();
+        if removed {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        removed
+    }
+
+    /// Clear all cached sensors.
+    pub async fn clear_sensor_cache(&self) {
+        let mut cache = self.sensor_cache.lock().await;
+        cache.clear();
+        if let Err(e) = cache.save() {
+            tracing::warn!("Failed to save sensor cache: {}", e);
+        }
+    }
+
+    /// Prune stale sensors from the cache.
+    ///
+    /// Returns the number of sensors removed.
+    pub async fn prune_stale_sensors(&self) -> usize {
+        let mut cache = self.sensor_cache.lock().await;
+        let count = cache.prune_stale();
+        if count > 0 {
+            if let Err(e) = cache.save() {
+                tracing::warn!("Failed to save sensor cache: {}", e);
+            }
+        }
+        count
+    }
+
+    /// Get the number of cached sensors.
+    pub async fn cached_sensor_count(&self) -> usize {
+        let cache = self.sensor_cache.lock().await;
+        cache.len()
+    }
+
+    // =========================================================================
+    // Priority-Based Connection Queue Methods
+    // =========================================================================
+
+    /// Add a discovered sensor to the connection queue.
+    ///
+    /// The sensor will be automatically prioritized based on its type:
+    /// - Primary (trainers, power meters) connect first
+    /// - Secondary (HR, cadence) connect after
+    pub async fn queue_sensor_for_connection(&self, sensor: DiscoveredSensor) {
+        let mut queue = self.connection_queue.lock().await;
+        queue.enqueue(sensor);
+    }
+
+    /// Add a preferred sensor to the connection queue (highest priority within its level).
+    pub async fn queue_preferred_sensor(&self, sensor: DiscoveredSensor) {
+        let mut queue = self.connection_queue.lock().await;
+        queue.enqueue_preferred(sensor);
+    }
+
+    /// Add all discovered sensors to the connection queue.
+    ///
+    /// Sensors are automatically prioritized by type.
+    pub async fn queue_all_discovered(&self) {
+        let discovered = self.discovered.lock().await.clone();
+        let cache = self.sensor_cache.lock().await;
+        let mut queue = self.connection_queue.lock().await;
+
+        for sensor in discovered.into_values() {
+            // Check if this sensor is preferred in the cache
+            if cache.get(&sensor.device_id).map_or(false, |c| c.is_preferred) {
+                queue.enqueue_preferred(sensor);
+            } else {
+                queue.enqueue(sensor);
+            }
+        }
+    }
+
+    /// Connect to the next sensor in the priority queue.
+    ///
+    /// Returns the device ID of the sensor that connection was attempted for,
+    /// or None if the queue is empty.
+    pub async fn connect_next_in_queue(&mut self) -> Result<Option<String>, SensorError> {
+        let entry = {
+            let mut queue = self.connection_queue.lock().await;
+            queue.dequeue()
+        };
+
+        match entry {
+            Some(entry) => {
+                let device_id = entry.sensor.device_id.clone();
+                tracing::info!(
+                    "Connecting to {} sensor: {} ({})",
+                    entry.priority,
+                    entry.name(),
+                    device_id
+                );
+                self.connect(&device_id).await?;
+                Ok(Some(device_id))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Connect to all sensors in the queue in priority order.
+    ///
+    /// Primary sensors (trainers, power meters) are connected first,
+    /// then secondary sensors (HR, cadence).
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn connect_all_in_queue(&mut self) -> Vec<String> {
+        let entries = {
+            let mut queue = self.connection_queue.lock().await;
+            queue.drain_in_order()
+        };
+
+        let mut connected = Vec::new();
+
+        for entry in entries {
+            let device_id = entry.sensor.device_id.clone();
+            tracing::info!(
+                "Connecting to {} sensor: {} ({})",
+                entry.priority,
+                entry.name(),
+                device_id
+            );
+
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    connected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect to {}: {}", device_id, e);
+                    // Continue with other sensors
+                }
+            }
+        }
+
+        if !connected.is_empty() {
+            tracing::info!(
+                "Connected to {} sensors in priority order",
+                connected.len()
+            );
+        }
+
+        connected
+    }
+
+    /// Connect to discovered sensors in priority order.
+    ///
+    /// This is a convenience method that:
+    /// 1. Queues all discovered sensors
+    /// 2. Connects to them in priority order (primary first)
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn connect_discovered_by_priority(&mut self) -> Vec<String> {
+        // Queue all discovered sensors
+        self.queue_all_discovered().await;
+
+        // Connect in priority order
+        self.connect_all_in_queue().await
+    }
+
+    /// Get the number of sensors in the connection queue.
+    pub async fn connection_queue_len(&self) -> usize {
+        self.connection_queue.lock().await.len()
+    }
+
+    /// Check if the connection queue is empty.
+    pub async fn is_connection_queue_empty(&self) -> bool {
+        self.connection_queue.lock().await.is_empty()
+    }
+
+    /// Get the count of primary and secondary sensors in the queue.
+    pub async fn connection_queue_counts(&self) -> (usize, usize) {
+        self.connection_queue.lock().await.count_by_priority()
+    }
+
+    /// Clear the connection queue.
+    pub async fn clear_connection_queue(&self) {
+        self.connection_queue.lock().await.clear();
+    }
+
+    /// Remove a sensor from the connection queue.
+    pub async fn remove_from_connection_queue(&self, device_id: &str) -> bool {
+        self.connection_queue.lock().await.remove(device_id)
+    }
+
+    /// Peek at the next sensor in the queue without removing it.
+    pub async fn peek_connection_queue(&self) -> Option<(String, SensorPriority)> {
+        self.connection_queue.lock().await.peek().map(|entry| {
+            (entry.sensor.device_id.clone(), entry.priority)
+        })
+    }
+
+    // =========================================================================
+    // Connection Health Monitoring Methods
+    // =========================================================================
+
+    /// Get the health status of a connected sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_sensor_health(&self, device_id: &str) -> Option<HealthStatus> {
+        self.health_monitor.lock().await.get_status(device_id)
+    }
+
+    /// Get detailed health statistics for a sensor.
+    pub async fn get_sensor_health_stats(&self, device_id: &str) -> Option<HealthStats> {
+        self.health_monitor.lock().await.get_stats(device_id)
+    }
+
+    /// Get health statistics for all monitored sensors.
+    pub async fn get_all_health_stats(&self) -> Vec<HealthStats> {
+        self.health_monitor.lock().await.get_all_stats()
+    }
+
+    /// Check all connections for health issues.
+    ///
+    /// Returns a list of device IDs that have stale connections and may need
+    /// proactive reconnection.
+    pub async fn check_connection_health(&mut self) -> Vec<String> {
+        self.health_monitor.lock().await.check_all()
+    }
+
+    /// Get devices with stale connections (no data received for stale timeout).
+    ///
+    /// Stale connections should trigger proactive reconnection before
+    /// the BLE disconnect notification arrives.
+    pub async fn get_stale_connections(&self) -> Vec<String> {
+        self.health_monitor.lock().await.get_stale_devices()
+    }
+
+    /// Get devices that need attention (degraded or stale connections).
+    pub async fn get_connections_needing_attention(&self) -> Vec<String> {
+        self.health_monitor.lock().await.get_devices_needing_attention()
+    }
+
+    /// Check if a sensor's connection is healthy.
+    pub async fn is_connection_healthy(&self, device_id: &str) -> bool {
+        self.health_monitor
+            .lock()
+            .await
+            .get_status(device_id)
+            .map_or(false, |s| s == HealthStatus::Healthy)
+    }
+
+    /// Proactively reconnect to sensors with stale connections.
+    ///
+    /// This method checks all connected sensors for health issues and
+    /// attempts to reconnect to any with stale connections (no data for 5s).
+    /// This triggers reconnection BEFORE the BLE timeout would normally occur.
+    ///
+    /// Returns a list of device IDs that reconnection was attempted for.
+    pub async fn reconnect_stale_connections(&mut self) -> Vec<String> {
+        let stale_devices = self.get_stale_connections().await;
+
+        if stale_devices.is_empty() {
+            return Vec::new();
+        }
+
+        tracing::info!(
+            "Proactively reconnecting {} stale connections: {:?}",
+            stale_devices.len(),
+            stale_devices
+        );
+
+        let mut reconnected = Vec::new();
+
+        for device_id in stale_devices {
+            // Disconnect first
+            if let Err(e) = self.disconnect(&device_id).await {
+                tracing::warn!("Failed to disconnect stale sensor {}: {}", device_id, e);
+            }
+
+            // Attempt reconnection
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    tracing::info!("Successfully reconnected stale sensor: {}", device_id);
+                    reconnected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to reconnect stale sensor {}: {}", device_id, e);
+                }
+            }
+        }
+
+        reconnected
+    }
+
+    /// Reset health tracking for a sensor after successful reconnection.
+    ///
+    /// Call this after a manual reconnection to reset the health state.
+    pub async fn reset_sensor_health(&self, device_id: &str) {
+        self.health_monitor.lock().await.reset(device_id);
+    }
+
     /// Shutdown the sensor manager.
     pub async fn shutdown(&mut self) {
         tracing::info!("Shutting down SensorManager");
@@ -1099,11 +2201,603 @@ impl SensorManager {
         // Stop scanning
         let _ = self.stop_discovery().await;
 
+        // Stop RSSI polling
+        self.stop_rssi_polling().await;
+
+        // Prepare session for clean shutdown (preserve sensor state for reconnection)
+        {
+            let mut session_mgr = self.session_manager.lock().await;
+            session_mgr.prepare_shutdown();
+        }
+
         // Disconnect all sensors
         let device_ids: Vec<String> = self.connected.lock().await.keys().cloned().collect();
 
         for device_id in device_ids {
             let _ = self.disconnect(&device_id).await;
         }
+
+        // Clear health monitoring
+        self.health_monitor.lock().await.clear();
+
+        // Clear quality monitoring
+        self.quality_monitor.lock().await.clear();
+
+        // Save sensor cache
+        let mut cache = self.sensor_cache.lock().await;
+        if let Err(e) = cache.save() {
+            tracing::warn!("Failed to save sensor cache on shutdown: {}", e);
+        }
+    }
+
+    // =========================================================================
+    // Session Persistence Methods for App Restart Reconnection
+    // =========================================================================
+
+    /// Check if there's a previous session that can be used for reconnection.
+    ///
+    /// Returns true if a session exists that is not stale (< 24 hours old)
+    /// and contains at least one sensor.
+    pub async fn has_reconnectable_session(&self) -> bool {
+        self.session_manager.lock().await.has_reconnectable_session()
+    }
+
+    /// Get sensors from the previous session that should be reconnected.
+    ///
+    /// Returns sensors sorted by reconnection priority:
+    /// 1. Primary sensors first
+    /// 2. Healthy sensors before unhealthy
+    /// 3. By sensor type priority (trainers/power meters first)
+    pub async fn get_session_reconnection_targets(&self) -> Vec<SessionSensor> {
+        self.session_manager
+            .lock()
+            .await
+            .get_reconnection_targets()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Get device IDs for sensors that should be reconnected from previous session.
+    pub async fn get_session_reconnection_device_ids(&self) -> Vec<String> {
+        self.session_manager
+            .lock()
+            .await
+            .get_reconnection_device_ids()
+    }
+
+    /// Attempt to reconnect to sensors from the previous session.
+    ///
+    /// This method:
+    /// 1. Gets sensors from the previous session
+    /// 2. Checks if they're currently visible (using fast_reconnect_cached)
+    /// 3. Connects to those that are found
+    ///
+    /// Returns a list of device IDs that were successfully connected.
+    pub async fn reconnect_previous_session(&mut self) -> Result<Vec<String>, SensorError> {
+        let session_device_ids: Vec<String> = {
+            let session_mgr = self.session_manager.lock().await;
+            if !session_mgr.has_reconnectable_session() {
+                tracing::debug!("No reconnectable session found");
+                return Ok(Vec::new());
+            }
+            session_mgr.get_reconnection_device_ids()
+        };
+
+        if session_device_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Attempting to reconnect {} sensors from previous session",
+            session_device_ids.len()
+        );
+
+        // First, try fast reconnection to discover cached sensors
+        let found_sensors = self.fast_reconnect_cached().await?;
+
+        // Find which session sensors are currently visible
+        let reconnectable: Vec<String> = session_device_ids
+            .into_iter()
+            .filter(|id| found_sensors.contains(id))
+            .collect();
+
+        if reconnectable.is_empty() {
+            tracing::info!("No previous session sensors are currently visible");
+            return Ok(Vec::new());
+        }
+
+        tracing::info!(
+            "Found {}/{} session sensors, attempting reconnection",
+            reconnectable.len(),
+            found_sensors.len()
+        );
+
+        // Connect to each reconnectable sensor
+        let mut connected = Vec::new();
+        for device_id in reconnectable {
+            match self.connect(&device_id).await {
+                Ok(()) => {
+                    tracing::info!("Reconnected to session sensor: {}", device_id);
+                    connected.push(device_id);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to reconnect to session sensor {}: {}",
+                        device_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        if !connected.is_empty() {
+            tracing::info!(
+                "Successfully reconnected {} sensors from previous session",
+                connected.len()
+            );
+        }
+
+        Ok(connected)
+    }
+
+    /// Start a new session, discarding the previous one.
+    ///
+    /// Call this when the user explicitly starts a new ride/workout
+    /// and doesn't want to use the previous session's sensors.
+    pub async fn start_new_session(&self) {
+        let mut session_mgr = self.session_manager.lock().await;
+        session_mgr.start_new_session(false);
+        tracing::info!("Started new sensor session");
+    }
+
+    /// Get the number of sensors in the current session.
+    pub async fn session_sensor_count(&self) -> usize {
+        self.session_manager.lock().await.sensor_count()
+    }
+
+    /// Check if the previous session ended cleanly.
+    pub async fn was_session_clean_shutdown(&self) -> bool {
+        self.session_manager.lock().await.was_clean_shutdown()
+    }
+
+    /// Clear the current session.
+    pub async fn clear_session(&self) {
+        let mut session_mgr = self.session_manager.lock().await;
+        session_mgr.clear();
+        tracing::info!("Cleared sensor session");
+    }
+
+    // =========================================================================
+    // RSSI Polling for Connection Quality Monitoring
+    // =========================================================================
+
+    /// Default RSSI polling interval in milliseconds.
+    const RSSI_POLL_INTERVAL_MS: u64 = 2000;
+
+    /// Start the RSSI polling task if not already running.
+    ///
+    /// The polling task runs every 2 seconds and updates RSSI values
+    /// for all connected BLE sensors.
+    async fn start_rssi_polling(&self) {
+        let mut handle_guard = self.rssi_polling_handle.lock().await;
+
+        // Check if already running
+        if handle_guard.is_some() {
+            return;
+        }
+
+        tracing::debug!("Starting RSSI polling task");
+
+        let connected = self.connected.clone();
+        let quality_monitor = self.quality_monitor.clone();
+        let sensor_states = self.sensor_states.clone();
+
+        let handle = tokio::spawn(async move {
+            Self::run_rssi_polling_loop(connected, quality_monitor, sensor_states).await;
+        });
+
+        *handle_guard = Some(handle);
+    }
+
+    /// Stop the RSSI polling task.
+    async fn stop_rssi_polling(&self) {
+        if let Some(handle) = self.rssi_polling_handle.lock().await.take() {
+            handle.abort();
+            tracing::debug!("Stopped RSSI polling task");
+        }
+    }
+
+    /// Run the RSSI polling loop.
+    ///
+    /// This polls RSSI values for all connected BLE peripherals every 2 seconds
+    /// and updates the quality monitor with the new values.
+    async fn run_rssi_polling_loop(
+        connected: Arc<Mutex<HashMap<String, Peripheral>>>,
+        quality_monitor: Arc<Mutex<ConnectionQualityMonitor>>,
+        sensor_states: Arc<Mutex<HashMap<String, SensorState>>>,
+    ) {
+        let poll_interval = std::time::Duration::from_millis(Self::RSSI_POLL_INTERVAL_MS);
+
+        loop {
+            tokio::time::sleep(poll_interval).await;
+
+            // Get connected peripherals
+            let peripherals: Vec<(String, Peripheral)> = {
+                connected.lock().await.iter()
+                    .map(|(id, p)| (id.clone(), p.clone()))
+                    .collect()
+            };
+
+            if peripherals.is_empty() {
+                // No connected sensors, stop polling
+                tracing::trace!("No connected sensors, RSSI polling idle");
+                continue;
+            }
+
+            // Poll RSSI for each connected peripheral
+            for (device_id, peripheral) in peripherals {
+                match peripheral.properties().await {
+                    Ok(Some(properties)) => {
+                        if let Some(rssi) = properties.rssi {
+                            // Update quality monitor
+                            {
+                                let mut monitor = quality_monitor.lock().await;
+                                monitor.record_rssi(&device_id, rssi);
+                            }
+
+                            // Update sensor state
+                            {
+                                let mut states = sensor_states.lock().await;
+                                if let Some(state) = states.get_mut(&device_id) {
+                                    state.signal_strength = Some(rssi);
+                                }
+                            }
+
+                            tracing::trace!(
+                                "RSSI poll for {}: {} dBm",
+                                device_id,
+                                rssi
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::trace!("No properties available for {}", device_id);
+                    }
+                    Err(e) => {
+                        tracing::trace!("Failed to get properties for {}: {}", device_id, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Connection Quality Monitoring Methods
+    // =========================================================================
+
+    /// Get the connection quality score (0-100) for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_score(&self, device_id: &str) -> Option<u8> {
+        self.quality_monitor.lock().await.get_score(device_id)
+    }
+
+    /// Get the connection quality level for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_level(&self, device_id: &str) -> Option<QualityLevel> {
+        self.quality_monitor.lock().await.get_level(device_id)
+    }
+
+    /// Get detailed quality statistics for a sensor.
+    ///
+    /// Returns None if the sensor is not being monitored.
+    pub async fn get_quality_stats(&self, device_id: &str) -> Option<QualityStats> {
+        self.quality_monitor.lock().await.get_stats(device_id)
+    }
+
+    /// Get quality statistics for all monitored sensors.
+    pub async fn get_all_quality_stats(&self) -> Vec<QualityStats> {
+        self.quality_monitor.lock().await.get_all_stats()
+    }
+
+    /// Get devices with poor connection quality.
+    ///
+    /// These sensors may need attention (closer proximity, fewer obstructions).
+    pub async fn get_poor_quality_devices(&self) -> Vec<String> {
+        self.quality_monitor.lock().await.get_poor_quality_devices()
+    }
+
+    /// Get devices with degraded connection quality (fair or poor).
+    pub async fn get_degraded_quality_devices(&self) -> Vec<String> {
+        self.quality_monitor.lock().await.get_degraded_devices()
+    }
+
+    /// Check if a sensor's connection quality is acceptable.
+    ///
+    /// Returns true if quality is Fair or better.
+    pub async fn is_quality_acceptable(&self, device_id: &str) -> bool {
+        self.quality_monitor
+            .lock()
+            .await
+            .get_level(device_id)
+            .map_or(false, |level| level >= QualityLevel::Fair)
+    }
+
+    /// Reset quality tracking for a sensor.
+    ///
+    /// Call this after a manual reconnection to reset the quality state.
+    pub async fn reset_quality(&self, device_id: &str) {
+        self.quality_monitor.lock().await.reset(device_id);
+    }
+
+    /// Get the number of sensors being monitored for quality.
+    pub async fn quality_monitoring_count(&self) -> usize {
+        self.quality_monitor.lock().await.len()
+    }
+
+    /// Check if quality monitoring is running for a sensor.
+    pub async fn is_quality_monitoring(&self, device_id: &str) -> bool {
+        self.quality_monitor.lock().await.is_monitoring(device_id)
+    }
+
+    // =========================================================================
+    // Conflict Detection and Failover Methods
+    // =========================================================================
+
+    /// Set a sensor as primary for a data type.
+    ///
+    /// This marks the sensor as the preferred source for the specified data type
+    /// (e.g., Power, HeartRate). The preference is persisted across sessions.
+    pub async fn set_primary_sensor(&self, data_type: DataType, device_id: &str) -> bool {
+        self.conflict_detector.lock().await.set_primary(data_type, device_id)
+    }
+
+    /// Get the primary sensor for a data type.
+    ///
+    /// Returns the device ID of the primary sensor, if one is set.
+    pub async fn get_primary_sensor(&self, data_type: DataType) -> Option<String> {
+        self.conflict_detector
+            .lock()
+            .await
+            .get_primary(data_type)
+            .map(|s| s.to_string())
+    }
+
+    /// Check if a sensor is the primary source for any data type.
+    pub async fn is_primary_sensor(&self, device_id: &str) -> bool {
+        self.conflict_detector.lock().await.is_primary(device_id)
+    }
+
+    /// Check if failover is available for a data type.
+    ///
+    /// Returns true if there's at least one connected secondary sensor that
+    /// could take over if the primary disconnects.
+    pub async fn has_failover_available(&self, data_type: DataType) -> bool {
+        self.conflict_detector.lock().await.has_failover_available(data_type)
+    }
+
+    /// Get data types that have failover protection.
+    ///
+    /// Returns a list of data types where at least one secondary sensor
+    /// is connected and could take over if the primary fails.
+    pub async fn get_protected_data_types(&self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.get_protected_data_types()
+    }
+
+    /// Get data types that are at risk (primary connected, no failover).
+    ///
+    /// These are data types where losing the primary would result in
+    /// no data for that type.
+    pub async fn get_at_risk_data_types(&self) -> Vec<DataType> {
+        self.conflict_detector.lock().await.get_at_risk_data_types()
+    }
+
+    /// Check if there are any active sensor conflicts.
+    ///
+    /// Returns true if multiple sensors are providing the same data type.
+    pub async fn has_conflicts(&self) -> bool {
+        self.conflict_detector.lock().await.has_conflicts()
+    }
+
+    /// Get the number of active conflicts.
+    pub async fn conflict_count(&self) -> usize {
+        self.conflict_detector.lock().await.conflict_count()
+    }
+
+    /// Get the number of unresolved conflicts.
+    pub async fn unresolved_conflict_count(&self) -> usize {
+        self.conflict_detector.lock().await.unresolved_count()
+    }
+
+    /// Get a summary of all conflicts for UI display.
+    pub async fn get_conflict_summary(&self) -> crate::sensors::conflict::ConflictSummary {
+        self.conflict_detector.lock().await.summary()
+    }
+
+    /// Register a sensor for conflict detection.
+    ///
+    /// Call this when a sensor is discovered to track potential conflicts.
+    /// Returns a list of new data types that now have conflicts.
+    pub async fn register_sensor_for_conflicts(&self, sensor: &DiscoveredSensor) -> Vec<DataType> {
+        self.conflict_detector.lock().await.register_sensor(sensor)
+    }
+
+    /// Unregister a sensor from conflict detection.
+    ///
+    /// Call this when a sensor is forgotten or removed.
+    /// Returns a list of data types that are no longer in conflict.
+    pub async fn unregister_sensor_from_conflicts(&self, device_id: &str) -> Vec<DataType> {
+        self.conflict_detector.lock().await.unregister_sensor(device_id)
+    }
+
+    /// Manually trigger failover for a sensor.
+    ///
+    /// This is useful when you want to test failover or when the automatic
+    /// failover didn't trigger (e.g., sensor still appears connected but
+    /// is not sending data).
+    pub async fn trigger_failover(&mut self, device_id: &str) -> Vec<FailoverResult> {
+        let failovers = {
+            let mut detector = self.conflict_detector.lock().await;
+            detector.handle_primary_disconnect(device_id)
+        };
+
+        // Send failover events
+        for failover in &failovers {
+            tracing::info!(
+                "Manual failover: {} switching from {} to {}",
+                failover.data_type.display_name(),
+                failover.from_sensor_name,
+                failover.to_sensor_name
+            );
+
+            // Update the new primary's is_primary flag
+            if let Some(state) = self.sensor_states.lock().await.get_mut(&failover.to_device_id) {
+                state.is_primary = true;
+            }
+
+            self.send_event(SensorEvent::FailoverActivated {
+                data_type: failover.data_type.display_name().to_string(),
+                from_device_id: failover.from_device_id.clone(),
+                from_sensor_name: failover.from_sensor_name.clone(),
+                to_device_id: failover.to_device_id.clone(),
+                to_sensor_name: failover.to_sensor_name.clone(),
+            });
+        }
+
+        failovers
+    }
+
+    /// Clear the primary selection for a data type.
+    pub async fn clear_primary_sensor(&self, data_type: DataType) {
+        self.conflict_detector.lock().await.clear_primary(data_type);
+    }
+
+    // ========================================================================
+    // Power Meter Wake-Up Detection Methods
+    // ========================================================================
+
+    /// Register a discovered sensor with the power meter wake-up detector.
+    ///
+    /// This should be called when a sensor is discovered to update the
+    /// wake-up detection state. If the sensor is a power meter that was
+    /// expected, it will be marked as found.
+    pub async fn record_power_meter_discovered(&self, sensor: &DiscoveredSensor) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .record_discovered(sensor);
+    }
+
+    /// Check for power meter wake-up hints.
+    ///
+    /// Returns hints for expected power meters that haven't been found yet.
+    /// This should be called periodically during discovery (e.g., every 2-5 seconds)
+    /// to check if any hints should be shown to the user.
+    pub async fn check_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector.lock().await.check_for_hints()
+    }
+
+    /// Get all current power meter wake-up hints.
+    pub async fn get_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_hints()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Get unshown power meter wake-up hints.
+    pub async fn get_unshown_power_meter_hints(&self) -> Vec<WakeUpHint> {
+        self.power_meter_detector
+            .lock()
+            .await
+            .get_unshown_hints()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Mark a power meter wake-up hint as shown.
+    pub async fn mark_power_meter_hint_shown(&self, device_id: &str) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .mark_hint_shown(device_id);
+    }
+
+    /// Mark all power meter wake-up hints as shown.
+    pub async fn mark_all_power_meter_hints_shown(&self) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .mark_all_hints_shown();
+    }
+
+    /// Check if any expected power meters are missing.
+    pub async fn has_missing_power_meters(&self) -> bool {
+        self.power_meter_detector.lock().await.missing_count() > 0
+    }
+
+    /// Get the number of expected power meters.
+    pub async fn expected_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.expected_count()
+    }
+
+    /// Get the number of found power meters.
+    pub async fn found_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.found_count()
+    }
+
+    /// Get the number of missing power meters.
+    pub async fn missing_power_meter_count(&self) -> usize {
+        self.power_meter_detector.lock().await.missing_count()
+    }
+
+    /// Check if all expected power meters have been found.
+    pub async fn all_power_meters_found(&self) -> bool {
+        self.power_meter_detector.lock().await.all_found()
+    }
+
+    /// Check if there are any expected power meters.
+    pub async fn has_expected_power_meters(&self) -> bool {
+        self.power_meter_detector.lock().await.has_expected()
+    }
+
+    /// Register an expected power meter manually.
+    ///
+    /// This is useful when you want to expect a power meter that isn't
+    /// in the cache (e.g., from user preferences or previous sessions).
+    pub async fn expect_power_meter(
+        &self,
+        device_id: String,
+        name: String,
+        protocol: Protocol,
+    ) {
+        self.power_meter_detector
+            .lock()
+            .await
+            .register_expected(device_id, name, protocol);
+    }
+
+    /// Get the power meter wake-up configuration.
+    pub async fn power_meter_wake_up_config(&self) -> PowerMeterWakeUpConfig {
+        self.power_meter_detector.lock().await.config().clone()
+    }
+
+    /// Set the power meter wake-up configuration.
+    pub async fn set_power_meter_wake_up_config(&self, config: PowerMeterWakeUpConfig) {
+        self.power_meter_detector.lock().await.set_config(config);
+    }
+
+    /// Clear all power meter wake-up state.
+    ///
+    /// This resets the detector to its initial state, clearing all
+    /// expectations, found sensors, and hints.
+    pub async fn clear_power_meter_detection(&self) {
+        self.power_meter_detector.lock().await.clear();
     }
 }

@@ -1,0 +1,256 @@
+# Build Progress: Enhanced Bluetooth/ANT+ Reliability
+
+## Status: In Progress
+
+## Completed Subtasks
+
+### 1.1 - Add parallel BLE/ANT+ discovery (COMPLETED)
+- Modified `src/sensors/manager.rs` to implement concurrent BLE/ANT+ scanning
+- Added `start_concurrent_discovery()` method using `tokio::join!` for true parallelism
+- Added `start_ble_discovery()` helper method for BLE-specific scanning
+- Added `prepare_ant_discovery()` wrapper for concurrent execution
+- Added `start_discovery_timeout()` helper to manage discovery timeout
+- Created `ParallelDiscoveryResult` struct in `src/sensors/types.rs`
+- Added unit tests in `tests/unit/parallel_discovery_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
+### 1.2 - Implement device caching for fast reconnection (COMPLETED)
+- Created `src/sensors/cache.rs` with SensorCache and CachedSensor structs
+- CachedSensor stores device_id, name, sensor_type, protocol, last_connected, connection_count
+- SensorCache provides JSON-based persistence at {data_dir}/sensor_cache.json
+- Added priority-based reconnection (preferred sensors first, then by usage count)
+- Integrated cache into SensorManager:
+  - Cache loaded on initialization
+  - Sensors cached on successful connection
+  - `fast_reconnect_cached()` for quick device lookup
+  - `connect_preferred_sensors()` for auto-reconnection
+  - Cache saved on shutdown
+- Added stale sensor pruning (sensors not seen in 7+ days)
+- Added nickname and preferred sensor designation support
+- Created comprehensive unit tests in `tests/unit/sensor_cache_test.rs`
+- Updated `src/sensors/mod.rs` with cache exports
+- Updated `tests/unit/mod.rs` with new test module
+
+### 1.3 - Add progressive discovery timeout (COMPLETED)
+- Added progressive timeout types to `src/sensors/types.rs`:
+  - `ProgressiveTimeoutConfig` - configuration for timeout behavior
+    - `initial_scan_secs: 10` - aggressive initial scan period
+    - `extension_period_secs: 5` - extension when sensors still being found
+    - `max_total_secs: 30` - maximum total discovery time
+    - `activity_window_secs: 3` - window for detecting recent activity
+    - `idle_threshold_secs: 5` - time before stopping for idle
+    - Preset configurations: `fast()`, `thorough()`, `disabled()`
+  - `ProgressiveTimeoutState` - tracks discovery progress
+  - `DiscoveryPhase` - Initial/Extended/Completed phases
+  - `TimeoutDecision` - Continue/Extend/Stop decisions
+  - `StopReason` - MaxTimeReached/IdleTimeout/Completed/UserRequested
+  - `DiscoveryProgress` - summary struct for UI display with status_text() and progress_percent()
+- Updated `src/sensors/manager.rs`:
+  - Added `progressive_timeout_state` field to SensorManager
+  - Replaced fixed timeout with progressive timeout in `start_discovery_timeout()`
+  - Added `run_progressive_timeout()` async method that:
+    - Monitors sensor discovery activity every 500ms
+    - Extends scan when sensors are still being discovered
+    - Stops early when idle for too long after finding sensors
+    - Respects maximum total scan time (30s default)
+  - Added `stop_discovery_internal()` helper method
+  - Added public methods: `get_discovery_phase()`, `get_discovery_progress()`,
+    `get_progressive_timeout_config()`, `set_progressive_timeout_config()`
+- Updated `src/sensors/mod.rs` with new type exports
+- Created comprehensive unit tests in `tests/unit/progressive_timeout_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
+### 1.4 - Implement priority-based connection queue (COMPLETED)
+- Created `src/sensors/connection_queue.rs` with:
+  - `SensorPriority` enum - Primary (trainers/power meters) and Secondary (HR/cadence)
+  - `ConnectionQueueEntry` struct - holds sensor with priority, preferred flag, and timing
+  - `ConnectionQueue` struct - priority heap for ordering connections:
+    - Preferred sensors connect first within their priority level
+    - Primary sensors (trainers, power meters) connect before secondary
+    - Secondary sensors (HR, cadence, speed) connect after all primary
+    - FIFO ordering within same priority/preference level
+    - Deduplication by device_id to prevent duplicate entries
+- Updated `src/sensors/manager.rs`:
+  - Added `connection_queue` field to SensorManager
+  - `queue_sensor_for_connection()` - add sensor to queue with auto-priority
+  - `queue_preferred_sensor()` - add preferred sensor with priority boost
+  - `queue_all_discovered()` - queue all discovered sensors
+  - `connect_next_in_queue()` - connect highest priority sensor
+  - `connect_all_in_queue()` - connect all sensors in priority order
+  - `connect_discovered_by_priority()` - convenience method for common flow
+  - Helper methods: `connection_queue_len()`, `is_connection_queue_empty()`,
+    `connection_queue_counts()`, `clear_connection_queue()`, `peek_connection_queue()`
+- Updated `src/sensors/mod.rs` with connection_queue exports
+- Created comprehensive unit tests in `tests/unit/connection_queue_test.rs`
+- Updated `tests/unit/mod.rs` with new test module
+
+### 2.1 - Implement exponential backoff for reconnection (COMPLETED)
+- See implementation_plan.json for details
+
+### 2.2 - Add connection health monitoring (COMPLETED)
+- See implementation_plan.json for details
+
+### 2.3 - Implement reconnection state machine (COMPLETED)
+- Created `src/sensors/connection_state.rs` with:
+  - `ConnectionLifecycleState` enum - Disconnected, Connecting, Connected, Reconnecting
+  - `StateTransition` enum - all valid transitions: Connect, ConnectionSuccess, ConnectionFailed,
+    ConnectionLost, Disconnect, Reconnect, ReconnectionSuccess, ReconnectionFailed,
+    ReconnectionExhausted, Reset
+  - `InvalidTransitionError` - returned when invalid transitions are attempted
+  - `ConnectionStateMachineConfig` - configuration with presets:
+    - `default()` - auto_reconnect true, 5 max attempts, 1s initial delay, 30s max delay
+    - `no_reconnect()` - auto_reconnect false
+    - `aggressive()` - 10 attempts, 500ms initial delay, 15s max delay
+    - `conservative()` - 3 attempts, 2s initial delay, 60s max delay
+  - `ConnectionStateMachine` - per-device state machine with:
+    - Valid transition enforcement (returns error for invalid transitions)
+    - Time tracking (state entered time, connection duration)
+    - Reconnection attempt counting with exhaustion detection
+    - Statistics tracking (total connections, disconnections)
+    - Intentional vs unintentional disconnect tracking
+    - `stats()` method returns `ConnectionStateStats` for UI display
+  - `ConnectionStateManager` - manages multiple device state machines:
+    - Per-device state machine tracking
+    - Bulk queries: get_connected_devices(), get_reconnecting_devices(), get_exhausted_devices()
+    - State-based filtering: get_devices_in_state()
+- Updated `src/sensors/mod.rs` with new exports
+- Created comprehensive unit tests in `tests/unit/connection_state_test.rs`:
+  - Basic state tests and display formatting
+  - Configuration preset tests
+  - Full connection flow tests (Disconnected -> Connecting -> Connected)
+  - Reconnection flow tests (Connected -> Reconnecting -> Connected/Disconnected)
+  - Reconnection exhaustion tests
+  - Invalid transition tests
+  - Statistics tests
+  - ConnectionStateManager tests for multi-device tracking
+  - Real-world scenario tests (trainer workout, HR failure, multi-sensor)
+- Updated `tests/unit/mod.rs` with new test module
+
+### 2.4 - Add persistent reconnection across app restarts (COMPLETED)
+- Created `src/sensors/persistence.rs` with:
+  - `SessionSensor` struct - stores sensor connection state:
+    - device_id, name, sensor_type, protocol
+    - connected_at, last_data_at timestamps
+    - is_primary flag for primary sensors
+    - was_healthy flag for connection health status
+  - `ConnectionSession` struct - represents a connection session:
+    - started_at, last_updated_at timestamps
+    - sensors HashMap for tracking connected sensors
+    - clean_shutdown flag to detect crashes vs intentional exits
+    - app_version for compatibility tracking
+    - Methods: add_sensor(), remove_sensor(), reconnection_priority()
+    - Priority sorting: primary first, healthy before unhealthy, then by sensor type
+  - `ConnectionSessionManager` - manages session persistence:
+    - JSON-based persistence at {data_dir}/sensor_session.json
+    - Auto-save on sensor connect/disconnect
+    - Session staleness detection (24 hour max age)
+    - Reconnection target ordering by priority
+    - Clean shutdown tracking for crash recovery
+  - `PersistenceError` enum for error handling
+- Updated `src/sensors/manager.rs`:
+  - Added `session_manager` field to SensorManager
+  - Session loaded on initialization
+  - Sensor recorded in session on successful connection
+  - Sensor removed from session on intentional disconnect
+  - Session prepared for clean shutdown in shutdown()
+  - New public methods:
+    - `has_reconnectable_session()` - check for previous session
+    - `get_session_reconnection_targets()` - get sensors to reconnect
+    - `get_session_reconnection_device_ids()` - get device IDs to reconnect
+    - `reconnect_previous_session()` - auto-reconnect to previous sensors
+    - `start_new_session()` - start fresh session
+    - `session_sensor_count()` - get current session sensor count
+    - `was_session_clean_shutdown()` - check if last session ended cleanly
+    - `clear_session()` - clear the current session
+- Updated `src/sensors/mod.rs` with persistence exports
+- Created comprehensive unit tests in `tests/unit/persistence_test.rs`:
+  - SessionSensor creation and update tests
+  - ConnectionSession add/remove/query tests
+  - Reconnection priority ordering tests
+  - SessionManager save/load tests
+  - Real-world scenario tests (workout session, crash recovery)
+- Updated `tests/unit/mod.rs` with new test module
+
+## Phase 1: Enhanced Discovery & Fast Connection - COMPLETE
+
+## Phase 2: Robust Automatic Reconnection - COMPLETE (4/4 complete)
+
+## Status: Phase 2 Complete - Ready for Phase 3
+
+## Implementation Plan Created
+- 6 phases with 24 total subtasks
+- Estimated effort: 3-4 days
+
+## Phases Overview
+
+### Phase 1: Enhanced Discovery & Fast Connection (4 subtasks)
+- Parallel BLE/ANT+ discovery
+- Device caching for fast reconnection
+- Progressive discovery timeout
+- Priority-based connection queue
+
+### Phase 2: Robust Automatic Reconnection (4 subtasks)
+- Exponential backoff for reconnection
+- Connection health monitoring
+- Reconnection state machine
+- Persistent reconnection across restarts
+
+### Phase 3: Connection Quality Monitoring & UI (5 subtasks)
+- ConnectionQuality tracking module
+- RSSI polling for connected sensors
+- ConnectionQualityIndicator UI widget
+- Quality indicators in sensor setup screen
+- Quality indicator in ride HUD
+
+### Phase 4: Sensor Conflict Resolution (5 subtasks)
+- DualProtocolDetector implementation
+- Protocol preference storage
+- Sensor conflict detector
+- Conflict resolution dialog UI
+- Automatic primary sensor failover
+
+### Phase 5: Power Meter Pairing Improvements (4 subtasks)
+- Power meter wake-up detection
+- Extended discovery for power meters
+- Calibration reminder system
+- Zero-offset calibration flow
+
+### Phase 6: Integration & Testing (4 subtasks)
+- Full discovery flow integration test
+- Reconnection stress test
+- CLI commands update
+- Troubleshooting documentation
+
+## Key Files to Modify
+- src/sensors/manager.rs (core modifications)
+- src/sensors/types.rs (new types)
+- src/sensors/mod.rs (module exports)
+- src/ui/screens/sensor_setup.rs (UI improvements)
+- src/ui/widgets/sensor_status.rs (quality indicators)
+
+## New Files to Create
+- src/sensors/cache.rs (device caching)
+- src/sensors/connection_queue.rs (priority queue)
+- src/sensors/reconnection.rs (backoff logic)
+- src/sensors/health.rs (connection health)
+- src/sensors/connection_state.rs (state machine)
+- src/sensors/persistence.rs (session persistence)
+- src/sensors/quality.rs (quality tracking)
+- src/sensors/dual_protocol.rs (dual protocol detection)
+- src/sensors/conflict.rs (conflict detection)
+- src/sensors/power_meter.rs (power meter specifics)
+- src/sensors/calibration.rs (calibration tracking)
+- src/ui/widgets/connection_quality.rs (quality widget)
+- src/ui/dialogs/sensor_conflict.rs (conflict dialog)
+- src/ui/dialogs/calibration.rs (calibration dialog)
+
+## Dependencies
+- btleplug (BLE communication)
+- rusb (ANT+ USB dongle)
+- tokio (async runtime)
+- crossbeam (channel communication)
+
+## Notes
+- Existing codebase has foundation for discovery and reconnection
+- Focus on improving reliability, adding quality monitoring
+- Better UX for conflict resolution and power meter pairing
