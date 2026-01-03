@@ -4,6 +4,7 @@
 
 use super::{MqttConfig, MqttError, MqttEvent, QoS};
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS as RumqttcQoS};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
@@ -75,6 +76,8 @@ pub struct DefaultMqttClient {
     client: Arc<RwLock<Option<AsyncClient>>>,
     /// Handle to the spawned event loop task (for aborting on disconnect)
     event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
+    /// Whether auto-reconnection is enabled (disabled on manual disconnect)
+    reconnect_enabled: Arc<AtomicBool>,
 }
 
 impl Default for DefaultMqttClient {
@@ -94,14 +97,21 @@ impl DefaultMqttClient {
             event_tx,
             client: Arc::new(RwLock::new(None)),
             event_loop_handle: Arc::new(RwLock::new(None)),
+            reconnect_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Spawn a task to poll the event loop and handle MQTT events
+    /// Spawn a task to poll the event loop and handle MQTT events.
+    /// When a recoverable error occurs and reconnection is enabled, this will
+    /// automatically spawn a reconnection attempt.
     fn spawn_event_loop_task(
         mut event_loop: EventLoop,
         state: Arc<RwLock<ConnectionState>>,
+        config: Arc<RwLock<Option<MqttConfig>>>,
         event_tx: broadcast::Sender<MqttEvent>,
+        client: Arc<RwLock<Option<AsyncClient>>>,
+        event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
+        reconnect_enabled: Arc<AtomicBool>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
@@ -110,7 +120,20 @@ impl DefaultMqttClient {
                         Self::handle_event(event, &state, &event_tx).await;
                     }
                     Err(e) => {
+                        let is_recoverable = Self::is_recoverable_error(&e);
                         Self::handle_connection_error(e, &state, &event_tx).await;
+
+                        // If error is recoverable and reconnection is enabled, start reconnection
+                        if is_recoverable && reconnect_enabled.load(Ordering::SeqCst) {
+                            Self::spawn_reconnection_task(
+                                Arc::clone(&state),
+                                Arc::clone(&config),
+                                event_tx.clone(),
+                                Arc::clone(&client),
+                                Arc::clone(&event_loop_handle),
+                                Arc::clone(&reconnect_enabled),
+                            );
+                        }
                         break;
                     }
                 }
@@ -250,44 +273,104 @@ impl DefaultMqttClient {
         }
     }
 
-    /// Start the reconnection loop (reserved for future use)
-    #[allow(dead_code)]
-    async fn start_reconnect_loop(
+    /// Spawn a reconnection task that will attempt to reconnect to the broker.
+    /// The task will wait for the configured reconnection interval, then attempt
+    /// to create a new connection. It tracks reconnection attempts and emits
+    /// Reconnecting events.
+    fn spawn_reconnection_task(
         state: Arc<RwLock<ConnectionState>>,
         config: Arc<RwLock<Option<MqttConfig>>>,
         event_tx: broadcast::Sender<MqttEvent>,
+        client: Arc<RwLock<Option<AsyncClient>>>,
+        event_loop_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
+        reconnect_enabled: Arc<AtomicBool>,
     ) {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::spawn(async move {
+            let mut attempt: u32 = 0;
 
-            let current_state = state.read().await.clone();
-            let cfg = config.read().await.clone();
-
-            match current_state {
-                ConnectionState::Reconnecting { attempt } => {
-                    if let Some(cfg) = cfg {
-                        let _ = event_tx.send(MqttEvent::Reconnecting { attempt });
-
-                        // TODO: Actually attempt reconnection
-                        tracing::info!("Attempting MQTT reconnection (attempt {})", attempt);
-
-                        // Simulate reconnection delay
-                        let delay = Duration::from_secs(cfg.reconnect_interval_secs as u64);
-                        tokio::time::sleep(delay).await;
-
-                        // For now, just increment attempt counter
-                        *state.write().await = ConnectionState::Reconnecting {
-                            attempt: attempt + 1,
-                        };
-
-                        // In real implementation, would attempt connection here
-                        // and transition to Connected on success
-                    }
+            loop {
+                // Check if reconnection is still enabled (user might disconnect manually)
+                if !reconnect_enabled.load(Ordering::SeqCst) {
+                    tracing::info!("MQTT reconnection disabled, stopping reconnection attempts");
+                    *state.write().await = ConnectionState::Disconnected;
+                    let _ = event_tx.send(MqttEvent::Disconnected);
+                    break;
                 }
-                ConnectionState::Disconnected => break,
-                _ => {}
+
+                // Get the config, bail if it's been cleared
+                let cfg = match config.read().await.clone() {
+                    Some(cfg) => cfg,
+                    None => {
+                        tracing::warn!("MQTT config cleared, stopping reconnection");
+                        *state.write().await = ConnectionState::Disconnected;
+                        let _ = event_tx.send(MqttEvent::Disconnected);
+                        break;
+                    }
+                };
+
+                attempt += 1;
+                *state.write().await = ConnectionState::Reconnecting { attempt };
+                let _ = event_tx.send(MqttEvent::Reconnecting { attempt });
+
+                tracing::info!(
+                    "MQTT reconnection attempt {} to {}:{}",
+                    attempt,
+                    cfg.broker_host,
+                    cfg.broker_port
+                );
+
+                // Wait for the configured reconnection interval before attempting
+                let delay = Duration::from_secs(cfg.reconnect_interval_secs as u64);
+                tokio::time::sleep(delay).await;
+
+                // Check again if reconnection is still enabled after sleeping
+                if !reconnect_enabled.load(Ordering::SeqCst) {
+                    tracing::info!("MQTT reconnection disabled during delay, stopping");
+                    *state.write().await = ConnectionState::Disconnected;
+                    let _ = event_tx.send(MqttEvent::Disconnected);
+                    break;
+                }
+
+                // Create new MQTT options and client
+                let mut mqtt_options = MqttOptions::new(
+                    &cfg.client_id,
+                    &cfg.broker_host,
+                    cfg.broker_port,
+                );
+                mqtt_options.set_keep_alive(Duration::from_secs(cfg.keep_alive_secs as u64));
+
+                // TODO (subtask 3.1): Add TLS configuration when use_tls is enabled
+                // TODO (subtask 3.2): Add credentials from keyring when username is set
+
+                // Create new AsyncClient and EventLoop
+                let (new_client, eventloop) = AsyncClient::new(mqtt_options, 10);
+
+                // Store the new client
+                *client.write().await = Some(new_client);
+
+                // Update state to connecting for this attempt
+                *state.write().await = ConnectionState::Connecting;
+
+                // Spawn new event loop task
+                let handle = Self::spawn_event_loop_task(
+                    eventloop,
+                    Arc::clone(&state),
+                    Arc::clone(&config),
+                    event_tx.clone(),
+                    Arc::clone(&client),
+                    Arc::clone(&event_loop_handle),
+                    Arc::clone(&reconnect_enabled),
+                );
+                *event_loop_handle.write().await = Some(handle);
+
+                tracing::debug!("MQTT reconnection attempt {} initiated", attempt);
+
+                // The event loop task will handle connection success/failure.
+                // If it fails with a recoverable error, it will spawn another
+                // reconnection task automatically, so we can exit this task.
+                break;
             }
-        }
+        });
     }
 }
 
@@ -308,6 +391,9 @@ impl MqttClient for DefaultMqttClient {
 
         *self.state.write().await = ConnectionState::Connecting;
         *self.config.write().await = Some(config.clone());
+
+        // Enable auto-reconnection for this connection
+        self.reconnect_enabled.store(true, Ordering::SeqCst);
 
         tracing::info!(
             "Connecting to MQTT broker at {}:{}",
@@ -338,7 +424,11 @@ impl MqttClient for DefaultMqttClient {
         let handle = Self::spawn_event_loop_task(
             eventloop,
             Arc::clone(&self.state),
+            Arc::clone(&self.config),
             self.event_tx.clone(),
+            Arc::clone(&self.client),
+            Arc::clone(&self.event_loop_handle),
+            Arc::clone(&self.reconnect_enabled),
         );
         *self.event_loop_handle.write().await = Some(handle);
 
@@ -348,6 +438,9 @@ impl MqttClient for DefaultMqttClient {
     }
 
     async fn disconnect(&self) -> Result<(), MqttError> {
+        // Disable auto-reconnection first to prevent reconnection tasks from running
+        self.reconnect_enabled.store(false, Ordering::SeqCst);
+
         // Abort the event loop task if running
         if let Some(handle) = self.event_loop_handle.write().await.take() {
             handle.abort();
@@ -551,5 +644,24 @@ mod tests {
     fn test_is_recoverable_error_network_unreachable() {
         let error = rumqttc::ConnectionError::NetworkUnreachable;
         assert!(DefaultMqttClient::is_recoverable_error(&error));
+    }
+
+    #[test]
+    fn test_reconnect_enabled_initial_false() {
+        let client = DefaultMqttClient::new();
+        // Auto-reconnection is disabled by default
+        assert!(!client.reconnect_enabled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_disables_reconnection() {
+        let client = DefaultMqttClient::new();
+        // Manually enable reconnection
+        client.reconnect_enabled.store(true, Ordering::SeqCst);
+        assert!(client.reconnect_enabled.load(Ordering::SeqCst));
+
+        // Disconnect should disable it
+        let _ = client.disconnect().await;
+        assert!(!client.reconnect_enabled.load(Ordering::SeqCst));
     }
 }
