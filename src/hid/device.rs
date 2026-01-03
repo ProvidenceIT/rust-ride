@@ -2,7 +2,8 @@
 //!
 //! Handles detection and management of USB HID devices.
 
-use super::{HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
+use super::{find_known_device, HidConfig, HidDeviceEvent, HidError, KNOWN_DEVICES};
+use hidapi::HidApi;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
@@ -135,21 +136,67 @@ impl HidDeviceManager for DefaultHidDeviceManager {
     fn scan_devices(&self) -> Vec<HidDevice> {
         tracing::info!("Scanning for HID devices...");
 
-        let found = Vec::new();
+        let mut found = Vec::new();
 
-        // TODO: Use hidapi to enumerate devices
-        // let api = HidApi::new().unwrap();
-        // for device in api.device_list() {
-        //     if let Some(known) = find_known_device(device.vendor_id(), device.product_id()) {
-        //         found.push(HidDevice::new(
-        //             device.vendor_id(),
-        //             device.product_id(),
-        //             known.name.to_string(),
-        //         ));
-        //     }
-        // }
+        // Initialize the HID API
+        let api = match HidApi::new() {
+            Ok(api) => api,
+            Err(e) => {
+                tracing::error!("Failed to initialize HID API: {}", e);
+                return found;
+            }
+        };
 
-        tracing::debug!("Found {} HID devices", found.len());
+        // Enumerate all connected HID devices
+        for device_info in api.device_list() {
+            let vendor_id = device_info.vendor_id();
+            let product_id = device_info.product_id();
+
+            // Check if this is a known/supported device
+            if let Some(known) = find_known_device(vendor_id, product_id) {
+                // Get the serial number if available
+                let serial_number = device_info
+                    .serial_number()
+                    .map(|s| s.to_string());
+
+                // Create the HID device struct
+                let mut device = HidDevice::new(
+                    vendor_id,
+                    product_id,
+                    known.name.to_string(),
+                );
+                device.serial_number = serial_number;
+
+                tracing::debug!(
+                    "Found known HID device: {} (VID:{:04X} PID:{:04X}{})",
+                    known.name,
+                    vendor_id,
+                    product_id,
+                    device.serial_number
+                        .as_ref()
+                        .map(|s| format!(" SN:{}", s))
+                        .unwrap_or_default()
+                );
+
+                // Avoid adding duplicate devices (same VID:PID:Serial)
+                let is_duplicate = found.iter().any(|d: &HidDevice| {
+                    d.vendor_id == vendor_id
+                        && d.product_id == product_id
+                        && d.serial_number == device.serial_number
+                });
+
+                if !is_duplicate {
+                    found.push(device);
+                }
+            }
+        }
+
+        tracing::info!("Found {} HID device(s)", found.len());
+
+        // Update our internal device list
+        if let Ok(mut devices) = self.devices.try_write() {
+            *devices = found.clone();
+        }
 
         found
     }
