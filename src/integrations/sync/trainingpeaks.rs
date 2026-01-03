@@ -7,7 +7,7 @@ use super::{SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use crate::workouts::types::{
     CadenceTarget, PowerTarget, SegmentType, Workout, WorkoutFormat, WorkoutSegment,
 };
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -835,6 +835,123 @@ impl TrainingPeaksClient {
 
         Ok(())
     }
+
+    /// Fetch scheduled workouts for a date range
+    ///
+    /// Retrieves all workouts scheduled within the specified date range from
+    /// the TrainingPeaks API. The date range is inclusive of both start and end dates.
+    ///
+    /// # Arguments
+    /// * `start_date` - The start date of the range (inclusive)
+    /// * `end_date` - The end date of the range (inclusive)
+    ///
+    /// # Returns
+    /// A vector of `TPWorkout` structs representing the scheduled workouts.
+    ///
+    /// # Errors
+    /// * `NotConfigured` - If no access token is configured
+    /// * `RateLimited` - If TrainingPeaks' rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
+    /// * `ApiError` - If the API returned an error response
+    pub async fn get_scheduled_workouts(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<Vec<TPWorkout>, SyncError> {
+        let token = self
+            .access_token
+            .read()
+            .await
+            .clone()
+            .ok_or(SyncError::NotConfigured(SyncPlatform::TrainingPeaks))?;
+
+        tracing::debug!(
+            "Fetching TrainingPeaks workouts from {} to {}",
+            start_date,
+            end_date
+        );
+
+        // Format dates as YYYY-MM-DD for the API query parameters
+        let start_date_str = start_date.format("%Y-%m-%d").to_string();
+        let end_date_str = end_date.format("%Y-%m-%d").to_string();
+
+        let url = format!(
+            "{}/workouts?startDate={}&endDate={}",
+            self.base_url, start_date_str, end_date_str
+        );
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    SyncError::Timeout(DEFAULT_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    SyncError::NetworkError(format!("Failed to fetch workouts: {}", e))
+                }
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("TrainingPeaks API rate limit exceeded");
+            return Err(SyncError::RateLimited);
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!(
+                "TrainingPeaks API returned 401 Unauthorized - token may be expired or revoked"
+            );
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<TrainingPeaksApiError>(&body) {
+                tracing::error!("TrainingPeaks workout fetch failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "TrainingPeaks error: {}",
+                    error_response
+                )));
+            }
+            tracing::error!(
+                "TrainingPeaks workout fetch failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::ApiError(format!(
+                "Failed to fetch workouts with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response - API returns an array of workouts
+        let workouts: Vec<TPWorkout> = serde_json::from_str(&body).map_err(|e| {
+            SyncError::ApiError(format!("Failed to parse workouts response: {}", e))
+        })?;
+
+        tracing::info!(
+            "Fetched {} workouts from TrainingPeaks for {} to {}",
+            workouts.len(),
+            start_date,
+            end_date
+        );
+
+        Ok(workouts)
+    }
 }
 
 /// TrainingPeaks upload status
@@ -1334,6 +1451,18 @@ mod tests {
         let client = TrainingPeaksClient::new();
 
         let result = client.get_athlete().await;
+
+        assert!(matches!(result, Err(SyncError::NotConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_without_token_returns_not_configured() {
+        let client = TrainingPeaksClient::new();
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 1, 7).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
 
         assert!(matches!(result, Err(SyncError::NotConfigured(_))));
     }
@@ -2596,5 +2725,264 @@ mod http_mocked_tests {
 
         assert!(result.is_ok());
         assert!(!client.is_configured());
+    }
+
+    // ============================================================================
+    // Get Scheduled Workouts Tests (T011)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_success() {
+        use wiremock::matchers::query_param;
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"[
+            {
+                "Id": 12345,
+                "Title": "Morning Endurance Ride",
+                "Description": "2 hour endurance ride",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-15",
+                "TotalTime": 7200,
+                "TSSPlanned": 100.0,
+                "IFPlanned": 0.70,
+                "Structure": null
+            },
+            {
+                "Id": 12346,
+                "Title": "Sweet Spot Intervals",
+                "Description": "2x20 sweet spot",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-17",
+                "TotalTime": 5400,
+                "TSSPlanned": 80.0,
+                "IFPlanned": 0.85,
+                "Structure": null
+            }
+        ]"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .and(query_param("startDate", "2025-01-15"))
+            .and(query_param("endDate", "2025-01-21"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 1, 21).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
+
+        assert!(result.is_ok());
+        let workouts = result.unwrap();
+        assert_eq!(workouts.len(), 2);
+
+        assert_eq!(workouts[0].id, 12345);
+        assert_eq!(workouts[0].title, "Morning Endurance Ride");
+        assert_eq!(workouts[0].workout_type, "Bike");
+        assert_eq!(workouts[0].workout_day, "2025-01-15");
+        assert_eq!(workouts[0].total_time, Some(7200.0));
+        assert_eq!(workouts[0].tss_planned, Some(100.0));
+
+        assert_eq!(workouts[1].id, 12346);
+        assert_eq!(workouts[1].title, "Sweet Spot Intervals");
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_empty_result() {
+        use wiremock::matchers::query_param;
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .and(query_param("startDate", "2025-02-01"))
+            .and(query_param("endDate", "2025-02-07"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 2, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 2, 7).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
+
+        assert!(result.is_ok());
+        let workouts = result.unwrap();
+        assert!(workouts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 1, 7).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
+
+        assert!(matches!(result, Err(SyncError::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 1, 7).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "Message": "Invalid date range",
+            "ErrorCode": "INVALID_PARAMETERS",
+            "Errors": []
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let start_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2025, 1, 7).unwrap();
+
+        let result = client.get_scheduled_workouts(start_date, end_date).await;
+
+        assert!(
+            matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Invalid date range"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_scheduled_workouts_with_structure() {
+        use wiremock::matchers::query_param;
+
+        let mock_server = MockServer::start().await;
+
+        // Workout with full structure including steps
+        let response_body = r#"[
+            {
+                "Id": 12347,
+                "Title": "VO2max Intervals",
+                "Description": "5x5 min VO2max with 5 min recovery",
+                "WorkoutType": "Bike",
+                "WorkoutDay": "2025-01-20",
+                "TotalTime": 4500,
+                "TSSPlanned": 120.0,
+                "IFPlanned": 0.95,
+                "Structure": {
+                    "PrimaryLengthMetric": "Duration",
+                    "PrimaryIntensityMetric": "Power",
+                    "Steps": [
+                        {
+                            "Type": "Warmup",
+                            "Name": "Warmup",
+                            "Length": 600,
+                            "LengthMetric": "Duration",
+                            "Targets": [
+                                {
+                                    "Type": "Power",
+                                    "MinValue": 100,
+                                    "MaxValue": 150,
+                                    "Unit": "Watts"
+                                }
+                            ]
+                        },
+                        {
+                            "Type": "Interval",
+                            "Name": "VO2max Work",
+                            "Length": 300,
+                            "LengthMetric": "Duration",
+                            "Targets": [
+                                {
+                                    "Type": "Power",
+                                    "MinValue": 320,
+                                    "MaxValue": 350,
+                                    "Unit": "Watts"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]"#;
+
+        Mock::given(method("GET"))
+            .and(path("/workouts"))
+            .and(query_param("startDate", "2025-01-20"))
+            .and(query_param("endDate", "2025-01-20"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = TrainingPeaksClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let date = NaiveDate::from_ymd_opt(2025, 1, 20).unwrap();
+
+        let result = client.get_scheduled_workouts(date, date).await;
+
+        assert!(result.is_ok());
+        let workouts = result.unwrap();
+        assert_eq!(workouts.len(), 1);
+
+        let workout = &workouts[0];
+        assert_eq!(workout.id, 12347);
+        assert_eq!(workout.title, "VO2max Intervals");
+        assert!(workout.structure.is_some());
+
+        let structure = workout.structure.as_ref().unwrap();
+        assert_eq!(structure.primary_length_metric, Some("Duration".to_string()));
+        assert_eq!(structure.primary_intensity_metric, Some("Power".to_string()));
+        assert_eq!(structure.steps.len(), 2);
+
+        assert_eq!(structure.steps[0].step_type, "Warmup");
+        assert_eq!(structure.steps[0].name, Some("Warmup".to_string()));
+        assert_eq!(structure.steps[0].length, Some(600.0));
+
+        assert_eq!(structure.steps[1].step_type, "Interval");
+        assert_eq!(structure.steps[1].name, Some("VO2max Work".to_string()));
+        assert_eq!(structure.steps[1].length, Some(300.0));
     }
 }
