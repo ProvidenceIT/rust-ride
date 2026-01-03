@@ -113,7 +113,8 @@ Date: 2026-01-03
 - [x] Implementation plan created
 - [x] T001: Create companion module structure - COMPLETED (fd8ff10)
 - [x] T002: Define companion API types - COMPLETED (68c5771)
-- [ ] Phase 1 in progress (2/10 subtasks)
+- [x] T003: Implement companion WebSocket server - COMPLETED
+- [ ] Phase 1 in progress (3/10 subtasks)
 - [ ] Phase 2 not started
 
 ## Completed Subtasks
@@ -131,7 +132,19 @@ Date: 2026-01-03
 - All types have Serde serialization with tag-based JSON encoding
 - Commit: 68c5771
 
+### T003: Implement companion WebSocket server
+- Full WebSocket server using tokio-tungstenite
+- Binds to 0.0.0.0 for LAN accessibility with configurable port (default 9876)
+- Multiple concurrent client connections (up to max_connections limit)
+- PIN-based authentication with 6-digit generated PINs
+- Message routing to handlers for all request types
+- Event broadcasting to subscribed clients for metrics streaming
+- Local IP detection for LAN URL generation (with fallback methods)
+- Graceful shutdown with client notification
+- Added rand and tokio net dependencies to Cargo.toml
+- Comprehensive unit tests for server lifecycle
+
 ## Next Steps
-1. Implement WebSocket server (T003)
-2. Implement mDNS service advertisement (T004)
-3. Implement metrics streaming handler (T005)
+1. Implement mDNS service advertisement (T004)
+2. Implement metrics streaming handler (T005)
+3. Implement workout control handlers (T006)

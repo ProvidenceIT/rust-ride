@@ -21,7 +21,7 @@ btleplug = { version = "0.11", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Async Runtime
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
 futures = "0.3"
 
 # Database
@@ -89,6 +89,9 @@ tokio-stream = "0.1"
 
 # Channels
 crossbeam = "0.8"
+
+# Random number generation
+rand = "0.8"
 
 # HTTP Client (for ML cloud API)
 reqwest = { version = "0.11", features = ["json", "rustls-tls", "multipart"], default-features = false }
