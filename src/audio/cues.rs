@@ -211,7 +211,13 @@ pub fn default_templates() -> HashMap<AlertType, CueTemplate> {
 
     templates.insert(
         AlertType::AchievementUnlocked,
-        CueTemplate::simple("Achievement unlocked"),
+        CueTemplate::with_alternatives(
+            "Achievement unlocked! {achievement_name}".to_string(),
+            vec![
+                "New achievement! {achievement_name}".to_string(),
+                "You earned {achievement_name}!".to_string(),
+            ],
+        ),
     );
 
     // General alerts
@@ -320,6 +326,13 @@ impl CueBuilder {
                 if let Some(prev) = previous_value {
                     result = result.replace("{previous}", &format!("{:.1}", prev));
                 }
+            }
+            AlertData::Achievement { achievement_name } => {
+                result = result.replace("{achievement_name}", achievement_name);
+            }
+            AlertData::Custom { message } => {
+                // For custom messages, replace the entire template with the message
+                result = message.clone();
             }
         }
 
@@ -558,5 +571,65 @@ mod tests {
             "Message '{}' should be one of the recovery motivational messages",
             message
         );
+    }
+
+    #[test]
+    fn test_achievement_unlocked_message() {
+        let builder = CueBuilder::new();
+        let context = AlertContext::achievement("Century Rider");
+
+        let message = builder.build(AlertType::AchievementUnlocked, &context);
+
+        // Should include the achievement name
+        assert!(
+            message.contains("Century Rider"),
+            "Message '{}' should contain the achievement name",
+            message
+        );
+
+        // Should be one of the valid achievement announcement patterns
+        let valid_patterns = [
+            "Achievement unlocked! Century Rider",
+            "New achievement! Century Rider",
+            "You earned Century Rider!",
+        ];
+        assert!(
+            valid_patterns.contains(&message.as_str()),
+            "Message '{}' should be one of the valid achievement patterns",
+            message
+        );
+    }
+
+    #[test]
+    fn test_custom_message() {
+        let builder = CueBuilder::new();
+        let custom_message = "Level up! You are now level 10";
+        let context = AlertContext::custom(custom_message);
+
+        // Custom message should replace the entire template
+        let message = builder.build(AlertType::AchievementUnlocked, &context);
+        assert_eq!(message, custom_message);
+    }
+
+    #[test]
+    fn test_achievement_context_creation() {
+        let context = AlertContext::achievement("First Ride");
+        match context.data {
+            AlertData::Achievement { achievement_name } => {
+                assert_eq!(achievement_name, "First Ride");
+            }
+            _ => panic!("Expected Achievement data"),
+        }
+    }
+
+    #[test]
+    fn test_custom_context_creation() {
+        let context = AlertContext::custom("Custom alert message");
+        match context.data {
+            AlertData::Custom { message } => {
+                assert_eq!(message, "Custom alert message");
+            }
+            _ => panic!("Expected Custom data"),
+        }
     }
 }

@@ -312,6 +312,10 @@ pub enum AlertData {
         unit: String,
         previous_value: Option<f32>,
     },
+    /// Achievement unlocked data
+    Achievement { achievement_name: String },
+    /// Custom message (for flexible announcements)
+    Custom { message: String },
 }
 
 impl AlertContext {
@@ -394,6 +398,28 @@ impl AlertContext {
                 value,
                 unit: unit.into(),
                 previous_value,
+            },
+            timestamp: Instant::now(),
+        }
+    }
+
+    /// Create an achievement unlocked context
+    pub fn achievement(name: impl Into<String>) -> Self {
+        Self {
+            data: AlertData::Achievement {
+                achievement_name: name.into(),
+            },
+            timestamp: Instant::now(),
+        }
+    }
+
+    /// Create a custom message context
+    ///
+    /// Use this for flexible announcements that don't fit other categories.
+    pub fn custom(message: impl Into<String>) -> Self {
+        Self {
+            data: AlertData::Custom {
+                message: message.into(),
             },
             timestamp: Instant::now(),
         }
