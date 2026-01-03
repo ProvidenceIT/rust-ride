@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "007-rider-profile-export-import",
+  "spec": "004-add-cadence-zones-system",
   "state": "building",
   "subtasks": {
-    "completed": 18,
-    "total": 27,
+    "completed": 1,
+    "total": 25,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "UI Integration",
+    "current": "Core Cadence Zone Types",
     "id": null,
-    "total": 4
+    "total": 5
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 20,
-    "started_at": "2026-01-02T23:53:06.451074"
+    "number": 3,
+    "started_at": "2026-01-03T06:13:50.063637"
   },
-  "last_update": "2026-01-03T00:49:31.140640"
+  "last_update": "2026-01-03T06:19:33.281964"
 }

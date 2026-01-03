@@ -365,6 +365,16 @@ pub const HR_ZONE_COLORS: [Color; 5] = [
     Color::new(255, 50, 50),   // Z5: Red (Maximum)
 ];
 
+/// Default cadence zone colors (distinct from power/HR colors)
+/// Uses a cyan/teal to magenta progression for visual distinction
+pub const CADENCE_ZONE_COLORS: [Color; 5] = [
+    Color::new(120, 160, 180), // Z1: Steel Blue (Low - climbing/recovery)
+    Color::new(0, 180, 200),   // Z2: Cyan (Economy - efficient spinning)
+    Color::new(0, 170, 150),   // Z3: Teal (Natural - optimal cadence)
+    Color::new(200, 100, 180), // Z4: Orchid (Fast - high cadence)
+    Color::new(255, 50, 180),  // Z5: Hot Pink (Sprint - max cadence)
+];
+
 /// Events emitted when zones change.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
