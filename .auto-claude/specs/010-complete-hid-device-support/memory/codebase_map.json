@@ -16,10 +16,40 @@
       "discovered_at": "2026-01-03T05:34:05.840276+00:00"
     },
     "src/hid/device.rs": {
-      "description": "start_monitoring() now spawns a background tokio task that polls for device changes every 2 seconds. Uses identity_key() method (VID:PID:Serial or path) for device tracking. Emits DeviceConnected/DeviceDisconnected events. Auto-closes handles on disconnect. stop_monitoring() signals task via is_monitoring flag.",
+      "description": "DefaultHidDeviceManager now tracks devices for auto-reconnect using auto_reconnect_targets HashMap keyed by identity_key (VID:PID:Serial or VID:PID:Path). Devices are tracked when opened via open_device() and untracked when closed via close_device(). The monitoring loop checks returning devices against this list.",
       "category": "implementation",
-      "discovered_at": "2026-01-03T05:47:19.687289+00:00"
+      "discovered_at": "2026-01-03T05:53:59.674161+00:00"
+    },
+    "src/hid/input.rs": {
+      "description": "HidInputReader now integrates with ButtonInputHandler via with_button_handler() builder method. When set, all RawButtonEvents are forwarded to handler.process_event() which handles mapping lookup and ButtonActionEvent emission. Learning mode captures button codes instead of emitting actions. Uses std::sync::Mutex (not tokio::sync::Mutex) for device_handles to match device.rs.",
+      "category": "integration",
+      "discovered_at": "2026-01-03T06:21:29.757516+00:00"
+    },
+    "src/hid/streamdeck.rs": {
+      "description": "New Stream Deck protocol module with StreamDeckModel enum (Original, Mini, XL, MK.2, Pedal) and StreamDeckParser for stateful input parsing. Handles model-specific report formats: Original/Mini use 1-byte header, MK.2/XL use 4-byte header, Pedal has no header. Includes grid coordinate utilities and button labeling.",
+      "category": "module",
+      "discovered_at": "2026-01-03T06:06:29.476273+00:00"
+    },
+    "src/hid/generic.rs": {
+      "description": "New generic.rs module for USB button controller support. Implements GenericHidParser with four report formats: Bitmap (gamepad), BytePerButton (foot pedals), KeyboardScanCode (keyboard emulation), and ConsumerControl (media keys). Auto-detection via detect_report_format(). Known device profiles for common foot pedals (Microdia, VEC, Olympus). Human-readable button labels via keyboard_scancode_name().",
+      "category": "architecture",
+      "discovered_at": "2026-01-03T06:14:28.311689+00:00"
+    },
+    "src/hid/executor.rs": {
+      "description": "Created DefaultActionExecutor implementing ActionExecutor trait. Handles all ButtonAction types via dependency injection (WorkoutEngine, RideRecorder, AudioEngine, FanController). Uses AppContext struct for ride/workout state tracking. Emits ActionResult and ExecutorEvent via broadcast channels. LapMarker struct tracks lap times during rides. NavigationTarget enum for UI navigation events. Builder pattern for dependency injection (with_workout_engine, with_audio_engine, etc.).",
+      "category": "implementation",
+      "discovered_at": "2026-01-03T06:28:03.902248+00:00"
+    },
+    "src/workouts/engine.rs": {
+      "description": "Added restart_segment() method that resets elapsed time to start of current segment. Calculates segment start by summing previous segment durations, resets total_elapsed_seconds, clears extension and ramp state, and emits IntervalRestarted event.",
+      "category": "workout_engine",
+      "discovered_at": "2026-01-03T06:36:01.647358+00:00"
+    },
+    "src/recording/recorder.rs": {
+      "description": "Added LapMarker struct and lap tracking to RideRecorder. LapMarker captures lap_number, elapsed_seconds, distance_meters, avg_power, avg_hr. Methods: add_lap() creates lap with calculated averages since last lap, get_laps(), has_laps(), lap_count(). Lap markers cleared on start() and discard().",
+      "category": "recording",
+      "discovered_at": "2026-01-03T06:36:01.704425+00:00"
     }
   },
-  "last_updated": "2026-01-03T05:47:19.687289+00:00"
+  "last_updated": "2026-01-03T06:36:01.704425+00:00"
 }

@@ -160,7 +160,7 @@
           "id": "2.4",
           "title": "Wire input events through ButtonInputHandler",
           "description": "Connect the HID input reading to the existing ButtonInputHandler to process raw events and emit mapped actions.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "files": [
             "src/hid/device.rs",
@@ -172,7 +172,8 @@
             "ButtonActionEvent emitted when mapping exists",
             "Learning mode captures button codes correctly"
           ],
-          "notes": "The mapping infrastructure already exists, just needs to be wired up."
+          "notes": "Implemented HID input to ButtonInputHandler wiring:\n\n- Added button_handler field to HidInputReader (Option<Arc<DefaultButtonInputHandler>>)\n- Added with_button_handler() builder method for integration\n- Modified start() to clone button_handler and forward events in the read loop\n- Each RawButtonEvent is now sent to both:\n  1. The broadcast channel for external subscribers\n  2. The ButtonInputHandler.process_event() for mapping lookup and action emission\n- Fixed Mutex import consistency (std::sync::Mutex to match device.rs)\n- Exported ButtonActionEvent from mod.rs for external consumers\n- Added 4 comprehensive tests:\n  - test_input_reader_with_button_handler\n  - test_input_reader_builder_pattern\n  - test_button_handler_receives_events\n  - test_learning_mode_captures_button\n  - test_learning_mode_ignores_mappings\n\nThe complete event pipeline is now: HID device \u2192 input reader \u2192 raw event \u2192 button handler \u2192 mapping lookup \u2192 action event",
+          "updated_at": "2026-01-03T06:21:22.504100+00:00"
         }
       ]
     },
@@ -186,7 +187,7 @@
           "id": "3.1",
           "title": "Implement DefaultActionExecutor",
           "description": "Create a concrete implementation of the ActionExecutor trait that handles all ButtonAction types by calling appropriate app subsystems.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "high",
           "files": [
             "src/hid/actions.rs",
@@ -199,13 +200,14 @@
             "Emits ActionResult events via broadcast channel",
             "Handles context checking (ride active, workout active, etc.)"
           ],
-          "notes": "Needs access to multiple app subsystems - use dependency injection."
+          "notes": "Implemented DefaultActionExecutor in src/hid/executor.rs:\n\n- Generic struct DefaultActionExecutor<A: AudioEngine, F: FanController>\n- AppContext struct for ride/workout state tracking\n- LapMarker struct for lap time tracking\n- ExecutorEvent enum for UI integration (navigation, fullscreen, custom actions)\n- NavigationTarget enum for view switching\n\nHandles all ButtonAction types:\n- Ride: AddLapMarker, PauseResume, EndRide\n- Workout: SkipInterval, ExtendInterval, RestartInterval (RestartInterval is placeholder)\n- Audio: VolumeUp, VolumeDown, MuteToggle\n- Fan: FanSpeedUp, FanSpeedDown, FanToggle (via MQTT FanController)\n- Navigation: ShowMetrics, ShowMap, ShowWorkout, ToggleFullscreen\n- Camera: Placeholder for 3D world integration\n- Custom: Emit events for external handling\n\nFeatures: builder pattern for DI, broadcast channels for events, context-aware availability, comprehensive tests.",
+          "updated_at": "2026-01-03T06:28:53.120510+00:00"
         },
         {
           "id": "3.2",
           "title": "Integrate with workout engine for ride/workout actions",
           "description": "Wire up ride control actions (pause, lap, end) and workout actions (skip interval, extend, restart) to the workout engine.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "medium",
           "files": [
             "src/hid/executor.rs",
@@ -219,7 +221,8 @@
             "ExtendInterval calls workout_engine.extend_interval()",
             "RestartInterval calls workout_engine.restart_interval()"
           ],
-          "notes": "Need to expose these methods from workout engine if not already available."
+          "notes": "Wired up ride control and workout actions to the workout engine:\n\n- Added restart_segment() method to WorkoutEngine that resets elapsed time to start of current segment\n- Added IntervalRestarted event to WorkoutEvent enum for audio/UI notifications\n- Added LapMarker struct and lap tracking (add_lap, get_laps, has_laps, lap_count) to RideRecorder\n- Wired RestartInterval action in executor to call engine.restart_segment()\n- Wired AddLapMarker action to call ride_recorder.add_lap() in addition to internal tracking\n- Added 4 comprehensive unit tests for restart_segment functionality\n\nAcceptance criteria met:\n- AddLapMarker triggers ride_recorder.add_lap() \u2713\n- PauseResume toggles ride state (already implemented) \u2713\n- EndRide triggers ride completion flow (already implemented) \u2713\n- SkipInterval calls workout_engine.skip_segment() (already implemented) \u2713\n- ExtendInterval calls workout_engine.extend_segment() (already implemented) \u2713\n- RestartInterval calls workout_engine.restart_segment() \u2713",
+          "updated_at": "2026-01-03T06:36:01.557389+00:00"
         },
         {
           "id": "3.3",
@@ -458,5 +461,5 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T06:14:28.384203+00:00"
+  "last_updated": "2026-01-03T06:36:01.557389+00:00"
 }

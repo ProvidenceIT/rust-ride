@@ -643,13 +643,181 @@ impl<A: AudioEngine + 'static, F: FanController + 'static> ActionExecutor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::DefaultAudioEngine;
-    use crate::integrations::mqtt::{DefaultFanController, DefaultMqttClient};
+    use crate::audio::{AudioError, AudioEvent, AudioItem, DefaultAudioEngine};
+    use crate::integrations::mqtt::{DefaultFanController, DefaultMqttClient, MqttError};
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    // ============================================================================
+    // Mock AudioEngine for testing
+    // ============================================================================
+
+    /// Mock audio engine that tracks set_volume calls
+    struct MockAudioEngine {
+        volume: AtomicU8,
+        set_volume_calls: std::sync::Mutex<Vec<u8>>,
+    }
+
+    impl MockAudioEngine {
+        fn new() -> Self {
+            Self {
+                volume: AtomicU8::new(80),
+                set_volume_calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn get_set_volume_calls(&self) -> Vec<u8> {
+            self.set_volume_calls.lock().unwrap().clone()
+        }
+    }
+
+    impl AudioEngine for MockAudioEngine {
+        fn initialize(&self) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        async fn play_sound(&self, _name: &str) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        async fn speak(&self, _text: &str) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        async fn play_tone(&self, _frequency_hz: u32, _duration_ms: u32) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        fn set_volume(&self, volume: u8) {
+            self.volume.store(volume, Ordering::SeqCst);
+            self.set_volume_calls.lock().unwrap().push(volume);
+        }
+
+        fn get_volume(&self) -> u8 {
+            self.volume.load(Ordering::SeqCst)
+        }
+
+        fn queue(&self, _item: AudioItem) {}
+
+        fn is_playing(&self) -> bool {
+            false
+        }
+
+        fn stop(&self) {}
+
+        fn subscribe_events(&self) -> broadcast::Receiver<AudioEvent> {
+            let (tx, rx) = broadcast::channel(10);
+            drop(tx);
+            rx
+        }
+    }
+
+    // ============================================================================
+    // Mock FanController for testing
+    // ============================================================================
+
+    /// Mock fan controller that tracks set_speed calls
+    struct MockFanController {
+        set_speed_calls: std::sync::Mutex<Vec<(Uuid, u8)>>,
+        should_fail: std::sync::atomic::AtomicBool,
+    }
+
+    impl MockFanController {
+        fn new() -> Self {
+            Self {
+                set_speed_calls: std::sync::Mutex::new(Vec::new()),
+                should_fail: std::sync::atomic::AtomicBool::new(false),
+            }
+        }
+
+        fn set_should_fail(&self, fail: bool) {
+            self.should_fail
+                .store(fail, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        fn get_set_speed_calls(&self) -> Vec<(Uuid, u8)> {
+            self.set_speed_calls.lock().unwrap().clone()
+        }
+    }
+
+    impl FanController for MockFanController {
+        fn configure(&self, _profiles: Vec<crate::integrations::mqtt::FanProfile>) {}
+
+        async fn start(&self) -> Result<(), MqttError> {
+            Ok(())
+        }
+
+        async fn stop(&self) -> Result<(), MqttError> {
+            Ok(())
+        }
+
+        fn update_metrics(
+            &self,
+            _power: u16,
+            _hr: Option<u8>,
+            _power_zone: u8,
+            _hr_zone: Option<u8>,
+        ) {
+        }
+
+        async fn set_speed(&self, profile_id: &Uuid, speed: u8) -> Result<(), MqttError> {
+            if self
+                .should_fail
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(MqttError::NotConnected);
+            }
+            self.set_speed_calls
+                .lock()
+                .unwrap()
+                .push((*profile_id, speed));
+            Ok(())
+        }
+
+        fn get_states(
+            &self,
+        ) -> std::collections::HashMap<Uuid, crate::integrations::mqtt::FanState> {
+            std::collections::HashMap::new()
+        }
+
+        async fn test_fan(&self, _profile_id: &Uuid) -> Result<(), MqttError> {
+            Ok(())
+        }
+
+        fn set_auto_mode(&self, _profile_id: &Uuid, _enabled: bool) {}
+    }
+
+    // ============================================================================
+    // Test Helpers
+    // ============================================================================
 
     // Helper to create test executor
     fn create_test_executor(
     ) -> DefaultActionExecutor<DefaultAudioEngine, DefaultFanController<DefaultMqttClient>> {
         DefaultActionExecutor::new()
+    }
+
+    /// Create executor with mock audio engine
+    fn create_executor_with_mock_audio(
+    ) -> (DefaultActionExecutor<MockAudioEngine, MockFanController>, Arc<MockAudioEngine>) {
+        let audio = Arc::new(MockAudioEngine::new());
+        let executor = DefaultActionExecutor::<MockAudioEngine, MockFanController>::new()
+            .with_audio_engine(audio.clone());
+        (executor, audio)
+    }
+
+    /// Create executor with mock fan controller and profile
+    fn create_executor_with_mock_fan(
+    ) -> (
+        DefaultActionExecutor<MockAudioEngine, MockFanController>,
+        Arc<MockFanController>,
+        Uuid,
+    ) {
+        let fan = Arc::new(MockFanController::new());
+        let profile_id = Uuid::new_v4();
+        let executor = DefaultActionExecutor::<MockAudioEngine, MockFanController>::new()
+            .with_fan_controller(fan.clone())
+            .with_fan_profile(profile_id);
+        (executor, fan, profile_id)
     }
 
     #[test]
@@ -877,5 +1045,261 @@ mod tests {
                 _ => panic!("Expected CustomAction event"),
             }
         }
+    }
+
+    // ============================================================================
+    // Audio Integration Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_volume_up_calls_audio_engine() {
+        let (executor, audio) = create_executor_with_mock_audio();
+
+        let result = executor.execute_audio_action(&ButtonAction::VolumeUp).await;
+        assert!(result.is_ok());
+
+        // Verify set_volume was called with the correct value
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], 90); // Default 80 + 10
+    }
+
+    #[tokio::test]
+    async fn test_volume_down_calls_audio_engine() {
+        let (executor, audio) = create_executor_with_mock_audio();
+
+        let result = executor
+            .execute_audio_action(&ButtonAction::VolumeDown)
+            .await;
+        assert!(result.is_ok());
+
+        // Verify set_volume was called
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], 70); // Default 80 - 10
+    }
+
+    #[tokio::test]
+    async fn test_mute_toggle_calls_audio_engine() {
+        let (executor, audio) = create_executor_with_mock_audio();
+
+        // Mute - should set volume to 0
+        let result = executor
+            .execute_audio_action(&ButtonAction::MuteToggle)
+            .await;
+        assert!(result.is_ok());
+        assert!(executor.is_muted());
+
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], 0);
+
+        // Unmute - should restore previous volume
+        let result = executor
+            .execute_audio_action(&ButtonAction::MuteToggle)
+            .await;
+        assert!(result.is_ok());
+        assert!(!executor.is_muted());
+
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1], 80); // Restored to default
+    }
+
+    #[tokio::test]
+    async fn test_volume_clamped_at_100() {
+        let (executor, audio) = create_executor_with_mock_audio();
+
+        // Set volume near max
+        *executor.volume_level.write().unwrap() = 95;
+
+        // Volume up should clamp at 100
+        let result = executor.execute_audio_action(&ButtonAction::VolumeUp).await;
+        assert!(result.is_ok());
+        assert_eq!(executor.get_volume(), 100);
+
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls[0], 100);
+    }
+
+    #[tokio::test]
+    async fn test_volume_clamped_at_0() {
+        let (executor, audio) = create_executor_with_mock_audio();
+
+        // Set volume near min
+        *executor.volume_level.write().unwrap() = 5;
+
+        // Volume down should clamp at 0
+        let result = executor
+            .execute_audio_action(&ButtonAction::VolumeDown)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(executor.get_volume(), 0);
+
+        let calls = audio.get_set_volume_calls();
+        assert_eq!(calls[0], 0);
+    }
+
+    // ============================================================================
+    // Fan Integration Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_fan_speed_up_calls_controller() {
+        let (executor, fan, profile_id) = create_executor_with_mock_fan();
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+        assert!(result.is_ok());
+
+        // Verify set_speed was called
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, profile_id);
+        assert_eq!(calls[0].1, 60); // Default 50 + 10
+    }
+
+    #[tokio::test]
+    async fn test_fan_speed_down_calls_controller() {
+        let (executor, fan, profile_id) = create_executor_with_mock_fan();
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedDown)
+            .await;
+        assert!(result.is_ok());
+
+        // Verify set_speed was called
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, profile_id);
+        assert_eq!(calls[0].1, 40); // Default 50 - 10
+    }
+
+    #[tokio::test]
+    async fn test_fan_toggle_calls_controller() {
+        let (executor, fan, profile_id) = create_executor_with_mock_fan();
+
+        // Turn fan on
+        let result = executor.execute_fan_action(&ButtonAction::FanToggle).await;
+        assert!(result.is_ok());
+        assert!(executor.is_fan_on());
+
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, profile_id);
+        assert_eq!(calls[0].1, 50); // Use current speed
+
+        // Turn fan off
+        let result = executor.execute_fan_action(&ButtonAction::FanToggle).await;
+        assert!(result.is_ok());
+        assert!(!executor.is_fan_on());
+
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].1, 0); // Speed 0 = off
+    }
+
+    #[tokio::test]
+    async fn test_fan_action_without_controller() {
+        let executor = DefaultActionExecutor::<MockAudioEngine, MockFanController>::new();
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+
+        // Should fail gracefully with NotAvailable error
+        assert!(matches!(result, Err(ActionError::NotAvailable(_))));
+        if let Err(ActionError::NotAvailable(msg)) = result {
+            assert!(msg.contains("Fan controller not available"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fan_action_without_profile() {
+        let fan = Arc::new(MockFanController::new());
+        // Create executor with fan controller but NO profile
+        let executor = DefaultActionExecutor::<MockAudioEngine, MockFanController>::new()
+            .with_fan_controller(fan);
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+
+        // Should fail gracefully with NotAvailable error
+        assert!(matches!(result, Err(ActionError::NotAvailable(_))));
+        if let Err(ActionError::NotAvailable(msg)) = result {
+            assert!(msg.contains("No fan profile configured"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fan_action_mqtt_error_handling() {
+        let (executor, fan, _profile_id) = create_executor_with_mock_fan();
+
+        // Configure mock to fail
+        fan.set_should_fail(true);
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+
+        // Should fail gracefully with ExecutionFailed error
+        assert!(matches!(result, Err(ActionError::ExecutionFailed(_))));
+        if let Err(ActionError::ExecutionFailed(msg)) = result {
+            assert!(msg.contains("Not connected"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fan_speed_clamped_at_100() {
+        let (executor, fan, _profile_id) = create_executor_with_mock_fan();
+
+        // Set speed near max
+        *executor.fan_speed.write().unwrap() = 95;
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(executor.get_fan_speed(), 100);
+
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls[0].1, 100);
+    }
+
+    #[tokio::test]
+    async fn test_fan_speed_clamped_at_0() {
+        let (executor, fan, _profile_id) = create_executor_with_mock_fan();
+
+        // Set speed near min
+        *executor.fan_speed.write().unwrap() = 5;
+
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedDown)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(executor.get_fan_speed(), 0);
+
+        let calls = fan.get_set_speed_calls();
+        assert_eq!(calls[0].1, 0);
+
+        // Fan should be off when speed is 0
+        assert!(!executor.is_fan_on());
+    }
+
+    #[tokio::test]
+    async fn test_fan_speed_up_turns_fan_on() {
+        let (executor, _fan, _profile_id) = create_executor_with_mock_fan();
+
+        // Initially off
+        assert!(!executor.is_fan_on());
+
+        // Speed up should turn fan on
+        let result = executor
+            .execute_fan_action(&ButtonAction::FanSpeedUp)
+            .await;
+        assert!(result.is_ok());
+        assert!(executor.is_fan_on());
     }
 }
