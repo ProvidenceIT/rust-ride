@@ -277,8 +277,9 @@
             "Test combination of filters"
           ],
           "estimated_effort": "small",
-          "status": "pending",
-          "dependencies": ["P2.6"]
+          "status": "completed",
+          "dependencies": ["P2.6"],
+          "completion_notes": "Added 20 comprehensive integration tests for ExportOptions filtering in a new export_options_filtering_tests module. Tests verify: (1) Individual include flags correctly exclude data types when disabled (PDC, training load, CP model, fitness profile), (2) *_only() convenience methods exclude all other data types, (3) Date range filtering works for training load data, (4) Partial date ranges (start only, end only) filter correctly, (5) Multiple exclusions work together, (6) All-disabled options returns empty export with metadata, (7) JSON output respects filtering options, (8) Data integrity is preserved through filtering. Tests use in-memory database with full test data to verify the complete filtering pipeline from ExportOptions through AnalyticsExporter.build_export_with_options()."
         }
       ]
     },
