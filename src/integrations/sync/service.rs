@@ -10,6 +10,7 @@
 
 use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenResponse, TokenStatus};
 use super::strava::StravaClient;
+use super::trainingpeaks::TrainingPeaksClient;
 use super::{PlatformConfig, SyncConfig, SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use crate::storage::sync_store::{
     delete_fit_from_queue, load_fit_from_queue, save_fit_for_queue, StoredPlatformSync,
@@ -443,6 +444,7 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
 /// Client for a specific platform
 enum PlatformClient {
     Strava(StravaClient),
+    TrainingPeaks(TrainingPeaksClient),
 }
 
 impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync + 'static>
@@ -475,6 +477,10 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         // Initialize platform clients
         let mut clients = HashMap::new();
         clients.insert(SyncPlatform::Strava, PlatformClient::Strava(StravaClient::new()));
+        clients.insert(
+            SyncPlatform::TrainingPeaks,
+            PlatformClient::TrainingPeaks(TrainingPeaksClient::new()),
+        );
 
         let service = Self {
             receiver,
@@ -890,6 +896,20 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     Err(SyncError::NotConfigured(platform))
                 }
             }
+            SyncPlatform::TrainingPeaks => {
+                if let Some(PlatformClient::TrainingPeaks(client)) = self.clients.get(&platform) {
+                    client
+                        .upload_activity(
+                            &entry.record.ride_id,
+                            &entry.fit_data,
+                            entry.activity_name.as_deref(),
+                            None, // description
+                        )
+                        .await
+                } else {
+                    Err(SyncError::NotConfigured(platform))
+                }
+            }
             _ => Err(SyncError::NotConfigured(platform)),
         };
 
@@ -1078,17 +1098,17 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 )
             }
             SyncError::RateLimited => {
-                "Too many requests to Strava. Please wait a few minutes before trying again.".to_string()
+                "Too many requests to the sync service. Please wait a few minutes before trying again.".to_string()
             }
             SyncError::TokenExpired => {
-                "Your Strava connection has expired. Please reconnect your account in Settings.".to_string()
+                "Your connection has expired. Please reconnect your account in Settings.".to_string()
             }
             SyncError::AuthorizationRequired => {
-                "Please connect your Strava account in Settings to sync activities.".to_string()
+                "Please connect your account in Settings to sync activities.".to_string()
             }
             SyncError::NetworkError(details) => {
                 if details.contains("Connection failed") {
-                    "Unable to connect to Strava. Please check your internet connection.".to_string()
+                    "Unable to connect to the sync service. Please check your internet connection.".to_string()
                 } else {
                     format!("A network error occurred: {}. Please try again.", details)
                 }
@@ -1354,6 +1374,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                         PlatformClient::Strava(strava) => {
                             strava.set_access_token(new_tokens.access_token.clone()).await;
                         }
+                        PlatformClient::TrainingPeaks(trainingpeaks) => {
+                            trainingpeaks.set_access_token(new_tokens.access_token.clone()).await;
+                        }
                     }
                 }
 
@@ -1449,7 +1472,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
     async fn load_stored_credentials(&mut self) {
         tracing::debug!("Loading stored credentials");
 
-        for platform in [SyncPlatform::Strava] {
+        for platform in [SyncPlatform::Strava, SyncPlatform::TrainingPeaks] {
             if self.credential_store.has_credentials(platform) {
                 match self.credential_store.get_tokens(platform).await {
                     Ok(Some(tokens)) => {
@@ -1460,6 +1483,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                             match client {
                                 PlatformClient::Strava(strava) => {
                                     strava.set_access_token(tokens.access_token.clone()).await;
+                                }
+                                PlatformClient::TrainingPeaks(trainingpeaks) => {
+                                    trainingpeaks.set_access_token(tokens.access_token.clone()).await;
                                 }
                             }
                         }
@@ -1507,6 +1533,12 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
             match client {
                 PlatformClient::Strava(strava) => {
                     if let Err(e) = strava.deauthorize().await {
+                        tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
+                        // Continue anyway - we still want to clear local credentials
+                    }
+                }
+                PlatformClient::TrainingPeaks(trainingpeaks) => {
+                    if let Err(e) = trainingpeaks.deauthorize().await {
                         tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
                         // Continue anyway - we still want to clear local credentials
                     }
@@ -2274,5 +2306,99 @@ mod tests {
         let max_manual_retries = MAX_UPLOAD_RETRIES * 2;
         assert!(max_manual_retries >= 10);
         assert!(max_manual_retries <= 20);
+    }
+
+    // ========== TrainingPeaks Integration Tests ==========
+
+    #[tokio::test]
+    async fn test_get_trainingpeaks_status_not_connected() {
+        let oauth_handler = DefaultOAuthHandler::new(8896);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let status = handle.get_status(SyncPlatform::TrainingPeaks).await.unwrap();
+        assert!(!status.connected);
+        assert!(status.token_status.is_none());
+        assert_eq!(status.pending_uploads, 0);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_queue_trainingpeaks_upload_requires_connection() {
+        let oauth_handler = DefaultOAuthHandler::new(8897);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let result = handle
+            .queue_upload(
+                Uuid::new_v4(),
+                SyncPlatform::TrainingPeaks,
+                vec![0u8; 100],
+                Some("Test Ride".to_string()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_trainingpeaks_config() {
+        let oauth_handler = DefaultOAuthHandler::new(8898);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let new_config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+
+        handle
+            .update_config(SyncPlatform::TrainingPeaks, new_config.clone())
+            .await
+            .unwrap();
+
+        let status = handle.get_status(SyncPlatform::TrainingPeaks).await.unwrap();
+        assert!(status.config.enabled);
+        assert!(status.config.auto_sync);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn test_trainingpeaks_sync_event_debug() {
+        // Verify SyncEvent variants can be formatted with TrainingPeaks
+        let event = SyncEvent::TokenRefreshed {
+            platform: SyncPlatform::TrainingPeaks,
+            expires_at: Utc::now(),
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("TokenRefreshed"));
+        assert!(debug_str.contains("TrainingPeaks"));
+
+        let event = SyncEvent::UploadStarted {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::TrainingPeaks,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadStarted"));
+        assert!(debug_str.contains("TrainingPeaks"));
+    }
+
+    #[test]
+    fn test_platform_client_enum_trainingpeaks() {
+        // Verify TrainingPeaks client can be created as PlatformClient variant
+        let trainingpeaks_client = TrainingPeaksClient::new();
+        let platform_client = PlatformClient::TrainingPeaks(trainingpeaks_client);
+
+        match platform_client {
+            PlatformClient::TrainingPeaks(client) => {
+                assert!(!client.is_configured());
+            }
+            _ => panic!("Expected TrainingPeaks variant"),
+        }
     }
 }

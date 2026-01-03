@@ -1,0 +1,40 @@
+{
+  "discovered_files": {
+    "src/integrations/sync/trainingpeaks.rs": {
+      "description": "T014: TrainingPeaksSyncManager handles periodic workout plan syncing. Key types: WorkoutSyncConfig (lookahead/lookback days, FTP, auto_sync_enabled, sync_interval_hours, cycling_only), WorkoutSyncResult (stats for fetched/converted/new/skipped/errors), ImportedWorkout (workout + external_id + scheduled_date + planned_tss/if). Manager methods: sync_workouts() for configured date range, sync_workouts_for_range() for custom range, get_workout() for single workout. Tracks synced IDs via mark_synced()/is_synced()/load_synced_ids(). Uses is_cycling_workout() to filter non-bike workouts. Default: 14 days lookahead, 7 days lookback, 6 hour sync interval.",
+      "category": "implementation",
+      "discovered_at": "2026-01-03T14:42:33.468777+00:00"
+    },
+    "src/integrations/sync/oauth.rs": {
+      "description": "TrainingPeaks OAuth uses standard OAuth2 with expires_in (seconds until expiry) rather than expires_at (Unix timestamp) like Strava. Token endpoint at oauth.trainingpeaks.com/oauth/token requires redirect_uri in token exchange request. Error responses use standard OAuth2 error/error_description format.",
+      "category": "API Pattern",
+      "discovered_at": "2026-01-03T13:51:14.825277+00:00"
+    },
+    "src/integrations/sync/service.rs": {
+      "description": "SyncService uses PlatformClient enum to support multiple platforms. To add a new platform: 1) Add variant to PlatformClient enum, 2) Initialize client in spawn_with_db(), 3) Add match arm in process_single_upload(), 4) Update check_and_refresh_token() token setting, 5) Update handle_disconnect() for deauthorization, 6) Add platform to load_stored_credentials() list.",
+      "category": "architecture",
+      "discovered_at": "2026-01-03T14:08:56.280713+00:00"
+    },
+    "src/workouts/types.rs": {
+      "description": "WorkoutFormat enum extended with TrainingPeaks variant to identify workouts synced from TrainingPeaks API.",
+      "category": "types",
+      "discovered_at": "2026-01-03T14:17:12.675388+00:00"
+    },
+    "src/workouts/library.rs": {
+      "description": "T016: TrainingPeaksWorkoutStore added to handle persistence of TrainingPeaks-synced workouts. Key types: StoredTrainingPeaksWorkout (workout + external_id + scheduled_date + planned_tss/if + synced_at), TrainingPeaksSyncRecord (sync tracking). Methods: save_imported_workout(), is_workout_synced(), get_local_workout_id(), get_by_external_id(), get_workouts_by_date_range(), get_all_synced_workouts(), get_sync_records(), delete_synced_workout(), clear_all_synced(). Uses ON CONFLICT for upsert behavior on re-sync.",
+      "category": "architecture",
+      "discovered_at": "2026-01-03T14:49:48.921540+00:00"
+    },
+    "src/storage/schema.rs": {
+      "description": "T016: MIGRATION_V9_TO_V10 adds TrainingPeaks workout sync columns to workouts table: external_id TEXT, external_platform TEXT, scheduled_date TEXT, planned_tss REAL, planned_if REAL. Also creates trainingpeaks_workout_sync table for tracking synced workouts with external_workout_id, local_workout_id, scheduled_date, synced_at, last_modified, sync_hash. Schema version bumped to 10.",
+      "category": "database",
+      "discovered_at": "2026-01-03T14:49:49.061638+00:00"
+    },
+    "src/storage/sync_store.rs": {
+      "description": "T017: Added TrainingPeaks workout sync tracking to sync_store.rs. New types: TrainingPeaksWorkoutSyncSummary (sync overview with total count, last sync time, date range), TrainingPeaksWorkoutSyncEntry (individual sync record with external_workout_id, local_workout_id, scheduled_date, synced_at, last_modified, sync_hash), TrainingPeaksWorkoutSyncConfig (auto_sync_enabled, lookahead/lookback days, sync_interval_hours, cycling_only). SyncStore methods: get_trainingpeaks_workout_sync_summary(), get/record/delete workout syncs, is_trainingpeaks_workout_synced(), get_local_workout_id_for_trainingpeaks(), get_external_workout_id_for_local(), is_trainingpeaks_workout_sync_due(), get_upcoming/recently_synced workouts.",
+      "category": "trainingpeaks-sync",
+      "discovered_at": "2026-01-03T15:02:36.467907+00:00"
+    }
+  },
+  "last_updated": "2026-01-03T15:02:36.467907+00:00"
+}

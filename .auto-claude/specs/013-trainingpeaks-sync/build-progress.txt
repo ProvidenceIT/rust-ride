@@ -1,0 +1,411 @@
+# TrainingPeaks Sync - Build Progress
+
+## Overview
+Add TrainingPeaks OAuth integration for uploading completed rides and downloading structured workout plans.
+
+## Estimated Total: 51.5 hours
+
+---
+
+## Phase 1: TrainingPeaks OAuth Integration (8 hours)
+- [x] T001: Create TrainingPeaks API client module (2h) ✅
+- [x] T002: Implement TrainingPeaks OAuth token exchange (3h) ✅
+- [x] T003: Implement athlete profile fetch (1.5h) ✅
+- [x] T004: Implement deauthorize functionality (1h) ✅
+- [x] T005: Add TrainingPeaks OAuth scopes (0.5h) ✅
+
+## Phase 2: Activity Upload Implementation (7.5 hours)
+- [x] T006: Implement FIT file upload to TrainingPeaks (3h) ✅
+- [x] T007: Add upload status checking (1.5h) ✅
+- [x] T008: Integrate TrainingPeaks with SyncService (2h) ✅
+- [x] T009: Add duplicate activity detection (1h) ✅
+
+## Phase 3: Workout Plan Download (12 hours)
+- [x] T010: Define TrainingPeaks workout API types (2h) ✅
+- [x] T011: Implement scheduled workouts fetch (2.5h) ✅
+- [x] T012: Implement workout detail fetch (2h) ✅
+- [x] T013: Create TrainingPeaks to internal workout converter (3h) ✅
+- [x] T014: Add workout plan sync manager (2.5h) ✅
+
+## Phase 4: Workout Library Integration (5 hours)
+- [x] T015: Add TrainingPeaks source to WorkoutFormat (0.5h) ✅ (done as part of T010)
+- [x] T016: Store TrainingPeaks workouts in database (2h) ✅
+- [x] T017: Add workout sync status tracking (1.5h) ✅
+- [ ] T018: Display TrainingPeaks badge in workout library (1h)
+
+## Phase 5: Settings UI Integration (7.5 hours)
+- [ ] T019: Create TrainingPeaks settings screen (3h)
+- [ ] T020: Add TrainingPeaks sync settings (1.5h)
+- [ ] T021: Add workout sync controls to settings (2h)
+- [ ] T022: Integrate TrainingPeaks into main settings screen (1h)
+
+## Phase 6: Sync Status UI (5 hours)
+- [ ] T023: Add TrainingPeaks to sync notification widget (1.5h)
+- [ ] T024: Show upload status on ride summary (1.5h)
+- [ ] T025: Add sync history view (2h)
+
+## Phase 7: Testing (7.5 hours)
+- [x] T026: Add unit tests for TrainingPeaksClient (4h) ✅
+- [ ] T027: Add integration tests for workout conversion (2h)
+- [ ] T028: Add UI component tests (1.5h)
+
+---
+
+## Acceptance Criteria Mapping
+- AC1 (OAuth): T001, T002, T003, T004, T005, T019
+- AC2 (Upload rides): T006, T007, T008, T009
+- AC3 (Download workouts): T010, T011, T012, T013, T014
+- AC4 (Workout library): T015, T016, T017, T018
+- AC5 (Sync status UI): T023, T024, T025
+
+---
+
+## Session Log
+
+### 2026-01-03 - Initial Planning
+- Created implementation_plan.json with 7 phases, 28 subtasks
+- Analyzed existing codebase patterns:
+  - Strava OAuth implementation in src/integrations/sync/strava.rs
+  - OAuth handler in src/integrations/sync/oauth.rs
+  - Training plans module structure
+  - Workout types in src/workouts/types.rs
+  - UI patterns in settings_strava.rs
+- TrainingPeaks already listed in SyncPlatform enum
+- Ready to begin Phase 1 implementation
+
+### 2026-01-03 - T002: TrainingPeaks OAuth Token Exchange
+- Added TrainingPeaksTokenResponse struct for parsing OAuth token responses
+  - Uses standard OAuth2 snake_case format with expires_in (seconds)
+- Added TrainingPeaksOAuthErrorResponse struct with Display impl
+  - Handles error/error_description OAuth2 error format
+- Added trainingpeaks_token_url field to DefaultOAuthHandler
+- Implemented exchange_trainingpeaks_token() method:
+  - Sends POST to oauth.trainingpeaks.com/oauth/token
+  - Includes redirect_uri in token request (required by TrainingPeaks)
+  - Parses expires_in as Duration rather than expires_at timestamp
+  - Proper error handling with TrainingPeaks-specific error parsing
+- Implemented refresh_trainingpeaks_token() method:
+  - Handles token refresh with standard OAuth2 grant_type=refresh_token
+  - Detects invalid_grant/invalid_token errors requiring re-auth
+  - Returns AuthorizationRequired for expired refresh tokens
+- Added TrainingPeaks to handle_callback and refresh_token match arms
+- Added with_token_urls() test helper for mocking both platforms
+- Added comprehensive wiremock tests:
+  - test_trainingpeaks_token_exchange_success
+  - test_trainingpeaks_token_exchange_invalid_code_error
+  - test_trainingpeaks_token_exchange_server_error
+  - test_trainingpeaks_token_refresh_success
+  - test_trainingpeaks_token_refresh_invalid_grant_requires_reauth
+  - test_trainingpeaks_token_refresh_generic_error
+  - test_trainingpeaks_start_authorization_builds_correct_url
+- Added response parsing tests for TrainingPeaks types:
+  - test_trainingpeaks_token_response_deserialization
+  - test_trainingpeaks_error_response_with_description
+  - test_trainingpeaks_error_response_without_description
+  - test_trainingpeaks_error_response_invalid_client
+- Manual verification required (cargo test not available in this environment)
+
+### 2026-01-03 - T003: Athlete Profile Fetch (Already Complete)
+- Verified that get_athlete() was already implemented as part of T001
+- Implementation includes:
+  - TrainingPeaksAthleteResponse struct with PascalCase field renaming (Id, FirstName, LastName, Email, ProfilePhotoUrl)
+  - AthleteProfile public struct with id, firstname, lastname, profile_photo_url fields
+  - display_name() method returning "FirstName LastName" format
+  - get_athlete() method calling GET /athlete/profile with full error handling:
+    - NotConfigured if no token
+    - RateLimited for 429 responses
+    - TokenExpired for 401 responses
+    - ApiError for other failures
+  - Proper logging of athlete fetch operations
+- Tests already present:
+  - test_get_athlete_without_token_returns_not_configured
+  - test_trainingpeaks_athlete_response_deserialization (full fields)
+  - test_trainingpeaks_athlete_response_minimal (null fields)
+  - test_athlete_display_name
+  - HTTP mocked tests: test_get_athlete_success, test_get_athlete_rate_limit, test_get_athlete_unauthorized
+- No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T004: Deauthorize Functionality (Already Complete)
+- Verified that deauthorize() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 751-833):
+  - Gets access token (returns NotConfigured error if not set)
+  - POSTs to /oauth/deauthorize endpoint with bearer auth
+  - **Always clears local token** regardless of API response status
+  - Returns Ok(()) even if API returns rate limit, unauthorized, or other errors
+  - Proper logging for all scenarios
+- Tests already present:
+  - test_deauthorize_without_token_returns_not_configured
+  - test_deauthorize_clears_local_token
+  - HTTP mocked tests: test_deauthorize_success, test_deauthorize_rate_limit_still_succeeds, test_deauthorize_unauthorized_still_succeeds
+- No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T005: OAuth Scopes (Already Complete)
+- Verified that OAuth scopes were already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 865-882):
+  - `pub mod scopes` containing scope constants:
+    - `ATHLETE_PROFILE` = "athlete:profile" - Read athlete profile
+    - `WORKOUTS_READ` = "workouts:read" - Read workouts
+    - `FILE_WRITE` = "file:write" - Write/upload files (activities)
+  - `pub fn default_scopes() -> Vec<String>` returning all required scopes
+- Pattern matches Strava implementation exactly (src/integrations/sync/strava.rs lines 758-777)
+- Tests already present:
+  - test_default_scopes - verifies all three scopes are included
+- No new commit needed - functionality already in T001 commit
+- **Phase 1 Complete!** All OAuth integration subtasks (T001-T005) are now done
+
+### 2026-01-03 - T006: FIT File Upload (Already Complete)
+- Verified that upload_activity() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 362-507):
+  - FIT file validation via validate_fit_file() before upload
+  - Multipart form POST to /v1/file endpoint
+  - Comprehensive error handling:
+    - RateLimited for 429 responses
+    - TokenExpired for 401 responses
+    - DuplicateActivity detection via is_duplicate_error()
+    - ApiError for other failures
+  - Returns SyncRecord with upload_id in external_id for status polling
+- Tests already present:
+  - test_validate_fit_file_* (various validation scenarios)
+  - test_is_duplicate_error_detection
+  - HTTP mocked tests: test_upload_activity_success, test_upload_activity_rate_limit,
+    test_upload_activity_unauthorized, test_upload_activity_api_error,
+    test_upload_activity_duplicate_detection
+- No new commit needed - functionality already in T001 commit
+
+### 2026-01-03 - T007: Upload Status Checking (Already Complete)
+- Verified that check_upload_status() was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs (lines 527-647):
+  - GET request to /v1/file/{upload_id}
+  - Handles rate limiting (429), unauthorized (401), not found (404)
+  - Returns UploadStatus enum:
+    - Processing - still being processed
+    - Ready { file_id: i64 } - successfully processed
+    - Error { error: String } - processing failed
+    - Duplicate { error: String } - duplicate detected during processing
+- UploadStatus enum defined at lines 836-847
+- Tests already present:
+  - test_check_upload_status_without_token_returns_not_configured
+  - test_upload_status_enum_variants
+  - HTTP mocked tests: test_check_upload_status_processing, test_check_upload_status_ready,
+    test_check_upload_status_error, test_check_upload_status_duplicate,
+    test_check_upload_status_not_found
+- No new code commit needed - functionality already in T001 commit
+- Manual verification complete: implementation matches Strava pattern exactly
+
+### 2026-01-03 - T008: SyncService Integration (Already Complete)
+- Verified that TrainingPeaks SyncService integration was already implemented
+- Implementation in src/integrations/sync/service.rs:
+  - Added TrainingPeaks variant to PlatformClient enum (line 447)
+  - TrainingPeaksClient initialized in spawn_with_db (lines 480-483)
+  - TrainingPeaks upload handling in process_single_upload (lines 899-912)
+  - Token refresh handling in check_and_refresh_token (lines 1377-1379)
+  - Disconnect/deauthorize handling in handle_disconnect (lines 1540-1545)
+  - TrainingPeaks included in load_stored_credentials loop (line 1475)
+- Tests already present:
+  - test_get_trainingpeaks_status_not_connected
+  - test_queue_trainingpeaks_upload_requires_connection
+  - test_update_trainingpeaks_config
+  - test_trainingpeaks_sync_event_debug
+  - test_platform_client_enum_trainingpeaks
+- No new commit needed - functionality added in previous session
+
+### 2026-01-03 - T009: Duplicate Activity Detection (Already Complete)
+- Verified that duplicate detection was already implemented as part of T001
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - is_duplicate_error() helper function (lines 315-320)
+    - Detects "duplicate", "already exists", "already uploaded" strings
+  - upload_activity() returns SyncError::DuplicateActivity (lines 454-458)
+  - check_upload_status() returns UploadStatus::Duplicate (lines 619-626)
+  - UploadStatus::Duplicate enum variant defined (line 846)
+- Integration in src/integrations/sync/service.rs:
+  - process_single_upload() handles DuplicateActivity specially (lines 974-991)
+  - Marks upload as completed (not failed) since activity exists
+  - is_retryable_error() marks DuplicateActivity as non-retryable (line 1073)
+  - User-friendly error message in get_user_friendly_error_message() (lines 1082-1086)
+- Tests already present:
+  - test_is_duplicate_error_detection
+  - test_upload_status_duplicate_variant
+  - HTTP mocked: test_upload_activity_duplicate_detection, test_check_upload_status_duplicate
+- No new code commit needed - functionality already in T001 commit
+- **Phase 2 Complete!** All activity upload subtasks (T006-T009) are now done
+
+### 2026-01-03 - T010: TrainingPeaks Workout API Types & Conversion
+- TrainingPeaks workout types (TPWorkout, TPWorkoutStructure, TPWorkoutStep, TPWorkoutTarget) already defined
+- Implemented conversion from TrainingPeaks workout format to internal Workout/WorkoutSegment types
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - TPWorkout::to_workout(ftp) - main conversion method
+  - convert_structure_to_segments() - handles structured workouts or fallback to total_time
+  - convert_step_to_segments() - recursively handles nested repeat steps
+  - step_to_segment() - converts single step to WorkoutSegment
+  - extract_power_target() - handles Power targets (absolute watts or %FTP)
+  - extract_cadence_target() - extracts Cadence targets to CadenceTarget struct
+  - map_step_type_to_segment_type() - maps TP step types (Warmup, Cooldown, Interval, etc.) to SegmentType
+  - WorkoutConversionError - error type for conversion failures
+  - convert_tp_workouts() - batch conversion helper
+- Added WorkoutFormat::TrainingPeaks variant to src/workouts/types.rs (completes T015 early)
+- Comprehensive tests added:
+  - test_workout_conversion_simple - basic workout without structure
+  - test_workout_conversion_with_structure - warmup/intervals/cooldown
+  - test_workout_conversion_with_repeats - 5x3min interval structure
+  - test_workout_conversion_with_cadence_target - power + cadence targets
+  - test_workout_conversion_error_* - error cases
+  - test_map_step_type_to_segment_type - step type mapping
+  - test_power_target_*_conversion - absolute watts and %FTP conversion
+  - test_convert_tp_workouts_batch - batch conversion
+- Commit: 57a5567
+
+### 2026-01-03 - T011: Scheduled Workouts Fetch (Already Complete)
+- Verified that get_scheduled_workouts() was already implemented in previous session
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - GET request to /v1/workouts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+  - Uses NaiveDate for date parameters
+  - Returns Vec<TPWorkout> with full workout structure
+  - Handles rate limiting (429), unauthorized (401), and API errors
+- Tests present:
+  - test_get_scheduled_workouts_without_token_returns_not_configured
+  - test_get_scheduled_workouts_success
+  - test_get_scheduled_workouts_empty_result
+  - test_get_scheduled_workouts_rate_limit
+  - test_get_scheduled_workouts_unauthorized
+  - test_get_scheduled_workouts_api_error
+  - test_get_scheduled_workouts_with_structure
+- No new commit needed - functionality already implemented
+
+### 2026-01-03 - T012: Workout Detail Fetch
+- Implemented get_workout_details() method in TrainingPeaksClient
+- Implementation in src/integrations/sync/trainingpeaks.rs:
+  - GET request to /v1/workouts/{workoutId}
+  - Fetches full workout structure with steps/intervals
+  - Handles rate limiting (429), unauthorized (401), not found (404), and API errors
+  - Returns TPWorkout with complete structure
+- Tests added:
+  - test_get_workout_details_without_token_returns_not_configured
+  - test_get_workout_details_success - verifies full workout parsing with structure
+  - test_get_workout_details_not_found - 404 handling
+  - test_get_workout_details_rate_limit - 429 handling
+  - test_get_workout_details_unauthorized - 401 handling
+  - test_get_workout_details_api_error - 500 error handling
+  - test_get_workout_details_with_repeat_steps - nested repeat structure
+  - test_get_workout_details_without_structure - simple workouts without steps
+- Manual verification required (cargo test not available in this environment)
+
+### 2026-01-03 - T016: Store TrainingPeaks Workouts in Database
+- Added database migration v9 -> v10 in src/storage/schema.rs:
+  - Extended workouts table with: external_id TEXT, external_platform TEXT,
+    scheduled_date TEXT, planned_tss REAL, planned_if REAL
+  - Created trainingpeaks_workout_sync table for sync tracking with
+    external_workout_id, local_workout_id, scheduled_date, synced_at,
+    last_modified, sync_hash
+  - Added indexes for efficient lookups on external ID and scheduled date
+- Updated src/storage/database.rs:
+  - Added MIGRATION_V9_TO_V10 import
+  - Added migration logic for v9 -> v10
+  - Updated into_workout() to handle TrainingPeaks format
+- Implemented TrainingPeaksWorkoutStore in src/workouts/library.rs:
+  - StoredTrainingPeaksWorkout struct for workout + sync metadata
+  - TrainingPeaksSyncRecord struct for sync tracking
+  - save_imported_workout() - persists workout with external ID and TP metadata
+  - is_workout_synced() - checks if external ID already synced
+  - get_local_workout_id() - maps external ID to local UUID
+  - get_by_external_id() - retrieves workout by TP external ID
+  - get_workouts_by_date_range() - queries workouts by scheduled date
+  - get_all_synced_workouts() - lists all synced TP workouts
+  - get_sync_records() - gets sync tracking records
+  - count_synced() - counts synced workouts
+  - delete_synced_workout() - deletes sync record and workout
+  - clear_all_synced() - removes all synced workouts
+  - Uses ON CONFLICT for upsert behavior on re-sync
+- Added 12 comprehensive tests for TrainingPeaksWorkoutStore
+- Commit: d5497f6
+
+### 2026-01-03 - T017: Add Workout Sync Status Tracking (Already Complete)
+- Verified that workout sync tracking was already implemented in commit 3ec8087
+- Implementation in src/storage/sync_store.rs:
+  - TrainingPeaksWorkoutSyncSummary: Overview of sync status with:
+    - total_synced: Total workouts synced
+    - synced_in_range: Workouts in current date range
+    - last_sync_at: Last sync timestamp
+    - auto_sync_enabled: Auto-sync flag
+    - earliest/latest_scheduled_date: Date range of synced workouts
+  - TrainingPeaksWorkoutSyncEntry: Individual sync record with:
+    - id: Unique sync entry ID
+    - external_workout_id: TrainingPeaks workout ID
+    - local_workout_id: Local database workout UUID
+    - scheduled_date: Scheduled date from TrainingPeaks
+    - synced_at: Sync timestamp
+    - last_modified: TrainingPeaks modification date
+    - sync_hash: Content hash for change detection
+  - TrainingPeaksWorkoutSyncConfig: Auto-sync configuration with:
+    - auto_sync_enabled: Enable/disable auto-sync
+    - lookahead_days: Days to look ahead (default 14)
+    - lookback_days: Days to look back (default 7)
+    - sync_interval_hours: Sync frequency (default 6 hours)
+    - cycling_only: Filter for bike workouts only
+- SyncStore methods added:
+  - get_trainingpeaks_workout_sync_summary(): Get sync overview
+  - get_all_trainingpeaks_workout_syncs(): Get all sync entries
+  - get_trainingpeaks_workout_syncs_by_date_range(): Query by date
+  - get_trainingpeaks_workout_sync_by_external_id(): Lookup by TP ID
+  - get_trainingpeaks_workout_sync_by_local_id(): Lookup by local ID
+  - record_trainingpeaks_workout_sync(): Upsert sync entry
+  - is_trainingpeaks_workout_synced(): Check if workout synced
+  - get_local_workout_id_for_trainingpeaks(): External->local ID map
+  - get_external_workout_id_for_local(): Local->external ID map
+  - is_trainingpeaks_workout_sync_due(): Check if sync interval elapsed
+  - get_upcoming_trainingpeaks_workouts(): Future workouts
+  - get_recently_synced_trainingpeaks_workouts(): Recent syncs
+  - update_trainingpeaks_workout_sync_hash(): Update content hash
+  - delete_trainingpeaks_workout_sync(): Delete single entry
+  - clear_all_trainingpeaks_workout_syncs(): Clear all syncs
+- Comprehensive tests included for all functionality
+- Commit: 3ec8087
+- **Phase 4 (T015-T017) Complete!** Remaining: T018 (UI badge)
+
+### 2026-01-03 - T022: Integrate TrainingPeaks into Main Settings Screen
+- Added TrainingPeaks entry to main settings screen with:
+  - Connection status indicator (green dot when connected)
+  - "Settings →" navigation button to TrainingPeaks settings screen
+  - "Connected" / "Not connected" status text
+  - TrainingPeaks teal brand color (rgb(0, 128, 128))
+- Implementation in src/ui/screens/settings.rs:
+  - Added NavigateToStravaSettings and NavigateToTrainingPeaksSettings action variants to SettingsAction enum
+  - Added pending_navigation field to SettingsScreen to track navigation requests
+  - Modified render_sync_section() to:
+    - Show "Settings →" button for Strava and TrainingPeaks (platforms with dedicated settings screens)
+    - Display connection status indicator (●) next to platform name when connected
+    - Keep inline connect/disconnect for other platforms (GarminConnect, IntervalsIcu)
+  - Added check in show() to return pending navigation action
+- Added comprehensive unit tests:
+  - test_settings_action_navigate_to_strava_settings
+  - test_settings_action_navigate_to_trainingpeaks_settings
+  - test_settings_action_navigation_not_equal
+  - test_settings_screen_pending_navigation_initial
+  - test_platform_states_includes_trainingpeaks
+  - test_set_platform_connected_trainingpeaks
+  - test_get_connected_platforms
+- Fixed git conflict marker at end of file
+- Note: app.rs will need to handle NavigateToTrainingPeaksSettings action for navigation (done in parent task)
+
+### 2026-01-03 - T026: Unit Tests for TrainingPeaksClient (Already Complete)
+- Verified comprehensive unit tests already exist in trainingpeaks.rs http_mocked_tests module
+- Tests were written as part of earlier tasks (T001, T002, T010-T014)
+- Total of 90+ unit tests covering all TrainingPeaksClient methods:
+  - **Client Core Tests (7 tests):** Creation, token management, scopes, timeout constants
+  - **Upload Activity Tests (8 HTTP-mocked tests):** Success, rate limit, unauthorized, API errors, duplicate detection, FIT file validation
+  - **Check Upload Status Tests (7 HTTP-mocked tests):** Processing, ready, error, duplicate, not found
+  - **Get Athlete Tests (6 HTTP-mocked tests):** Success, rate limit, unauthorized, deserialization
+  - **Deauthorize Tests (5 HTTP-mocked tests):** Success, rate limit handling, unauthorized handling
+  - **Scheduled Workouts Tests (7 HTTP-mocked tests):** Success, empty result, rate limit, unauthorized, API error, with structure
+  - **Workout Details Tests (8 HTTP-mocked tests):** Success, not found, rate limit, unauthorized, API error, repeat steps
+  - **Workout Conversion Tests (20+ tests):** Power targets (absolute/percent/zones), range targets, cadence, repeats
+  - **TrainingPeaksSyncManager Tests (16+ tests):** Sync operations, cycling filter, tracking synced workouts
+- OAuth tests for TrainingPeaks in oauth.rs:
+  - test_trainingpeaks_token_exchange_success
+  - test_trainingpeaks_token_exchange_invalid_code_error
+  - test_trainingpeaks_token_exchange_server_error
+  - test_trainingpeaks_token_refresh_success
+  - test_trainingpeaks_token_refresh_invalid_grant_requires_reauth
+  - test_trainingpeaks_token_refresh_generic_error
+  - test_trainingpeaks_start_authorization_builds_correct_url
+- All tests use wiremock for HTTP mocking
+- No new code needed - task complete

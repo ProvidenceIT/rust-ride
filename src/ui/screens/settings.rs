@@ -197,6 +197,8 @@ pub struct SettingsScreen {
     pub tv_mode_enabled: bool,
     /// T092: TV Mode font scale (1.5-3.0)
     pub tv_mode_font_scale: f32,
+    /// T022: Pending navigation action from sync section
+    pending_navigation: Option<SettingsAction>,
 }
 
 /// Configuration for a specific alert type (voice vs. sound)
@@ -519,6 +521,10 @@ pub enum SettingsAction {
     TestMqttConnection(MqttConfig),
     /// Test fan by cycling through speeds (profile, mqtt_config)
     TestFan(FanProfile, MqttConfig),
+    /// Navigate to Strava settings screen
+    NavigateToStravaSettings,
+    /// Navigate to TrainingPeaks settings screen
+    NavigateToTrainingPeaksSettings,
 }
 
 impl SettingsScreen {
@@ -594,6 +600,7 @@ impl SettingsScreen {
             restart_onboarding_requested: false,
             tv_mode_enabled: false,
             tv_mode_font_scale: 2.0,
+            pending_navigation: None,
         }
     }
 
@@ -912,6 +919,11 @@ impl SettingsScreen {
                 profile_name: fan_profile.name.clone(),
             };
             return SettingsAction::TestFan(fan_profile, mqtt_config);
+        }
+
+        // T022: Check for pending navigation from sync section
+        if let Some(nav_action) = self.pending_navigation.take() {
+            return nav_action;
         }
 
         // Check if HID device scan was requested
@@ -2823,6 +2835,10 @@ impl SettingsScreen {
                     SyncPlatform::IntervalsIcu,
                 ];
 
+                // T022: Track if we need to navigate to a settings screen
+                let mut navigate_to_strava = false;
+                let mut navigate_to_trainingpeaks = false;
+
                 for platform in platforms {
                     // Get values before closure to avoid borrow conflicts
                     let auto_sync_val = self
@@ -2838,12 +2854,18 @@ impl SettingsScreen {
                         .map(|(_, connected)| *connected)
                         .unwrap_or(false);
 
+                    // T022: Check if this platform has a dedicated settings screen
+                    let has_settings_screen = matches!(
+                        platform,
+                        SyncPlatform::Strava | SyncPlatform::TrainingPeaks
+                    );
+
                     ui.horizontal(|ui| {
                         // Platform name with icon
                         let (icon, icon_color) = match platform {
                             SyncPlatform::Strava => ("", Color32::from_rgb(252, 82, 0)),
                             SyncPlatform::GarminConnect => ("", Color32::from_rgb(0, 135, 200)),
-                            SyncPlatform::TrainingPeaks => ("", Color32::from_rgb(0, 102, 51)),
+                            SyncPlatform::TrainingPeaks => ("", Color32::from_rgb(0, 128, 128)), // TrainingPeaks teal
                             SyncPlatform::IntervalsIcu => ("", Color32::from_rgb(255, 193, 7)),
                             #[cfg(target_os = "macos")]
                             SyncPlatform::HealthKit => ("", Color32::from_rgb(255, 59, 48)),
@@ -2852,57 +2874,105 @@ impl SettingsScreen {
                         ui.label(RichText::new(icon).color(icon_color));
                         ui.label(RichText::new(platform.display_name()).size(14.0).strong());
 
+                        // T022: Connection status indicator
+                        if is_connected {
+                            ui.label(
+                                RichText::new("●")
+                                    .color(Color32::from_rgb(52, 168, 83))
+                                    .size(10.0),
+                            );
+                        }
+
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            // Connect/Disconnect button
-                            if is_connected {
-                                ui.label(
-                                    RichText::new("Connected")
-                                        .color(Color32::from_rgb(52, 168, 83)),
+                            // T022: For platforms with settings screens, show Settings button
+                            if has_settings_screen {
+                                let settings_tooltip = format!(
+                                    "Configure {} settings{}",
+                                    platform.display_name(),
+                                    if !is_connected { " and connect" } else { "" }
                                 );
                                 if ui
-                                    .small_button("Disconnect")
-                                    .on_hover_text("Remove authorization")
+                                    .button("Settings →")
+                                    .on_hover_text(settings_tooltip)
                                     .clicked()
                                 {
-                                    // Mark for disconnect
-                                    if let Some((_, connected)) = self
-                                        .platform_states
-                                        .iter_mut()
-                                        .find(|(p, _)| *p == platform)
-                                    {
-                                        *connected = false;
+                                    match platform {
+                                        SyncPlatform::Strava => navigate_to_strava = true,
+                                        SyncPlatform::TrainingPeaks => navigate_to_trainingpeaks = true,
+                                        _ => {}
                                     }
-                                    self.has_changes = true;
                                 }
-                            } else if ui
-                                .button("Connect")
-                                .on_hover_text(format!("Connect to {}", platform.display_name()))
-                                .clicked()
-                            {
-                                // TODO: Trigger OAuth flow
-                                tracing::info!("Connect to {:?}", platform);
-                            }
 
-                            // Auto-sync checkbox
-                            if is_connected {
-                                let mut auto_sync = auto_sync_val;
-                                if ui
-                                    .checkbox(&mut auto_sync, "Auto-sync")
-                                    .on_hover_text("Automatically sync rides after completion")
-                                    .changed()
-                                {
-                                    if let Some(config) =
-                                        self.sync_config.platforms.get_mut(&platform)
+                                // Connection status text
+                                if is_connected {
+                                    ui.label(
+                                        RichText::new("Connected")
+                                            .color(Color32::from_rgb(52, 168, 83)),
+                                    );
+                                } else {
+                                    ui.label(
+                                        RichText::new("Not connected")
+                                            .weak(),
+                                    );
+                                }
+                            } else {
+                                // For other platforms, use inline connect/disconnect
+                                if is_connected {
+                                    ui.label(
+                                        RichText::new("Connected")
+                                            .color(Color32::from_rgb(52, 168, 83)),
+                                    );
+                                    if ui
+                                        .small_button("Disconnect")
+                                        .on_hover_text("Remove authorization")
+                                        .clicked()
                                     {
-                                        config.auto_sync = auto_sync;
+                                        // Mark for disconnect
+                                        if let Some((_, connected)) = self
+                                            .platform_states
+                                            .iter_mut()
+                                            .find(|(p, _)| *p == platform)
+                                        {
+                                            *connected = false;
+                                        }
+                                        self.has_changes = true;
                                     }
-                                    self.has_changes = true;
+                                } else if ui
+                                    .button("Connect")
+                                    .on_hover_text(format!("Connect to {}", platform.display_name()))
+                                    .clicked()
+                                {
+                                    tracing::info!("Connect to {:?}", platform);
+                                }
+
+                                // Auto-sync checkbox
+                                if is_connected {
+                                    let mut auto_sync = auto_sync_val;
+                                    if ui
+                                        .checkbox(&mut auto_sync, "Auto-sync")
+                                        .on_hover_text("Automatically sync rides after completion")
+                                        .changed()
+                                    {
+                                        if let Some(config) =
+                                            self.sync_config.platforms.get_mut(&platform)
+                                        {
+                                            config.auto_sync = auto_sync;
+                                        }
+                                        self.has_changes = true;
+                                    }
                                 }
                             }
                         });
                     });
 
                     ui.add_space(8.0);
+                }
+
+                // T022: Handle navigation after the loop (to avoid borrow conflicts)
+                if navigate_to_strava {
+                    self.pending_navigation = Some(SettingsAction::NavigateToStravaSettings);
+                } else if navigate_to_trainingpeaks {
+                    self.pending_navigation = Some(SettingsAction::NavigateToTrainingPeaksSettings);
                 }
 
                 ui.add_space(8.0);
@@ -3726,4 +3796,102 @@ impl SettingsScreen {
         self.restart_onboarding_requested = false;
     }
 }
->>>>>>> auto-claude/010-complete-hid-device-support
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_action_navigate_to_strava_settings() {
+        let action = SettingsAction::NavigateToStravaSettings;
+        assert_eq!(action, SettingsAction::NavigateToStravaSettings);
+    }
+
+    #[test]
+    fn test_settings_action_navigate_to_trainingpeaks_settings() {
+        let action = SettingsAction::NavigateToTrainingPeaksSettings;
+        assert_eq!(action, SettingsAction::NavigateToTrainingPeaksSettings);
+    }
+
+    #[test]
+    fn test_settings_action_navigation_not_equal() {
+        assert_ne!(
+            SettingsAction::NavigateToStravaSettings,
+            SettingsAction::NavigateToTrainingPeaksSettings
+        );
+        assert_ne!(
+            SettingsAction::NavigateToStravaSettings,
+            SettingsAction::None
+        );
+        assert_ne!(
+            SettingsAction::NavigateToTrainingPeaksSettings,
+            SettingsAction::None
+        );
+    }
+
+    #[test]
+    fn test_settings_screen_pending_navigation_initial() {
+        let profile = UserProfile::default();
+        let screen = SettingsScreen::new(profile);
+        assert!(screen.pending_navigation.is_none());
+    }
+
+    #[test]
+    fn test_platform_states_includes_trainingpeaks() {
+        let profile = UserProfile::default();
+        let screen = SettingsScreen::new(profile);
+
+        let has_trainingpeaks = screen
+            .platform_states
+            .iter()
+            .any(|(p, _)| *p == SyncPlatform::TrainingPeaks);
+
+        assert!(has_trainingpeaks, "TrainingPeaks should be in platform_states");
+    }
+
+    #[test]
+    fn test_set_platform_connected_trainingpeaks() {
+        let profile = UserProfile::default();
+        let mut screen = SettingsScreen::new(profile);
+
+        // Initially not connected
+        let initial_connected = screen
+            .platform_states
+            .iter()
+            .find(|(p, _)| *p == SyncPlatform::TrainingPeaks)
+            .map(|(_, c)| *c)
+            .unwrap_or(false);
+        assert!(!initial_connected);
+
+        // Set connected
+        screen.set_platform_connected(SyncPlatform::TrainingPeaks, true);
+
+        let connected = screen
+            .platform_states
+            .iter()
+            .find(|(p, _)| *p == SyncPlatform::TrainingPeaks)
+            .map(|(_, c)| *c)
+            .unwrap_or(false);
+        assert!(connected);
+    }
+
+    #[test]
+    fn test_get_connected_platforms() {
+        let profile = UserProfile::default();
+        let mut screen = SettingsScreen::new(profile);
+
+        // Initially no platforms connected
+        assert!(screen.get_connected_platforms().is_empty());
+
+        // Connect TrainingPeaks
+        screen.set_platform_connected(SyncPlatform::TrainingPeaks, true);
+        let connected = screen.get_connected_platforms();
+        assert!(connected.contains(&SyncPlatform::TrainingPeaks));
+
+        // Connect Strava too
+        screen.set_platform_connected(SyncPlatform::Strava, true);
+        let connected = screen.get_connected_platforms();
+        assert!(connected.contains(&SyncPlatform::Strava));
+        assert!(connected.contains(&SyncPlatform::TrainingPeaks));
+    }
+}

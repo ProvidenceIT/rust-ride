@@ -163,6 +163,41 @@ impl std::fmt::Display for StravaErrorResponse {
     }
 }
 
+/// TrainingPeaks OAuth token response from the token endpoint
+/// TrainingPeaks uses standard OAuth2 response format with snake_case field names
+#[derive(Debug, Deserialize)]
+struct TrainingPeaksTokenResponse {
+    /// The access token for API calls
+    access_token: String,
+    /// The refresh token for getting new access tokens
+    refresh_token: String,
+    /// Token lifetime in seconds
+    expires_in: i64,
+    /// Token type (usually "Bearer")
+    #[allow(dead_code)]
+    token_type: String,
+}
+
+/// TrainingPeaks OAuth error response
+#[derive(Debug, Deserialize)]
+struct TrainingPeaksOAuthErrorResponse {
+    /// Error type (e.g., "invalid_grant", "invalid_client")
+    error: String,
+    /// Human-readable error description
+    #[serde(default)]
+    error_description: Option<String>,
+}
+
+impl std::fmt::Display for TrainingPeaksOAuthErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref description) = self.error_description {
+            write!(f, "{}: {}", self.error, description)
+        } else {
+            write!(f, "{}", self.error)
+        }
+    }
+}
+
 /// Default OAuth handler implementation
 #[allow(dead_code)]
 pub struct DefaultOAuthHandler {
@@ -173,10 +208,15 @@ pub struct DefaultOAuthHandler {
     callback_port: u16,
     /// Base URL for Strava OAuth API (overridable for testing)
     strava_token_url: String,
+    /// Base URL for TrainingPeaks OAuth API (overridable for testing)
+    trainingpeaks_token_url: String,
 }
 
 /// Default Strava OAuth token URL
 const STRAVA_TOKEN_URL: &str = "https://www.strava.com/oauth/token";
+
+/// Default TrainingPeaks OAuth token URL
+const TRAININGPEAKS_TOKEN_URL: &str = "https://oauth.trainingpeaks.com/oauth/token";
 
 impl DefaultOAuthHandler {
     /// Create a new OAuth handler
@@ -188,6 +228,7 @@ impl DefaultOAuthHandler {
             http_client: Client::new(),
             callback_port,
             strava_token_url: STRAVA_TOKEN_URL.to_string(),
+            trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
         }
     }
 
@@ -201,6 +242,25 @@ impl DefaultOAuthHandler {
             http_client: Client::new(),
             callback_port,
             strava_token_url,
+            trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
+        }
+    }
+
+    /// Create a new OAuth handler with custom token URLs (for testing)
+    #[cfg(test)]
+    pub fn with_token_urls(
+        callback_port: u16,
+        strava_token_url: String,
+        trainingpeaks_token_url: String,
+    ) -> Self {
+        Self {
+            configs: Arc::new(RwLock::new(HashMap::new())),
+            tokens: Arc::new(RwLock::new(HashMap::new())),
+            pending_states: Arc::new(RwLock::new(HashMap::new())),
+            http_client: Client::new(),
+            callback_port,
+            strava_token_url,
+            trainingpeaks_token_url,
         }
     }
 
@@ -305,6 +365,9 @@ impl OAuthHandler for DefaultOAuthHandler {
             SyncPlatform::Strava => {
                 self.exchange_strava_token(code, config).await?
             }
+            SyncPlatform::TrainingPeaks => {
+                self.exchange_trainingpeaks_token(code, config).await?
+            }
             _ => {
                 // For other platforms, return an error until implemented
                 return Err(SyncError::NotConfigured(platform));
@@ -391,6 +454,79 @@ impl OAuthHandler for DefaultOAuthHandler {
         })
     }
 
+    /// Exchange authorization code for tokens with TrainingPeaks' OAuth endpoint
+    async fn exchange_trainingpeaks_token(
+        &self,
+        code: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::TrainingPeaks))?;
+
+        // Build the token request
+        // TrainingPeaks uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", config.redirect_uri.as_str()),
+        ];
+
+        tracing::debug!("Exchanging authorization code with TrainingPeaks token endpoint");
+
+        let response = self
+            .http_client
+            .post(&self.trainingpeaks_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to send token request: {}", e)))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as TrainingPeaks OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<TrainingPeaksOAuthErrorResponse>(&body) {
+                tracing::error!("TrainingPeaks token exchange failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "TrainingPeaks OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!("TrainingPeaks token exchange failed with status {}: {}", status, body);
+            return Err(SyncError::ApiError(format!(
+                "TrainingPeaks OAuth failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let tp_response: TrainingPeaksTokenResponse = serde_json::from_str(&body)
+            .map_err(|e| SyncError::ApiError(format!("Failed to parse token response: {}", e)))?;
+
+        // TrainingPeaks returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(tp_response.expires_in);
+
+        tracing::info!(
+            "Successfully exchanged code for TrainingPeaks tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: tp_response.access_token,
+            refresh_token: Some(tp_response.refresh_token),
+            expires_at,
+        })
+    }
+
     async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
         let current = self.tokens.read().await.get(&platform).cloned();
 
@@ -409,6 +545,7 @@ impl OAuthHandler for DefaultOAuthHandler {
         // Refresh tokens based on platform
         let new_tokens = match platform {
             SyncPlatform::Strava => self.refresh_strava_token(&refresh, config).await?,
+            SyncPlatform::TrainingPeaks => self.refresh_trainingpeaks_token(&refresh, config).await?,
             _ => {
                 return Err(SyncError::NotConfigured(platform));
             }
@@ -514,6 +651,99 @@ impl OAuthHandler for DefaultOAuthHandler {
         Ok(TokenResponse {
             access_token: strava_response.access_token,
             refresh_token: Some(strava_response.refresh_token),
+            expires_at,
+        })
+    }
+
+    /// Refresh tokens with TrainingPeaks' OAuth endpoint
+    async fn refresh_trainingpeaks_token(
+        &self,
+        refresh_token: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::TrainingPeaks))?;
+
+        // Build the refresh token request
+        // TrainingPeaks uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ];
+
+        tracing::debug!("Refreshing TrainingPeaks access token");
+
+        let response = self
+            .http_client
+            .post(&self.trainingpeaks_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to send refresh token request: {}", e))
+            })?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as TrainingPeaks OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<TrainingPeaksOAuthErrorResponse>(&body) {
+                tracing::error!("TrainingPeaks token refresh failed: {}", error_response);
+
+                // Check if the refresh token is invalid or expired
+                // TrainingPeaks uses standard OAuth2 error codes
+                let requires_reauth = error_response.error == "invalid_grant"
+                    || error_response.error == "invalid_token"
+                    || error_response.error == "unauthorized";
+
+                if requires_reauth {
+                    tracing::warn!(
+                        "TrainingPeaks refresh token is invalid/expired, re-authorization required"
+                    );
+                    return Err(SyncError::AuthorizationRequired);
+                }
+
+                return Err(SyncError::RefreshFailed(format!(
+                    "TrainingPeaks OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!(
+                "TrainingPeaks token refresh failed with status {}: {}",
+                status,
+                body
+            );
+            return Err(SyncError::RefreshFailed(format!(
+                "TrainingPeaks refresh failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let tp_response: TrainingPeaksTokenResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::RefreshFailed(format!("Failed to parse refresh response: {}", e))
+        })?;
+
+        // TrainingPeaks returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(tp_response.expires_in);
+
+        tracing::info!(
+            "Successfully refreshed TrainingPeaks tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: tp_response.access_token,
+            refresh_token: Some(tp_response.refresh_token),
             expires_at,
         })
     }
@@ -1630,6 +1860,255 @@ mod tests {
             assert!(result.is_ok());
             assert!(!handler.is_authorized(SyncPlatform::Strava));
         }
+
+        // === TrainingPeaks OAuth Tests ===
+
+        /// Helper to set up handler with mock server URL for TrainingPeaks
+        async fn setup_trainingpeaks_handler_with_mock_server(
+            mock_server: &MockServer,
+        ) -> DefaultOAuthHandler {
+            let handler = DefaultOAuthHandler::with_token_urls(
+                8888,
+                STRAVA_TOKEN_URL.to_string(),
+                format!("{}/oauth/token", mock_server.uri()),
+            );
+
+            // Configure TrainingPeaks OAuth
+            handler
+                .configure(
+                    SyncPlatform::TrainingPeaks,
+                    OAuthConfig {
+                        client_id: "tp_client_id".to_string(),
+                        client_secret: Some("tp_client_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["athlete:profile".to_string(), "workouts:read".to_string(), "file:write".to_string()],
+                    },
+                )
+                .await;
+
+            // Add a pending state for the callback
+            handler
+                .pending_states
+                .write()
+                .await
+                .insert("tp_test_state".to_string(), SyncPlatform::TrainingPeaks);
+
+            handler
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_exchange_success() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for successful token exchange
+            // TrainingPeaks returns expires_in (seconds) instead of expires_at (timestamp)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=authorization_code"))
+                .and(body_string_contains("code=tp_auth_code"))
+                .and(body_string_contains("client_id=tp_client_id"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "tp_access_token_12345",
+                    "refresh_token": "tp_refresh_token_67890",
+                    "expires_in": 21600  // 6 hours in seconds
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("tp_auth_code", "tp_test_state").await;
+
+            assert!(result.is_ok(), "TrainingPeaks token exchange should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "tp_access_token_12345");
+            assert_eq!(token.refresh_token, Some("tp_refresh_token_67890".to_string()));
+            assert!(handler.is_authorized(SyncPlatform::TrainingPeaks));
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_exchange_invalid_code_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for error response (invalid authorization code)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "invalid_grant",
+                    "error_description": "The authorization code is invalid or expired."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("invalid_code", "tp_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("invalid_grant"), "Error should contain error type");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_exchange_server_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for server error (500)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "tp_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("500"), "Error should contain status code");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_refresh_success() {
+            let mock_server = MockServer::start().await;
+
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .and(body_string_contains("refresh_token=tp_original_refresh"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "tp_new_access_token",
+                    "refresh_token": "tp_new_refresh_token",
+                    "expires_in": 21600
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            // Set up existing tokens
+            handler.tokens.write().await.insert(
+                SyncPlatform::TrainingPeaks,
+                TokenResponse {
+                    access_token: "tp_old_access".to_string(),
+                    refresh_token: Some("tp_original_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1), // Expired
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::TrainingPeaks).await;
+
+            assert!(result.is_ok(), "TrainingPeaks token refresh should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "tp_new_access_token");
+            assert_eq!(token.refresh_token, Some("tp_new_refresh_token".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_refresh_invalid_grant_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns error indicating refresh token is expired
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "invalid_grant",
+                    "error_description": "The refresh token is expired or revoked."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::TrainingPeaks,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("expired_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::TrainingPeaks).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_token_refresh_generic_error() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns a generic error
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "server_error",
+                    "error_description": "An internal error occurred."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_trainingpeaks_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::TrainingPeaks,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("valid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::TrainingPeaks).await;
+
+            assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+        }
+
+        #[tokio::test]
+        async fn test_trainingpeaks_start_authorization_builds_correct_url() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            handler
+                .configure(
+                    SyncPlatform::TrainingPeaks,
+                    OAuthConfig {
+                        client_id: "tp_my_client_id".to_string(),
+                        client_secret: Some("tp_my_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["athlete:profile".to_string(), "workouts:read".to_string()],
+                    },
+                )
+                .await;
+
+            let result = handler.start_authorization(SyncPlatform::TrainingPeaks).await;
+
+            assert!(result.is_ok());
+            let auth_url = result.unwrap();
+            assert!(auth_url.url.contains("client_id=tp_my_client_id"));
+            assert!(auth_url.url.contains("oauth.trainingpeaks.com"));
+            assert!(auth_url.url.contains("redirect_uri="));
+            assert!(auth_url.url.contains("scope="));
+            assert!(auth_url.url.contains("state="));
+            assert!(!auth_url.state.is_empty());
+        }
     }
 
     // === Credential Store Mock Tests ===
@@ -1893,6 +2372,67 @@ mod tests {
             let error: StravaErrorResponse = serde_json::from_str(json).unwrap();
             assert_eq!(error.message, "Authorization Error");
             assert!(error.errors.is_empty()); // Default empty vec
+        }
+
+        // === TrainingPeaks Response Parsing Tests ===
+
+        #[test]
+        fn test_trainingpeaks_token_response_deserialization() {
+            // TrainingPeaks uses standard OAuth2 snake_case format
+            let json = r#"{
+                "token_type": "Bearer",
+                "access_token": "tp_abc123",
+                "refresh_token": "tp_def456",
+                "expires_in": 21600
+            }"#;
+
+            let response: TrainingPeaksTokenResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(response.access_token, "tp_abc123");
+            assert_eq!(response.refresh_token, "tp_def456");
+            assert_eq!(response.expires_in, 21600);
+            assert_eq!(response.token_type, "Bearer");
+        }
+
+        #[test]
+        fn test_trainingpeaks_error_response_with_description() {
+            let json = r#"{
+                "error": "invalid_grant",
+                "error_description": "The authorization code is invalid or expired."
+            }"#;
+
+            let error: TrainingPeaksOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "invalid_grant");
+            assert_eq!(error.error_description, Some("The authorization code is invalid or expired.".to_string()));
+
+            let display = format!("{}", error);
+            assert!(display.contains("invalid_grant"));
+            assert!(display.contains("The authorization code is invalid or expired."));
+        }
+
+        #[test]
+        fn test_trainingpeaks_error_response_without_description() {
+            // Some OAuth errors only have the error code
+            let json = r#"{"error": "server_error"}"#;
+
+            let error: TrainingPeaksOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "server_error");
+            assert_eq!(error.error_description, None);
+            assert_eq!(format!("{}", error), "server_error");
+        }
+
+        #[test]
+        fn test_trainingpeaks_error_response_invalid_client() {
+            let json = r#"{
+                "error": "invalid_client",
+                "error_description": "The client_id or client_secret is incorrect."
+            }"#;
+
+            let error: TrainingPeaksOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "invalid_client");
+
+            let display = format!("{}", error);
+            assert!(display.contains("invalid_client"));
+            assert!(display.contains("client_id or client_secret"));
         }
     }
 }

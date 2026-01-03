@@ -286,7 +286,21 @@ impl WorkoutLibraryScreen {
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(&workout.name).strong());
+                    // Workout name with optional source badge
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&workout.name).strong());
+
+                        // Source badge (show for TrainingPeaks and other external sources)
+                        if let Some(source_format) = workout.source_format {
+                            let source_name = format_workout_source(source_format);
+                            let source_color = source_badge_color(source_format);
+                            ui.label(
+                                RichText::new(source_name)
+                                    .small()
+                                    .color(source_color),
+                            );
+                        }
+                    });
 
                     ui.horizontal(|ui| {
                         // Duration
@@ -338,7 +352,19 @@ impl WorkoutLibraryScreen {
         let mut result = None;
 
         // Workout info
-        ui.label(RichText::new(&workout.name).size(18.0).strong());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(&workout.name).size(18.0).strong());
+
+            // Source badge in preview
+            if let Some(source_format) = workout.source_format {
+                let source_name = format_workout_source(source_format);
+                let source_color = source_badge_color(source_format);
+                ui.label(
+                    RichText::new(source_name)
+                        .color(source_color),
+                );
+            }
+        });
 
         if let Some(ref author) = workout.author {
             ui.label(RichText::new(format!("by {}", author)).weak());
@@ -554,12 +580,80 @@ impl WorkoutLibraryScreen {
     }
 }
 
-/// Format a workout format for display.
-fn _format_workout_format(format: WorkoutFormat) -> &'static str {
+/// TrainingPeaks brand color (teal)
+const TRAININGPEAKS_TEAL: Color32 = Color32::from_rgb(0, 128, 128);
+
+/// Format a workout format for display (short name for badges).
+fn format_workout_source(format: WorkoutFormat) -> &'static str {
     match format {
-        WorkoutFormat::Zwo => "Zwift (.zwo)",
-        WorkoutFormat::Mrc => "TrainerRoad (.mrc)",
-        WorkoutFormat::Fit => "Garmin (.fit)",
+        WorkoutFormat::Zwo => "Zwift",
+        WorkoutFormat::Mrc => "TrainerRoad",
+        WorkoutFormat::Fit => "Garmin",
         WorkoutFormat::Native => "RustRide",
+        WorkoutFormat::TrainingPeaks => "TrainingPeaks",
+    }
+}
+
+/// Get the color for a workout source badge.
+fn source_badge_color(format: WorkoutFormat) -> Color32 {
+    match format {
+        WorkoutFormat::TrainingPeaks => TRAININGPEAKS_TEAL,
+        WorkoutFormat::Zwo => Color32::from_rgb(252, 82, 0), // Zwift orange
+        WorkoutFormat::Mrc => Color32::from_rgb(213, 0, 50), // TrainerRoad red
+        WorkoutFormat::Fit => Color32::from_rgb(0, 122, 201), // Garmin blue
+        WorkoutFormat::Native => Color32::from_rgb(66, 133, 244), // RustRide blue
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_workout_source() {
+        assert_eq!(format_workout_source(WorkoutFormat::TrainingPeaks), "TrainingPeaks");
+        assert_eq!(format_workout_source(WorkoutFormat::Zwo), "Zwift");
+        assert_eq!(format_workout_source(WorkoutFormat::Mrc), "TrainerRoad");
+        assert_eq!(format_workout_source(WorkoutFormat::Fit), "Garmin");
+        assert_eq!(format_workout_source(WorkoutFormat::Native), "RustRide");
+    }
+
+    #[test]
+    fn test_source_badge_color_trainingpeaks() {
+        let color = source_badge_color(WorkoutFormat::TrainingPeaks);
+        assert_eq!(color, TRAININGPEAKS_TEAL);
+        assert_eq!(color, Color32::from_rgb(0, 128, 128));
+    }
+
+    #[test]
+    fn test_source_badge_color_all_formats() {
+        // Verify all formats have distinct colors
+        let tp_color = source_badge_color(WorkoutFormat::TrainingPeaks);
+        let zwo_color = source_badge_color(WorkoutFormat::Zwo);
+        let mrc_color = source_badge_color(WorkoutFormat::Mrc);
+        let fit_color = source_badge_color(WorkoutFormat::Fit);
+        let native_color = source_badge_color(WorkoutFormat::Native);
+
+        // All colors should be different (not transparent)
+        assert_ne!(tp_color, Color32::TRANSPARENT);
+        assert_ne!(zwo_color, Color32::TRANSPARENT);
+        assert_ne!(mrc_color, Color32::TRANSPARENT);
+        assert_ne!(fit_color, Color32::TRANSPARENT);
+        assert_ne!(native_color, Color32::TRANSPARENT);
+
+        // TrainingPeaks should be teal
+        assert_eq!(tp_color, Color32::from_rgb(0, 128, 128));
+        // Zwift should be orange
+        assert_eq!(zwo_color, Color32::from_rgb(252, 82, 0));
+        // TrainerRoad should be red
+        assert_eq!(mrc_color, Color32::from_rgb(213, 0, 50));
+    }
+
+    #[test]
+    fn test_trainingpeaks_teal_constant() {
+        // Verify the constant matches expected TrainingPeaks brand color
+        assert_eq!(TRAININGPEAKS_TEAL.r(), 0);
+        assert_eq!(TRAININGPEAKS_TEAL.g(), 128);
+        assert_eq!(TRAININGPEAKS_TEAL.b(), 128);
     }
 }

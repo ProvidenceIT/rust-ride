@@ -1192,6 +1192,539 @@ impl<'a> SyncStore<'a> {
     }
 }
 
+// ========== TrainingPeaks Workout Sync Tracking (T017) ==========
+
+/// Summary of TrainingPeaks workout sync status.
+/// Provides an overview of the current workout sync state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingPeaksWorkoutSyncSummary {
+    /// Total number of workouts synced from TrainingPeaks
+    pub total_synced: usize,
+    /// Number of workouts synced in the current date range (last 30 days)
+    pub synced_in_range: usize,
+    /// When workouts were last synced from TrainingPeaks
+    pub last_sync_at: Option<DateTime<Utc>>,
+    /// Whether auto-sync is enabled for workout plans
+    pub auto_sync_enabled: bool,
+    /// Earliest scheduled workout date in synced workouts
+    pub earliest_scheduled_date: Option<String>,
+    /// Latest scheduled workout date in synced workouts
+    pub latest_scheduled_date: Option<String>,
+}
+
+impl Default for TrainingPeaksWorkoutSyncSummary {
+    fn default() -> Self {
+        Self {
+            total_synced: 0,
+            synced_in_range: 0,
+            last_sync_at: None,
+            auto_sync_enabled: false,
+            earliest_scheduled_date: None,
+            latest_scheduled_date: None,
+        }
+    }
+}
+
+/// Individual TrainingPeaks workout sync entry.
+/// Represents a single workout that has been synced from TrainingPeaks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingPeaksWorkoutSyncEntry {
+    /// Unique ID for the sync entry
+    pub id: Uuid,
+    /// External workout ID from TrainingPeaks
+    pub external_workout_id: i64,
+    /// Local workout ID in our database
+    pub local_workout_id: Uuid,
+    /// Scheduled date from TrainingPeaks (YYYY-MM-DD format)
+    pub scheduled_date: Option<String>,
+    /// When this workout was synced
+    pub synced_at: DateTime<Utc>,
+    /// Last modified date from TrainingPeaks (for detecting updates)
+    pub last_modified: Option<String>,
+    /// Hash of workout content (for detecting changes)
+    pub sync_hash: Option<String>,
+}
+
+/// TrainingPeaks workout sync configuration.
+/// Settings for automatic workout plan syncing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingPeaksWorkoutSyncConfig {
+    /// Whether automatic workout sync is enabled
+    pub auto_sync_enabled: bool,
+    /// Number of days to look ahead for scheduled workouts
+    pub lookahead_days: i32,
+    /// Number of days to look back for scheduled workouts
+    pub lookback_days: i32,
+    /// Sync interval in hours (how often to check for new workouts)
+    pub sync_interval_hours: i32,
+    /// Only sync cycling workouts (filter out running, swimming, etc.)
+    pub cycling_only: bool,
+    /// Last successful sync timestamp
+    pub last_sync_at: Option<String>,
+}
+
+impl Default for TrainingPeaksWorkoutSyncConfig {
+    fn default() -> Self {
+        Self {
+            auto_sync_enabled: true,
+            lookahead_days: 14,
+            lookback_days: 7,
+            sync_interval_hours: 6,
+            cycling_only: true,
+            last_sync_at: None,
+        }
+    }
+}
+
+impl<'a> SyncStore<'a> {
+    // ========== TrainingPeaks Workout Sync Operations ==========
+
+    /// Get the workout sync summary for TrainingPeaks.
+    pub fn get_trainingpeaks_workout_sync_summary(&self) -> Result<TrainingPeaksWorkoutSyncSummary, DatabaseError> {
+        // Get total synced count
+        let total_synced: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM trainingpeaks_workout_sync",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        // Get count in current range (last 30 days from now)
+        let thirty_days_ago = (Utc::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
+        let synced_in_range: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM trainingpeaks_workout_sync WHERE scheduled_date >= ?1",
+                params![thirty_days_ago],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        // Get last sync time
+        let last_sync_at: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MAX(synced_at) FROM trainingpeaks_workout_sync",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let last_sync_datetime = last_sync_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        });
+
+        // Get date range
+        let earliest_date: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MIN(scheduled_date) FROM trainingpeaks_workout_sync WHERE scheduled_date IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let latest_date: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MAX(scheduled_date) FROM trainingpeaks_workout_sync WHERE scheduled_date IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        Ok(TrainingPeaksWorkoutSyncSummary {
+            total_synced: total_synced as usize,
+            synced_in_range: synced_in_range as usize,
+            last_sync_at: last_sync_datetime,
+            auto_sync_enabled: false, // Set from config
+            earliest_scheduled_date: earliest_date,
+            latest_scheduled_date: latest_date,
+        })
+    }
+
+    /// Get all TrainingPeaks workout sync entries.
+    pub fn get_all_trainingpeaks_workout_syncs(&self) -> Result<Vec<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                        synced_at, last_modified, sync_hash
+                 FROM trainingpeaks_workout_sync
+                 ORDER BY synced_at DESC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], Self::map_workout_sync_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?);
+        }
+        Ok(entries)
+    }
+
+    /// Get TrainingPeaks workout sync entries for a date range.
+    pub fn get_trainingpeaks_workout_syncs_by_date_range(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                        synced_at, last_modified, sync_hash
+                 FROM trainingpeaks_workout_sync
+                 WHERE scheduled_date >= ?1 AND scheduled_date <= ?2
+                 ORDER BY scheduled_date ASC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![start_date, end_date], Self::map_workout_sync_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?);
+        }
+        Ok(entries)
+    }
+
+    /// Get a TrainingPeaks workout sync entry by external workout ID.
+    pub fn get_trainingpeaks_workout_sync_by_external_id(
+        &self,
+        external_workout_id: i64,
+    ) -> Result<Option<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                        synced_at, last_modified, sync_hash
+                 FROM trainingpeaks_workout_sync
+                 WHERE external_workout_id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut rows = stmt
+            .query_map(params![external_workout_id], Self::map_workout_sync_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DatabaseError::QueryFailed(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    /// Get a TrainingPeaks workout sync entry by local workout ID.
+    pub fn get_trainingpeaks_workout_sync_by_local_id(
+        &self,
+        local_workout_id: &Uuid,
+    ) -> Result<Option<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                        synced_at, last_modified, sync_hash
+                 FROM trainingpeaks_workout_sync
+                 WHERE local_workout_id = ?1",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut rows = stmt
+            .query_map(params![local_workout_id.to_string()], Self::map_workout_sync_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DatabaseError::QueryFailed(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    /// Check if a workout has been synced from TrainingPeaks.
+    pub fn is_trainingpeaks_workout_synced(&self, external_workout_id: i64) -> Result<bool, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+                params![external_workout_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count > 0)
+    }
+
+    /// Get the local workout ID for a synced TrainingPeaks workout.
+    pub fn get_local_workout_id_for_trainingpeaks(
+        &self,
+        external_workout_id: i64,
+    ) -> Result<Option<Uuid>, DatabaseError> {
+        let result: Result<String, rusqlite::Error> = self.conn.query_row(
+            "SELECT local_workout_id FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+            params![external_workout_id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(id_str) => {
+                let uuid = Uuid::parse_str(&id_str)
+                    .map_err(|e| DatabaseError::QueryFailed(format!("Invalid UUID: {}", e)))?;
+                Ok(Some(uuid))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Get the external workout ID for a local workout.
+    pub fn get_external_workout_id_for_local(
+        &self,
+        local_workout_id: &Uuid,
+    ) -> Result<Option<i64>, DatabaseError> {
+        let result: Result<i64, rusqlite::Error> = self.conn.query_row(
+            "SELECT external_workout_id FROM trainingpeaks_workout_sync WHERE local_workout_id = ?1",
+            params![local_workout_id.to_string()],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(external_id) => Ok(Some(external_id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+        }
+    }
+
+    /// Record a workout sync from TrainingPeaks.
+    pub fn record_trainingpeaks_workout_sync(
+        &self,
+        entry: &TrainingPeaksWorkoutSyncEntry,
+    ) -> Result<(), DatabaseError> {
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO trainingpeaks_workout_sync
+                    (id, external_workout_id, local_workout_id, scheduled_date, synced_at, last_modified, sync_hash)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT(external_workout_id) DO UPDATE SET
+                    local_workout_id = excluded.local_workout_id,
+                    scheduled_date = excluded.scheduled_date,
+                    synced_at = excluded.synced_at,
+                    last_modified = excluded.last_modified,
+                    sync_hash = excluded.sync_hash
+                "#,
+                params![
+                    entry.id.to_string(),
+                    entry.external_workout_id,
+                    entry.local_workout_id.to_string(),
+                    entry.scheduled_date,
+                    entry.synced_at.to_rfc3339(),
+                    entry.last_modified,
+                    entry.sync_hash,
+                ],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Update the sync hash for a workout sync entry.
+    pub fn update_trainingpeaks_workout_sync_hash(
+        &self,
+        external_workout_id: i64,
+        sync_hash: &str,
+    ) -> Result<bool, DatabaseError> {
+        let now = Utc::now().to_rfc3339();
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE trainingpeaks_workout_sync SET sync_hash = ?1, synced_at = ?2 WHERE external_workout_id = ?3",
+                params![sync_hash, now, external_workout_id],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Update the last modified date for a workout sync entry.
+    pub fn update_trainingpeaks_workout_last_modified(
+        &self,
+        external_workout_id: i64,
+        last_modified: &str,
+    ) -> Result<bool, DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "UPDATE trainingpeaks_workout_sync SET last_modified = ?1 WHERE external_workout_id = ?2",
+                params![last_modified, external_workout_id],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Delete a TrainingPeaks workout sync entry.
+    pub fn delete_trainingpeaks_workout_sync(&self, external_workout_id: i64) -> Result<bool, DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute(
+                "DELETE FROM trainingpeaks_workout_sync WHERE external_workout_id = ?1",
+                params![external_workout_id],
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Clear all TrainingPeaks workout sync entries.
+    pub fn clear_all_trainingpeaks_workout_syncs(&self) -> Result<usize, DatabaseError> {
+        let rows_affected = self
+            .conn
+            .execute("DELETE FROM trainingpeaks_workout_sync", [])
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(rows_affected)
+    }
+
+    /// Get the last sync time for TrainingPeaks workouts.
+    pub fn get_trainingpeaks_last_workout_sync_time(&self) -> Result<Option<DateTime<Utc>>, DatabaseError> {
+        let result: Result<String, rusqlite::Error> = self.conn.query_row(
+            "SELECT MAX(synced_at) FROM trainingpeaks_workout_sync",
+            [],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(timestamp_str) => {
+                let datetime = DateTime::parse_from_rfc3339(&timestamp_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| DatabaseError::QueryFailed(format!("Invalid timestamp: {}", e)))?;
+                Ok(Some(datetime))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => {
+                // SQLite returns NULL for MAX on empty table, which causes an error
+                if e.to_string().contains("NullPointer") || e.to_string().contains("Null") {
+                    Ok(None)
+                } else {
+                    Err(DatabaseError::QueryFailed(e.to_string()))
+                }
+            }
+        }
+    }
+
+    /// Get the count of synced TrainingPeaks workouts.
+    pub fn get_trainingpeaks_workout_sync_count(&self) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM trainingpeaks_workout_sync",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    /// Get the count of synced TrainingPeaks workouts in a date range.
+    pub fn get_trainingpeaks_workout_sync_count_in_range(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<usize, DatabaseError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM trainingpeaks_workout_sync WHERE scheduled_date >= ?1 AND scheduled_date <= ?2",
+                params![start_date, end_date],
+                |row| row.get(0),
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as usize)
+    }
+
+    /// Check if a sync is due based on last sync time and interval.
+    pub fn is_trainingpeaks_workout_sync_due(&self, sync_interval_hours: i32) -> Result<bool, DatabaseError> {
+        match self.get_trainingpeaks_last_workout_sync_time()? {
+            Some(last_sync) => {
+                let next_sync = last_sync + chrono::Duration::hours(sync_interval_hours as i64);
+                Ok(Utc::now() >= next_sync)
+            }
+            None => Ok(true), // Never synced, so sync is due
+        }
+    }
+
+    /// Get recently synced workouts (within the last N days).
+    pub fn get_recently_synced_trainingpeaks_workouts(
+        &self,
+        days: i32,
+    ) -> Result<Vec<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let cutoff = (Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339();
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, external_workout_id, local_workout_id, scheduled_date,
+                        synced_at, last_modified, sync_hash
+                 FROM trainingpeaks_workout_sync
+                 WHERE synced_at >= ?1
+                 ORDER BY synced_at DESC",
+            )
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![cutoff], Self::map_workout_sync_entry_row)
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.map_err(|e| DatabaseError::QueryFailed(e.to_string()))?);
+        }
+        Ok(entries)
+    }
+
+    /// Get upcoming scheduled workouts from TrainingPeaks.
+    pub fn get_upcoming_trainingpeaks_workouts(
+        &self,
+        days_ahead: i32,
+    ) -> Result<Vec<TrainingPeaksWorkoutSyncEntry>, DatabaseError> {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let end_date = (Utc::now() + chrono::Duration::days(days_ahead as i64))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        self.get_trainingpeaks_workout_syncs_by_date_range(&today, &end_date)
+    }
+
+    /// Helper function to map a row to TrainingPeaksWorkoutSyncEntry.
+    fn map_workout_sync_entry_row(row: &rusqlite::Row) -> rusqlite::Result<TrainingPeaksWorkoutSyncEntry> {
+        let id_str: String = row.get(0)?;
+        let local_workout_id_str: String = row.get(2)?;
+        let synced_at_str: String = row.get(4)?;
+
+        Ok(TrainingPeaksWorkoutSyncEntry {
+            id: Uuid::parse_str(&id_str).unwrap_or_default(),
+            external_workout_id: row.get(1)?,
+            local_workout_id: Uuid::parse_str(&local_workout_id_str).unwrap_or_default(),
+            scheduled_date: row.get(3)?,
+            synced_at: DateTime::parse_from_rfc3339(&synced_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            last_modified: row.get(5)?,
+            sync_hash: row.get(6)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2606,5 +3139,380 @@ mod tests {
         assert!(loaded.is_enabled);
         assert!(loaded.auto_upload);
         assert_eq!(loaded.athlete_id, Some("99999".to_string()));
+    }
+
+    // ========== TrainingPeaks Workout Sync Tests (T017) ==========
+
+    fn setup_test_db_with_trainingpeaks_workout_sync() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS trainingpeaks_workout_sync (
+                id TEXT PRIMARY KEY,
+                external_workout_id INTEGER NOT NULL UNIQUE,
+                local_workout_id TEXT NOT NULL,
+                scheduled_date TEXT,
+                synced_at TEXT NOT NULL,
+                last_modified TEXT,
+                sync_hash TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_external ON trainingpeaks_workout_sync(external_workout_id);
+            CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_local ON trainingpeaks_workout_sync(local_workout_id);
+            CREATE INDEX IF NOT EXISTS idx_tp_workout_sync_date ON trainingpeaks_workout_sync(scheduled_date);
+            "#,
+        )
+        .unwrap();
+
+        conn
+    }
+
+    fn create_test_workout_sync_entry(external_id: i64, scheduled_date: Option<&str>) -> TrainingPeaksWorkoutSyncEntry {
+        TrainingPeaksWorkoutSyncEntry {
+            id: Uuid::new_v4(),
+            external_workout_id: external_id,
+            local_workout_id: Uuid::new_v4(),
+            scheduled_date: scheduled_date.map(|s| s.to_string()),
+            synced_at: Utc::now(),
+            last_modified: None,
+            sync_hash: None,
+        }
+    }
+
+    #[test]
+    fn test_record_and_get_trainingpeaks_workout_sync() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, Some("2026-01-15"));
+
+        // Record the sync
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Get by external ID
+        let loaded = store.get_trainingpeaks_workout_sync_by_external_id(12345).unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.external_workout_id, 12345);
+        assert_eq!(loaded.local_workout_id, entry.local_workout_id);
+        assert_eq!(loaded.scheduled_date, Some("2026-01-15".to_string()));
+    }
+
+    #[test]
+    fn test_is_trainingpeaks_workout_synced() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Initially not synced
+        assert!(!store.is_trainingpeaks_workout_synced(12345).unwrap());
+
+        // Record sync
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Now synced
+        assert!(store.is_trainingpeaks_workout_synced(12345).unwrap());
+
+        // Different ID still not synced
+        assert!(!store.is_trainingpeaks_workout_synced(99999).unwrap());
+    }
+
+    #[test]
+    fn test_get_local_workout_id_for_trainingpeaks() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Get local ID
+        let local_id = store.get_local_workout_id_for_trainingpeaks(12345).unwrap();
+        assert!(local_id.is_some());
+        assert_eq!(local_id.unwrap(), entry.local_workout_id);
+
+        // Non-existent returns None
+        let missing = store.get_local_workout_id_for_trainingpeaks(99999).unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_get_external_workout_id_for_local() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Get external ID
+        let external_id = store.get_external_workout_id_for_local(&entry.local_workout_id).unwrap();
+        assert!(external_id.is_some());
+        assert_eq!(external_id.unwrap(), 12345);
+
+        // Non-existent returns None
+        let missing = store.get_external_workout_id_for_local(&Uuid::new_v4()).unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_get_all_trainingpeaks_workout_syncs() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Initially empty
+        let all = store.get_all_trainingpeaks_workout_syncs().unwrap();
+        assert!(all.is_empty());
+
+        // Add entries
+        let entry1 = create_test_workout_sync_entry(1001, Some("2026-01-10"));
+        let entry2 = create_test_workout_sync_entry(1002, Some("2026-01-15"));
+        store.record_trainingpeaks_workout_sync(&entry1).unwrap();
+        store.record_trainingpeaks_workout_sync(&entry2).unwrap();
+
+        // Get all
+        let all = store.get_all_trainingpeaks_workout_syncs().unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_get_trainingpeaks_workout_syncs_by_date_range() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Add entries with different dates
+        let entry1 = create_test_workout_sync_entry(1001, Some("2026-01-10"));
+        let entry2 = create_test_workout_sync_entry(1002, Some("2026-01-15"));
+        let entry3 = create_test_workout_sync_entry(1003, Some("2026-01-20"));
+
+        store.record_trainingpeaks_workout_sync(&entry1).unwrap();
+        store.record_trainingpeaks_workout_sync(&entry2).unwrap();
+        store.record_trainingpeaks_workout_sync(&entry3).unwrap();
+
+        // Query mid-range
+        let range = store.get_trainingpeaks_workout_syncs_by_date_range("2026-01-12", "2026-01-18").unwrap();
+        assert_eq!(range.len(), 1);
+        assert_eq!(range[0].external_workout_id, 1002);
+
+        // Query all
+        let all = store.get_trainingpeaks_workout_syncs_by_date_range("2026-01-01", "2026-01-31").unwrap();
+        assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn test_get_trainingpeaks_workout_sync_by_local_id() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, Some("2026-01-15"));
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Get by local ID
+        let loaded = store.get_trainingpeaks_workout_sync_by_local_id(&entry.local_workout_id).unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.external_workout_id, 12345);
+
+        // Non-existent returns None
+        let missing = store.get_trainingpeaks_workout_sync_by_local_id(&Uuid::new_v4()).unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_update_trainingpeaks_workout_sync_hash() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Update hash
+        let updated = store.update_trainingpeaks_workout_sync_hash(12345, "abc123hash").unwrap();
+        assert!(updated);
+
+        // Verify
+        let loaded = store.get_trainingpeaks_workout_sync_by_external_id(12345).unwrap().unwrap();
+        assert_eq!(loaded.sync_hash, Some("abc123hash".to_string()));
+
+        // Non-existent returns false
+        let not_updated = store.update_trainingpeaks_workout_sync_hash(99999, "test").unwrap();
+        assert!(!not_updated);
+    }
+
+    #[test]
+    fn test_update_trainingpeaks_workout_last_modified() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Update last_modified
+        let updated = store.update_trainingpeaks_workout_last_modified(12345, "2026-01-15T10:00:00Z").unwrap();
+        assert!(updated);
+
+        // Verify
+        let loaded = store.get_trainingpeaks_workout_sync_by_external_id(12345).unwrap().unwrap();
+        assert_eq!(loaded.last_modified, Some("2026-01-15T10:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_delete_trainingpeaks_workout_sync() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        let entry = create_test_workout_sync_entry(12345, None);
+        store.record_trainingpeaks_workout_sync(&entry).unwrap();
+
+        // Verify exists
+        assert!(store.is_trainingpeaks_workout_synced(12345).unwrap());
+
+        // Delete
+        let deleted = store.delete_trainingpeaks_workout_sync(12345).unwrap();
+        assert!(deleted);
+
+        // Verify deleted
+        assert!(!store.is_trainingpeaks_workout_synced(12345).unwrap());
+
+        // Deleting again returns false
+        let deleted_again = store.delete_trainingpeaks_workout_sync(12345).unwrap();
+        assert!(!deleted_again);
+    }
+
+    #[test]
+    fn test_clear_all_trainingpeaks_workout_syncs() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Add multiple entries
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1001, None)).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1002, None)).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1003, None)).unwrap();
+
+        assert_eq!(store.get_trainingpeaks_workout_sync_count().unwrap(), 3);
+
+        // Clear all
+        let cleared = store.clear_all_trainingpeaks_workout_syncs().unwrap();
+        assert_eq!(cleared, 3);
+
+        // Verify empty
+        assert_eq!(store.get_trainingpeaks_workout_sync_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_get_trainingpeaks_workout_sync_count() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Initially zero
+        assert_eq!(store.get_trainingpeaks_workout_sync_count().unwrap(), 0);
+
+        // Add entries
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1001, None)).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1002, None)).unwrap();
+
+        assert_eq!(store.get_trainingpeaks_workout_sync_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_get_trainingpeaks_workout_sync_count_in_range() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Add entries with different dates
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1001, Some("2026-01-10"))).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1002, Some("2026-01-15"))).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1003, Some("2026-01-20"))).unwrap();
+
+        // Count in mid-range
+        let count = store.get_trainingpeaks_workout_sync_count_in_range("2026-01-12", "2026-01-18").unwrap();
+        assert_eq!(count, 1);
+
+        // Count all
+        let count = store.get_trainingpeaks_workout_sync_count_in_range("2026-01-01", "2026-01-31").unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_is_trainingpeaks_workout_sync_due() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // With no syncs, should be due
+        assert!(store.is_trainingpeaks_workout_sync_due(6).unwrap());
+
+        // Add a recent sync
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1001, None)).unwrap();
+
+        // Should not be due yet (we just synced)
+        assert!(!store.is_trainingpeaks_workout_sync_due(6).unwrap());
+    }
+
+    #[test]
+    fn test_get_trainingpeaks_workout_sync_summary() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Empty summary
+        let summary = store.get_trainingpeaks_workout_sync_summary().unwrap();
+        assert_eq!(summary.total_synced, 0);
+        assert_eq!(summary.synced_in_range, 0);
+        assert!(summary.last_sync_at.is_none());
+        assert!(summary.earliest_scheduled_date.is_none());
+        assert!(summary.latest_scheduled_date.is_none());
+
+        // Add entries
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1001, Some("2026-01-10"))).unwrap();
+        store.record_trainingpeaks_workout_sync(&create_test_workout_sync_entry(1002, Some("2026-01-20"))).unwrap();
+
+        let summary = store.get_trainingpeaks_workout_sync_summary().unwrap();
+        assert_eq!(summary.total_synced, 2);
+        assert!(summary.last_sync_at.is_some());
+        assert_eq!(summary.earliest_scheduled_date, Some("2026-01-10".to_string()));
+        assert_eq!(summary.latest_scheduled_date, Some("2026-01-20".to_string()));
+    }
+
+    #[test]
+    fn test_upsert_trainingpeaks_workout_sync() {
+        let conn = setup_test_db_with_trainingpeaks_workout_sync();
+        let store = SyncStore::new(&conn);
+
+        // Initial sync
+        let entry1 = create_test_workout_sync_entry(12345, Some("2026-01-15"));
+        store.record_trainingpeaks_workout_sync(&entry1).unwrap();
+
+        // Update with same external ID
+        let mut entry2 = create_test_workout_sync_entry(12345, Some("2026-01-16"));
+        entry2.sync_hash = Some("updated_hash".to_string());
+        store.record_trainingpeaks_workout_sync(&entry2).unwrap();
+
+        // Should still have only 1 entry
+        assert_eq!(store.get_trainingpeaks_workout_sync_count().unwrap(), 1);
+
+        // Should have updated values
+        let loaded = store.get_trainingpeaks_workout_sync_by_external_id(12345).unwrap().unwrap();
+        assert_eq!(loaded.scheduled_date, Some("2026-01-16".to_string()));
+        assert_eq!(loaded.sync_hash, Some("updated_hash".to_string()));
+    }
+
+    #[test]
+    fn test_trainingpeaks_workout_sync_config_defaults() {
+        let config = TrainingPeaksWorkoutSyncConfig::default();
+        assert!(config.auto_sync_enabled);
+        assert_eq!(config.lookahead_days, 14);
+        assert_eq!(config.lookback_days, 7);
+        assert_eq!(config.sync_interval_hours, 6);
+        assert!(config.cycling_only);
+        assert!(config.last_sync_at.is_none());
+    }
+
+    #[test]
+    fn test_trainingpeaks_workout_sync_summary_defaults() {
+        let summary = TrainingPeaksWorkoutSyncSummary::default();
+        assert_eq!(summary.total_synced, 0);
+        assert_eq!(summary.synced_in_range, 0);
+        assert!(summary.last_sync_at.is_none());
+        assert!(!summary.auto_sync_enabled);
+        assert!(summary.earliest_scheduled_date.is_none());
+        assert!(summary.latest_scheduled_date.is_none());
     }
 }

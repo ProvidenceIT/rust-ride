@@ -24,6 +24,7 @@ pub mod route_import;
 pub mod sensor_setup;
 pub mod settings;
 pub mod settings_strava;
+pub mod settings_trainingpeaks;
 pub mod streaming;
 pub mod training_plans;
 pub mod workout_library;
@@ -58,6 +59,10 @@ pub use settings::{SettingsAction, SettingsScreen, TestVoiceSettings};
 pub use settings_strava::{
     StravaConnectionState, StravaSettingsAction, StravaSettingsScreen,
 };
+pub use settings_trainingpeaks::{
+    SyncHistoryEntry, TrainingPeaksConnectionState, TrainingPeaksSettingsAction,
+    TrainingPeaksSettingsScreen, WorkoutSyncStatus,
+};
 pub use streaming::{StreamingAction, StreamingScreen};
 pub use training_plans::{PlanSortOrder, TrainingPlansAction, TrainingPlansScreen};
 pub use workout_library::{WorkoutImportError, WorkoutLibraryScreen};
@@ -87,6 +92,8 @@ pub enum Screen {
     Settings,
     /// Strava settings screen
     StravaSettings,
+    /// TrainingPeaks settings screen
+    TrainingPeaksSettings,
     /// World selection screen
     WorldSelect,
     /// Avatar customization screen
