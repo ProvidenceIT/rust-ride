@@ -3,6 +3,7 @@
 pub mod accessible_button;
 pub mod achievement_notification;
 pub mod chat_panel;
+pub mod companion_status;
 pub mod connection_quality;
 pub mod dynamics_display;
 pub mod ftp_notification;
@@ -54,6 +55,10 @@ pub use power_curve_chart::{
     PowerCurveChart, PowerCurveConfig, PowerCurveSummary, PowerImprovement,
 };
 pub use sensor_status::{SensorConnectionCard, SensorStatusIndicator, SensorStatusSummary};
+pub use companion_status::{
+    CompanionClientCard, CompanionClientList, CompanionClientListResponse,
+    CompanionStatusIndicator, InlineCompanionStatus,
+};
 pub use shortcut_overlay::ShortcutOverlay;
 pub use smo2_display::{SmO2Display, SmO2Placeholder, SmO2WidgetSize};
 pub use sync_notification::{

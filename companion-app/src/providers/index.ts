@@ -6,3 +6,7 @@
 
 // Auto-reconnect provider - handles reconnection to last server on launch
 export { AutoReconnectProvider, useAutoReconnectContext } from './AutoReconnectProvider';
+
+// Global error handler provider - handles error notifications with user-friendly toasts
+export { GlobalErrorHandlerProvider, useGlobalErrorHandler } from './GlobalErrorHandlerProvider';
+export type { GlobalErrorHandlerContextValue, ErrorCategory } from './GlobalErrorHandlerProvider';

@@ -90,3 +90,42 @@ export type { ToastProps, ToastData, ToastVariant } from './Toast';
 // ToastContainer - renders all active toasts
 export { ToastContainer } from './ToastContainer';
 export type { ToastContainerProps } from './ToastContainer';
+
+// StopConfirmationModal - confirmation dialog before stopping session
+export { StopConfirmationModal } from './StopConfirmationModal';
+export type { StopConfirmationModalProps } from './StopConfirmationModal';
+
+// ResistanceControl - +/- buttons for adjusting trainer resistance during free rides
+export { ResistanceControl } from './ResistanceControl';
+export type { ResistanceControlProps } from './ResistanceControl';
+
+// ZoneDistributionBar - displays time in zones as a stacked horizontal bar
+export {
+  ZoneDistributionBar,
+  getPowerZoneData,
+  getHrZoneData,
+} from './ZoneDistributionBar';
+export type {
+  ZoneDistributionBarProps,
+  ZoneData,
+} from './ZoneDistributionBar';
+
+// RideStatisticsSummary - displays key training stats (TSS, IF, calories) in cards
+export { RideStatisticsSummary } from './RideStatisticsSummary';
+export type { RideStatisticsSummaryProps } from './RideStatisticsSummary';
+
+// HistoryFilterBar - horizontal filter bar for filtering ride history by date/type
+export { HistoryFilterBar } from './HistoryFilterBar';
+export type { HistoryFilterBarProps } from './HistoryFilterBar';
+
+// DateRangePickerModal - modal for selecting custom date range for filtering
+export { DateRangePickerModal } from './DateRangePickerModal';
+export type { DateRangePickerModalProps } from './DateRangePickerModal';
+
+// SelectPickerModal - generic picker modal for selecting from a list of options
+export { SelectPickerModal } from './SelectPickerModal';
+export type { SelectPickerModalProps, SelectOption } from './SelectPickerModal';
+
+// EmptyState - consistent empty state display across screens
+export { EmptyState, CompactEmptyState } from './EmptyState';
+export type { EmptyStateProps, EmptyStateVariant, CompactEmptyStateProps } from './EmptyState';

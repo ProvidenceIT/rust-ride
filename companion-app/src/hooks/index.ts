@@ -18,3 +18,14 @@ export type { UseWorkoutControlsReturn } from './useWorkoutControls';
 
 export { useToast, ToastProvider } from './useToast';
 export type { ToastProviderProps, ToastContextValue, ShowToastOptions } from './useToast';
+
+export { useResistanceControl } from './useResistanceControl';
+export type { UseResistanceControlReturn } from './useResistanceControl';
+
+export { useKeepAwake } from './useKeepAwake';
+export type { UseKeepAwakeReturn, KeepAwakeWrapperProps } from './useKeepAwake';
+
+export { useIntervalChangeHaptics } from './useIntervalChangeHaptics';
+export type { UseIntervalChangeHapticsOptions, UseIntervalChangeHapticsReturn } from './useIntervalChangeHaptics';
+
+export { useThemeSync, useIsDarkMode } from './useThemeSync';

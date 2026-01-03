@@ -29,6 +29,7 @@ import { ServerListItem } from '@/components/ServerListItem';
 import { ManualEntryModal } from '@/components/ManualEntryModal';
 import { QRScannerModal } from '@/components/QRScannerModal';
 import { PinEntryModal } from '@/components/PinEntryModal';
+import { EmptyState } from '@/components/EmptyState';
 import {
   useConnectionStore,
   selectDiscoveredServers,
@@ -247,46 +248,18 @@ export function ConnectionScreen({ navigation }: Props): React.JSX.Element {
 
     return (
       <View style={styles.emptyState}>
-        <View
-          style={[
-            styles.emptyIconContainer,
-            {
-              backgroundColor: colors.surface,
-              borderRadius: borderRadius.full,
-              width: 80,
-              height: 80,
-            },
-          ]}
-        >
-          <Text style={[styles.emptyIcon, { color: colors.textMuted }]}>?</Text>
-        </View>
-        <Text
-          style={[
-            styles.emptyTitle,
-            textStyles.sectionTitle,
-            { color: colors.textPrimary, marginTop: spacing.lg },
-          ]}
-        >
-          No Servers Found
-        </Text>
-        <Text
-          style={[
-            styles.emptyDescription,
-            textStyles.body,
-            { color: colors.textSecondary, marginTop: spacing.sm },
-          ]}
-        >
-          Make sure RustRide is running on your computer and the companion server is enabled.
-        </Text>
-        <Button
-          title="Retry Scan"
-          variant="outline"
-          onPress={handleRefresh}
-          style={{ marginTop: spacing.lg }}
+        <EmptyState
+          variant="custom"
+          icon="help-circle-outline"
+          title="No Servers Found"
+          description="Make sure RustRide is running on your computer and the companion server is enabled."
+          actionLabel="Retry Scan"
+          onAction={handleRefresh}
+          testID="connection-empty-state"
         />
       </View>
     );
-  }, [isScanning, colors, borderRadius, textStyles, spacing, handleRefresh]);
+  }, [isScanning, handleRefresh]);
 
   // Key extractor for FlatList
   const keyExtractor = useCallback(

@@ -5,6 +5,7 @@
 //! T050: Wire sensor data to UI via crossbeam channel
 //! T157: Implement crash recovery prompt on startup
 //! T043: Integrate achievement tracking into ride completion flow
+//! T050: Start companion server on desktop app launch if enabled in config
 
 use eframe::egui;
 
@@ -15,6 +16,7 @@ use rustride::achievements::{
     RideMetrics,
 };
 use rustride::audio::{AudioEngine, DefaultAudioEngine};
+use rustride::companion::CompanionServer;
 use rustride::hid::{
     load_hid_config_from_db, save_hid_config_to_db, ButtonInputHandler, ButtonMapping,
     DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
@@ -168,6 +170,8 @@ pub struct RustRideApp {
     /// T012/6.3: Pending fan test task handle
     pending_fan_test:
         Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
+    /// T050: Mobile companion app server for remote control and metrics
+    companion_server: Option<Arc<CompanionServer>>,
 }
 
 impl RustRideApp {
@@ -351,6 +355,38 @@ impl RustRideApp {
         // T029: Initialize focus manager for keyboard navigation
         let focus_manager = FocusManager::new();
 
+        // T050: Initialize and start companion server if enabled in config
+        let companion_server = if config.companion.enabled {
+            let server = Arc::new(CompanionServer::new(config.companion.clone()));
+            let rt = tokio_runtime.clone();
+            let server_clone = Arc::clone(&server);
+
+            // Start the companion server asynchronously
+            rt.spawn(async move {
+                match server_clone.start().await {
+                    Ok(()) => {
+                        if let Some(url) = server_clone.get_url() {
+                            tracing::info!(
+                                "Companion server started on {} (PIN required: {})",
+                                url,
+                                server_clone.config().require_pin
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to start companion server: {}", e);
+                        // The server will remain in a non-running state
+                        // User can check settings screen for status
+                    }
+                }
+            });
+
+            Some(server)
+        } else {
+            tracing::debug!("Companion server is disabled in config");
+            None
+        };
+
         // T059: Initialize onboarding screen and check if it should be shown
         // In a real implementation, we'd load the onboarding state from storage
         let onboarding_state = load_onboarding_state();
@@ -369,6 +405,8 @@ impl RustRideApp {
         let mut settings_screen = SettingsScreen::new(profile.clone());
         settings_screen.set_incline_config(incline_config);
         settings_screen.set_hid_config(hid_config);
+        // Set companion config for settings display
+        settings_screen.set_companion_config(config.companion.clone());
 
         Self {
             current_screen: start_screen,
@@ -417,6 +455,8 @@ impl RustRideApp {
             database,
             pending_mqtt_test: None,
             pending_fan_test: None,
+            // T050: Companion server for mobile app connectivity
+            companion_server,
         }
     }
 
@@ -1693,6 +1733,27 @@ impl eframe::App for RustRideApp {
 
         // Crash recovery dialog (shown on top of everything)
         self.render_recovery_dialog(ctx);
+    }
+
+    /// T050: Handle application exit - gracefully stop companion server.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Stop companion server if running
+        if let Some(ref server) = self.companion_server {
+            let server = Arc::clone(server);
+            let rt = self.tokio_runtime.clone();
+
+            // Block on stopping the server to ensure clean shutdown
+            let _ = rt.block_on(async move {
+                if server.is_running() {
+                    tracing::info!("Stopping companion server...");
+                    if let Err(e) = server.stop().await {
+                        tracing::error!("Error stopping companion server: {}", e);
+                    } else {
+                        tracing::info!("Companion server stopped");
+                    }
+                }
+            });
+        }
     }
 }
 

@@ -103,46 +103,49 @@ describe('DashboardScreen', () => {
 
   describe('Connection Status', () => {
     it('shows disconnected state when not connected', () => {
-      const { getByText } = renderWithProviders();
+      const { getAllByText } = renderWithProviders();
 
-      expect(getByText('Disconnected')).toBeTruthy();
-      expect(getByText('Not Connected')).toBeTruthy();
+      // Both the ConnectionStatus badge and NoSessionState show these texts
+      expect(getAllByText('Disconnected').length).toBeGreaterThan(0);
+      expect(getAllByText('Not Connected').length).toBeGreaterThan(0);
     });
 
     it('shows connecting state', () => {
       useConnectionStore.getState().connect('ws://192.168.1.100:9876');
 
-      const { getByText } = renderWithProviders();
+      const { getAllByText } = renderWithProviders();
 
-      expect(getByText('Connecting...')).toBeTruthy();
+      // Both the header badge and NoSessionState show connecting state
+      expect(getAllByText('Connecting...').length).toBeGreaterThan(0);
     });
 
     it('shows connected state', () => {
       useConnectionStore.getState().connect('ws://192.168.1.100:9876');
       useConnectionStore.getState().setConnected();
 
-      const { getByText } = renderWithProviders();
+      const { getAllByText } = renderWithProviders();
 
-      expect(getByText('Connected')).toBeTruthy();
+      expect(getAllByText('Connected').length).toBeGreaterThan(0);
     });
 
     it('shows authenticated state', () => {
       useConnectionStore.getState().connect('ws://192.168.1.100:9876');
       useConnectionStore.getState().setAuthenticated();
 
-      const { getByText } = renderWithProviders();
+      const { getAllByText } = renderWithProviders();
 
-      expect(getByText('Authenticated')).toBeTruthy();
+      expect(getAllByText('Authenticated').length).toBeGreaterThan(0);
     });
   });
 
   describe('No Session State', () => {
     it('shows empty state message when not connected', () => {
-      const { getByText } = renderWithProviders();
+      const { getAllByText, getByText } = renderWithProviders();
 
-      expect(getByText('Not Connected')).toBeTruthy();
+      expect(getAllByText('Not Connected').length).toBeGreaterThan(0);
+      // NoSessionState shows "Connect to your RustRide desktop app to control workouts and view live metrics."
       expect(
-        getByText('Connect to your RustRide desktop app to see live metrics')
+        getByText(/Connect to your RustRide desktop app/)
       ).toBeTruthy();
     });
 
@@ -153,11 +156,10 @@ describe('DashboardScreen', () => {
 
       const { getByText } = renderWithProviders();
 
-      expect(getByText('No Active Session')).toBeTruthy();
+      // NoSessionState shows "Ready to Ride" when connected
+      expect(getByText('Ready to Ride')).toBeTruthy();
       expect(
-        getByText(
-          'Start a workout or free ride on the desktop app to see live metrics here'
-        )
+        getByText(/Start a workout or free ride on the desktop app/)
       ).toBeTruthy();
     });
 
@@ -388,7 +390,8 @@ describe('DashboardScreen', () => {
 
       const { getByText } = renderWithProviders();
 
-      expect(getByText(/Target:/)).toBeTruthy();
+      // CadenceDisplay shows "TARGET" in uppercase
+      expect(getByText('TARGET')).toBeTruthy();
       expect(getByText(/90/)).toBeTruthy();
     });
   });
@@ -589,7 +592,8 @@ describe('DashboardScreen', () => {
     it('has accessible time metric', () => {
       const { getByLabelText } = renderWithProviders();
 
-      expect(getByLabelText(/Elapsed time: 5:00/)).toBeTruthy();
+      // Accessibility label uses human-readable format: "5 minutes"
+      expect(getByLabelText(/Elapsed time: 5 minutes/)).toBeTruthy();
     });
 
     it('has accessible calories metric', () => {
@@ -609,10 +613,10 @@ describe('DashboardScreen', () => {
       useConnectionStore.getState().connect('ws://192.168.1.100:9876');
       useConnectionStore.getState().setAuthenticated();
 
-      const { getByText } = renderWithProviders();
+      const { getAllByText } = renderWithProviders();
 
-      // The connection status badge should show authenticated
-      expect(getByText('Authenticated')).toBeTruthy();
+      // The connection status badge should show authenticated (appears in both header and content)
+      expect(getAllByText('Authenticated').length).toBeGreaterThan(0);
     });
   });
 });

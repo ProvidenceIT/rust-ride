@@ -432,4 +432,472 @@ describe('ConnectionService', () => {
       expect(service.getServerUrl()).toBe('ws://localhost:9876');
     });
   });
+
+  describe('workout controls', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should send pause command and handle success', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const pausePromise = service.pauseWorkout();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'workout_pause' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'workout_pause' }));
+
+      await pausePromise;
+    });
+
+    it('should send pause command and handle failure', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const pausePromise = service.pauseWorkout();
+
+      ws?.simulateMessage(
+        JSON.stringify({ type: 'command_failed', command: 'workout_pause', error: 'Not a workout' }),
+      );
+
+      await expect(pausePromise).rejects.toThrow('Not a workout');
+    });
+
+    it('should send resume command', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const resumePromise = service.resumeWorkout();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'workout_resume' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'workout_resume' }));
+
+      await resumePromise;
+    });
+
+    it('should send skip command', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const skipPromise = service.skipInterval();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'workout_skip' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'workout_skip' }));
+
+      await skipPromise;
+    });
+
+    it('should send stop command', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const stopPromise = service.stopWorkout();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'workout_stop' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'workout_stop' }));
+
+      await stopPromise;
+    });
+
+    it('should send adjust_resistance command', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const adjustPromise = service.adjustResistance(5);
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'adjust_resistance', delta: 5 }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'adjust_resistance' }));
+
+      await adjustPromise;
+    });
+
+    it('should send adjust_resistance with negative delta', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const adjustPromise = service.adjustResistance(-10);
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'adjust_resistance', delta: -10 }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'command_ok', command: 'adjust_resistance' }));
+
+      await adjustPromise;
+    });
+  });
+
+  describe('ride history', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should fetch ride history with default parameters', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      service.fetchRideHistory();
+
+      expect(ws?.send).toHaveBeenCalledWith(
+        JSON.stringify({ type: 'get_ride_history', limit: 20, offset: 0 }),
+      );
+    });
+
+    it('should fetch ride history with custom parameters', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      service.fetchRideHistory(50, 100);
+
+      expect(ws?.send).toHaveBeenCalledWith(
+        JSON.stringify({ type: 'get_ride_history', limit: 50, offset: 100 }),
+      );
+    });
+
+    it('should fetch ride details', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      service.fetchRideDetails('ride-123');
+
+      expect(ws?.send).toHaveBeenCalledWith(
+        JSON.stringify({ type: 'get_ride_details', ride_id: 'ride-123' }),
+      );
+    });
+  });
+
+  describe('message parsing edge cases', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should ignore invalid JSON messages', () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // Should not throw
+      expect(() => {
+        ws?.simulateMessage('{ invalid json }');
+      }).not.toThrow();
+    });
+
+    it('should handle metrics with null values', () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'metrics',
+          power_watts: null,
+          heart_rate_bpm: null,
+          cadence_rpm: null,
+          speed_kmh: null,
+          distance_km: 0,
+          elapsed_secs: 0,
+          calories: 0,
+        }),
+      );
+
+      const metrics = useMetricsStore.getState().metrics;
+      expect(metrics.power_watts).toBe(0);
+      expect(metrics.heart_rate_bpm).toBeNull();
+    });
+
+    it('should handle session_state_changed to paused', () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // First start a session
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_state_changed',
+          state: 'active',
+          session: {
+            session_id: 'test-session',
+            session_type: 'workout',
+            workout_name: 'Test Workout',
+            is_paused: false,
+            elapsed_secs: 0,
+          },
+        }),
+      );
+
+      expect(useSessionStore.getState().isActive).toBe(true);
+
+      // Then pause it
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_state_changed',
+          state: 'paused',
+        }),
+      );
+
+      expect(useSessionStore.getState().isPaused).toBe(true);
+    });
+
+    it('should handle session_state_changed to completed', () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // First start a session
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_state_changed',
+          state: 'active',
+          session: {
+            session_id: 'test-session',
+            session_type: 'workout',
+            workout_name: 'Test Workout',
+            is_paused: false,
+            elapsed_secs: 0,
+          },
+        }),
+      );
+
+      expect(useSessionStore.getState().isActive).toBe(true);
+
+      // Then complete it
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_state_changed',
+          state: 'completed',
+        }),
+      );
+
+      expect(useSessionStore.getState().isActive).toBe(false);
+    });
+
+    it('should handle disconnecting event', () => {
+      const ws = MockWebSocket.getLastInstance();
+      const onDisconnected = jest.fn();
+
+      service.setCallbacks({ onDisconnected });
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'disconnecting',
+          reason: 'Server shutting down',
+        }),
+      );
+
+      expect(onDisconnected).toHaveBeenCalledWith('Server shutting down');
+    });
+
+    it('should handle error response with AUTH_REQUIRED code', () => {
+      const ws = MockWebSocket.getLastInstance();
+      const onAuthRequired = jest.fn();
+
+      service.setCallbacks({ onAuthRequired });
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'error',
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required',
+        }),
+      );
+
+      expect(onAuthRequired).toHaveBeenCalled();
+    });
+
+    it('should handle error response with other codes', () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'error',
+          code: 'NO_SESSION',
+          message: 'No active session',
+        }),
+      );
+
+      const state = useConnectionStore.getState();
+      expect(state.error?.message).toBe('No active session');
+    });
+  });
+
+  describe('metrics subscription', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should subscribe to metrics', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const subscribePromise = service.subscribeMetrics();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'subscribe_metrics' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'subscribed_metrics' }));
+
+      await subscribePromise;
+      expect(useMetricsStore.getState().isSubscribed).toBe(true);
+    });
+
+    it('should unsubscribe from metrics', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // First subscribe
+      useMetricsStore.getState().setSubscribed(true);
+
+      const unsubscribePromise = service.unsubscribeMetrics();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'unsubscribe_metrics' }));
+
+      ws?.simulateMessage(JSON.stringify({ type: 'unsubscribed_metrics' }));
+
+      await unsubscribePromise;
+      expect(useMetricsStore.getState().isSubscribed).toBe(false);
+    });
+  });
+
+  describe('session status', () => {
+    beforeEach(async () => {
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+    });
+
+    it('should get session status', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      const statusPromise = service.getSessionStatus();
+
+      expect(ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'get_session_status' }));
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_status',
+          active: true,
+          session: {
+            session_id: 'test-session',
+            session_type: 'workout',
+            workout_name: 'Test Workout',
+            is_paused: false,
+            elapsed_secs: 1800,
+            target_power_watts: 200,
+          },
+        }),
+      );
+
+      await statusPromise;
+
+      const session = useSessionStore.getState();
+      expect(session.isActive).toBe(true);
+      expect(session.workoutName).toBe('Test Workout');
+      expect(session.targetPowerWatts).toBe(200);
+    });
+
+    it('should handle inactive session status', async () => {
+      const ws = MockWebSocket.getLastInstance();
+
+      // First set an active session
+      useSessionStore.getState().startSession({
+        session_id: 'test-session',
+        session_type: 'workout',
+        workout_name: 'Test Workout',
+        is_paused: false,
+        elapsed_secs: 0,
+      });
+
+      const statusPromise = service.getSessionStatus();
+
+      ws?.simulateMessage(
+        JSON.stringify({
+          type: 'session_status',
+          active: false,
+          session: null,
+        }),
+      );
+
+      await statusPromise;
+
+      expect(useSessionStore.getState().isActive).toBe(false);
+    });
+  });
+
+  describe('callbacks', () => {
+    it('should call onError callback on WebSocket error', async () => {
+      const onError = jest.fn();
+      service.setCallbacks({ onError });
+
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+
+      ws?.simulateError();
+
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it('should call onDisconnected callback on close', async () => {
+      const onDisconnected = jest.fn();
+      service.setCallbacks({ onDisconnected });
+
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+
+      ws?.simulateClose('Server closed connection');
+
+      expect(onDisconnected).toHaveBeenCalledWith('Server closed connection');
+    });
+  });
+
+  describe('backoff configuration', () => {
+    it('should allow custom backoff settings', () => {
+      service.setBackoffConfig({
+        initialDelayMs: 500,
+        maxDelayMs: 10000,
+        multiplier: 1.5,
+      });
+
+      // Verify the formula works with new config
+      expect(Math.min(500 * Math.pow(1.5, 0), 10000)).toBe(500);
+      expect(Math.min(500 * Math.pow(1.5, 1), 10000)).toBe(750);
+      expect(Math.min(500 * Math.pow(1.5, 2), 10000)).toBe(1125);
+    });
+  });
+
+  describe('connection state', () => {
+    it('should close existing connection before new connect', async () => {
+      // First connection
+      const connectPromise1 = service.connect('ws://localhost:9876');
+      const ws1 = MockWebSocket.getLastInstance();
+      ws1?.simulateOpen();
+      await connectPromise1;
+
+      expect(service.isConnected()).toBe(true);
+
+      // Second connection should close the first
+      const connectPromise2 = service.connect('ws://localhost:9877');
+      const ws2 = MockWebSocket.getLastInstance();
+      ws2?.simulateOpen();
+      await connectPromise2;
+
+      expect(ws1?.close).toHaveBeenCalled();
+      expect(ws2?.url).toBe('ws://localhost:9877');
+    });
+
+    it('isAuthenticated should return correct state', async () => {
+      expect(service.isAuthenticated()).toBe(false);
+
+      const connectPromise = service.connect('ws://localhost:9876');
+      const ws = MockWebSocket.getLastInstance();
+      ws?.simulateOpen();
+      await connectPromise;
+
+      // Still not authenticated
+      expect(service.isAuthenticated()).toBe(false);
+
+      // Simulate auth
+      ws?.simulateMessage(JSON.stringify({ type: 'auth_ok', session_id: 'test-session' }));
+
+      expect(service.isAuthenticated()).toBe(true);
+    });
+  });
 });

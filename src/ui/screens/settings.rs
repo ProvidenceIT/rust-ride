@@ -199,6 +199,28 @@ pub struct SettingsScreen {
     pub tv_mode_font_scale: f32,
     /// T022: Pending navigation action from sync section
     pending_navigation: Option<SettingsAction>,
+    /// T047: Mobile companion app settings
+    pub companion_config: crate::companion::types::CompanionConfig,
+    /// T047: Show/hide companion section
+    show_companion: bool,
+    /// T047: Port input buffer for companion server
+    companion_port_input: String,
+    /// T047: Current PIN (for display when server running)
+    companion_current_pin: Option<String>,
+    /// T047: Server running status
+    companion_server_running: bool,
+    /// T048: Cached QR code module data for rendering
+    companion_qr_data: Option<Vec<Vec<bool>>>,
+    /// T048: Connection URL for display and copy
+    companion_connection_url: Option<String>,
+    /// T048: Flag indicating PIN regeneration was requested
+    pub regenerate_pin_requested: bool,
+    /// T048: Flag indicating URL copy was requested
+    pub copy_url_requested: bool,
+    /// T049: Connected companion clients
+    companion_clients: Vec<crate::companion::types::CompanionClient>,
+    /// T049: Session ID of client to disconnect (if any)
+    pub disconnect_companion_session_id: Option<uuid::Uuid>,
 }
 
 /// Configuration for a specific alert type (voice vs. sound)
@@ -601,6 +623,17 @@ impl SettingsScreen {
             tv_mode_enabled: false,
             tv_mode_font_scale: 2.0,
             pending_navigation: None,
+            companion_config: crate::companion::types::CompanionConfig::default(),
+            show_companion: false,
+            companion_port_input: "9876".to_string(),
+            companion_current_pin: None,
+            companion_server_running: false,
+            companion_qr_data: None,
+            companion_connection_url: None,
+            regenerate_pin_requested: false,
+            copy_url_requested: false,
+            companion_clients: Vec::new(),
+            disconnect_companion_session_id: None,
         }
     }
 
@@ -730,6 +763,76 @@ impl SettingsScreen {
     /// Get current audio engine configuration.
     pub fn get_audio_config(&self) -> &AudioConfig {
         &self.audio_config
+    }
+
+    /// Set companion server configuration.
+    /// T047: Configure companion server from loaded config.
+    pub fn set_companion_config(&mut self, config: crate::companion::types::CompanionConfig) {
+        self.companion_port_input = config.port.to_string();
+        self.companion_config = config;
+    }
+
+    /// Get current companion configuration.
+    pub fn get_companion_config(&self) -> &crate::companion::types::CompanionConfig {
+        &self.companion_config
+    }
+
+    /// Update companion server status.
+    /// T047, T048: Update UI to reflect server running state, current PIN, QR data, and URL.
+    pub fn set_companion_status(&mut self, is_running: bool, current_pin: Option<String>) {
+        self.companion_server_running = is_running;
+        self.companion_current_pin = current_pin;
+    }
+
+    /// T048: Set companion QR code data for display.
+    ///
+    /// The QR data is a 2D vector of booleans where `true` represents a dark module.
+    /// The URL is the WebSocket connection URL for copying.
+    pub fn set_companion_qr_data(
+        &mut self,
+        qr_data: Option<Vec<Vec<bool>>>,
+        connection_url: Option<String>,
+    ) {
+        self.companion_qr_data = qr_data;
+        self.companion_connection_url = connection_url;
+    }
+
+    /// T048: Check if PIN regeneration was requested.
+    pub fn take_regenerate_pin_request(&mut self) -> bool {
+        let requested = self.regenerate_pin_requested;
+        self.regenerate_pin_requested = false;
+        requested
+    }
+
+    /// T048: Check if URL copy was requested.
+    pub fn take_copy_url_request(&mut self) -> Option<String> {
+        if self.copy_url_requested {
+            self.copy_url_requested = false;
+            self.companion_connection_url.clone()
+        } else {
+            None
+        }
+    }
+
+    /// T049: Update the list of connected companion clients.
+    ///
+    /// This should be called periodically from the main app to update
+    /// the connected devices display in the settings panel.
+    pub fn set_companion_clients(&mut self, clients: Vec<crate::companion::types::CompanionClient>) {
+        self.companion_clients = clients;
+    }
+
+    /// T049: Get the number of connected companion clients.
+    pub fn companion_client_count(&self) -> usize {
+        self.companion_clients.len()
+    }
+
+    /// T049: Take the disconnect request (returns session ID to disconnect).
+    ///
+    /// Call this from the main app loop to check if a disconnect was requested
+    /// and handle it by calling `CompanionServer::disconnect_client()`.
+    pub fn take_disconnect_companion_request(&mut self) -> Option<uuid::Uuid> {
+        self.disconnect_companion_session_id.take()
     }
 
     /// Set FTP confidence from auto-detection.
@@ -896,6 +999,11 @@ impl SettingsScreen {
 
             // T092: HID device settings section
             self.render_hid_section(ui);
+
+            ui.add_space(16.0);
+
+            // T047: Mobile companion app settings section
+            self.render_companion_section(ui);
 
             ui.add_space(16.0);
 
@@ -3546,6 +3654,434 @@ impl SettingsScreen {
         if self.hid_settings.learning_mode {
             self.hid_settings.learned_button_code = Some(button_code);
         }
+    }
+
+    /// Render the mobile companion app settings section.
+    /// T047: Add settings panel in desktop app for companion server configuration.
+    fn render_companion_section(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width() - 16.0);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("📱 Mobile Companion App").size(18.0).strong());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .button(if self.show_companion { "Hide" } else { "Show" })
+                        .clicked()
+                    {
+                        self.show_companion = !self.show_companion;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+
+            // Master enable/disable toggle
+            if ui
+                .checkbox(&mut self.companion_config.enabled, "Enable companion server")
+                .on_hover_text("Allow mobile devices to connect and control workouts over LAN")
+                .changed()
+            {
+                self.has_changes = true;
+            }
+
+            // T049: Server status indicator with connected client count
+            if self.companion_server_running {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("● Running")
+                            .color(Color32::from_rgb(50, 205, 50))
+                            .small(),
+                    );
+                    // Show connected client count
+                    let client_count = self.companion_clients.len();
+                    if client_count > 0 {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(format!("📱 {} connected", client_count))
+                                .color(Color32::from_rgb(52, 168, 83))
+                                .small(),
+                        );
+                    }
+                });
+            }
+
+            if self.show_companion {
+                ui.add_enabled_ui(self.companion_config.enabled, |ui| {
+                    ui.add_space(8.0);
+
+                    // Server settings
+                    ui.label(RichText::new("Server Settings").strong());
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("companion_server_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 8.0])
+                        .show(ui, |ui| {
+                            // Port setting
+                            ui.label("Port:");
+                            ui.horizontal(|ui| {
+                                let port_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.companion_port_input)
+                                        .desired_width(80.0),
+                                );
+                                if port_response.changed() {
+                                    self.has_changes = true;
+                                    if let Ok(port) = self.companion_port_input.parse::<u16>() {
+                                        if port >= 1024 {
+                                            self.companion_config.port = port;
+                                            self.error_message = None;
+                                        } else {
+                                            self.error_message = Some(
+                                                "Port must be 1024 or higher".to_string(),
+                                            );
+                                        }
+                                    }
+                                }
+                                ui.label(
+                                    RichText::new("(default: 9876)")
+                                        .small()
+                                        .color(Color32::GRAY),
+                                );
+                            });
+                            ui.end_row();
+
+                            // Max connections
+                            ui.label("Max connections:");
+                            let mut max_conn = self.companion_config.max_connections as i32;
+                            if ui
+                                .add(egui::Slider::new(&mut max_conn, 1..=10))
+                                .on_hover_text("Maximum number of mobile devices that can connect")
+                                .changed()
+                            {
+                                self.companion_config.max_connections = max_conn as u8;
+                                self.has_changes = true;
+                            }
+                            ui.end_row();
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Authentication settings
+                    ui.label(RichText::new("Authentication").strong());
+                    ui.add_space(4.0);
+
+                    // Require PIN toggle
+                    if ui
+                        .checkbox(&mut self.companion_config.require_pin, "Require PIN to connect")
+                        .on_hover_text("Mobile devices must enter a PIN to access workout controls")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    // Display current PIN when server is running and PIN required
+                    if self.companion_config.require_pin && self.companion_server_running {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.label("Current PIN:");
+                            if let Some(ref pin) = self.companion_current_pin {
+                                ui.label(
+                                    RichText::new(pin)
+                                        .monospace()
+                                        .size(20.0)
+                                        .color(Color32::from_rgb(66, 133, 244)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new("------")
+                                        .monospace()
+                                        .color(Color32::GRAY),
+                                );
+                            }
+                            // T048: Regenerate PIN button
+                            if ui
+                                .button("🔄 Regenerate PIN")
+                                .on_hover_text("Generate a new random PIN")
+                                .clicked()
+                            {
+                                self.regenerate_pin_requested = true;
+                            }
+                        });
+                        ui.label(
+                            RichText::new("Share this PIN with your mobile device to connect")
+                                .small()
+                                .color(Color32::GRAY),
+                        );
+                    }
+
+                    // T048: QR Code and URL section (when server is running)
+                    if self.companion_server_running {
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("Quick Pairing").strong());
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            // QR Code display
+                            if let Some(ref qr_data) = self.companion_qr_data {
+                                // Render QR code using egui rectangles
+                                let module_count = qr_data.len();
+                                if module_count > 0 {
+                                    let qr_size = 160.0; // Total QR code size in pixels
+                                    let module_size = qr_size / module_count as f32;
+                                    let quiet_zone = 2; // Quiet zone in modules
+
+                                    // Reserve space for QR code with quiet zone
+                                    let total_size = qr_size + (quiet_zone as f32 * module_size * 2.0);
+                                    let (response, painter) = ui.allocate_painter(
+                                        egui::vec2(total_size, total_size),
+                                        egui::Sense::hover(),
+                                    );
+
+                                    let rect = response.rect;
+                                    let offset = egui::vec2(
+                                        quiet_zone as f32 * module_size,
+                                        quiet_zone as f32 * module_size,
+                                    );
+
+                                    // Draw white background with quiet zone
+                                    painter.rect_filled(rect, 4.0, Color32::WHITE);
+
+                                    // Draw QR code modules
+                                    for (y, row) in qr_data.iter().enumerate() {
+                                        for (x, &is_dark) in row.iter().enumerate() {
+                                            if is_dark {
+                                                let module_rect = egui::Rect::from_min_size(
+                                                    rect.min + offset + egui::vec2(
+                                                        x as f32 * module_size,
+                                                        y as f32 * module_size,
+                                                    ),
+                                                    egui::vec2(module_size, module_size),
+                                                );
+                                                painter.rect_filled(
+                                                    module_rect,
+                                                    0.0,
+                                                    Color32::BLACK,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Placeholder when QR not available
+                                ui.group(|ui| {
+                                    ui.set_min_size(egui::vec2(160.0, 160.0));
+                                    ui.centered_and_justified(|ui| {
+                                        ui.label(
+                                            RichText::new("QR code loading...")
+                                                .color(Color32::GRAY)
+                                                .italics(),
+                                        );
+                                    });
+                                });
+                            }
+
+                            ui.add_space(16.0);
+
+                            // Connection info and buttons on the right side
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    RichText::new("Scan QR code to connect")
+                                        .color(Color32::GRAY)
+                                        .small(),
+                                );
+                                ui.add_space(8.0);
+
+                                // Connection URL display
+                                if let Some(ref url) = self.companion_connection_url {
+                                    ui.horizontal(|ui| {
+                                        ui.label("URL:");
+                                        ui.label(
+                                            RichText::new(url)
+                                                .monospace()
+                                                .small()
+                                                .color(Color32::from_rgb(100, 149, 237)),
+                                        );
+                                    });
+                                }
+
+                                ui.add_space(8.0);
+
+                                // Copy URL button
+                                if ui
+                                    .button("📋 Copy URL")
+                                    .on_hover_text("Copy connection URL to clipboard")
+                                    .clicked()
+                                {
+                                    self.copy_url_requested = true;
+                                }
+                            });
+                        });
+
+                        // T049: Connected Devices section
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Connected Devices").strong());
+                            ui.add_space(8.0);
+                            let client_count = self.companion_clients.len();
+                            let count_color = if client_count > 0 {
+                                Color32::from_rgb(52, 168, 83) // Green
+                            } else {
+                                Color32::GRAY
+                            };
+                            ui.label(
+                                RichText::new(format!("({})", client_count))
+                                    .color(count_color),
+                            );
+                        });
+                        ui.add_space(4.0);
+
+                        if self.companion_clients.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📱").size(18.0).weak());
+                                ui.add_space(4.0);
+                                ui.label(RichText::new("No companion apps connected").weak());
+                            });
+                            ui.label(
+                                RichText::new("Open the RustRide app on your phone to connect")
+                                    .weak()
+                                    .small(),
+                            );
+                        } else {
+                            // Show each connected client with disconnect button
+                            for client in &self.companion_clients {
+                                let bg_color = if client.is_authenticated {
+                                    Color32::from_rgba_unmultiplied(52, 168, 83, 30)
+                                } else {
+                                    Color32::from_rgba_unmultiplied(251, 188, 4, 30)
+                                };
+
+                                egui::Frame::new()
+                                    .fill(bg_color)
+                                    .inner_margin(12.0)
+                                    .corner_radius(8.0)
+                                    .show(ui, |ui| {
+                                        ui.set_min_width(ui.available_width() - 16.0);
+
+                                        ui.horizontal(|ui| {
+                                            // Icon
+                                            ui.label(RichText::new("📱").size(24.0));
+                                            ui.add_space(8.0);
+
+                                            ui.vertical(|ui| {
+                                                // IP Address with auth status
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RichText::new(&client.remote_addr).strong());
+                                                    if client.is_authenticated {
+                                                        ui.label(
+                                                            RichText::new(" ✓ Authenticated")
+                                                                .color(Color32::from_rgb(52, 168, 83))
+                                                                .small(),
+                                                        );
+                                                    } else {
+                                                        ui.label(
+                                                            RichText::new(" ○ Pending auth")
+                                                                .color(Color32::from_rgb(251, 188, 4))
+                                                                .small(),
+                                                        );
+                                                    }
+                                                });
+
+                                                // Connection details
+                                                ui.horizontal(|ui| {
+                                                    ui.label(
+                                                        RichText::new(format!("Connected: {}", client.connected_at))
+                                                            .weak()
+                                                            .small(),
+                                                    );
+                                                    if client.subscribed_to_metrics {
+                                                        ui.add_space(8.0);
+                                                        ui.label(
+                                                            RichText::new("📊 Streaming metrics")
+                                                                .color(Color32::from_rgb(66, 133, 244))
+                                                                .small(),
+                                                        );
+                                                    }
+                                                });
+                                            });
+
+                                            // Disconnect button on the right
+                                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                if ui
+                                                    .button(RichText::new("Disconnect").color(Color32::from_rgb(234, 67, 53)))
+                                                    .on_hover_text("Disconnect this device")
+                                                    .clicked()
+                                                {
+                                                    self.disconnect_companion_session_id = Some(client.session_id);
+                                                }
+                                            });
+                                        });
+                                    });
+
+                                ui.add_space(8.0);
+                            }
+                        }
+                    }
+
+                    ui.add_space(12.0);
+
+                    // Session settings
+                    ui.label(RichText::new("Session").strong());
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("companion_session_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 8.0])
+                        .show(ui, |ui| {
+                            // Session timeout
+                            ui.label("Session timeout:");
+                            let timeout_options = [
+                                (0, "No timeout"),
+                                (1800, "30 minutes"),
+                                (3600, "1 hour"),
+                                (7200, "2 hours"),
+                            ];
+                            let current_timeout = self.companion_config.session_timeout_secs;
+                            let current_label = timeout_options
+                                .iter()
+                                .find(|(v, _)| *v == current_timeout)
+                                .map(|(_, l)| *l)
+                                .unwrap_or("Custom");
+
+                            egui::ComboBox::from_id_salt("companion_timeout")
+                                .selected_text(current_label)
+                                .show_ui(ui, |ui| {
+                                    for (value, label) in timeout_options {
+                                        if ui
+                                            .selectable_label(current_timeout == value, label)
+                                            .clicked()
+                                        {
+                                            self.companion_config.session_timeout_secs = value;
+                                            self.has_changes = true;
+                                        }
+                                    }
+                                });
+                            ui.end_row();
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Info box
+                    ui.group(|ui| {
+                        ui.set_min_width(ui.available_width() - 16.0);
+                        ui.label(
+                            RichText::new("ℹ️ How to Connect")
+                                .strong()
+                                .color(Color32::from_rgb(66, 133, 244)),
+                        );
+                        ui.add_space(4.0);
+                        ui.label("1. Enable the companion server above");
+                        ui.label("2. Open the RustRide companion app on your mobile device");
+                        ui.label("3. Ensure both devices are on the same WiFi network");
+                        ui.label("4. The app will auto-discover this computer, or scan the QR code");
+                        if self.companion_config.require_pin {
+                            ui.label("5. Enter the PIN shown above when prompted");
+                        }
+                    });
+                });
+            }
+        });
     }
 
     /// Render the accessibility settings section.
