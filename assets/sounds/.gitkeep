@@ -3,14 +3,65 @@
 # Place WAV or MP3 sound files here. The audio backend will load
 # them by name (without extension).
 #
-# Expected sounds:
-# - countdown_tick.wav - Short tick for countdown timers
-# - interval_change.wav - Sound for workout interval changes
-# - achievement_bronze.wav - Bronze achievement unlocked
-# - achievement_silver.wav - Silver achievement unlocked
-# - achievement_gold.wav - Gold achievement unlocked
-# - workout_start.wav - Workout session starting
-# - workout_complete.wav - Workout completed
+# SOUND FILE CATALOG
+# ==================
 #
-# If audio files are missing, the audio engine will fall back to
-# generated tones.
+# Countdown Sounds:
+# - countdown_tick.wav - Short tick for each countdown second
+# - countdown_3.wav - 3 seconds remaining (higher pitch)
+# - countdown_2.wav - 2 seconds remaining (even higher)
+# - countdown_1.wav - 1 second remaining (highest, most urgent)
+# - countdown_go.wav - Go! Interval starting now
+#
+# Interval Sounds:
+# - interval_warning.wav - Interval change approaching
+# - interval_change.wav - Interval has changed
+# - interval_rest.wav - Rest interval started
+# - interval_work.wav - Work interval started
+#
+# Achievement Sounds:
+# - achievement_bronze.wav - Bronze achievement unlocked (simple chime)
+# - achievement_silver.wav - Silver achievement unlocked (richer harmony)
+# - achievement_gold.wav - Gold achievement unlocked (triumphant fanfare)
+# - achievement_platinum.wav - Platinum achievement unlocked (epic celebration)
+# - level_up.wav - Level up notification
+#
+# Milestone Sounds:
+# - milestone_distance.wav - Distance milestone (5km, 10km, etc.)
+# - milestone_time.wav - Time milestone (15min, 30min, etc.)
+# - milestone_calories.wav - Calorie milestone
+# - personal_record.wav - Personal record achieved
+#
+# Workout Lifecycle Sounds:
+# - workout_start.wav - Workout is starting
+# - workout_pause.wav - Workout paused
+# - workout_resume.wav - Workout resumed
+# - workout_complete.wav - Workout completed successfully
+# - workout_stop.wav - Workout stopped early
+#
+# Zone Change Sounds:
+# - zone_up.wav - Entering higher power zone
+# - zone_down.wav - Entering lower power zone
+#
+# Alert Sounds:
+# - notification.wav - General notification
+# - warning.wav - Warning alert
+# - error.wav - Error alert
+# - success.wav - Success confirmation
+#
+# Connection Sounds:
+# - device_connected.wav - Device connected
+# - device_disconnected.wav - Device disconnected
+#
+# FALLBACK BEHAVIOR
+# =================
+# If any audio file is missing, the audio engine will automatically
+# generate appropriate tones as fallback. See src/audio/sounds.rs
+# for the fallback tone definitions.
+#
+# AUDIO FILE REQUIREMENTS
+# =======================
+# - Format: WAV (recommended) or MP3
+# - Sample rate: 44100 Hz recommended
+# - Duration: Keep sounds short (<500ms for notifications, <200ms for ticks)
+# - Volume: Normalize to -3dB peak for consistent playback
