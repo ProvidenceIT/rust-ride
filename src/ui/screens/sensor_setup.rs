@@ -4,6 +4,7 @@
 //! T046: Implement sensor pairing confirmation dialog
 //! T009-3.4: Add connection quality indicators to sensor setup screen
 //! T009-4.4: Add sensor conflict resolution dialog
+//! T009-6.4: Add in-app troubleshooting tips
 
 use std::collections::HashMap;
 
@@ -11,7 +12,12 @@ use egui::{Align, Color32, Layout, RichText, Ui, Vec2};
 
 use crate::sensors::ant::dongle::{AntDongle, DongleStatus};
 use crate::sensors::conflict::{DataType, SensorConflict};
+use crate::sensors::health::HealthStatus;
 use crate::sensors::quality::{QualityLevel, QualityStats};
+use crate::sensors::troubleshooting::{
+    get_no_sensors_tips, get_poor_signal_tips, get_power_meter_tips,
+    get_ant_plus_tips, IssueDetector, TroubleshootingTip, TipPriority,
+};
 use crate::sensors::types::{ConnectionState, DiscoveredSensor, Protocol, SensorState, SensorType};
 use crate::ui::dialogs::sensor_conflict::{
     ConflictNotificationBanner, ConflictResolutionAction, SensorConflictDialog,
@@ -50,6 +56,12 @@ pub struct SensorSetupScreen {
     pub active_conflicts: Vec<SensorConflict>,
     /// Last conflict resolution action (for external handling)
     pub last_conflict_action: Option<ConflictResolutionAction>,
+    /// Issue detector for contextual troubleshooting tips
+    pub issue_detector: IssueDetector,
+    /// Whether to show expanded troubleshooting panel
+    pub show_troubleshooting_panel: bool,
+    /// Dismissed tip titles (to avoid showing same tip repeatedly)
+    dismissed_tips: std::collections::HashSet<String>,
 }
 
 impl Default for SensorSetupScreen {
@@ -68,6 +80,9 @@ impl Default for SensorSetupScreen {
             conflict_dialog_state: SensorConflictDialogState::new(),
             active_conflicts: Vec::new(),
             last_conflict_action: None,
+            issue_detector: IssueDetector::new(),
+            show_troubleshooting_panel: false,
+            dismissed_tips: std::collections::HashSet::new(),
         }
     }
 }
@@ -255,6 +270,60 @@ impl SensorSetupScreen {
         self.last_conflict_action.take()
     }
 
+    // =========================================================================
+    // Troubleshooting Management
+    // =========================================================================
+
+    /// Record a signal quality issue for a sensor.
+    pub fn record_quality_issue(&mut self, device_id: &str, sensor_name: &str, quality: QualityLevel, rssi: Option<i16>) {
+        self.issue_detector.record_quality_issue(device_id, sensor_name, quality, rssi);
+    }
+
+    /// Record a connection health issue for a sensor.
+    pub fn record_health_issue(&mut self, device_id: &str, sensor_name: &str, status: HealthStatus) {
+        self.issue_detector.record_health_issue(device_id, sensor_name, status);
+    }
+
+    /// Record a discovery issue for a missing sensor.
+    pub fn record_discovery_issue(&mut self, sensor_name: &str, sensor_type: SensorType) {
+        self.issue_detector.record_discovery_issue(sensor_name, sensor_type);
+    }
+
+    /// Record a battery issue for a sensor.
+    pub fn record_battery_issue(&mut self, device_id: &str, sensor_name: &str, level: u8) {
+        self.issue_detector.record_battery_issue(device_id, sensor_name, level);
+    }
+
+    /// Record that no ANT+ dongle is available.
+    pub fn record_ant_dongle_missing(&mut self) {
+        self.issue_detector.record_ant_dongle_missing();
+    }
+
+    /// Clear all detected issues.
+    pub fn clear_issues(&mut self) {
+        self.issue_detector.clear();
+    }
+
+    /// Check if there are any detected issues.
+    pub fn has_issues(&self) -> bool {
+        self.issue_detector.has_issues()
+    }
+
+    /// Dismiss a troubleshooting tip by title.
+    pub fn dismiss_tip(&mut self, title: &str) {
+        self.dismissed_tips.insert(title.to_string());
+    }
+
+    /// Check if a tip has been dismissed.
+    pub fn is_tip_dismissed(&self, title: &str) -> bool {
+        self.dismissed_tips.contains(title)
+    }
+
+    /// Toggle the troubleshooting panel visibility.
+    pub fn toggle_troubleshooting_panel(&mut self) {
+        self.show_troubleshooting_panel = !self.show_troubleshooting_panel;
+    }
+
     /// Check if a sensor with the same name exists with a different protocol.
     /// Returns Some((device_id, ble_sensor, ant_sensor)) if dual-protocol detected.
     pub fn find_dual_protocol_sensor(
@@ -395,18 +464,9 @@ impl SensorSetupScreen {
                             );
                         }
 
-                        // T154: Troubleshooting tips
+                        // T009-6.4: Troubleshooting tips
                         ui.add_space(16.0);
-                        ui.group(|ui| {
-                            ui.label(RichText::new("Troubleshooting Tips").size(14.0).strong());
-                            ui.add_space(4.0);
-                            ui.label("• Make sure Bluetooth is enabled on your device");
-                            ui.label("• Ensure your trainer/sensors are powered on");
-                            ui.label("• Keep sensors within 10 meters of your computer");
-                            ui.label("• Wake up your sensors by moving/pedaling");
-                            ui.label("• Check that no other app is connected to the sensor");
-                            ui.label("• Try restarting the sensor if it won't appear");
-                        });
+                        self.render_troubleshooting_tips_panel(ui, TroubleshootingContext::NoSensors);
                     } else {
                         // Clone sensors to avoid borrow conflict with mutable self
                         let sensors: Vec<_> = self.discovered_sensors.clone();
@@ -663,14 +723,160 @@ impl SensorSetupScreen {
                             format!("{} have weak signals", sensor_names.join(", "))
                         };
                         ui.label(RichText::new(names_text).weak());
-                        ui.label(
-                            RichText::new("Try moving closer to the sensor or reducing interference")
-                                .small()
-                                .weak(),
-                        );
+
+                        // Show quick troubleshooting tips
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("Quick fixes:").small().strong());
+                        for tip in get_poor_signal_tips().iter().take(3) {
+                            ui.label(RichText::new(format!("• {}", tip)).small().weak());
+                        }
                     });
                 });
             });
+    }
+
+    /// Render the troubleshooting tips panel based on context.
+    fn render_troubleshooting_tips_panel(&mut self, ui: &mut Ui, context: TroubleshootingContext) {
+        let tips = match context {
+            TroubleshootingContext::NoSensors => get_no_sensors_tips(),
+            TroubleshootingContext::PoorSignal => get_poor_signal_tips(),
+            TroubleshootingContext::PowerMeterMissing => get_power_meter_tips(),
+            TroubleshootingContext::AntPlus => get_ant_plus_tips(),
+        };
+
+        let (title, icon) = match context {
+            TroubleshootingContext::NoSensors => ("Troubleshooting Tips", "💡"),
+            TroubleshootingContext::PoorSignal => ("Signal Troubleshooting", "📶"),
+            TroubleshootingContext::PowerMeterMissing => ("Power Meter Tips", "⚡"),
+            TroubleshootingContext::AntPlus => ("ANT+ Troubleshooting", "📡"),
+        };
+
+        let bg_color = Color32::from_rgba_unmultiplied(66, 133, 244, 20);
+        let border_color = Color32::from_rgb(66, 133, 244);
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .inner_margin(12.0)
+            .corner_radius(6.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(icon).size(18.0));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(title).size(14.0).strong().color(border_color));
+                });
+                ui.add_space(6.0);
+
+                for tip in tips {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("•").color(Color32::GRAY));
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(tip).small());
+                    });
+                }
+            });
+    }
+
+    /// Render contextual troubleshooting based on detected issues.
+    fn render_contextual_troubleshooting(&mut self, ui: &mut Ui) {
+        let contextual_tips = self.issue_detector.generate_contextual_tips();
+        if contextual_tips.is_empty() {
+            return;
+        }
+
+        // Filter out dismissed tips
+        let active_tips: Vec<_> = contextual_tips
+            .into_iter()
+            .filter(|t| !self.dismissed_tips.contains(&t.tip.title))
+            .collect();
+
+        if active_tips.is_empty() {
+            return;
+        }
+
+        ui.add_space(8.0);
+
+        // Show the top tip prominently
+        if let Some(top_tip) = active_tips.first() {
+            self.render_tip_card(ui, &top_tip.tip, &top_tip.context);
+        }
+
+        // Show toggle for more tips if there are multiple
+        if active_tips.len() > 1 {
+            ui.add_space(4.0);
+            let toggle_text = if self.show_troubleshooting_panel {
+                format!("▼ Hide {} more tips", active_tips.len() - 1)
+            } else {
+                format!("▶ Show {} more tips", active_tips.len() - 1)
+            };
+
+            if ui.small_button(&toggle_text).clicked() {
+                self.show_troubleshooting_panel = !self.show_troubleshooting_panel;
+            }
+
+            if self.show_troubleshooting_panel {
+                for tip in active_tips.iter().skip(1) {
+                    self.render_tip_card(ui, &tip.tip, &tip.context);
+                }
+            }
+        }
+    }
+
+    /// Render a single tip card.
+    fn render_tip_card(&mut self, ui: &mut Ui, tip: &TroubleshootingTip, context: &str) {
+        let (bg_color, border_color) = match tip.priority {
+            TipPriority::Critical => (
+                Color32::from_rgba_unmultiplied(234, 67, 53, 25),
+                Color32::from_rgb(234, 67, 53),
+            ),
+            TipPriority::High => (
+                Color32::from_rgba_unmultiplied(251, 188, 4, 25),
+                Color32::from_rgb(251, 188, 4),
+            ),
+            TipPriority::Medium => (
+                Color32::from_rgba_unmultiplied(66, 133, 244, 20),
+                Color32::from_rgb(66, 133, 244),
+            ),
+            TipPriority::Low => (
+                Color32::from_rgba_unmultiplied(160, 160, 170, 20),
+                Color32::from_rgb(160, 160, 170),
+            ),
+        };
+
+        egui::Frame::new()
+            .fill(bg_color)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .inner_margin(10.0)
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tip.icon).size(16.0));
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&tip.title).strong().color(border_color));
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if ui.small_button("✕").on_hover_text("Dismiss").clicked() {
+                                    self.dismissed_tips.insert(tip.title.clone());
+                                }
+                            });
+                        });
+
+                        ui.label(RichText::new(context).small().weak());
+                        ui.add_space(4.0);
+
+                        // Show first resolution step
+                        if let Some(first_step) = tip.resolution.first() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("→").color(border_color));
+                                ui.label(RichText::new(first_step).small());
+                            });
+                        }
+                    });
+                });
+            });
+
+        ui.add_space(4.0);
     }
 
     /// Render the pairing confirmation dialog.
@@ -811,6 +1017,19 @@ impl SensorSetupScreen {
                 });
             });
     }
+}
+
+/// Context for which troubleshooting tips to show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TroubleshootingContext {
+    /// No sensors found during discovery.
+    NoSensors,
+    /// Poor signal quality detected.
+    PoorSignal,
+    /// Power meter expected but not found.
+    PowerMeterMissing,
+    /// ANT+ specific issues.
+    AntPlus,
 }
 
 /// Get an icon for a sensor type.

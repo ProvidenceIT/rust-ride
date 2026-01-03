@@ -19,6 +19,7 @@ pub mod power_meter;
 pub mod quality;
 pub mod reconnection;
 pub mod smo2;
+pub mod troubleshooting;
 pub mod types;
 
 pub use dynamics::{
@@ -82,6 +83,12 @@ pub use calibration::{
 pub use smo2::{
     DefaultSmO2Provider, MuscleLocation, SmO2Error, SmO2Provider, SmO2Reading, SmO2Sensor,
     SmO2Status,
+};
+pub use troubleshooting::{
+    ContextualTip, DetectedIssue, IssueDetector, TipPriority, TroubleshootingCategory,
+    TroubleshootingGuide, TroubleshootingTip, get_ant_plus_tips, get_calibration_tips,
+    get_connection_drop_tips, get_no_sensors_tips, get_poor_signal_tips, get_power_meter_tips,
+    get_protocol_specific_tips,
 };
 pub use types::{
     ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress, ParallelDiscoveryResult,
