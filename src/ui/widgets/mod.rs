@@ -3,6 +3,7 @@
 pub mod accessible_button;
 pub mod achievement_notification;
 pub mod chat_panel;
+pub mod connection_quality;
 pub mod dynamics_display;
 pub mod ftp_notification;
 pub mod gradient_display;
@@ -30,6 +31,10 @@ pub use achievement_notification::{
     AchievementBadge, AchievementNotificationConfig, AchievementNotificationWidget,
 };
 pub use chat_panel::{ChatMessage, ChatOverlay, ChatPanel, ChatPanelAction, ChatPanelConfig};
+pub use connection_quality::{
+    CompactConnectionQualityIndicator, ConnectionQualityIndicator,
+    ConnectionQualityIndicatorConfig, ConnectionQualityIndicatorResponse, ConnectionQualityPreview,
+};
 pub use dynamics_display::{BalanceBar, DynamicsDisplay};
 pub use ftp_notification::{FtpNotification, FtpNotificationAction};
 pub use gradient_display::{GradientDisplay, GradientDisplayConfig, GradientPreview};
