@@ -4233,4 +4233,660 @@ mod tests {
         assert!(msg.contains("date range"));
         assert!(msg.contains("user"));
     }
+
+    // ============ ExportOptions Filtering Tests ============
+    // These tests verify that ExportOptions correctly filters data when building exports.
+
+    mod export_options_filtering_tests {
+        use super::*;
+        use crate::metrics::analytics::pdc::PdcPoint;
+        use crate::metrics::analytics::rider_type::{PowerProfile, RiderType};
+        use crate::metrics::analytics::training_load::DailyLoad;
+        use crate::metrics::analytics::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
+        use crate::metrics::analytics::critical_power::CpModel;
+        use crate::storage::analytics_store::AnalyticsStore;
+        use crate::storage::database::Database;
+
+        fn setup_db() -> Database {
+            Database::open_in_memory().expect("Failed to create test database")
+        }
+
+        fn create_test_user(db: &Database) -> Uuid {
+            let user_id = Uuid::new_v4();
+            let now = Utc::now().to_rfc3339();
+            db.connection()
+                .execute(
+                    "INSERT INTO users (id, name, ftp, weight_kg, power_zones_json, units, theme, created_at, updated_at)
+                     VALUES (?1, 'Test User', 250, 70.0, '{}', 'metric', 'dark', ?2, ?2)",
+                    rusqlite::params![user_id.to_string(), now],
+                )
+                .expect("Failed to create test user");
+            user_id
+        }
+
+        fn populate_all_data(db: &Database, user_id: &Uuid) {
+            let store = AnalyticsStore::new(db.connection());
+
+            // Add PDC data
+            let pdc_points = vec![
+                PdcPoint {
+                    duration_secs: 60,
+                    power_watts: 400,
+                },
+                PdcPoint {
+                    duration_secs: 300,
+                    power_watts: 320,
+                },
+            ];
+            store
+                .save_pdc_points(user_id, &pdc_points, None)
+                .expect("Failed to save PDC");
+
+            // Add training load data
+            let dates = [
+                NaiveDate::from_ymd_opt(2024, 6, 10).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 11).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 12).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 20).unwrap(),
+            ];
+            for (i, date) in dates.iter().enumerate() {
+                let load = DailyLoad {
+                    tss: 100.0 + (i as f32 * 10.0),
+                    atl: 70.0 + (i as f32 * 2.0),
+                    ctl: 80.0 + (i as f32),
+                    tsb: 10.0 - (i as f32 * 2.0),
+                };
+                store
+                    .save_daily_load(user_id, *date, &load)
+                    .expect("Failed to save training load");
+            }
+
+            // Add CP model
+            let cp_model = CpModel::new(280, 18000, 0.96);
+            store
+                .save_cp_model(user_id, &cp_model)
+                .expect("Failed to save CP model");
+
+            // Add VO2max
+            let vo2max = Vo2maxResult {
+                vo2max: 52.5,
+                method: Vo2maxMethod::FtpBased,
+                classification: FitnessLevel::Trained,
+            };
+            store
+                .save_vo2max(user_id, &vo2max)
+                .expect("Failed to save VO2max");
+
+            // Add rider profile
+            store
+                .save_rider_profile(user_id, RiderType::AllRounder, &PowerProfile::balanced())
+                .expect("Failed to save rider profile");
+
+            // Set accepted FTP
+            db.connection()
+                .execute(
+                    "UPDATE users SET ftp = 275 WHERE id = ?1",
+                    rusqlite::params![user_id.to_string()],
+                )
+                .expect("Failed to update FTP");
+        }
+
+        #[test]
+        fn test_export_options_filters_excludes_pdc_when_disabled() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new().with_pdc(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // PDC should be None when disabled
+            assert!(export.pdc.is_none(), "PDC should be excluded when disabled");
+
+            // Other data should still be present
+            assert!(
+                export.training_load.is_some(),
+                "Training load should be present"
+            );
+            assert!(export.cp_model.is_some(), "CP model should be present");
+            assert!(
+                export.fitness_profile.is_some(),
+                "Fitness profile should be present"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_excludes_training_load_when_disabled() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new().with_training_load(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Training load should be None when disabled
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded when disabled"
+            );
+
+            // Other data should still be present
+            assert!(export.pdc.is_some(), "PDC should be present");
+            assert!(export.cp_model.is_some(), "CP model should be present");
+            assert!(
+                export.fitness_profile.is_some(),
+                "Fitness profile should be present"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_excludes_cp_model_when_disabled() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new().with_cp_model(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // CP model should be None when disabled
+            assert!(
+                export.cp_model.is_none(),
+                "CP model should be excluded when disabled"
+            );
+
+            // Other data should still be present
+            assert!(export.pdc.is_some(), "PDC should be present");
+            assert!(
+                export.training_load.is_some(),
+                "Training load should be present"
+            );
+            assert!(
+                export.fitness_profile.is_some(),
+                "Fitness profile should be present"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_excludes_fitness_profile_when_disabled() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new().with_fitness_profile(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Fitness profile should be None when disabled
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded when disabled"
+            );
+
+            // Other data should still be present
+            assert!(export.pdc.is_some(), "PDC should be present");
+            assert!(
+                export.training_load.is_some(),
+                "Training load should be present"
+            );
+            assert!(export.cp_model.is_some(), "CP model should be present");
+        }
+
+        #[test]
+        fn test_export_options_filters_pdc_only_excludes_all_others() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::pdc_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Only PDC should be present
+            assert!(export.pdc.is_some(), "PDC should be present");
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded"
+            );
+            assert!(export.cp_model.is_none(), "CP model should be excluded");
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded"
+            );
+
+            // Verify PDC has expected data
+            let pdc = export.pdc.unwrap();
+            assert_eq!(pdc.len(), 2);
+        }
+
+        #[test]
+        fn test_export_options_filters_training_load_only_excludes_all_others() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::training_load_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Only training load should be present
+            assert!(export.pdc.is_none(), "PDC should be excluded");
+            assert!(
+                export.training_load.is_some(),
+                "Training load should be present"
+            );
+            assert!(export.cp_model.is_none(), "CP model should be excluded");
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_cp_model_only_excludes_all_others() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::cp_model_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Only CP model should be present
+            assert!(export.pdc.is_none(), "PDC should be excluded");
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded"
+            );
+            assert!(export.cp_model.is_some(), "CP model should be present");
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded"
+            );
+
+            // Verify CP model has expected data
+            let cp = export.cp_model.unwrap();
+            assert_eq!(cp.cp_watts, 280);
+            assert_eq!(cp.w_prime_joules, 18000);
+        }
+
+        #[test]
+        fn test_export_options_filters_fitness_profile_only_excludes_all_others() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::fitness_profile_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Only fitness profile should be present
+            assert!(export.pdc.is_none(), "PDC should be excluded");
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded"
+            );
+            assert!(export.cp_model.is_none(), "CP model should be excluded");
+            assert!(
+                export.fitness_profile.is_some(),
+                "Fitness profile should be present"
+            );
+
+            // Verify fitness profile has expected data
+            let fp = export.fitness_profile.unwrap();
+            assert_eq!(fp.ftp_watts, Some(275));
+            assert!(fp.vo2max.is_some());
+            assert!(fp.rider_type.is_some());
+        }
+
+        #[test]
+        fn test_export_options_filters_date_range_filters_training_load() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+
+            // Filter to only June 11-15
+            let start = NaiveDate::from_ymd_opt(2024, 6, 11).unwrap();
+            let end = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+            let options = ExportOptions::training_load_only().with_date_range(Some(start), Some(end));
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let training_load = export.training_load.expect("Should have training load");
+
+            // Should have 3 days: 11, 12, 15 (10 and 20 are outside range)
+            assert_eq!(
+                training_load.len(),
+                3,
+                "Should have 3 days in range: {:?}",
+                training_load.days.iter().map(|d| d.date).collect::<Vec<_>>()
+            );
+
+            // Verify all dates are within range
+            for day in &training_load.days {
+                assert!(
+                    day.date >= start && day.date <= end,
+                    "Date {} should be within range",
+                    day.date
+                );
+            }
+        }
+
+        #[test]
+        fn test_export_options_filters_start_date_only() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+
+            // Only set start date to June 15
+            let start = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+            let options = ExportOptions::training_load_only().with_start_date(start);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let training_load = export.training_load.expect("Should have training load");
+
+            // Should have 2 days: 15 and 20 (everything from June 15 onwards)
+            assert_eq!(training_load.len(), 2, "Should have 2 days from June 15");
+
+            // Verify all dates are on or after start
+            for day in &training_load.days {
+                assert!(day.date >= start, "Date {} should be >= {}", day.date, start);
+            }
+        }
+
+        #[test]
+        fn test_export_options_filters_end_date_only() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+
+            // Only set end date to June 12 - BUT the default start is calculated as
+            // end_date - 365 days, so we need to set a reasonable recent end date
+            let end = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+            let options = ExportOptions::training_load_only().with_end_date(end);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let training_load = export.training_load.expect("Should have training load");
+
+            // Should have 3 days: 10, 11, 12 (everything up to June 12)
+            assert_eq!(
+                training_load.len(),
+                3,
+                "Should have 3 days up to June 12: {:?}",
+                training_load.days.iter().map(|d| d.date).collect::<Vec<_>>()
+            );
+
+            // Verify all dates are on or before end
+            for day in &training_load.days {
+                assert!(day.date <= end, "Date {} should be <= {}", day.date, end);
+            }
+        }
+
+        #[test]
+        fn test_export_options_filters_multiple_exclusions() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new()
+                .with_pdc(true)
+                .with_training_load(false)
+                .with_cp_model(true)
+                .with_fitness_profile(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // PDC and CP should be present
+            assert!(export.pdc.is_some(), "PDC should be present");
+            assert!(export.cp_model.is_some(), "CP model should be present");
+
+            // Training load and fitness profile should be excluded
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded"
+            );
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_all_disabled_returns_empty_export() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::new()
+                .with_pdc(false)
+                .with_training_load(false)
+                .with_cp_model(false)
+                .with_fitness_profile(false);
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // All should be None
+            assert!(export.pdc.is_none(), "PDC should be excluded");
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be excluded"
+            );
+            assert!(export.cp_model.is_none(), "CP model should be excluded");
+            assert!(
+                export.fitness_profile.is_none(),
+                "Fitness profile should be excluded"
+            );
+
+            // But metadata should still be present
+            assert!(!export.user_id.is_empty());
+            assert_eq!(export.export_version, AnalyticsExport::CURRENT_VERSION);
+        }
+
+        #[test]
+        fn test_export_options_filters_date_range_no_data_in_range() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+
+            // Filter to a range with no data (January 2024)
+            let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+            let end = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
+            let options = ExportOptions::training_load_only().with_date_range(Some(start), Some(end));
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            // Training load should be None when no data in range
+            assert!(
+                export.training_load.is_none(),
+                "Training load should be None when no data in range"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_json_output_respects_options() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::pdc_only();
+
+            let json = exporter
+                .export_json_with_options(user_id, &options)
+                .expect("Should export JSON");
+
+            // Parse and verify
+            let parsed: serde_json::Value =
+                serde_json::from_str(&json).expect("Should parse JSON");
+
+            // PDC should be present
+            assert!(
+                parsed["pdc"].is_object() || parsed["pdc"].is_array(),
+                "PDC should be in JSON"
+            );
+
+            // Other fields should be null
+            assert!(
+                parsed["training_load"].is_null(),
+                "training_load should be null"
+            );
+            assert!(parsed["cp_model"].is_null(), "cp_model should be null");
+            assert!(
+                parsed["fitness_profile"].is_null(),
+                "fitness_profile should be null"
+            );
+        }
+
+        #[test]
+        fn test_export_options_filters_preserves_pdc_data_integrity() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::pdc_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let pdc = export.pdc.expect("Should have PDC");
+
+            // Verify data integrity
+            assert_eq!(pdc.len(), 2);
+            assert_eq!(pdc.points[0].duration_secs, 60);
+            assert_eq!(pdc.points[0].power_watts, 400);
+            assert_eq!(pdc.points[1].duration_secs, 300);
+            assert_eq!(pdc.points[1].power_watts, 320);
+        }
+
+        #[test]
+        fn test_export_options_filters_preserves_training_load_data_integrity() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let start = NaiveDate::from_ymd_opt(2024, 6, 10).unwrap();
+            let end = NaiveDate::from_ymd_opt(2024, 6, 11).unwrap();
+            let options =
+                ExportOptions::training_load_only().with_date_range(Some(start), Some(end));
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let tl = export.training_load.expect("Should have training load");
+
+            // Verify data integrity for first day
+            assert_eq!(tl.len(), 2);
+            let day0 = &tl.days[0];
+            assert_eq!(day0.date, start);
+            assert!((day0.tss - 100.0).abs() < 0.01);
+            assert!((day0.atl - 70.0).abs() < 0.01);
+            assert!((day0.ctl - 80.0).abs() < 0.01);
+            assert!((day0.tsb - 10.0).abs() < 0.01);
+        }
+
+        #[test]
+        fn test_export_options_filters_preserves_cp_model_data_integrity() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::cp_model_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let cp = export.cp_model.expect("Should have CP model");
+
+            // Verify data integrity
+            assert_eq!(cp.cp_watts, 280);
+            assert_eq!(cp.w_prime_joules, 18000);
+            assert!((cp.r_squared - 0.96).abs() < 0.001);
+        }
+
+        #[test]
+        fn test_export_options_filters_preserves_fitness_profile_data_integrity() {
+            let db = setup_db();
+            let user_id = create_test_user(&db);
+            populate_all_data(&db, &user_id);
+
+            let exporter = AnalyticsExporter::new(Arc::new(db));
+            let options = ExportOptions::fitness_profile_only();
+
+            let export = exporter
+                .build_export_with_options(user_id, &options)
+                .expect("Should build export");
+
+            let fp = export.fitness_profile.expect("Should have fitness profile");
+
+            // Verify data integrity
+            assert_eq!(fp.ftp_watts, Some(275));
+            assert_eq!(fp.rider_type, Some("All-Rounder".to_string()));
+
+            let vo2max = fp.vo2max.expect("Should have VO2max");
+            assert!((vo2max.vo2max - 52.5).abs() < 0.01);
+            assert_eq!(vo2max.classification, "Trained");
+            assert_eq!(vo2max.method, "FTP-based");
+
+            let pp = fp.power_profile.expect("Should have power profile");
+            // PowerProfile::balanced() should have approximately equal values
+            assert!((pp.neuromuscular_pct - 100.0).abs() < 0.1);
+        }
+    }
 }
