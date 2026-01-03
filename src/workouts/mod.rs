@@ -1,6 +1,7 @@
 //! Workout module for structured training sessions.
 
 pub mod engine;
+pub mod exporter_zwo;
 pub mod library;
 pub mod parser_mrc;
 pub mod parser_zwo;
