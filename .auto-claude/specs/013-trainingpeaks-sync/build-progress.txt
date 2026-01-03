@@ -45,7 +45,7 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
 - [ ] T025: Add sync history view (2h)
 
 ## Phase 7: Testing (7.5 hours)
-- [ ] T026: Add unit tests for TrainingPeaksClient (4h)
+- [x] T026: Add unit tests for TrainingPeaksClient (4h) ✅
 - [ ] T027: Add integration tests for workout conversion (2h)
 - [ ] T028: Add UI component tests (1.5h)
 
@@ -385,3 +385,27 @@ Add TrainingPeaks OAuth integration for uploading completed rides and downloadin
   - test_get_connected_platforms
 - Fixed git conflict marker at end of file
 - Note: app.rs will need to handle NavigateToTrainingPeaksSettings action for navigation (done in parent task)
+
+### 2026-01-03 - T026: Unit Tests for TrainingPeaksClient (Already Complete)
+- Verified comprehensive unit tests already exist in trainingpeaks.rs http_mocked_tests module
+- Tests were written as part of earlier tasks (T001, T002, T010-T014)
+- Total of 90+ unit tests covering all TrainingPeaksClient methods:
+  - **Client Core Tests (7 tests):** Creation, token management, scopes, timeout constants
+  - **Upload Activity Tests (8 HTTP-mocked tests):** Success, rate limit, unauthorized, API errors, duplicate detection, FIT file validation
+  - **Check Upload Status Tests (7 HTTP-mocked tests):** Processing, ready, error, duplicate, not found
+  - **Get Athlete Tests (6 HTTP-mocked tests):** Success, rate limit, unauthorized, deserialization
+  - **Deauthorize Tests (5 HTTP-mocked tests):** Success, rate limit handling, unauthorized handling
+  - **Scheduled Workouts Tests (7 HTTP-mocked tests):** Success, empty result, rate limit, unauthorized, API error, with structure
+  - **Workout Details Tests (8 HTTP-mocked tests):** Success, not found, rate limit, unauthorized, API error, repeat steps
+  - **Workout Conversion Tests (20+ tests):** Power targets (absolute/percent/zones), range targets, cadence, repeats
+  - **TrainingPeaksSyncManager Tests (16+ tests):** Sync operations, cycling filter, tracking synced workouts
+- OAuth tests for TrainingPeaks in oauth.rs:
+  - test_trainingpeaks_token_exchange_success
+  - test_trainingpeaks_token_exchange_invalid_code_error
+  - test_trainingpeaks_token_exchange_server_error
+  - test_trainingpeaks_token_refresh_success
+  - test_trainingpeaks_token_refresh_invalid_grant_requires_reauth
+  - test_trainingpeaks_token_refresh_generic_error
+  - test_trainingpeaks_start_authorization_builds_correct_url
+- All tests use wiremock for HTTP mocking
+- No new code needed - task complete

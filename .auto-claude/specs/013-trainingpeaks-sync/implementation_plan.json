@@ -291,14 +291,16 @@
           "id": "T018",
           "title": "Display TrainingPeaks badge in workout library",
           "description": "Show TrainingPeaks source indicator in workout library UI for imported workouts.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T016"
           ],
           "estimated_hours": 1,
           "files": [
             "src/ui/screens/workout_library.rs"
-          ]
+          ],
+          "notes": "Added TrainingPeaks source badge display in workout library UI. Implementation includes: 1) TRAININGPEAKS_TEAL color constant (rgb(0,128,128)), 2) format_workout_source() function for workout format display names, 3) source_badge_color() function for platform-specific colors, 4) Source badge display next to workout name in render_workout_item(), 5) Source badge display in render_workout_preview(), 6) Support for all workout formats (TrainingPeaks, Zwift, TrainerRoad, Garmin, RustRide), 7) Unit tests for format_workout_source and source_badge_color functions. Commit: bf79208",
+          "updated_at": "2026-01-03T15:05:48.877201+00:00"
         }
       ]
     },
@@ -311,7 +313,7 @@
           "id": "T019",
           "title": "Create TrainingPeaks settings screen",
           "description": "Create src/ui/screens/settings_trainingpeaks.rs following settings_strava.rs pattern. Include connection states, athlete profile display, connect/disconnect buttons.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T003"
           ],
@@ -319,13 +321,15 @@
           "files": [
             "src/ui/screens/settings_trainingpeaks.rs",
             "src/ui/screens/mod.rs"
-          ]
+          ],
+          "notes": "Created src/ui/screens/settings_trainingpeaks.rs following settings_strava.rs pattern exactly. Includes: TrainingPeaksConnectionState enum (Disconnected, Connecting, Connected, Disconnecting, Error), TrainingPeaksSettingsAction enum (None, Back, Connect, Disconnect, ToggleAutoSync), TrainingPeaksSettingsScreen with full UI rendering for all connection states, athlete profile display with initials avatar, sync settings with auto-sync toggle, pending uploads count, last sync timestamp, and TrainingPeaks profile link. Uses TRAININGPEAKS_TEAL brand color. Added 10 comprehensive unit tests. Updated mod.rs with module registration, type exports, and TrainingPeaksSettings Screen enum variant. Commit: 168df5c",
+          "updated_at": "2026-01-03T15:09:46.791241+00:00"
         },
         {
           "id": "T020",
           "title": "Add TrainingPeaks sync settings",
           "description": "Add configuration options: auto-sync rides, sync workout plans, sync frequency. Store in platform config.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T019"
           ],
@@ -333,13 +337,15 @@
           "files": [
             "src/ui/screens/settings_trainingpeaks.rs",
             "src/integrations/sync/mod.rs"
-          ]
+          ],
+          "notes": "Added TrainingPeaksPlatformConfig struct in mod.rs with: enabled, auto_sync_rides, sync_workout_plans, sync_frequency_hours, lookahead_days, lookback_days, cycling_only fields. Default: 6h sync interval, 14 days lookahead, 7 days lookback, cycling_only enabled. Includes from_platform_config/to_platform_config conversions, is_workout_sync_due() method, sync_frequency_options/display helpers. Updated TrainingPeaksSettingsScreen with: separate Ride Sync and Workout Plan Sync UI sections, tp_config field, new action types (ToggleAutoSyncRides, ToggleSyncWorkoutPlans, SetSyncFrequency, UpdateConfig), sync frequency dropdown, synced workouts count display, last_workout_sync timestamp, cycling-only filter hint. Added 8 new unit tests in mod.rs and 7 new tests in settings_trainingpeaks.rs. Commit: 627fa75",
+          "updated_at": "2026-01-03T15:16:15.996611+00:00"
         },
         {
           "id": "T021",
           "title": "Add workout sync controls to settings",
           "description": "Add UI controls for manual workout plan sync, sync status display, and date range selection for workout import.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T014",
             "T019"
@@ -347,20 +353,24 @@
           "estimated_hours": 2,
           "files": [
             "src/ui/screens/settings_trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Added UI controls for manual workout plan sync in settings_trainingpeaks.rs. Implementation includes: 1) WorkoutSyncStatus enum (Idle, Syncing, Success, Error) for tracking sync progress, 2) New action types: SyncWorkoutsNow, SetLookaheadDays, SetLookbackDays, 3) Date range selection UI with LOOKAHEAD_OPTIONS (7, 14, 21, 28, 30 days) and LOOKBACK_OPTIONS (0, 3, 7, 14, 30 days) dropdowns, 4) \"Sync Now\" button with spinner during sync and disabled state, 5) render_workout_sync_status() method showing success (with new workouts count) or error messages, 6) set_workout_sync_status() and is_syncing_workouts() helper methods, 7) Export WorkoutSyncStatus from screens mod.rs, 8) 12 new unit tests for WorkoutSyncStatus, actions, and date range functionality. Commit: 821a1de",
+          "updated_at": "2026-01-03T15:22:43.463377+00:00"
         },
         {
           "id": "T022",
           "title": "Integrate TrainingPeaks into main settings screen",
           "description": "Add TrainingPeaks entry to main settings screen with connection status indicator and navigation to TrainingPeaks settings.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T019"
           ],
           "estimated_hours": 1,
           "files": [
             "src/ui/screens/settings.rs"
-          ]
+          ],
+          "notes": "Added TrainingPeaks entry to main settings screen with: 1) NavigateToStravaSettings and NavigateToTrainingPeaksSettings action variants in SettingsAction enum, 2) pending_navigation field in SettingsScreen for navigation tracking, 3) \"Settings \u2192\" button for Strava and TrainingPeaks that triggers navigation to dedicated settings screens, 4) Connection status indicator (green dot) next to platform name when connected, 5) \"Connected\" / \"Not connected\" status text, 6) TrainingPeaks teal brand color. Added 7 comprehensive unit tests. Commit: 3c7861f",
+          "updated_at": "2026-01-03T15:28:49.785846+00:00"
         }
       ]
     },
@@ -373,33 +383,37 @@
           "id": "T023",
           "title": "Add TrainingPeaks to sync notification widget",
           "description": "Extend sync_notification.rs widget to show TrainingPeaks sync status alongside other platforms.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T008"
           ],
           "estimated_hours": 1.5,
           "files": [
             "src/ui/widgets/sync_notification.rs"
-          ]
+          ],
+          "notes": "Extended sync_notification.rs widget for TrainingPeaks sync status. Added: 1) Three new notification types: WorkoutSyncStarted, WorkoutSyncCompleted (with new_workouts/updated_workouts counts), WorkoutSyncFailed, 2) Fixed hardcoded \"View on Strava\" button to use platform.display_name() dynamically (now shows \"View on TrainingPeaks\", etc.), 3) Implemented title(), description(), color(), background_color(), and icon() for all new types, 4) Added 9 comprehensive tests for TrainingPeaks and workout sync notifications. Commit: b3b76d5",
+          "updated_at": "2026-01-03T15:34:53.198384+00:00"
         },
         {
           "id": "T024",
           "title": "Show upload status on ride summary",
           "description": "Display TrainingPeaks upload status on ride summary screen after completing a ride.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T008"
           ],
           "estimated_hours": 1.5,
           "files": [
             "src/ui/screens/ride_summary.rs"
-          ]
+          ],
+          "notes": "Added inline sync status section to ride summary screen. Implementation includes: 1) Platform brand color constants (STRAVA_ORANGE, TRAININGPEAKS_TEAL, GARMIN_BLUE, INTERVALS_PURPLE), 2) Status color constants (SUCCESS_GREEN, ERROR_RED, WARNING_AMBER), 3) Helper functions: platform_color(), status_icon_and_color(), status_description(), 4) render_sync_status_section() method displaying platform badges with colored status indicators after action buttons, 5) New public methods: has_completed_sync(), is_syncing(), get_synced_platforms(), 6) 25 comprehensive unit tests. Commit: 2fcfb4e",
+          "updated_at": "2026-01-03T15:40:35.830689+00:00"
         },
         {
           "id": "T025",
           "title": "Add sync history view",
           "description": "Show sync history for TrainingPeaks in settings, including recent uploads and any failed syncs with retry option.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T019",
             "T017"
@@ -407,7 +421,9 @@
           "estimated_hours": 2,
           "files": [
             "src/ui/screens/settings_trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Added sync history view to TrainingPeaks settings screen. Implementation includes: 1) SyncHistoryEntry struct with status display helpers (can_retry, is_syncing, status_text, status_color, status_icon), 2) sync_history field in TrainingPeaksSettingsScreen with set_sync_history, add_sync_history_entry methods, 3) failed_sync_count() and has_failed_syncs() helper methods, 4) New actions: RetrySyncRecord(Uuid) and ViewExternalActivity(String), 5) render_sync_history() method with scrollable list display, 6) render_sync_history_entry() method showing ride name, status icon/text, timestamps, error messages for failed syncs, retry button, and view button for completed syncs, 7) MAX_SYNC_HISTORY_ENTRIES=10 limit, 8) 20+ comprehensive unit tests. Exported SyncHistoryEntry from screens mod.rs.",
+          "updated_at": "2026-01-03T15:47:38.319204+00:00"
         }
       ]
     },
@@ -420,14 +436,16 @@
           "id": "T026",
           "title": "Add unit tests for TrainingPeaksClient",
           "description": "Write unit tests for all TrainingPeaksClient methods including OAuth, upload, and workout fetch. Use wiremock for HTTP mocking.",
-          "status": "pending",
+          "status": "completed",
           "dependencies": [
             "T014"
           ],
           "estimated_hours": 4,
           "files": [
             "src/integrations/sync/trainingpeaks.rs"
-          ]
+          ],
+          "notes": "Comprehensive unit tests for TrainingPeaksClient already exist in http_mocked_tests module within trainingpeaks.rs. Tests were written as part of earlier tasks (T001, T002, T010-T014). Total of 90+ tests covering: 1) Client core (creation, token management, scopes), 2) Upload activity (7 HTTP-mocked tests with wiremock for success/error/rate-limit/duplicate), 3) Check upload status (6 HTTP-mocked tests), 4) Get athlete (5 HTTP-mocked tests), 5) Deauthorize (4 HTTP-mocked tests), 6) Scheduled workouts (7 HTTP-mocked tests), 7) Workout details (8 HTTP-mocked tests), 8) Workout conversion (20+ tests for power targets/zones/ranges/cadence/repeats), 9) TrainingPeaksSyncManager (15+ tests). Additionally, TrainingPeaks OAuth tests exist in oauth.rs covering token exchange, refresh, and authorization URL building.",
+          "updated_at": "2026-01-03T15:51:45.690156+00:00"
         },
         {
           "id": "T027",
@@ -517,5 +535,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-03T15:01:17.438397+00:00"
+  "last_updated": "2026-01-03T15:51:45.690156+00:00"
 }
