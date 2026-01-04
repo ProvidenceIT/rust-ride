@@ -924,7 +924,7 @@ async fn test_max_reconnection_attempts_limit() {
         broker_host: "192.0.2.1".to_string(), // Non-routable
         broker_port: 1883,
         connection_timeout_secs: 1,
-        reconnect_interval_secs: 1, // Fast reconnection for testing
+        reconnect_interval_secs: 1,      // Fast reconnection for testing
         max_reconnect_attempts: Some(2), // Limit to 2 attempts
         ..Default::default()
     };
@@ -947,7 +947,7 @@ async fn test_max_reconnection_attempts_limit() {
                 }
             }
             Ok(Err(_)) => break, // Channel closed
-            Err(_) => continue, // Timeout, keep waiting
+            Err(_) => continue,  // Timeout, keep waiting
         }
     }
 
@@ -1041,7 +1041,10 @@ async fn test_connection_lost_event_on_failure() {
         match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
             Ok(Ok(MqttEvent::ConnectionLost { reason })) => {
                 got_loss_event = true;
-                assert!(!reason.is_empty(), "Should have a reason for connection loss");
+                assert!(
+                    !reason.is_empty(),
+                    "Should have a reason for connection loss"
+                );
             }
             Ok(Ok(MqttEvent::Error { message })) => {
                 got_loss_event = true;
@@ -1059,7 +1062,10 @@ async fn test_connection_lost_event_on_failure() {
 
     let _ = client.disconnect().await;
 
-    assert!(got_loss_event, "Should have received a connection loss/error event");
+    assert!(
+        got_loss_event,
+        "Should have received a connection loss/error event"
+    );
 }
 
 /// Test that Reconnecting event includes attempt number.

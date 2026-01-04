@@ -27,7 +27,9 @@ fn create_test_database() -> Database {
 /// Insert a test rider into the database.
 fn insert_test_rider(db: &Database, rider: &Rider) {
     let store = SocialStore::new(db.connection());
-    store.insert_rider(rider).expect("Failed to insert test rider");
+    store
+        .insert_rider(rider)
+        .expect("Failed to insert test rider");
 }
 
 /// Insert a test FTP estimate directly into the database.
@@ -95,27 +97,55 @@ fn test_export_basic_profile() {
     let exporter = ProfileExporter::new(Arc::new(db));
     let json_result = exporter.export_json(rider_id);
 
-    assert!(json_result.is_ok(), "Export should succeed: {:?}", json_result.err());
+    assert!(
+        json_result.is_ok(),
+        "Export should succeed: {:?}",
+        json_result.err()
+    );
     let json = json_result.unwrap();
 
     // Parse the JSON and verify required fields
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Should be valid JSON");
 
     // Verify top-level fields
-    assert!(parsed.get("export_version").is_some(), "export_version field must be present");
-    assert!(parsed.get("exported_at").is_some(), "exported_at field must be present");
-    assert!(parsed.get("rider_id").is_some(), "rider_id field must be present");
-    assert!(parsed.get("profile").is_some(), "profile field must be present");
-    assert!(parsed.get("ftp_history").is_some(), "ftp_history field must be present");
+    assert!(
+        parsed.get("export_version").is_some(),
+        "export_version field must be present"
+    );
+    assert!(
+        parsed.get("exported_at").is_some(),
+        "exported_at field must be present"
+    );
+    assert!(
+        parsed.get("rider_id").is_some(),
+        "rider_id field must be present"
+    );
+    assert!(
+        parsed.get("profile").is_some(),
+        "profile field must be present"
+    );
+    assert!(
+        parsed.get("ftp_history").is_some(),
+        "ftp_history field must be present"
+    );
 
     // Verify profile data
     let profile = parsed.get("profile").unwrap();
-    assert_eq!(profile.get("display_name").and_then(|v| v.as_str()), Some("TestRider123"));
-    assert_eq!(profile.get("bio").and_then(|v| v.as_str()), Some("Integration test bio"));
+    assert_eq!(
+        profile.get("display_name").and_then(|v| v.as_str()),
+        Some("TestRider123")
+    );
+    assert_eq!(
+        profile.get("bio").and_then(|v| v.as_str()),
+        Some("Integration test bio")
+    );
     assert_eq!(profile.get("ftp").and_then(|v| v.as_u64()), Some(265));
     assert!(profile.get("total_distance_km").is_some());
     assert!(profile.get("total_time_hours").is_some());
-    assert_eq!(profile.get("sharing_enabled").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        profile.get("sharing_enabled").and_then(|v| v.as_bool()),
+        Some(true)
+    );
 
     // Verify rider_id matches
     assert_eq!(
@@ -153,9 +183,18 @@ fn test_export_with_ftp_history() {
     insert_test_rider(&db, &rider);
 
     // Insert FTP history entries
-    let date1 = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 3, 20, 14, 30, 0).unwrap().to_rfc3339();
-    let date3 = Utc.with_ymd_and_hms(2024, 6, 10, 8, 0, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2024, 1, 15, 10, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 3, 20, 14, 30, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date3 = Utc
+        .with_ymd_and_hms(2024, 6, 10, 8, 0, 0)
+        .unwrap()
+        .to_rfc3339();
 
     insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", &date1, true);
     insert_test_ftp_estimate(&db, rider_id, 265, "20min_test", "high", &date2, true);
@@ -163,7 +202,9 @@ fn test_export_with_ftp_history() {
 
     // Export and verify
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // Verify FTP history
@@ -174,15 +215,36 @@ fn test_export_with_ftp_history() {
 
     // Entries should be ordered by detected_at DESC (most recent first)
     let first_entry = &history[0];
-    assert_eq!(first_entry.get("ftp_watts").and_then(|v| v.as_u64()), Some(280));
-    assert_eq!(first_entry.get("method").and_then(|v| v.as_str()), Some("manual"));
-    assert_eq!(first_entry.get("confidence").and_then(|v| v.as_str()), Some("medium"));
-    assert_eq!(first_entry.get("accepted").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(
+        first_entry.get("ftp_watts").and_then(|v| v.as_u64()),
+        Some(280)
+    );
+    assert_eq!(
+        first_entry.get("method").and_then(|v| v.as_str()),
+        Some("manual")
+    );
+    assert_eq!(
+        first_entry.get("confidence").and_then(|v| v.as_str()),
+        Some("medium")
+    );
+    assert_eq!(
+        first_entry.get("accepted").and_then(|v| v.as_bool()),
+        Some(false)
+    );
 
     let last_entry = &history[2];
-    assert_eq!(last_entry.get("ftp_watts").and_then(|v| v.as_u64()), Some(250));
-    assert_eq!(last_entry.get("method").and_then(|v| v.as_str()), Some("ramp_test"));
-    assert_eq!(last_entry.get("accepted").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        last_entry.get("ftp_watts").and_then(|v| v.as_u64()),
+        Some(250)
+    );
+    assert_eq!(
+        last_entry.get("method").and_then(|v| v.as_str()),
+        Some("ramp_test")
+    );
+    assert_eq!(
+        last_entry.get("accepted").and_then(|v| v.as_bool()),
+        Some(true)
+    );
 
     // Verify all entries have required fields
     for entry in history {
@@ -221,13 +283,15 @@ fn test_export_with_avatar() {
         jersey_color: [255, 128, 0], // Orange
         bike_style: BikeStyle::Road,
         jersey_secondary: Some([0, 0, 255]), // Blue
-        helmet_color: Some([0, 0, 0]), // Black
+        helmet_color: Some([0, 0, 0]),       // Black
     };
     insert_test_avatar(&db, rider_id, &avatar_config);
 
     // Export and verify
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // Verify avatar is present
@@ -236,10 +300,19 @@ fn test_export_with_avatar() {
     let avatar = avatar.unwrap();
 
     // Verify avatar fields (colors stored as hex strings)
-    assert!(avatar.get("jersey_color").is_some(), "jersey_color required");
+    assert!(
+        avatar.get("jersey_color").is_some(),
+        "jersey_color required"
+    );
     assert!(avatar.get("bike_style").is_some(), "bike_style required");
-    assert!(avatar.get("jersey_secondary").is_some(), "jersey_secondary required");
-    assert!(avatar.get("helmet_color").is_some(), "helmet_color required");
+    assert!(
+        avatar.get("jersey_secondary").is_some(),
+        "jersey_secondary required"
+    );
+    assert!(
+        avatar.get("helmet_color").is_some(),
+        "helmet_color required"
+    );
 
     // Verify color format (hex string like "#FF8000")
     let jersey_color = avatar.get("jersey_color").and_then(|v| v.as_str());
@@ -278,8 +351,14 @@ fn test_export_complete_profile() {
     insert_test_rider(&db, &rider);
 
     // Add FTP history
-    let date1 = Utc.with_ymd_and_hms(2023, 6, 1, 12, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2023, 6, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
     insert_test_ftp_estimate(&db, rider_id, 280, "ramp_test", "high", &date1, true);
     insert_test_ftp_estimate(&db, rider_id, 300, "20min_test", "high", &date2, true);
 
@@ -288,13 +367,15 @@ fn test_export_complete_profile() {
         jersey_color: [255, 0, 0], // Red
         bike_style: BikeStyle::TT,
         jersey_secondary: Some([255, 255, 255]), // White
-        helmet_color: Some([128, 128, 128]), // Gray
+        helmet_color: Some([128, 128, 128]),     // Gray
     };
     insert_test_avatar(&db, rider_id, &avatar_config);
 
     // Export
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // Verify all top-level fields
@@ -307,15 +388,30 @@ fn test_export_complete_profile() {
 
     // Verify profile
     let profile = parsed.get("profile").unwrap();
-    assert_eq!(profile.get("display_name").and_then(|v| v.as_str()), Some("CompleteRider"));
+    assert_eq!(
+        profile.get("display_name").and_then(|v| v.as_str()),
+        Some("CompleteRider")
+    );
     assert!(profile.get("bio").and_then(|v| v.as_str()).is_some());
     assert_eq!(profile.get("ftp").and_then(|v| v.as_u64()), Some(300));
-    assert_eq!(profile.get("total_distance_km").and_then(|v| v.as_f64()), Some(10000.0));
-    assert_eq!(profile.get("total_time_hours").and_then(|v| v.as_f64()), Some(500.0));
-    assert_eq!(profile.get("sharing_enabled").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        profile.get("total_distance_km").and_then(|v| v.as_f64()),
+        Some(10000.0)
+    );
+    assert_eq!(
+        profile.get("total_time_hours").and_then(|v| v.as_f64()),
+        Some(500.0)
+    );
+    assert_eq!(
+        profile.get("sharing_enabled").and_then(|v| v.as_bool()),
+        Some(true)
+    );
 
     // Verify FTP history
-    let ftp_history = parsed.get("ftp_history").and_then(|v| v.as_array()).unwrap();
+    let ftp_history = parsed
+        .get("ftp_history")
+        .and_then(|v| v.as_array())
+        .unwrap();
     assert_eq!(ftp_history.len(), 2);
 
     // Verify avatar
@@ -350,13 +446,18 @@ fn test_export_without_avatar() {
 
     // Export without inserting any avatar
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // Avatar should be null
     let avatar = parsed.get("avatar");
     assert!(avatar.is_some(), "avatar field should exist");
-    assert!(avatar.unwrap().is_null(), "avatar should be null when not set");
+    assert!(
+        avatar.unwrap().is_null(),
+        "avatar should be null when not set"
+    );
 }
 
 /// Test export with empty FTP history.
@@ -383,17 +484,25 @@ fn test_export_with_empty_ftp_history() {
 
     // Export
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // FTP history should be an empty array
     let ftp_history = parsed.get("ftp_history").and_then(|v| v.as_array());
     assert!(ftp_history.is_some(), "ftp_history should be present");
-    assert!(ftp_history.unwrap().is_empty(), "ftp_history should be empty");
+    assert!(
+        ftp_history.unwrap().is_empty(),
+        "ftp_history should be empty"
+    );
 
     // Profile FTP should be null
     let profile = parsed.get("profile").unwrap();
-    assert!(profile.get("ftp").unwrap().is_null(), "ftp should be null when not set");
+    assert!(
+        profile.get("ftp").unwrap().is_null(),
+        "ftp should be null when not set"
+    );
 }
 
 /// Test export with minimal profile (no optional fields).
@@ -420,7 +529,9 @@ fn test_export_minimal_profile() {
 
     // Export
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     // All required fields should be present
@@ -432,12 +543,24 @@ fn test_export_minimal_profile() {
     // avatar may or may not be present as null
 
     let profile = parsed.get("profile").unwrap();
-    assert_eq!(profile.get("display_name").and_then(|v| v.as_str()), Some("MinimalRider"));
+    assert_eq!(
+        profile.get("display_name").and_then(|v| v.as_str()),
+        Some("MinimalRider")
+    );
     assert!(profile.get("bio").unwrap().is_null());
     assert!(profile.get("ftp").unwrap().is_null());
-    assert_eq!(profile.get("total_distance_km").and_then(|v| v.as_f64()), Some(0.0));
-    assert_eq!(profile.get("total_time_hours").and_then(|v| v.as_f64()), Some(0.0));
-    assert_eq!(profile.get("sharing_enabled").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(
+        profile.get("total_distance_km").and_then(|v| v.as_f64()),
+        Some(0.0)
+    );
+    assert_eq!(
+        profile.get("total_time_hours").and_then(|v| v.as_f64()),
+        Some(0.0)
+    );
+    assert_eq!(
+        profile.get("sharing_enabled").and_then(|v| v.as_bool()),
+        Some(false)
+    );
 }
 
 /// Test export returns error for non-existent profile.
@@ -449,7 +572,10 @@ fn test_export_profile_not_found() {
     let exporter = ProfileExporter::new(Arc::new(db));
     let result = exporter.export_json(non_existent_id);
 
-    assert!(result.is_err(), "Export should fail for non-existent profile");
+    assert!(
+        result.is_err(),
+        "Export should fail for non-existent profile"
+    );
     let error = result.unwrap_err();
     assert!(
         format!("{:?}", error).contains("ProfileNotFound"),
@@ -479,7 +605,9 @@ fn test_export_json_is_pretty_printed() {
     insert_test_rider(&db, &rider);
 
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
 
     // Pretty-printed JSON should contain newlines and indentation
     assert!(json.contains('\n'), "Pretty JSON should have newlines");
@@ -508,7 +636,9 @@ fn test_export_timestamp_format() {
     insert_test_rider(&db, &rider);
 
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     let exported_at = parsed.get("exported_at").and_then(|v| v.as_str());
@@ -536,7 +666,9 @@ fn test_export_with_special_characters() {
         id: rider_id,
         display_name: "Rider\"Quote'Apos<Tag>&Amp".to_string(),
         avatar_id: None,
-        bio: Some("Bio with\nnewline\tand\ttabs \"quotes\" 'apostrophes' <tags> &ampersands;".to_string()),
+        bio: Some(
+            "Bio with\nnewline\tand\ttabs \"quotes\" 'apostrophes' <tags> &ampersands;".to_string(),
+        ),
         ftp: Some(250),
         total_distance_km: 100.0,
         total_time_hours: 5.0,
@@ -547,7 +679,9 @@ fn test_export_with_special_characters() {
     insert_test_rider(&db, &rider);
 
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
 
     // Should be valid JSON even with special characters
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
@@ -557,7 +691,11 @@ fn test_export_with_special_characters() {
         profile.get("display_name").and_then(|v| v.as_str()),
         Some("Rider\"Quote'Apos<Tag>&Amp")
     );
-    assert!(profile.get("bio").and_then(|v| v.as_str()).unwrap().contains("newline"));
+    assert!(profile
+        .get("bio")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .contains("newline"));
 }
 
 /// Test export with unicode characters in profile fields.
@@ -583,13 +721,18 @@ fn test_export_with_unicode() {
     insert_test_rider(&db, &rider);
 
     let exporter = ProfileExporter::new(Arc::new(db));
-    let json = exporter.export_json(rider_id).expect("Export should succeed");
+    let json = exporter
+        .export_json(rider_id)
+        .expect("Export should succeed");
 
     // Should handle unicode correctly
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("Valid JSON");
 
     let profile = parsed.get("profile").unwrap();
-    let display_name = profile.get("display_name").and_then(|v| v.as_str()).unwrap();
+    let display_name = profile
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert!(display_name.contains("🚴"));
     assert!(display_name.contains("骑手"));
 
@@ -627,7 +770,11 @@ fn test_export_to_file() {
     let exporter = ProfileExporter::new(Arc::new(db));
     let result = exporter.export_to_file(rider_id, &export_path);
 
-    assert!(result.is_ok(), "Export to file should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Export to file should succeed: {:?}",
+        result.err()
+    );
     assert!(export_path.exists(), "Export file should exist");
 
     // Read and verify file content
@@ -635,7 +782,11 @@ fn test_export_to_file() {
     let parsed: serde_json::Value = serde_json::from_str(&content).expect("Valid JSON");
     assert!(parsed.get("export_version").is_some());
     assert_eq!(
-        parsed.get("profile").unwrap().get("display_name").and_then(|v| v.as_str()),
+        parsed
+            .get("profile")
+            .unwrap()
+            .get("display_name")
+            .and_then(|v| v.as_str()),
         Some("FileExportRider")
     );
 
@@ -665,13 +816,18 @@ fn test_build_export_returns_struct() {
     insert_test_rider(&db, &rider);
 
     let exporter = ProfileExporter::new(Arc::new(db));
-    let export = exporter.build_export(rider_id).expect("Build export should succeed");
+    let export = exporter
+        .build_export(rider_id)
+        .expect("Build export should succeed");
 
     // Verify the ProfileExport struct
     assert_eq!(export.export_version, ProfileExport::CURRENT_VERSION);
     assert_eq!(export.rider_id, rider_id);
     assert_eq!(export.profile.display_name, "BuildExportRider");
-    assert_eq!(export.profile.bio, Some("Testing build_export method".to_string()));
+    assert_eq!(
+        export.profile.bio,
+        Some("Testing build_export method".to_string())
+    );
     assert_eq!(export.profile.ftp, Some(270));
     assert!((export.profile.total_distance_km - 1234.5).abs() < 0.01);
     assert!((export.profile.total_time_hours - 67.89).abs() < 0.01);
@@ -837,8 +993,14 @@ fn test_import_to_empty_db_with_ftp_history() {
         .expect("Import should succeed");
 
     assert!(result.success);
-    assert_eq!(result.ftp_entries_imported, 3, "All 3 FTP entries should be imported");
-    assert_eq!(result.ftp_entries_skipped, 0, "No entries should be skipped");
+    assert_eq!(
+        result.ftp_entries_imported, 3,
+        "All 3 FTP entries should be imported"
+    );
+    assert_eq!(
+        result.ftp_entries_skipped, 0,
+        "No entries should be skipped"
+    );
 
     // Verify FTP entries in database
     let count = count_ftp_entries(&db, rider_id);
@@ -882,7 +1044,13 @@ fn test_import_to_empty_db_complete_profile() {
         ("2024-06-01T12:00:00Z", 280, "20min_test", "high", true),
     ];
     let avatar = ("#00FF00", "tt_bike", None, Some("#888888"));
-    let json = create_test_export_json(rider_id, "CompleteImport", Some(280), ftp_history, Some(avatar));
+    let json = create_test_export_json(
+        rider_id,
+        "CompleteImport",
+        Some(280),
+        ftp_history,
+        Some(avatar),
+    );
 
     let exporter = ProfileExporter::new(Arc::new(db.clone()));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
@@ -935,11 +1103,15 @@ fn test_detect_conflicts_existing_profile() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
     // Should detect ExistingProfile conflict
     assert!(!conflicts.is_empty(), "Should detect conflicts");
-    let has_existing = conflicts.iter().any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
+    let has_existing = conflicts
+        .iter()
+        .any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
     assert!(has_existing, "Should have ExistingProfile conflict");
 }
 
@@ -970,7 +1142,9 @@ fn test_detect_conflicts_display_name_mismatch() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
     // Should detect DisplayNameMismatch
     let has_name_mismatch = conflicts.iter().any(|c| {
@@ -979,7 +1153,10 @@ fn test_detect_conflicts_display_name_mismatch() {
             existing_name
         } if imported_name == "NewName" && existing_name == "OldName")
     });
-    assert!(has_name_mismatch, "Should detect DisplayNameMismatch conflict");
+    assert!(
+        has_name_mismatch,
+        "Should detect DisplayNameMismatch conflict"
+    );
 }
 
 /// Test conflict detection: FTP mismatch detected.
@@ -1009,14 +1186,19 @@ fn test_detect_conflicts_ftp_mismatch() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
     // Should detect FtpMismatch
     let has_ftp_mismatch = conflicts.iter().any(|c| {
-        matches!(c, ProfileConflict::FtpMismatch {
-            imported_ftp: Some(300),
-            existing_ftp: Some(250)
-        })
+        matches!(
+            c,
+            ProfileConflict::FtpMismatch {
+                imported_ftp: Some(300),
+                existing_ftp: Some(250)
+            }
+        )
     });
     assert!(has_ftp_mismatch, "Should detect FtpMismatch conflict");
 }
@@ -1049,14 +1231,19 @@ fn test_detect_conflicts_avatar_mismatch() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
     // Should detect AvatarMismatch
     let has_avatar_mismatch = conflicts.iter().any(|c| {
-        matches!(c, ProfileConflict::AvatarMismatch {
-            import_has_avatar: true,
-            existing_has_avatar: false
-        })
+        matches!(
+            c,
+            ProfileConflict::AvatarMismatch {
+                import_has_avatar: true,
+                existing_has_avatar: false
+            }
+        )
     });
     assert!(has_avatar_mismatch, "Should detect AvatarMismatch conflict");
 }
@@ -1088,16 +1275,26 @@ fn test_detect_conflicts_no_conflict_when_matching() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
     // Should still have ExistingProfile conflict (profile exists)
-    let has_existing = conflicts.iter().any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
+    let has_existing = conflicts
+        .iter()
+        .any(|c| matches!(c, ProfileConflict::ExistingProfile { .. }));
     assert!(has_existing, "Should have ExistingProfile conflict");
 
     // But should NOT have name/FTP/avatar mismatches
-    let has_name_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::DisplayNameMismatch { .. }));
-    let has_ftp_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::FtpMismatch { .. }));
-    let has_avatar_mismatch = conflicts.iter().any(|c| matches!(c, ProfileConflict::AvatarMismatch { .. }));
+    let has_name_mismatch = conflicts
+        .iter()
+        .any(|c| matches!(c, ProfileConflict::DisplayNameMismatch { .. }));
+    let has_ftp_mismatch = conflicts
+        .iter()
+        .any(|c| matches!(c, ProfileConflict::FtpMismatch { .. }));
+    let has_avatar_mismatch = conflicts
+        .iter()
+        .any(|c| matches!(c, ProfileConflict::AvatarMismatch { .. }));
 
     assert!(!has_name_mismatch, "Should not have DisplayNameMismatch");
     assert!(!has_ftp_mismatch, "Should not have FtpMismatch");
@@ -1115,9 +1312,14 @@ fn test_detect_conflicts_no_conflict_for_new_profile() {
 
     let exporter = ProfileExporter::new(Arc::new(db));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
-    let conflicts = exporter.detect_conflicts(&export).expect("Conflict detection should succeed");
+    let conflicts = exporter
+        .detect_conflicts(&export)
+        .expect("Conflict detection should succeed");
 
-    assert!(conflicts.is_empty(), "Should have no conflicts for new profile");
+    assert!(
+        conflicts.is_empty(),
+        "Should have no conflicts for new profile"
+    );
 }
 
 // =============================================================================
@@ -1189,13 +1391,29 @@ fn test_merge_strategy_combines_ftp_history() {
     insert_test_rider(&db, &rider);
 
     // Add existing FTP history (2 entries)
-    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-15T10:00:00Z", true);
-    insert_test_ftp_estimate(&db, rider_id, 265, "20min_test", "high", "2024-03-20T14:30:00Z", true);
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        250,
+        "ramp_test",
+        "high",
+        "2024-01-15T10:00:00Z",
+        true,
+    );
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        265,
+        "20min_test",
+        "high",
+        "2024-03-20T14:30:00Z",
+        true,
+    );
 
     // Import with additional FTP history (1 new, 1 duplicate timestamp)
     let ftp_history = vec![
         ("2024-03-20T14:30:00Z", 265u16, "20min_test", "high", true), // Duplicate
-        ("2024-06-10T08:00:00Z", 280, "manual", "medium", false), // New
+        ("2024-06-10T08:00:00Z", 280, "manual", "medium", false),     // New
     ];
     let json = create_test_export_json(rider_id, "FTPRider", Some(280), ftp_history, None);
 
@@ -1293,11 +1511,15 @@ fn test_merge_strategy_updates_existing_avatar() {
 
     // Verify existing avatar
     let (jersey, _) = query_avatar_from_db(&db, rider_id).unwrap();
-    assert!(jersey.contains("FF") || jersey.contains("ff"), "Should have red jersey");
+    assert!(
+        jersey.contains("FF") || jersey.contains("ff"),
+        "Should have red jersey"
+    );
 
     // Import with different avatar using Merge
     let new_avatar = ("#00FF00", "tt_bike", Some("#000000"), Some("#FFFFFF")); // Green TT bike
-    let json = create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
+    let json =
+        create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
 
     let exporter = ProfileExporter::new(Arc::new(db.clone()));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
@@ -1383,9 +1605,33 @@ fn test_replace_strategy_replaces_ftp_history() {
     insert_test_rider(&db, &rider);
 
     // Add existing FTP history (3 entries)
-    insert_test_ftp_estimate(&db, rider_id, 230, "ramp_test", "high", "2023-06-01T12:00:00Z", true);
-    insert_test_ftp_estimate(&db, rider_id, 240, "20min_test", "high", "2023-09-15T12:00:00Z", true);
-    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-10T12:00:00Z", true);
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        230,
+        "ramp_test",
+        "high",
+        "2023-06-01T12:00:00Z",
+        true,
+    );
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        240,
+        "20min_test",
+        "high",
+        "2023-09-15T12:00:00Z",
+        true,
+    );
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        250,
+        "ramp_test",
+        "high",
+        "2024-01-10T12:00:00Z",
+        true,
+    );
 
     // Verify existing count
     assert_eq!(count_ftp_entries(&db, rider_id), 3);
@@ -1404,8 +1650,14 @@ fn test_replace_strategy_replaces_ftp_history() {
         .expect("Import should succeed");
 
     assert!(result.success);
-    assert_eq!(result.ftp_entries_imported, 2, "Should import 2 new entries");
-    assert_eq!(result.ftp_entries_skipped, 0, "No entries skipped in Replace");
+    assert_eq!(
+        result.ftp_entries_imported, 2,
+        "Should import 2 new entries"
+    );
+    assert_eq!(
+        result.ftp_entries_skipped, 0,
+        "No entries skipped in Replace"
+    );
 
     // Verify only new FTP entries exist (old ones deleted)
     let count = count_ftp_entries(&db, rider_id);
@@ -1445,7 +1697,8 @@ fn test_replace_strategy_replaces_avatar() {
 
     // Import with Replace strategy and different avatar
     let new_avatar = ("#00FF00", "tt_bike", None, Some("#888888")); // Green TT bike
-    let json = create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
+    let json =
+        create_test_export_json(rider_id, "AvatarRider", Some(270), vec![], Some(new_avatar));
 
     let exporter = ProfileExporter::new(Arc::new(db.clone()));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
@@ -1458,7 +1711,10 @@ fn test_replace_strategy_replaces_avatar() {
 
     // Verify avatar was replaced
     let (jersey, bike) = query_avatar_from_db(&db, rider_id).unwrap();
-    assert_eq!(jersey, "#00FF00", "Avatar jersey should be replaced to green");
+    assert_eq!(
+        jersey, "#00FF00",
+        "Avatar jersey should be replaced to green"
+    );
     assert_eq!(bike, "tt_bike", "Avatar bike style should be replaced");
 }
 
@@ -1543,12 +1799,26 @@ fn test_skip_strategy_makes_no_changes() {
     insert_test_rider(&db, &rider);
 
     // Add existing FTP history
-    insert_test_ftp_estimate(&db, rider_id, 250, "ramp_test", "high", "2024-01-15T10:00:00Z", true);
+    insert_test_ftp_estimate(
+        &db,
+        rider_id,
+        250,
+        "ramp_test",
+        "high",
+        "2024-01-15T10:00:00Z",
+        true,
+    );
 
     // Import with Skip strategy (completely different data)
     let ftp_history = vec![("2024-06-01T12:00:00Z", 350u16, "manual", "low", false)];
     let avatar = ("#FF0000", "road_bike", None, None);
-    let json = create_test_export_json(rider_id, "DifferentName", Some(350), ftp_history, Some(avatar));
+    let json = create_test_export_json(
+        rider_id,
+        "DifferentName",
+        Some(350),
+        ftp_history,
+        Some(avatar),
+    );
 
     let exporter = ProfileExporter::new(Arc::new(db.clone()));
     let export = exporter.parse_import(&json).expect("Parse should succeed");
@@ -1559,8 +1829,14 @@ fn test_skip_strategy_makes_no_changes() {
     assert!(result.success, "Skip should succeed");
     assert!(!result.profile_updated, "Profile should not be updated");
     assert!(!result.avatar_updated, "Avatar should not be updated");
-    assert_eq!(result.ftp_entries_imported, 0, "No FTP entries should be imported");
-    assert_eq!(result.ftp_entries_skipped, 0, "No FTP entries tracked as skipped");
+    assert_eq!(
+        result.ftp_entries_imported, 0,
+        "No FTP entries should be imported"
+    );
+    assert_eq!(
+        result.ftp_entries_skipped, 0,
+        "No FTP entries tracked as skipped"
+    );
 
     // Verify original data unchanged
     let profile = query_profile_from_db(&db, rider_id);
@@ -1574,7 +1850,10 @@ fn test_skip_strategy_makes_no_changes() {
     assert_eq!(count, 1, "FTP history should be unchanged");
 
     // Verify no avatar was added
-    assert!(query_avatar_from_db(&db, rider_id).is_none(), "No avatar should exist");
+    assert!(
+        query_avatar_from_db(&db, rider_id).is_none(),
+        "No avatar should exist"
+    );
 }
 
 // =============================================================================
@@ -1622,7 +1901,8 @@ fn test_import_from_file_nonexistent() {
     let db = create_test_database();
     let exporter = ProfileExporter::new(Arc::new(db));
 
-    let result = exporter.import_from_file("/nonexistent/path/import.json", ConflictResolution::Merge);
+    let result =
+        exporter.import_from_file("/nonexistent/path/import.json", ConflictResolution::Merge);
 
     assert!(result.is_err(), "Import from non-existent file should fail");
     let error = format!("{:?}", result.unwrap_err());
@@ -1687,7 +1967,10 @@ fn test_import_from_file_wrong_version() {
 
     assert!(result.is_err(), "Import with wrong version should fail");
     let error = format!("{:?}", result.unwrap_err());
-    assert!(error.contains("InvalidVersion"), "Error should be InvalidVersion");
+    assert!(
+        error.contains("InvalidVersion"),
+        "Error should be InvalidVersion"
+    );
 
     // Cleanup
     std::fs::remove_dir_all(&temp_dir).ok();
@@ -1698,7 +1981,10 @@ fn test_import_from_file_wrong_version() {
 // =============================================================================
 
 /// Helper to query full FTP history from database, ordered by detected_at DESC.
-fn query_ftp_history_from_db(db: &Database, rider_id: Uuid) -> Vec<(u16, String, String, String, bool)> {
+fn query_ftp_history_from_db(
+    db: &Database,
+    rider_id: Uuid,
+) -> Vec<(u16, String, String, String, bool)> {
     let conn = db.connection();
     let mut stmt = conn
         .prepare(
@@ -1798,14 +2084,42 @@ fn test_roundtrip_complete_profile() {
     insert_test_rider(&source_db, &rider);
 
     // Add FTP history entries with different timestamps
-    let date1 = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 4, 20, 14, 30, 0).unwrap().to_rfc3339();
-    let date3 = Utc.with_ymd_and_hms(2024, 7, 10, 8, 0, 0).unwrap().to_rfc3339();
-    let date4 = Utc.with_ymd_and_hms(2024, 10, 5, 16, 15, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2024, 1, 15, 10, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 4, 20, 14, 30, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date3 = Utc
+        .with_ymd_and_hms(2024, 7, 10, 8, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date4 = Utc
+        .with_ymd_and_hms(2024, 10, 5, 16, 15, 0)
+        .unwrap()
+        .to_rfc3339();
 
     insert_test_ftp_estimate(&source_db, rider_id, 250, "ramp_test", "high", &date1, true);
-    insert_test_ftp_estimate(&source_db, rider_id, 265, "20min_test", "high", &date2, true);
-    insert_test_ftp_estimate(&source_db, rider_id, 275, "ramp_test", "medium", &date3, false);
+    insert_test_ftp_estimate(
+        &source_db,
+        rider_id,
+        265,
+        "20min_test",
+        "high",
+        &date2,
+        true,
+    );
+    insert_test_ftp_estimate(
+        &source_db,
+        rider_id,
+        275,
+        "ramp_test",
+        "medium",
+        &date3,
+        false,
+    );
     insert_test_ftp_estimate(&source_db, rider_id, 285, "manual", "high", &date4, true);
 
     // Add avatar configuration
@@ -1813,7 +2127,7 @@ fn test_roundtrip_complete_profile() {
         jersey_color: [0, 128, 255], // Blue
         bike_style: BikeStyle::TT,
         jersey_secondary: Some([255, 255, 0]), // Yellow
-        helmet_color: Some([64, 64, 64]), // Dark gray
+        helmet_color: Some([64, 64, 64]),      // Dark gray
     };
     insert_test_avatar(&source_db, rider_id, &avatar_config);
 
@@ -1826,7 +2140,10 @@ fn test_roundtrip_complete_profile() {
     // Verify export has all expected data
     assert_eq!(export.rider_id, rider_id);
     assert_eq!(export.profile.display_name, "RoundTripRider");
-    assert_eq!(export.profile.bio, Some("Complete profile for round-trip testing.".to_string()));
+    assert_eq!(
+        export.profile.bio,
+        Some("Complete profile for round-trip testing.".to_string())
+    );
     assert_eq!(export.profile.ftp, Some(285));
     assert!((export.profile.total_distance_km - 5432.1).abs() < 0.01);
     assert!((export.profile.total_time_hours - 271.5).abs() < 0.01);
@@ -1851,10 +2168,16 @@ fn test_roundtrip_complete_profile() {
 
     // Verify profile data matches original
     let imported_profile = query_full_profile_from_db(&dest_db, rider_id);
-    assert!(imported_profile.is_some(), "Profile should exist in destination DB");
+    assert!(
+        imported_profile.is_some(),
+        "Profile should exist in destination DB"
+    );
     let (name, bio, ftp, distance, time, sharing) = imported_profile.unwrap();
     assert_eq!(name, "RoundTripRider");
-    assert_eq!(bio, Some("Complete profile for round-trip testing.".to_string()));
+    assert_eq!(
+        bio,
+        Some("Complete profile for round-trip testing.".to_string())
+    );
     assert_eq!(ftp, Some(285));
     assert!((distance - 5432.1).abs() < 0.01);
     assert!((time - 271.5).abs() < 0.01);
@@ -1862,7 +2185,10 @@ fn test_roundtrip_complete_profile() {
 
     // Verify avatar matches
     let imported_avatar = query_full_avatar_from_db(&dest_db, rider_id);
-    assert!(imported_avatar.is_some(), "Avatar should exist in destination DB");
+    assert!(
+        imported_avatar.is_some(),
+        "Avatar should exist in destination DB"
+    );
     let (jersey, bike_style, secondary, helmet) = imported_avatar.unwrap();
     // Colors are stored as hex strings in the export format
     assert!(!jersey.is_empty());
@@ -1899,11 +2225,26 @@ fn test_roundtrip_ftp_history_ordering_preserved() {
     insert_test_rider(&source_db, &rider);
 
     // Add FTP history in non-chronological order (to test sorting)
-    let jan = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap().to_rfc3339();
-    let mar = Utc.with_ymd_and_hms(2024, 3, 15, 12, 0, 0).unwrap().to_rfc3339();
-    let jun = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap().to_rfc3339();
-    let sep = Utc.with_ymd_and_hms(2024, 9, 1, 12, 0, 0).unwrap().to_rfc3339();
-    let dec = Utc.with_ymd_and_hms(2024, 12, 15, 12, 0, 0).unwrap().to_rfc3339();
+    let jan = Utc
+        .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let mar = Utc
+        .with_ymd_and_hms(2024, 3, 15, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let jun = Utc
+        .with_ymd_and_hms(2024, 6, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let sep = Utc
+        .with_ymd_and_hms(2024, 9, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let dec = Utc
+        .with_ymd_and_hms(2024, 12, 15, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
 
     // Insert in random order
     insert_test_ftp_estimate(&source_db, rider_id, 280, "ramp_test", "high", &jun, true);
@@ -1920,11 +2261,23 @@ fn test_roundtrip_ftp_history_ordering_preserved() {
 
     // Verify export FTP history is ordered by detected_at DESC (most recent first)
     assert_eq!(export.ftp_history.len(), 5);
-    assert_eq!(export.ftp_history[0].ftp_watts, 300, "December (most recent) should be first");
-    assert_eq!(export.ftp_history[1].ftp_watts, 290, "September should be second");
+    assert_eq!(
+        export.ftp_history[0].ftp_watts, 300,
+        "December (most recent) should be first"
+    );
+    assert_eq!(
+        export.ftp_history[1].ftp_watts, 290,
+        "September should be second"
+    );
     assert_eq!(export.ftp_history[2].ftp_watts, 280, "June should be third");
-    assert_eq!(export.ftp_history[3].ftp_watts, 265, "March should be fourth");
-    assert_eq!(export.ftp_history[4].ftp_watts, 250, "January (oldest) should be last");
+    assert_eq!(
+        export.ftp_history[3].ftp_watts, 265,
+        "March should be fourth"
+    );
+    assert_eq!(
+        export.ftp_history[4].ftp_watts, 250,
+        "January (oldest) should be last"
+    );
 
     // Create fresh destination database and import
     let dest_db = create_test_database();
@@ -1942,11 +2295,26 @@ fn test_roundtrip_ftp_history_ordering_preserved() {
     assert_eq!(imported_history.len(), 5);
 
     // Should be ordered DESC by detected_at
-    assert_eq!(imported_history[0].0, 300, "December should be first after import");
-    assert_eq!(imported_history[1].0, 290, "September should be second after import");
-    assert_eq!(imported_history[2].0, 280, "June should be third after import");
-    assert_eq!(imported_history[3].0, 265, "March should be fourth after import");
-    assert_eq!(imported_history[4].0, 250, "January should be last after import");
+    assert_eq!(
+        imported_history[0].0, 300,
+        "December should be first after import"
+    );
+    assert_eq!(
+        imported_history[1].0, 290,
+        "September should be second after import"
+    );
+    assert_eq!(
+        imported_history[2].0, 280,
+        "June should be third after import"
+    );
+    assert_eq!(
+        imported_history[3].0, 265,
+        "March should be fourth after import"
+    );
+    assert_eq!(
+        imported_history[4].0, 250,
+        "January should be last after import"
+    );
 }
 
 /// Test round-trip with JSON serialization/deserialization (file-based).
@@ -1972,12 +2340,29 @@ fn test_roundtrip_via_json_file() {
     insert_test_rider(&source_db, &rider);
 
     // Add FTP history
-    let date1 = Utc.with_ymd_and_hms(2024, 2, 1, 10, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 5, 15, 14, 0, 0).unwrap().to_rfc3339();
-    let date3 = Utc.with_ymd_and_hms(2024, 8, 20, 16, 30, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2024, 2, 1, 10, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 5, 15, 14, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date3 = Utc
+        .with_ymd_and_hms(2024, 8, 20, 16, 30, 0)
+        .unwrap()
+        .to_rfc3339();
 
     insert_test_ftp_estimate(&source_db, rider_id, 260, "ramp_test", "high", &date1, true);
-    insert_test_ftp_estimate(&source_db, rider_id, 270, "20min_test", "medium", &date2, true);
+    insert_test_ftp_estimate(
+        &source_db,
+        rider_id,
+        270,
+        "20min_test",
+        "medium",
+        &date2,
+        true,
+    );
     insert_test_ftp_estimate(&source_db, rider_id, 275, "manual", "low", &date3, false);
 
     // Add avatar
@@ -2005,7 +2390,11 @@ fn test_roundtrip_via_json_file() {
     let content = std::fs::read_to_string(&export_path).expect("Read export file");
     let parsed: serde_json::Value = serde_json::from_str(&content).expect("Valid JSON");
     assert_eq!(
-        parsed.get("profile").unwrap().get("display_name").and_then(|v| v.as_str()),
+        parsed
+            .get("profile")
+            .unwrap()
+            .get("display_name")
+            .and_then(|v| v.as_str()),
         Some("JSONRoundTrip")
     );
 
@@ -2134,12 +2523,29 @@ fn test_roundtrip_ftp_entry_attributes_preserved() {
     insert_test_rider(&source_db, &rider);
 
     // Add FTP entries with various attributes
-    let date1 = Utc.with_ymd_and_hms(2024, 3, 1, 9, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 6, 1, 15, 0, 0).unwrap().to_rfc3339();
-    let date3 = Utc.with_ymd_and_hms(2024, 9, 1, 11, 30, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2024, 3, 1, 9, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 6, 1, 15, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date3 = Utc
+        .with_ymd_and_hms(2024, 9, 1, 11, 30, 0)
+        .unwrap()
+        .to_rfc3339();
 
     insert_test_ftp_estimate(&source_db, rider_id, 270, "ramp_test", "high", &date1, true);
-    insert_test_ftp_estimate(&source_db, rider_id, 280, "20min_test", "medium", &date2, false);
+    insert_test_ftp_estimate(
+        &source_db,
+        rider_id,
+        280,
+        "20min_test",
+        "medium",
+        &date2,
+        false,
+    );
     insert_test_ftp_estimate(&source_db, rider_id, 290, "manual", "low", &date3, true);
 
     // Export
@@ -2213,7 +2619,9 @@ fn test_roundtrip_special_characters() {
     let dest_db = create_test_database();
     let dest_exporter = ProfileExporter::new(Arc::new(dest_db.clone()));
 
-    let export = dest_exporter.parse_import(&json).expect("Parse should succeed");
+    let export = dest_exporter
+        .parse_import(&json)
+        .expect("Parse should succeed");
     dest_exporter
         .import_profile(&export, ConflictResolution::Merge)
         .expect("Import should succeed");
@@ -2294,10 +2702,24 @@ fn test_roundtrip_replace_strategy() {
     };
     insert_test_rider(&source_db, &rider);
 
-    let date1 = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap().to_rfc3339();
-    let date2 = Utc.with_ymd_and_hms(2024, 8, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let date1 = Utc
+        .with_ymd_and_hms(2024, 6, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let date2 = Utc
+        .with_ymd_and_hms(2024, 8, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
     insert_test_ftp_estimate(&source_db, rider_id, 270, "ramp_test", "high", &date1, true);
-    insert_test_ftp_estimate(&source_db, rider_id, 280, "20min_test", "high", &date2, true);
+    insert_test_ftp_estimate(
+        &source_db,
+        rider_id,
+        280,
+        "20min_test",
+        "high",
+        &date2,
+        true,
+    );
 
     // Export
     let source_exporter = ProfileExporter::new(Arc::new(source_db));
@@ -2322,7 +2744,10 @@ fn test_roundtrip_replace_strategy() {
     insert_test_rider(&dest_db, &existing_rider);
 
     // Add different FTP history to destination
-    let old_date = Utc.with_ymd_and_hms(2023, 1, 1, 12, 0, 0).unwrap().to_rfc3339();
+    let old_date = Utc
+        .with_ymd_and_hms(2023, 1, 1, 12, 0, 0)
+        .unwrap()
+        .to_rfc3339();
     insert_test_ftp_estimate(&dest_db, rider_id, 200, "manual", "low", &old_date, false);
 
     // Import with Replace strategy
@@ -2344,7 +2769,11 @@ fn test_roundtrip_replace_strategy() {
 
     // Verify old FTP history deleted and new imported
     let history = query_ftp_history_from_db(&dest_db, rider_id);
-    assert_eq!(history.len(), 2, "Should have only imported entries, not old ones");
+    assert_eq!(
+        history.len(),
+        2,
+        "Should have only imported entries, not old ones"
+    );
     assert_eq!(history[0].0, 280);
     assert_eq!(history[1].0, 270);
 }

@@ -6,7 +6,9 @@
 //! It uses mock sensor infrastructure to simulate realistic sensor interactions.
 
 use rustride::sensors::cache::{CachedSensor, SensorCache};
-use rustride::sensors::conflict::{ConflictDetector, ConflictDetectorConfig, DataType, ResolutionStrategy};
+use rustride::sensors::conflict::{
+    ConflictDetector, ConflictDetectorConfig, DataType, ResolutionStrategy,
+};
 use rustride::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use rustride::sensors::connection_state::{
     ConnectionLifecycleState, ConnectionStateMachine, ConnectionStateMachineConfig,
@@ -20,10 +22,9 @@ use rustride::sensors::persistence::{ConnectionSessionManager, SessionSensor};
 use rustride::sensors::quality::{ConnectionQualityConfig, ConnectionQualityMonitor, QualityLevel};
 use rustride::sensors::reconnection::{ExponentialBackoff, ExponentialBackoffConfig};
 use rustride::sensors::types::{
-    ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress,
-    ParallelDiscoveryResult, ProgressiveTimeoutConfig, ProgressiveTimeoutState,
-    Protocol, SensorConfig, SensorError, SensorEvent, SensorReading, SensorState,
-    SensorType, StopReason, TimeoutDecision,
+    ConnectionState, DiscoveredSensor, DiscoveryPhase, DiscoveryProgress, ParallelDiscoveryResult,
+    ProgressiveTimeoutConfig, ProgressiveTimeoutState, Protocol, SensorConfig, SensorError,
+    SensorEvent, SensorReading, SensorState, SensorType, StopReason, TimeoutDecision,
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -34,7 +35,11 @@ use uuid::Uuid;
 // ============================================================================
 
 /// Create a mock discovered sensor for testing.
-fn make_discovered_sensor(name: &str, sensor_type: SensorType, protocol: Protocol) -> DiscoveredSensor {
+fn make_discovered_sensor(
+    name: &str,
+    sensor_type: SensorType,
+    protocol: Protocol,
+) -> DiscoveredSensor {
     DiscoveredSensor {
         device_id: format!("{}:{}", protocol, name.replace(' ', "_").to_lowercase()),
         name: name.to_string(),
@@ -52,7 +57,11 @@ fn make_trainer() -> DiscoveredSensor {
 
 /// Create a mock power meter sensor.
 fn make_power_meter() -> DiscoveredSensor {
-    make_discovered_sensor("Stages Power", SensorType::PowerMeter, Protocol::BleCyclingPower)
+    make_discovered_sensor(
+        "Stages Power",
+        SensorType::PowerMeter,
+        Protocol::BleCyclingPower,
+    )
 }
 
 /// Create a mock heart rate sensor.
@@ -194,11 +203,14 @@ impl SensorFlowCoordinator {
 
     /// Connect to a sensor by device ID.
     fn connect(&mut self, device_id: &str) -> Result<(), SensorError> {
-        let sensor = self.discovered.get(device_id)
+        let sensor = self
+            .discovered
+            .get(device_id)
             .ok_or_else(|| SensorError::SensorNotFound(device_id.to_string()))?;
 
         // Transition to connecting state
-        self.state_manager.transition(device_id, StateTransition::Connect)
+        self.state_manager
+            .transition(device_id, StateTransition::Connect)
             .map_err(|_| SensorError::ConnectionFailed("Invalid state transition".to_string()))?;
 
         self.events.push(SensorEvent::ConnectionChanged {
@@ -207,11 +219,13 @@ impl SensorFlowCoordinator {
         });
 
         // Simulate successful connection
-        self.state_manager.transition(device_id, StateTransition::ConnectionSuccess)
+        self.state_manager
+            .transition(device_id, StateTransition::ConnectionSuccess)
             .map_err(|_| SensorError::ConnectionFailed("Connection failed".to_string()))?;
 
         // Update conflict detector
-        self.conflict_detector.update_connection_status(device_id, true);
+        self.conflict_detector
+            .update_connection_status(device_id, true);
 
         // Start health monitoring with appropriate config
         let health_config = match sensor.sensor_type {
@@ -220,16 +234,18 @@ impl SensorFlowCoordinator {
             }
             _ => ConnectionHealthConfig::default(),
         };
-        self.health_monitor.start_monitoring(device_id, health_config);
+        self.health_monitor
+            .start_monitoring(device_id, health_config);
 
         // Start quality monitoring
         let quality_config = match sensor.sensor_type {
             SensorType::Trainer | SensorType::SmartTrainer | SensorType::PowerMeter => {
                 ConnectionQualityConfig::strict()
             }
-            _ => ConnectionQualityConfig::relaxed()
+            _ => ConnectionQualityConfig::relaxed(),
         };
-        self.quality_monitor.start_monitoring(device_id, quality_config);
+        self.quality_monitor
+            .start_monitoring(device_id, quality_config);
 
         // Save to session
         let session_sensor = SessionSensor::new(
@@ -295,7 +311,8 @@ impl SensorFlowCoordinator {
     /// Gracefully disconnect a sensor.
     fn disconnect(&mut self, device_id: &str) -> Result<(), SensorError> {
         // Transition to disconnected state
-        self.state_manager.transition(device_id, StateTransition::Disconnect)
+        self.state_manager
+            .transition(device_id, StateTransition::Disconnect)
             .map_err(|_| SensorError::Disconnected(device_id.to_string()))?;
 
         // Update conflict detector (may trigger failover)
@@ -330,7 +347,8 @@ impl SensorFlowCoordinator {
     /// Simulate connection loss and automatic reconnection.
     fn simulate_connection_loss(&mut self, device_id: &str) -> Result<bool, SensorError> {
         // Transition to reconnecting state
-        self.state_manager.transition(device_id, StateTransition::ConnectionLost)
+        self.state_manager
+            .transition(device_id, StateTransition::ConnectionLost)
             .map_err(|_| SensorError::Disconnected(device_id.to_string()))?;
 
         self.events.push(SensorEvent::ConnectionChanged {
@@ -347,7 +365,8 @@ impl SensorFlowCoordinator {
 
         if should_retry {
             // Simulate successful reconnection
-            self.state_manager.transition(device_id, StateTransition::ReconnectionSuccess)
+            self.state_manager
+                .transition(device_id, StateTransition::ReconnectionSuccess)
                 .map_err(|_| SensorError::ConnectionFailed("Reconnection failed".to_string()))?;
 
             // Reset backoff on success
@@ -363,7 +382,8 @@ impl SensorFlowCoordinator {
             Ok(true)
         } else {
             // Exhausted reconnection attempts
-            self.state_manager.transition(device_id, StateTransition::ReconnectionExhausted)
+            self.state_manager
+                .transition(device_id, StateTransition::ReconnectionExhausted)
                 .map_err(|_| SensorError::ConnectionFailed("Reconnection exhausted".to_string()))?;
 
             self.events.push(SensorEvent::ConnectionChanged {
@@ -387,7 +407,9 @@ impl SensorFlowCoordinator {
 
     /// Check if all sensors are connected.
     fn all_connected(&self) -> bool {
-        self.discovered.keys().all(|id| self.state_manager.is_connected(id))
+        self.discovered
+            .keys()
+            .all(|id| self.state_manager.is_connected(id))
     }
 
     /// Get connected sensor count.
@@ -427,7 +449,10 @@ fn test_full_sensor_discovery_flow() {
 
     // Phase 1: Start discovery
     coordinator.start_discovery();
-    assert!(coordinator.get_events().iter().any(|e| matches!(e, SensorEvent::ScanStarted)));
+    assert!(coordinator
+        .get_events()
+        .iter()
+        .any(|e| matches!(e, SensorEvent::ScanStarted)));
 
     // Phase 2: Discover sensors
     let trainer = make_trainer();
@@ -449,7 +474,9 @@ fn test_full_sensor_discovery_flow() {
     assert_eq!(progress.phase, DiscoveryPhase::Completed);
 
     // Verify discovery events
-    let discovery_events: Vec<_> = coordinator.get_events().iter()
+    let discovery_events: Vec<_> = coordinator
+        .get_events()
+        .iter()
         .filter(|e| matches!(e, SensorEvent::Discovered(_)))
         .collect();
     assert_eq!(discovery_events.len(), 4);
@@ -475,7 +502,8 @@ fn test_priority_based_connection() {
     assert!(results.iter().all(|r| r.is_ok()));
 
     // Verify connection order (primary sensors first: trainer, power meter)
-    let connected_order: Vec<_> = results.iter()
+    let connected_order: Vec<_> = results
+        .iter()
         .filter_map(|r| r.as_ref().ok())
         .cloned()
         .collect();
@@ -519,7 +547,9 @@ fn test_data_reception_flow() {
             speed_kmh: Some(30.0),
             distance_delta_m: Some(8.3),
         };
-        coordinator.receive_data(&trainer.device_id, reading).unwrap();
+        coordinator
+            .receive_data(&trainer.device_id, reading)
+            .unwrap();
     }
 
     // Receive 10 HR readings
@@ -540,8 +570,14 @@ fn test_data_reception_flow() {
     assert_eq!(coordinator.readings_count(), 20);
 
     // Verify health is good after receiving data
-    assert_eq!(coordinator.get_health_status(&trainer.device_id), Some(HealthStatus::Healthy));
-    assert_eq!(coordinator.get_health_status(&hr.device_id), Some(HealthStatus::Healthy));
+    assert_eq!(
+        coordinator.get_health_status(&trainer.device_id),
+        Some(HealthStatus::Healthy)
+    );
+    assert_eq!(
+        coordinator.get_health_status(&hr.device_id),
+        Some(HealthStatus::Healthy)
+    );
 }
 
 #[test]
@@ -565,11 +601,23 @@ fn test_graceful_disconnection() {
     coordinator.disconnect(&trainer.device_id).unwrap();
     assert_eq!(coordinator.connected_count(), 1);
     assert!(!coordinator.state_manager.is_connected(&trainer.device_id));
-    assert!(coordinator.state_manager.is_connected(&power_meter.device_id));
+    assert!(coordinator
+        .state_manager
+        .is_connected(&power_meter.device_id));
 
     // Verify disconnect event
-    let disconnect_events: Vec<_> = coordinator.get_events().iter()
-        .filter(|e| matches!(e, SensorEvent::ConnectionChanged { state: ConnectionState::Disconnected, .. }))
+    let disconnect_events: Vec<_> = coordinator
+        .get_events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                SensorEvent::ConnectionChanged {
+                    state: ConnectionState::Disconnected,
+                    ..
+                }
+            )
+        })
         .collect();
     assert!(!disconnect_events.is_empty());
 
@@ -592,7 +640,9 @@ fn test_connection_loss_and_reconnection() {
     assert!(coordinator.state_manager.is_connected(&trainer.device_id));
 
     // Simulate connection loss
-    let reconnected = coordinator.simulate_connection_loss(&trainer.device_id).unwrap();
+    let reconnected = coordinator
+        .simulate_connection_loss(&trainer.device_id)
+        .unwrap();
 
     // Should have reconnected
     assert!(reconnected);
@@ -600,9 +650,15 @@ fn test_connection_loss_and_reconnection() {
 
     // Verify reconnection event sequence
     let events = coordinator.get_events();
-    let has_reconnecting = events.iter().any(|e| matches!(e,
-        SensorEvent::ConnectionChanged { state: ConnectionState::Reconnecting, .. }
-    ));
+    let has_reconnecting = events.iter().any(|e| {
+        matches!(
+            e,
+            SensorEvent::ConnectionChanged {
+                state: ConnectionState::Reconnecting,
+                ..
+            }
+        )
+    });
     assert!(has_reconnecting);
 }
 
@@ -623,13 +679,17 @@ fn test_failover_on_primary_disconnect() {
     coordinator.connect(&trainer.device_id).unwrap();
 
     // Set power meter as primary for power
-    coordinator.conflict_detector.set_primary(DataType::Power, &power_meter.device_id);
+    coordinator
+        .conflict_detector
+        .set_primary(DataType::Power, &power_meter.device_id);
 
     // Disconnect primary (power meter)
     coordinator.disconnect(&power_meter.device_id).unwrap();
 
     // Verify failover event was generated
-    let failover_events: Vec<_> = coordinator.get_events().iter()
+    let failover_events: Vec<_> = coordinator
+        .get_events()
+        .iter()
         .filter(|e| matches!(e, SensorEvent::FailoverActivated { .. }))
         .collect();
 
@@ -669,7 +729,9 @@ fn test_complete_workout_session() {
             speed_kmh: Some(30.0),
             distance_delta_m: Some(8.33),
         };
-        coordinator.receive_data(&trainer_id, power_reading).unwrap();
+        coordinator
+            .receive_data(&trainer_id, power_reading)
+            .unwrap();
 
         // HR data every second
         let hr_reading = SensorReading {
@@ -688,8 +750,14 @@ fn test_complete_workout_session() {
     assert_eq!(coordinator.readings_count(), 120); // 60 power + 60 HR
 
     // 4. Verify health is good
-    assert_eq!(coordinator.get_health_status(&trainer_id), Some(HealthStatus::Healthy));
-    assert_eq!(coordinator.get_health_status(&hr_id), Some(HealthStatus::Healthy));
+    assert_eq!(
+        coordinator.get_health_status(&trainer_id),
+        Some(HealthStatus::Healthy)
+    );
+    assert_eq!(
+        coordinator.get_health_status(&hr_id),
+        Some(HealthStatus::Healthy)
+    );
 
     // 5. End workout - graceful shutdown
     coordinator.shutdown();
@@ -738,7 +806,9 @@ fn test_connection_quality_monitoring() {
             speed_kmh: Some(30.0),
             distance_delta_m: Some(8.33),
         };
-        coordinator.receive_data(&trainer.device_id, reading).unwrap();
+        coordinator
+            .receive_data(&trainer.device_id, reading)
+            .unwrap();
     }
 
     // Quality should be good with strong signal and consistent data
@@ -746,7 +816,11 @@ fn test_connection_quality_monitoring() {
     assert!(quality.is_some());
     // With good RSSI (-55) and consistent data, should be at least Fair
     let level = quality.unwrap();
-    assert!(level == QualityLevel::Excellent || level == QualityLevel::Good || level == QualityLevel::Fair);
+    assert!(
+        level == QualityLevel::Excellent
+            || level == QualityLevel::Good
+            || level == QualityLevel::Fair
+    );
 }
 
 #[test]
@@ -874,7 +948,10 @@ fn test_conflict_detector_integration() {
     assert!(!failovers.is_empty());
 
     // Trainer should now be primary
-    assert_eq!(detector.get_primary(DataType::Power), Some(trainer.device_id.as_str()));
+    assert_eq!(
+        detector.get_primary(DataType::Power),
+        Some(trainer.device_id.as_str())
+    );
 }
 
 #[test]
@@ -915,11 +992,15 @@ fn test_event_sequence_verification() {
     assert!(matches!(events.first(), Some(SensorEvent::ScanStarted)));
 
     // Should have discovery event
-    assert!(events.iter().any(|e| matches!(e, SensorEvent::Discovered(_))));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, SensorEvent::Discovered(_))));
 
     // Should have ScanStopped
     assert!(events.iter().any(|e| matches!(e, SensorEvent::ScanStopped)));
 
     // Should have connection events
-    assert!(events.iter().any(|e| matches!(e, SensorEvent::ConnectionChanged { .. })));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, SensorEvent::ConnectionChanged { .. })));
 }

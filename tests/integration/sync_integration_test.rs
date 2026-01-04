@@ -4,13 +4,13 @@
 //! including retry mechanism and offline queue handling.
 
 use chrono::{Duration, Utc};
-use rustride::integrations::sync::{
-    PlatformConfig, SyncConfig, SyncError, SyncEvent, SyncPlatform, SyncRecordStatus,
-};
 use rustride::integrations::sync::oauth::{
     AuthorizationUrl, CredentialStore, OAuthHandler, TokenResponse, TokenStatus,
 };
 use rustride::integrations::sync::service::{SyncService, SyncServiceHandle};
+use rustride::integrations::sync::{
+    PlatformConfig, SyncConfig, SyncError, SyncEvent, SyncPlatform, SyncRecordStatus,
+};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -49,11 +49,13 @@ impl MockOAuthHandler {
     }
 
     fn set_refresh_failure(&self, should_fail: bool) {
-        self.simulate_refresh_failure.store(should_fail, Ordering::SeqCst);
+        self.simulate_refresh_failure
+            .store(should_fail, Ordering::SeqCst);
     }
 
     fn set_reauth_required(&self, required: bool) {
-        self.simulate_reauth_required.store(required, Ordering::SeqCst);
+        self.simulate_reauth_required
+            .store(required, Ordering::SeqCst);
     }
 
     fn get_refresh_count(&self) -> u32 {
@@ -72,11 +74,7 @@ impl OAuthHandler for MockOAuthHandler {
         })
     }
 
-    async fn handle_callback(
-        &self,
-        _code: &str,
-        _state: &str,
-    ) -> Result<TokenResponse, SyncError> {
+    async fn handle_callback(&self, _code: &str, _state: &str) -> Result<TokenResponse, SyncError> {
         Ok(TokenResponse {
             access_token: "mock_access_token".to_string(),
             refresh_token: Some("mock_refresh_token".to_string()),
@@ -92,7 +90,9 @@ impl OAuthHandler for MockOAuthHandler {
         }
 
         if self.simulate_refresh_failure.load(Ordering::SeqCst) {
-            return Err(SyncError::RefreshFailed("Simulated refresh failure".to_string()));
+            return Err(SyncError::RefreshFailed(
+                "Simulated refresh failure".to_string(),
+            ));
         }
 
         let new_tokens = TokenResponse {
@@ -101,7 +101,10 @@ impl OAuthHandler for MockOAuthHandler {
             expires_at: Utc::now() + Duration::hours(1),
         };
 
-        self.tokens.write().await.insert(platform, new_tokens.clone());
+        self.tokens
+            .write()
+            .await
+            .insert(platform, new_tokens.clone());
         Ok(new_tokens)
     }
 
@@ -162,14 +165,14 @@ impl CredentialStore for MockCredentialStore {
         platform: SyncPlatform,
         tokens: &TokenResponse,
     ) -> Result<(), SyncError> {
-        self.credentials.write().await.insert(platform, tokens.clone());
+        self.credentials
+            .write()
+            .await
+            .insert(platform, tokens.clone());
         Ok(())
     }
 
-    async fn get_tokens(
-        &self,
-        platform: SyncPlatform,
-    ) -> Result<Option<TokenResponse>, SyncError> {
+    async fn get_tokens(&self, platform: SyncPlatform) -> Result<Option<TokenResponse>, SyncError> {
         Ok(self.credentials.read().await.get(&platform).cloned())
     }
 
@@ -204,7 +207,7 @@ fn generate_test_fit_data() -> Vec<u8> {
     // Minimal FIT file header (14 bytes) + dummy data
     // This is a simplified mock - real FIT files are more complex
     let mut data = vec![
-        14,  // Header size
+        14,   // Header size
         0x10, // Protocol version
         0x00, 0x00, // Profile version
         0x00, 0x00, 0x00, 0x00, // Data size (placeholder)
@@ -228,7 +231,10 @@ async fn test_sync_service_starts_and_stops() {
 
     // Service should be running
     let platforms = handle.get_connected_platforms().await.unwrap();
-    assert!(platforms.is_empty(), "No platforms should be connected initially");
+    assert!(
+        platforms.is_empty(),
+        "No platforms should be connected initially"
+    );
 
     // Shutdown should succeed
     let result = handle.shutdown().await;
@@ -243,8 +249,14 @@ async fn test_platform_connection_status() {
 
     // Check initial status
     let status = handle.get_status(SyncPlatform::Strava).await.unwrap();
-    assert!(!status.connected, "Strava should not be connected initially");
-    assert!(status.token_status.is_none(), "No token status when not connected");
+    assert!(
+        !status.connected,
+        "Strava should not be connected initially"
+    );
+    assert!(
+        status.token_status.is_none(),
+        "No token status when not connected"
+    );
     assert_eq!(status.pending_uploads, 0, "No pending uploads initially");
 
     handle.shutdown().await.unwrap();
@@ -261,7 +273,12 @@ async fn test_upload_requires_platform_connection() {
 
     // Attempt upload without connection should fail
     let result = handle
-        .queue_upload(ride_id, SyncPlatform::Strava, fit_data, Some("Test Ride".to_string()))
+        .queue_upload(
+            ride_id,
+            SyncPlatform::Strava,
+            fit_data,
+            Some("Test Ride".to_string()),
+        )
         .await;
 
     assert!(
@@ -323,7 +340,10 @@ async fn test_cancel_nonexistent_upload() {
     let fake_record_id = Uuid::new_v4();
     let result = handle.cancel_upload(fake_record_id).await.unwrap();
 
-    assert!(!result, "Cancelling non-existent upload should return false");
+    assert!(
+        !result,
+        "Cancelling non-existent upload should return false"
+    );
 
     handle.shutdown().await.unwrap();
 }
@@ -337,7 +357,10 @@ async fn test_get_sync_records_empty() {
     let ride_id = Uuid::new_v4();
     let records = handle.get_sync_records(ride_id).await.unwrap();
 
-    assert!(records.is_empty(), "No sync records should exist for new ride");
+    assert!(
+        records.is_empty(),
+        "No sync records should exist for new ride"
+    );
 
     handle.shutdown().await.unwrap();
 }
@@ -393,7 +416,10 @@ async fn test_multiple_platform_configs() {
     assert!(strava_status.config.auto_sync);
 
     // Verify Garmin config
-    let garmin_status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+    let garmin_status = handle
+        .get_status(SyncPlatform::GarminConnect)
+        .await
+        .unwrap();
     assert!(garmin_status.config.enabled);
     assert!(!garmin_status.config.auto_sync);
 
@@ -506,8 +532,14 @@ async fn test_sync_config_default() {
 
     // All platforms should be disabled by default
     for (_, platform_config) in &config.platforms {
-        assert!(!platform_config.enabled, "Platforms should be disabled by default");
-        assert!(!platform_config.auto_sync, "Auto-sync should be off by default");
+        assert!(
+            !platform_config.enabled,
+            "Platforms should be disabled by default"
+        );
+        assert!(
+            !platform_config.auto_sync,
+            "Auto-sync should be off by default"
+        );
     }
 }
 
@@ -522,10 +554,16 @@ async fn test_platform_config_default() {
 #[tokio::test]
 async fn test_sync_error_display() {
     let errors = vec![
-        (SyncError::NotConfigured(SyncPlatform::Strava), "not configured"),
+        (
+            SyncError::NotConfigured(SyncPlatform::Strava),
+            "not configured",
+        ),
         (SyncError::AuthorizationRequired, "Authorization required"),
         (SyncError::TokenExpired, "Token expired"),
-        (SyncError::RefreshFailed("test".to_string()), "refresh failed"),
+        (
+            SyncError::RefreshFailed("test".to_string()),
+            "refresh failed",
+        ),
         (SyncError::UploadFailed("test".to_string()), "Upload failed"),
         (SyncError::ApiError("test".to_string()), "API error"),
         (SyncError::CredentialError("test".to_string()), "Credential"),
@@ -633,13 +671,20 @@ async fn test_mock_credential_store_operations() {
         refresh_token: Some("refresh_token".to_string()),
         expires_at: Utc::now() + Duration::hours(1),
     };
-    store.store_tokens(SyncPlatform::Strava, &tokens).await.unwrap();
+    store
+        .store_tokens(SyncPlatform::Strava, &tokens)
+        .await
+        .unwrap();
 
     // Should have credentials now
     assert!(store.has_credentials(SyncPlatform::Strava));
 
     // Retrieve credentials
-    let retrieved = store.get_tokens(SyncPlatform::Strava).await.unwrap().unwrap();
+    let retrieved = store
+        .get_tokens(SyncPlatform::Strava)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(retrieved.access_token, tokens.access_token);
 
     // Delete credentials

@@ -13,13 +13,14 @@
 //! - Audio queue priority and expiration
 //! - CI-compatible mock backend
 
-use rustride::achievements::{AchievementCategory, AchievementNotification, AchievementTier, LevelUpNotification};
+use rustride::achievements::{
+    AchievementCategory, AchievementNotification, AchievementTier, LevelUpNotification,
+};
 use rustride::audio::{
-    AchievementAudioBridge, AchievementAudioBridgeConfig,
-    AlertConfig, AlertContext, AlertManager, AlertType,
-    AudioCategory, AudioConfig, AudioEngine, AudioError, AudioEvent, AudioItem, AudioPriority,
-    CuePattern, MilestoneAudioBridge, MilestoneAudioBridgeConfig, MilestoneData, MilestoneType,
-    MuteState, WorkoutAudioBridge, WorkoutAudioBridgeConfig,
+    AchievementAudioBridge, AchievementAudioBridgeConfig, AlertConfig, AlertContext, AlertManager,
+    AlertType, AudioCategory, AudioConfig, AudioEngine, AudioError, AudioEvent, AudioItem,
+    AudioPriority, CuePattern, MilestoneAudioBridge, MilestoneAudioBridgeConfig, MilestoneData,
+    MilestoneType, MuteState, WorkoutAudioBridge, WorkoutAudioBridgeConfig,
 };
 use rustride::workouts::types::WorkoutEvent;
 use std::collections::HashMap;
@@ -141,7 +142,8 @@ impl MockAudioBackend {
 
     /// Enable/disable queue processing.
     pub fn set_queue_processing_enabled(&self, enabled: bool) {
-        self.queue_processing_enabled.store(enabled, Ordering::Relaxed);
+        self.queue_processing_enabled
+            .store(enabled, Ordering::Relaxed);
     }
 
     /// Emit an audio event (for testing event subscriptions).
@@ -176,7 +178,11 @@ impl AudioEngine for MockAudioBackend {
         Ok(())
     }
 
-    async fn play_sound_with_category(&self, name: &str, _category: AudioCategory) -> Result<(), AudioError> {
+    async fn play_sound_with_category(
+        &self,
+        name: &str,
+        _category: AudioCategory,
+    ) -> Result<(), AudioError> {
         self.play_sound(name).await
     }
 
@@ -193,9 +199,7 @@ impl AudioEngine for MockAudioBackend {
     async fn play_tone(&self, frequency_hz: u32, duration_ms: u32) -> Result<(), AudioError> {
         if self.simulate_failure.load(Ordering::Relaxed) {
             self.error_count.fetch_add(1, Ordering::Relaxed);
-            return Err(AudioError::PlaybackFailed(
-                "Mock tone failure".to_string(),
-            ));
+            return Err(AudioError::PlaybackFailed("Mock tone failure".to_string()));
         }
         self.played_tones
             .lock()
@@ -397,7 +401,8 @@ impl MockAlertManager {
 
     /// Get trigger count for a specific alert type.
     pub fn get_trigger_count(&self, alert_type: AlertType) -> usize {
-        *self.trigger_counts
+        *self
+            .trigger_counts
             .lock()
             .unwrap()
             .get(&alert_type)
@@ -419,7 +424,8 @@ impl AlertManager for MockAlertManager {
             .unwrap()
             .push((alert_type, context));
 
-        *self.trigger_counts
+        *self
+            .trigger_counts
             .lock()
             .unwrap()
             .entry(alert_type)
@@ -620,7 +626,11 @@ fn test_mock_backend_stop() {
 fn test_mock_backend_clear() {
     let backend = MockAudioBackend::new();
     backend.played_tones.lock().unwrap().push((440, 100));
-    backend.played_sounds.lock().unwrap().push("test".to_string());
+    backend
+        .played_sounds
+        .lock()
+        .unwrap()
+        .push("test".to_string());
     backend.playback_count.store(5, Ordering::Relaxed);
 
     backend.clear();
@@ -686,8 +696,12 @@ async fn test_countdown_triggers_tones_and_voice() {
 
     // Process countdown events for 10 and 5 seconds (should have voice)
     let events = vec![
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 10 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 10,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        },
     ];
     bridge.process_events(&events).await;
 
@@ -706,15 +720,24 @@ async fn test_countdown_final_seconds_tone_only() {
 
     // Process final countdown events (3, 2, 1 - tone only, no voice)
     let events = vec![
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 2 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 3,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 2,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 1,
+        },
     ];
     bridge.process_events(&events).await;
 
     // No voice alerts for final countdown
     let alerts = alert_manager.get_triggered_alerts();
-    assert!(alerts.is_empty(), "Final countdown should not trigger voice");
+    assert!(
+        alerts.is_empty(),
+        "Final countdown should not trigger voice"
+    );
 
     // But tones should be played
     let tones = audio_backend.get_played_tones();
@@ -727,11 +750,21 @@ async fn test_full_countdown_sequence() {
 
     // Full countdown sequence
     let events = vec![
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 10 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 2 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 10,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 3,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 2,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 1,
+        },
     ];
     bridge.process_events(&events).await;
 
@@ -768,7 +801,9 @@ async fn test_workout_lifecycle_events() {
     let events = vec![
         WorkoutEvent::Paused,
         WorkoutEvent::Resumed,
-        WorkoutEvent::Completed { total_duration_secs: 3600 },
+        WorkoutEvent::Completed {
+            total_duration_secs: 3600,
+        },
     ];
     bridge.process_events(&events).await;
 
@@ -813,21 +848,22 @@ async fn test_workout_config_disables_announcements() {
         countdown_voice_thresholds: vec![10, 5],
     };
 
-    let bridge = WorkoutAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        WorkoutAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     let events = vec![
-        WorkoutEvent::Started { workout_name: "Test".to_string() },
+        WorkoutEvent::Started {
+            workout_name: "Test".to_string(),
+        },
         WorkoutEvent::IntervalChange {
             interval_name: "Test".to_string(),
             target_power: Some(200),
             duration_secs: 60,
             is_recovery: false,
         },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        },
     ];
     bridge.process_events(&events).await;
 
@@ -841,22 +877,27 @@ async fn test_workout_custom_countdown_thresholds() {
     let audio_backend = Arc::new(MockAudioBackend::new());
 
     let config = WorkoutAudioBridgeConfig {
-        countdown_thresholds: vec![5, 3], // Only 5 and 3 seconds
+        countdown_thresholds: vec![5, 3],    // Only 5 and 3 seconds
         countdown_voice_thresholds: vec![5], // Only 5 gets voice
         ..Default::default()
     };
 
-    let bridge = WorkoutAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        WorkoutAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     let events = vec![
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 10 }, // Not in thresholds
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },  // Voice + tone
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },  // Tone only
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },  // Not in thresholds
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 10,
+        }, // Not in thresholds
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        }, // Voice + tone
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 3,
+        }, // Tone only
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 1,
+        }, // Not in thresholds
     ];
     bridge.process_events(&events).await;
 
@@ -943,11 +984,8 @@ async fn test_achievement_chimes_disabled() {
         ..Default::default()
     };
 
-    let bridge = AchievementAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        AchievementAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     let notification = create_test_achievement(AchievementTier::Gold, "Test");
     bridge.handle_achievement_notification(&notification).await;
@@ -972,11 +1010,8 @@ async fn test_achievement_voice_disabled() {
         ..Default::default()
     };
 
-    let bridge = AchievementAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        AchievementAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     let notification = create_test_achievement(AchievementTier::Bronze, "Test");
     bridge.handle_achievement_notification(&notification).await;
@@ -1000,11 +1035,8 @@ async fn test_multiple_achievements_sorted_by_tier() {
         ..Default::default()
     };
 
-    let bridge = AchievementAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        AchievementAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     let notifications = vec![
         create_test_achievement(AchievementTier::Bronze, "First"),
@@ -1031,7 +1063,10 @@ async fn test_distance_milestone_triggers_audio() {
 
     // Should have played tones
     let tones = audio_backend.get_played_tones();
-    assert!(!tones.is_empty(), "Should have played distance milestone tones");
+    assert!(
+        !tones.is_empty(),
+        "Should have played distance milestone tones"
+    );
 }
 
 #[tokio::test]
@@ -1051,7 +1086,10 @@ async fn test_calorie_milestone_triggers_audio() {
     bridge.handle_calorie_milestone(500.0).await;
 
     let tones = audio_backend.get_played_tones();
-    assert!(!tones.is_empty(), "Should have played calorie milestone tones");
+    assert!(
+        !tones.is_empty(),
+        "Should have played calorie milestone tones"
+    );
 }
 
 #[tokio::test]
@@ -1079,11 +1117,8 @@ async fn test_milestone_sounds_disabled() {
     config.distance_sounds_enabled = false;
     config.distance_voice_enabled = false;
 
-    let bridge = MilestoneAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        MilestoneAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     bridge.handle_distance_milestone(10.0, "km").await;
 
@@ -1101,11 +1136,8 @@ async fn test_milestone_voice_enabled() {
     let mut config = MilestoneAudioBridgeConfig::default();
     config.distance_voice_enabled = true;
 
-    let bridge = MilestoneAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        MilestoneAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     bridge.handle_distance_milestone(10.0, "km").await;
 
@@ -1122,11 +1154,8 @@ async fn test_all_milestone_types() {
     // Enable all voice announcements for this test
     let mut config = MilestoneAudioBridgeConfig::default();
     config.enable_all();
-    let bridge = MilestoneAudioBridge::with_config(
-        alert_manager.clone(),
-        audio_backend.clone(),
-        config,
-    );
+    let bridge =
+        MilestoneAudioBridge::with_config(alert_manager.clone(), audio_backend.clone(), config);
 
     bridge.handle_distance_milestone(10.0, "km").await;
     bridge.handle_time_milestone(60.0).await;
@@ -1251,29 +1280,68 @@ fn test_queue_processing_disabled() {
 
 #[test]
 fn test_cue_pattern_countdown_mapping() {
-    assert_eq!(CuePattern::for_countdown_seconds(10), Some(CuePattern::CountdownTick10));
-    assert_eq!(CuePattern::for_countdown_seconds(5), Some(CuePattern::CountdownTick5));
-    assert_eq!(CuePattern::for_countdown_seconds(3), Some(CuePattern::CountdownFinal3));
-    assert_eq!(CuePattern::for_countdown_seconds(2), Some(CuePattern::CountdownFinal2));
-    assert_eq!(CuePattern::for_countdown_seconds(1), Some(CuePattern::CountdownFinal1));
+    assert_eq!(
+        CuePattern::for_countdown_seconds(10),
+        Some(CuePattern::CountdownTick10)
+    );
+    assert_eq!(
+        CuePattern::for_countdown_seconds(5),
+        Some(CuePattern::CountdownTick5)
+    );
+    assert_eq!(
+        CuePattern::for_countdown_seconds(3),
+        Some(CuePattern::CountdownFinal3)
+    );
+    assert_eq!(
+        CuePattern::for_countdown_seconds(2),
+        Some(CuePattern::CountdownFinal2)
+    );
+    assert_eq!(
+        CuePattern::for_countdown_seconds(1),
+        Some(CuePattern::CountdownFinal1)
+    );
     assert_eq!(CuePattern::for_countdown_seconds(7), None);
 }
 
 #[test]
 fn test_cue_pattern_achievement_mapping() {
-    assert_eq!(CuePattern::for_achievement_tier("bronze"), Some(CuePattern::AchievementBronze));
-    assert_eq!(CuePattern::for_achievement_tier("silver"), Some(CuePattern::AchievementSilver));
-    assert_eq!(CuePattern::for_achievement_tier("gold"), Some(CuePattern::AchievementGold));
-    assert_eq!(CuePattern::for_achievement_tier("platinum"), Some(CuePattern::AchievementPlatinum));
+    assert_eq!(
+        CuePattern::for_achievement_tier("bronze"),
+        Some(CuePattern::AchievementBronze)
+    );
+    assert_eq!(
+        CuePattern::for_achievement_tier("silver"),
+        Some(CuePattern::AchievementSilver)
+    );
+    assert_eq!(
+        CuePattern::for_achievement_tier("gold"),
+        Some(CuePattern::AchievementGold)
+    );
+    assert_eq!(
+        CuePattern::for_achievement_tier("platinum"),
+        Some(CuePattern::AchievementPlatinum)
+    );
     assert_eq!(CuePattern::for_achievement_tier("unknown"), None);
 }
 
 #[test]
 fn test_cue_pattern_milestone_mapping() {
-    assert_eq!(CuePattern::for_milestone_type("distance"), Some(CuePattern::MilestoneDistance));
-    assert_eq!(CuePattern::for_milestone_type("time"), Some(CuePattern::MilestoneTime));
-    assert_eq!(CuePattern::for_milestone_type("calories"), Some(CuePattern::MilestoneCalories));
-    assert_eq!(CuePattern::for_milestone_type("pr"), Some(CuePattern::PersonalRecord));
+    assert_eq!(
+        CuePattern::for_milestone_type("distance"),
+        Some(CuePattern::MilestoneDistance)
+    );
+    assert_eq!(
+        CuePattern::for_milestone_type("time"),
+        Some(CuePattern::MilestoneTime)
+    );
+    assert_eq!(
+        CuePattern::for_milestone_type("calories"),
+        Some(CuePattern::MilestoneCalories)
+    );
+    assert_eq!(
+        CuePattern::for_milestone_type("pr"),
+        Some(CuePattern::PersonalRecord)
+    );
 }
 
 #[test]
@@ -1338,7 +1406,9 @@ async fn test_bridge_handles_audio_errors_gracefully() {
     let bridge = WorkoutAudioBridge::new(alert_manager.clone(), audio_backend.clone());
 
     // Should not panic even with audio failures
-    let event = WorkoutEvent::IntervalCountdown { seconds_remaining: 5 };
+    let event = WorkoutEvent::IntervalCountdown {
+        seconds_remaining: 5,
+    };
     bridge.process_event(&event).await;
 
     // Alert manager should still receive the alert
@@ -1356,18 +1426,30 @@ async fn test_complete_workout_audio_pipeline() {
 
     // Simulate a complete mini-workout
     let events = vec![
-        WorkoutEvent::Started { workout_name: "Quick Intervals".to_string() },
+        WorkoutEvent::Started {
+            workout_name: "Quick Intervals".to_string(),
+        },
         WorkoutEvent::IntervalChange {
             interval_name: "Warmup".to_string(),
             target_power: Some(150),
             duration_secs: 300,
             is_recovery: false,
         },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 10 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 5 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 3 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 2 },
-        WorkoutEvent::IntervalCountdown { seconds_remaining: 1 },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 10,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 3,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 2,
+        },
+        WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 1,
+        },
         WorkoutEvent::IntervalChange {
             interval_name: "VO2 Max".to_string(),
             target_power: Some(350),
@@ -1382,7 +1464,9 @@ async fn test_complete_workout_audio_pipeline() {
             duration_secs: 60,
             is_recovery: true,
         },
-        WorkoutEvent::Completed { total_duration_secs: 420 },
+        WorkoutEvent::Completed {
+            total_duration_secs: 420,
+        },
     ];
 
     bridge.process_events(&events).await;
@@ -1408,20 +1492,19 @@ async fn test_combined_achievement_and_milestone_audio() {
     let audio_backend = Arc::new(MockAudioBackend::new());
 
     // Create both bridges with shared components
-    let achievement_bridge = AchievementAudioBridge::new(
-        alert_manager.clone(),
-        audio_backend.clone(),
-    );
-    let milestone_bridge = MilestoneAudioBridge::new(
-        alert_manager.clone(),
-        audio_backend.clone(),
-    );
+    let achievement_bridge =
+        AchievementAudioBridge::new(alert_manager.clone(), audio_backend.clone());
+    let milestone_bridge = MilestoneAudioBridge::new(alert_manager.clone(), audio_backend.clone());
 
     // Trigger achievement and milestone
     let achievement = create_test_achievement(AchievementTier::Gold, "Century Ride");
-    achievement_bridge.handle_achievement_notification(&achievement).await;
+    achievement_bridge
+        .handle_achievement_notification(&achievement)
+        .await;
 
-    milestone_bridge.handle_personal_record(100.0, "km", Some(95.0)).await;
+    milestone_bridge
+        .handle_personal_record(100.0, "km", Some(95.0))
+        .await;
 
     // Both should have triggered alerts
     let alert_types = alert_manager.get_alert_types();

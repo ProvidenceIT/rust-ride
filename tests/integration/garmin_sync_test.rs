@@ -4,14 +4,14 @@
 //! from Garmin Connect, using mocked HTTP responses via wiremock.
 
 use chrono::{Duration, Utc};
-use rustride::integrations::sync::{
-    ErrorCategory, GarminClient, GarminUserProfile, PlatformConfig, SyncConfig, SyncError,
-    SyncErrorExt, SyncEvent, SyncPlatform, SyncRecordStatus,
-};
 use rustride::integrations::sync::oauth::{
     AuthorizationUrl, CredentialStore, OAuthHandler, TokenResponse, TokenStatus,
 };
 use rustride::integrations::sync::service::{SyncService, SyncServiceHandle};
+use rustride::integrations::sync::{
+    ErrorCategory, GarminClient, GarminUserProfile, PlatformConfig, SyncConfig, SyncError,
+    SyncErrorExt, SyncEvent, SyncPlatform, SyncRecordStatus,
+};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -55,11 +55,13 @@ impl GarminMockOAuthHandler {
     }
 
     fn set_refresh_failure(&self, should_fail: bool) {
-        self.simulate_refresh_failure.store(should_fail, Ordering::SeqCst);
+        self.simulate_refresh_failure
+            .store(should_fail, Ordering::SeqCst);
     }
 
     fn set_reauth_required(&self, required: bool) {
-        self.simulate_reauth_required.store(required, Ordering::SeqCst);
+        self.simulate_reauth_required
+            .store(required, Ordering::SeqCst);
     }
 
     fn get_refresh_count(&self) -> u32 {
@@ -73,16 +75,15 @@ impl OAuthHandler for GarminMockOAuthHandler {
         platform: SyncPlatform,
     ) -> Result<AuthorizationUrl, SyncError> {
         Ok(AuthorizationUrl {
-            url: format!("https://connect.garmin.com/oauthConfirm?platform={:?}", platform),
+            url: format!(
+                "https://connect.garmin.com/oauthConfirm?platform={:?}",
+                platform
+            ),
             state: "garmin_test_state".to_string(),
         })
     }
 
-    async fn handle_callback(
-        &self,
-        _code: &str,
-        _state: &str,
-    ) -> Result<TokenResponse, SyncError> {
+    async fn handle_callback(&self, _code: &str, _state: &str) -> Result<TokenResponse, SyncError> {
         let tokens = TokenResponse {
             access_token: "garmin_mock_access_token".to_string(),
             refresh_token: Some("garmin_mock_refresh_token".to_string()),
@@ -104,7 +105,9 @@ impl OAuthHandler for GarminMockOAuthHandler {
         }
 
         if self.simulate_refresh_failure.load(Ordering::SeqCst) {
-            return Err(SyncError::RefreshFailed("Simulated refresh failure".to_string()));
+            return Err(SyncError::RefreshFailed(
+                "Simulated refresh failure".to_string(),
+            ));
         }
 
         let new_tokens = TokenResponse {
@@ -113,7 +116,10 @@ impl OAuthHandler for GarminMockOAuthHandler {
             expires_at: Utc::now() + Duration::hours(1),
         };
 
-        self.tokens.write().await.insert(platform, new_tokens.clone());
+        self.tokens
+            .write()
+            .await
+            .insert(platform, new_tokens.clone());
         Ok(new_tokens)
     }
 
@@ -173,14 +179,14 @@ impl CredentialStore for GarminMockCredentialStore {
         platform: SyncPlatform,
         tokens: &TokenResponse,
     ) -> Result<(), SyncError> {
-        self.credentials.write().await.insert(platform, tokens.clone());
+        self.credentials
+            .write()
+            .await
+            .insert(platform, tokens.clone());
         Ok(())
     }
 
-    async fn get_tokens(
-        &self,
-        platform: SyncPlatform,
-    ) -> Result<Option<TokenResponse>, SyncError> {
+    async fn get_tokens(&self, platform: SyncPlatform) -> Result<Option<TokenResponse>, SyncError> {
         Ok(self.credentials.read().await.get(&platform).cloned())
     }
 
@@ -214,12 +220,12 @@ fn create_garmin_test_service(
 fn generate_valid_fit_data() -> Vec<u8> {
     // FIT file with 14-byte header
     let mut data = vec![
-        14,           // Header size (14 bytes)
-        0x10,         // Protocol version
-        0x00, 0x00,   // Profile version
+        14,   // Header size (14 bytes)
+        0x10, // Protocol version
+        0x00, 0x00, // Profile version
         0x00, 0x00, 0x00, 0x00, // Data size (placeholder)
         b'.', b'F', b'I', b'T', // ".FIT" signature
-        0x00, 0x00,   // CRC (placeholder)
+        0x00, 0x00, // CRC (placeholder)
     ];
     // Add some dummy record data
     data.extend_from_slice(&[0u8; 100]);
@@ -229,9 +235,9 @@ fn generate_valid_fit_data() -> Vec<u8> {
 /// Generate minimal (12-byte header) FIT file data for testing
 fn generate_minimal_fit_data() -> Vec<u8> {
     let mut data = vec![
-        12,           // Header size (12 bytes)
-        0x10,         // Protocol version
-        0x00, 0x00,   // Profile version
+        12,   // Header size (12 bytes)
+        0x10, // Protocol version
+        0x00, 0x00, // Profile version
         0x00, 0x00, 0x00, 0x00, // Data size (placeholder)
         b'.', b'F', b'I', b'T', // ".FIT" signature
     ];
@@ -301,7 +307,10 @@ async fn test_garmin_connect_flow_start_authorization() {
     let handle = create_garmin_test_service(oauth_handler.clone(), credential_store);
 
     // Initially not connected
-    let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+    let status = handle
+        .get_status(SyncPlatform::GarminConnect)
+        .await
+        .unwrap();
     assert!(!status.connected, "Should not be connected initially");
 
     // Start authorization - returns URL to open in browser
@@ -331,9 +340,18 @@ async fn test_garmin_connect_flow_handle_callback() {
         .await
         .unwrap();
 
-    assert!(!tokens.access_token.is_empty(), "Access token should be returned");
-    assert!(tokens.refresh_token.is_some(), "Refresh token should be returned");
-    assert!(tokens.expires_at > Utc::now(), "Token should not be expired");
+    assert!(
+        !tokens.access_token.is_empty(),
+        "Access token should be returned"
+    );
+    assert!(
+        tokens.refresh_token.is_some(),
+        "Refresh token should be returned"
+    );
+    assert!(
+        tokens.expires_at > Utc::now(),
+        "Token should not be expired"
+    );
 
     // Store credentials
     credential_store
@@ -364,18 +382,17 @@ async fn test_garmin_upload_flow_success() {
         .and(path("/upload-service/upload/.fit"))
         .and(bearer_token("test_access_token"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(12345678))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(12345678)),
         )
         .mount(&mock_server)
         .await;
 
     // Create client with mock server URL
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     // Generate valid FIT data
     let fit_data = generate_valid_fit_data();
@@ -404,25 +421,25 @@ async fn test_garmin_upload_flow_duplicate() {
     // Setup mock for duplicate response
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_duplicate_error_response())
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_string(create_duplicate_error_response()))
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     let fit_data = generate_valid_fit_data();
     let ride_id = Uuid::new_v4();
 
     let result = client.upload_activity(&ride_id, &fit_data).await;
     assert!(
-        matches!(result, Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))),
+        matches!(
+            result,
+            Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+        ),
         "Should detect duplicate: {:?}",
         result
     );
@@ -439,11 +456,11 @@ async fn test_garmin_upload_flow_409_conflict() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     let fit_data = generate_valid_fit_data();
     let ride_id = Uuid::new_v4();
@@ -463,18 +480,15 @@ async fn test_garmin_upload_flow_rate_limited() {
 
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
-        .respond_with(
-            ResponseTemplate::new(429)
-                .insert_header("Retry-After", "60")
-        )
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "60"))
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     let fit_data = generate_valid_fit_data();
     let ride_id = Uuid::new_v4();
@@ -498,10 +512,8 @@ async fn test_garmin_upload_flow_token_expired() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
     client.set_access_token("expired_token".to_string()).await;
 
     let fit_data = generate_valid_fit_data();
@@ -543,17 +555,16 @@ async fn test_garmin_get_profile_flow() {
         .and(path("/userprofile-service/socialProfile"))
         .and(bearer_token("test_access_token"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_profile_response(987654, "TestUser"))
+            ResponseTemplate::new(200).set_body_string(create_profile_response(987654, "TestUser")),
         )
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     let profile = client.get_user_profile().await.unwrap();
 
@@ -576,20 +587,30 @@ async fn test_garmin_disconnect_flow() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
-    assert!(client.is_configured(), "Client should be configured before disconnect");
+    assert!(
+        client.is_configured(),
+        "Client should be configured before disconnect"
+    );
 
     // Deauthorize
     let result = client.deauthorize().await;
-    assert!(result.is_ok(), "Deauthorize should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Deauthorize should succeed: {:?}",
+        result.err()
+    );
 
     // Token should be cleared
-    assert!(!client.is_configured(), "Client should not be configured after disconnect");
+    assert!(
+        !client.is_configured(),
+        "Client should not be configured after disconnect"
+    );
 }
 
 /// Test disconnect flow when revoke endpoint fails
@@ -604,18 +625,24 @@ async fn test_garmin_disconnect_flow_revoke_fails() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     // Deauthorize should still succeed (local token cleared)
     let result = client.deauthorize().await;
-    assert!(result.is_ok(), "Deauthorize should succeed even if API fails");
+    assert!(
+        result.is_ok(),
+        "Deauthorize should succeed even if API fails"
+    );
 
     // Token should still be cleared
-    assert!(!client.is_configured(), "Token should be cleared even on API error");
+    assert!(
+        !client.is_configured(),
+        "Token should be cleared even on API error"
+    );
 }
 
 /// Test disconnect flow when revoke endpoint is not found (404)
@@ -629,11 +656,11 @@ async fn test_garmin_disconnect_flow_endpoint_not_found() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
-    client.set_access_token("test_access_token".to_string()).await;
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
+    client
+        .set_access_token("test_access_token".to_string())
+        .await;
 
     let result = client.deauthorize().await;
     assert!(result.is_ok(), "Deauthorize should succeed on 404");
@@ -653,8 +680,7 @@ async fn test_garmin_complete_e2e_flow() {
     Mock::given(method("GET"))
         .and(path("/userprofile-service/socialProfile"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_profile_response(111222, "E2EUser"))
+            ResponseTemplate::new(200).set_body_string(create_profile_response(111222, "E2EUser")),
         )
         .mount(&mock_server)
         .await;
@@ -662,8 +688,7 @@ async fn test_garmin_complete_e2e_flow() {
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(99887766))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(99887766)),
         )
         .mount(&mock_server)
         .await;
@@ -674,14 +699,15 @@ async fn test_garmin_complete_e2e_flow() {
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
 
     // Step 1: Connect (simulate OAuth callback)
     client.set_access_token("e2e_test_token".to_string()).await;
-    assert!(client.is_configured(), "Client should be configured after connect");
+    assert!(
+        client.is_configured(),
+        "Client should be configured after connect"
+    );
 
     // Step 2: Fetch profile to verify connection
     let profile = client.get_user_profile().await.unwrap();
@@ -715,8 +741,7 @@ async fn test_garmin_multiple_uploads() {
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(11111111))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(11111111)),
         )
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -725,8 +750,7 @@ async fn test_garmin_multiple_uploads() {
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(22222222))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(22222222)),
         )
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -735,16 +759,13 @@ async fn test_garmin_multiple_uploads() {
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(33333333))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(33333333)),
         )
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
     client.set_access_token("test_token".to_string()).await;
 
     let fit_data = generate_valid_fit_data();
@@ -760,7 +781,11 @@ async fn test_garmin_multiple_uploads() {
         }
     }
 
-    assert_eq!(external_ids.len(), 3, "All 3 uploads should have external IDs");
+    assert_eq!(
+        external_ids.len(),
+        3,
+        "All 3 uploads should have external IDs"
+    );
 }
 
 /// Test upload with minimal (12-byte header) FIT file
@@ -771,16 +796,13 @@ async fn test_garmin_upload_minimal_fit_header() {
     Mock::given(method("POST"))
         .and(path("/upload-service/upload/.fit"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(create_upload_success_response(44444444))
+            ResponseTemplate::new(200).set_body_string(create_upload_success_response(44444444)),
         )
         .mount(&mock_server)
         .await;
 
-    let client = GarminClient::with_base_url(
-        mock_server.uri(),
-        format!("{}/oauth", mock_server.uri()),
-    );
+    let client =
+        GarminClient::with_base_url(mock_server.uri(), format!("{}/oauth", mock_server.uri()));
     client.set_access_token("test_token".to_string()).await;
 
     // Use minimal 12-byte header FIT data
@@ -788,7 +810,11 @@ async fn test_garmin_upload_minimal_fit_header() {
     let ride_id = Uuid::new_v4();
 
     let result = client.upload_activity(&ride_id, &fit_data).await;
-    assert!(result.is_ok(), "Minimal FIT header should be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Minimal FIT header should be accepted: {:?}",
+        result.err()
+    );
 }
 
 // ============================================================================
@@ -813,7 +839,10 @@ async fn test_garmin_service_platform_config() {
         .unwrap();
 
     // Verify configuration
-    let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+    let status = handle
+        .get_status(SyncPlatform::GarminConnect)
+        .await
+        .unwrap();
     assert!(status.config.enabled, "Garmin should be enabled");
     assert!(status.config.auto_sync, "Auto-sync should be enabled");
 
@@ -832,7 +861,12 @@ async fn test_garmin_service_upload_requires_auth() {
 
     // Attempt upload without authorization
     let result = handle
-        .queue_upload(ride_id, SyncPlatform::GarminConnect, fit_data, Some("Test Ride".to_string()))
+        .queue_upload(
+            ride_id,
+            SyncPlatform::GarminConnect,
+            fit_data,
+            Some("Test Ride".to_string()),
+        )
         .await;
 
     assert!(
@@ -1015,7 +1049,9 @@ async fn test_garmin_fit_validation_too_small() {
 /// Test FIT file validation rejects missing signature
 #[tokio::test]
 async fn test_garmin_fit_validation_missing_signature() {
-    let bad_signature = vec![14, 0x10, 0, 0, 0, 0, 0, 0, b'N', b'O', b'T', b'F', 0, 0, 0, 0];
+    let bad_signature = vec![
+        14, 0x10, 0, 0, 0, 0, 0, 0, b'N', b'O', b'T', b'F', 0, 0, 0, 0,
+    ];
     let result = GarminClient::validate_fit_file(&bad_signature);
     assert!(
         matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("signature")),
@@ -1028,7 +1064,9 @@ async fn test_garmin_fit_validation_missing_signature() {
 #[tokio::test]
 async fn test_garmin_fit_validation_invalid_header() {
     // Header size 13 is invalid (must be 12 or 14)
-    let bad_header = vec![13, 0x10, 0, 0, 0, 0, 0, 0, b'.', b'F', b'I', b'T', 0, 0, 0, 0];
+    let bad_header = vec![
+        13, 0x10, 0, 0, 0, 0, 0, 0, b'.', b'F', b'I', b'T', 0, 0, 0, 0,
+    ];
     let result = GarminClient::validate_fit_file(&bad_header);
     assert!(
         matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("header")),

@@ -330,15 +330,17 @@ fn test_multiple_device_mappings() {
 mod action_integration_tests {
     use super::*;
     use rustride::audio::{AudioEngine, AudioError, AudioEvent, AudioItem};
+    use rustride::hid::actions::{ActionContext, ActionError, ActionExecutor, ActionResult};
     use rustride::hid::executor::{
         AppContext, DefaultActionExecutor, ExecutorEvent, LapMarker, NavigationTarget,
     };
-    use rustride::hid::actions::{ActionContext, ActionError, ActionExecutor, ActionResult};
     use rustride::integrations::mqtt::{FanController, FanProfile, FanState, MqttError};
     use rustride::recording::recorder::RideRecorder;
     use rustride::recording::types::RecorderConfig;
     use rustride::workouts::engine::WorkoutEngine;
-    use rustride::workouts::types::{PowerTarget, SegmentType, Workout, WorkoutSegment, WorkoutStatus};
+    use rustride::workouts::types::{
+        PowerTarget, SegmentType, Workout, WorkoutSegment, WorkoutStatus,
+    };
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Arc, RwLock};
@@ -529,8 +531,7 @@ mod action_integration_tests {
     }
 
     /// Create executor with mock audio engine for testing
-    fn create_executor_with_audio(
-    ) -> (
+    fn create_executor_with_audio() -> (
         DefaultActionExecutor<MockAudioEngine, MockFanController>,
         Arc<MockAudioEngine>,
     ) {
@@ -541,8 +542,7 @@ mod action_integration_tests {
     }
 
     /// Create executor with mock fan controller for testing
-    fn create_executor_with_fan(
-    ) -> (
+    fn create_executor_with_fan() -> (
         DefaultActionExecutor<MockAudioEngine, MockFanController>,
         Arc<MockFanController>,
         Uuid,
@@ -556,8 +556,7 @@ mod action_integration_tests {
     }
 
     /// Create executor with ride recorder for testing
-    fn create_executor_with_recorder(
-    ) -> (
+    fn create_executor_with_recorder() -> (
         DefaultActionExecutor<MockAudioEngine, MockFanController>,
         Arc<RwLock<RideRecorder>>,
     ) {
@@ -568,8 +567,7 @@ mod action_integration_tests {
     }
 
     /// Create executor with workout engine for testing
-    fn create_executor_with_workout_engine(
-    ) -> (
+    fn create_executor_with_workout_engine() -> (
         DefaultActionExecutor<MockAudioEngine, MockFanController>,
         Arc<RwLock<WorkoutEngine>>,
     ) {
@@ -649,7 +647,10 @@ mod action_integration_tests {
 
         // Don't start a ride - executor.set_ride_active(false) by default
         let result = executor.execute(&ButtonAction::AddLapMarker).await;
-        assert!(result.is_err(), "Lap marker should fail without active ride");
+        assert!(
+            result.is_err(),
+            "Lap marker should fail without active ride"
+        );
 
         match result {
             Err(ActionError::NotAvailable(_)) => {}
@@ -709,12 +710,18 @@ mod action_integration_tests {
         // Pause the ride
         let result = executor.execute(&ButtonAction::PauseResume).await;
         assert!(result.is_ok(), "Pause action should succeed");
-        assert!(executor.context.read().unwrap().ride_paused, "Ride should be paused");
+        assert!(
+            executor.context.read().unwrap().ride_paused,
+            "Ride should be paused"
+        );
 
         // Resume the ride
         let result = executor.execute(&ButtonAction::PauseResume).await;
         assert!(result.is_ok(), "Resume action should succeed");
-        assert!(!executor.context.read().unwrap().ride_paused, "Ride should be resumed");
+        assert!(
+            !executor.context.read().unwrap().ride_paused,
+            "Ride should be resumed"
+        );
     }
 
     /// Test that PauseResume also pauses/resumes the workout engine
@@ -797,7 +804,10 @@ mod action_integration_tests {
         {
             let eng = engine.read().unwrap();
             let progress = eng.state().unwrap().segment_progress.as_ref().unwrap();
-            assert_eq!(progress.segment_index, 1, "Should be in segment 1 after skip");
+            assert_eq!(
+                progress.segment_index, 1,
+                "Should be in segment 1 after skip"
+            );
         }
 
         // Skip again
@@ -808,7 +818,10 @@ mod action_integration_tests {
         {
             let eng = engine.read().unwrap();
             let progress = eng.state().unwrap().segment_progress.as_ref().unwrap();
-            assert_eq!(progress.segment_index, 2, "Should be in segment 2 after second skip");
+            assert_eq!(
+                progress.segment_index, 2,
+                "Should be in segment 2 after second skip"
+            );
         }
     }
 
@@ -819,7 +832,10 @@ mod action_integration_tests {
 
         // Don't start a workout
         let result = executor.execute(&ButtonAction::SkipInterval).await;
-        assert!(result.is_err(), "Skip interval should fail without active workout");
+        assert!(
+            result.is_err(),
+            "Skip interval should fail without active workout"
+        );
 
         match result {
             Err(ActionError::NotAvailable(_)) => {}
@@ -843,18 +859,36 @@ mod action_integration_tests {
         // Get initial remaining time
         let initial_remaining = {
             let eng = engine.read().unwrap();
-            eng.state().unwrap().segment_progress.as_ref().unwrap().remaining_seconds
+            eng.state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .remaining_seconds
         };
 
         // Extend by 30 seconds
-        let result = executor.execute(&ButtonAction::ExtendInterval { seconds: 30 }).await;
+        let result = executor
+            .execute(&ButtonAction::ExtendInterval { seconds: 30 })
+            .await;
         assert!(result.is_ok(), "Extend interval should succeed");
 
         // Verify remaining time increased
         {
             let eng = engine.read().unwrap();
-            let remaining = eng.state().unwrap().segment_progress.as_ref().unwrap().remaining_seconds;
-            assert!(remaining >= initial_remaining + 25, "Remaining time should increase by ~30s (got {} from {})", remaining, initial_remaining);
+            let remaining = eng
+                .state()
+                .unwrap()
+                .segment_progress
+                .as_ref()
+                .unwrap()
+                .remaining_seconds;
+            assert!(
+                remaining >= initial_remaining + 25,
+                "Remaining time should increase by ~30s (got {} from {})",
+                remaining,
+                initial_remaining
+            );
         }
     }
 
@@ -922,7 +956,10 @@ mod action_integration_tests {
         // Verify audio engine was called
         let calls = audio.get_set_volume_calls();
         assert!(!calls.is_empty(), "Audio engine should be called");
-        assert_eq!(calls[0], new_volume, "Audio engine should receive new volume");
+        assert_eq!(
+            calls[0], new_volume,
+            "Audio engine should receive new volume"
+        );
     }
 
     /// Test that VolumeDown action decreases audio volume
@@ -944,7 +981,10 @@ mod action_integration_tests {
         // Verify audio engine was called
         let calls = audio.get_set_volume_calls();
         assert!(!calls.is_empty(), "Audio engine should be called");
-        assert_eq!(calls[0], new_volume, "Audio engine should receive new volume");
+        assert_eq!(
+            calls[0], new_volume,
+            "Audio engine should receive new volume"
+        );
     }
 
     /// Test that MuteToggle action toggles audio mute state
@@ -961,16 +1001,26 @@ mod action_integration_tests {
         assert!(executor.is_muted(), "Should be muted after toggle");
 
         // Verify audio engine was set to volume 0
-        assert_eq!(audio.last_set_volume(), Some(0), "Audio volume should be 0 when muted");
+        assert_eq!(
+            audio.last_set_volume(),
+            Some(0),
+            "Audio volume should be 0 when muted"
+        );
 
         // Toggle mute (unmute)
         let result = executor.execute(&ButtonAction::MuteToggle).await;
         assert!(result.is_ok(), "Unmute toggle should succeed");
-        assert!(!executor.is_muted(), "Should be unmuted after second toggle");
+        assert!(
+            !executor.is_muted(),
+            "Should be unmuted after second toggle"
+        );
 
         // Verify audio engine was restored to previous volume
         let restored_volume = audio.last_set_volume().unwrap();
-        assert!(restored_volume > 0, "Volume should be restored after unmute");
+        assert!(
+            restored_volume > 0,
+            "Volume should be restored after unmute"
+        );
     }
 
     /// Test that volume actions clamp at boundaries
@@ -984,7 +1034,11 @@ mod action_integration_tests {
         }
 
         // Verify clamped at 100
-        assert_eq!(executor.get_volume(), 100, "Volume should be clamped at 100");
+        assert_eq!(
+            executor.get_volume(),
+            100,
+            "Volume should be clamped at 100"
+        );
 
         // Set volume near min
         for _ in 0..15 {
@@ -1038,12 +1092,18 @@ mod action_integration_tests {
         // Verify controller was called with current speed
         let calls = fan.get_set_speed_calls();
         let current_speed = executor.get_fan_speed();
-        assert_eq!(calls[0].1, current_speed, "Should set to current speed when turning on");
+        assert_eq!(
+            calls[0].1, current_speed,
+            "Should set to current speed when turning on"
+        );
 
         // Toggle off
         let result = executor.execute(&ButtonAction::FanToggle).await;
         assert!(result.is_ok(), "Fan toggle off should succeed");
-        assert!(!executor.is_fan_on(), "Fan should be off after second toggle");
+        assert!(
+            !executor.is_fan_on(),
+            "Fan should be off after second toggle"
+        );
 
         // Verify controller was called with speed 0
         let calls = fan.get_set_speed_calls();
@@ -1064,7 +1124,10 @@ mod action_integration_tests {
 
         match result {
             Err(ActionError::ExecutionFailed(msg)) => {
-                assert!(msg.contains("Not connected"), "Error should mention connection");
+                assert!(
+                    msg.contains("Not connected"),
+                    "Error should mention connection"
+                );
             }
             other => panic!("Expected ExecutionFailed error, got {:?}", other),
         }
@@ -1134,12 +1197,18 @@ mod action_integration_tests {
 
         // Without active workout
         let result = executor.execute(&ButtonAction::ShowWorkout).await;
-        assert!(result.is_err(), "ShowWorkout should fail without active workout");
+        assert!(
+            result.is_err(),
+            "ShowWorkout should fail without active workout"
+        );
 
         // With active workout
         executor.set_workout_active(true);
         let result = executor.execute(&ButtonAction::ShowWorkout).await;
-        assert!(result.is_ok(), "ShowWorkout should succeed with active workout");
+        assert!(
+            result.is_ok(),
+            "ShowWorkout should succeed with active workout"
+        );
     }
 
     // ========================================================================
@@ -1207,7 +1276,10 @@ mod action_integration_tests {
         assert!(result.is_ok(), "Show metrics should succeed");
 
         // Verify all subsystems were called
-        assert!(audio.get_set_volume_calls().len() >= 1, "Audio should be called");
+        assert!(
+            audio.get_set_volume_calls().len() >= 1,
+            "Audio should be called"
+        );
         assert!(fan.get_set_speed_calls().len() >= 1, "Fan should be called");
         {
             let rec = recorder.read().unwrap();
@@ -1216,7 +1288,10 @@ mod action_integration_tests {
         {
             let eng = engine.read().unwrap();
             let progress = eng.state().unwrap().segment_progress.as_ref().unwrap();
-            assert_eq!(progress.segment_index, 1, "Should be in segment 1 after skip");
+            assert_eq!(
+                progress.segment_index, 1,
+                "Should be in segment 1 after skip"
+            );
         }
     }
 
@@ -1284,7 +1359,10 @@ mod action_integration_tests {
         assert!(result.is_ok(), "Action should execute successfully");
 
         // Verify audio was affected
-        assert!(!audio.get_set_volume_calls().is_empty(), "Audio should be called");
+        assert!(
+            !audio.get_set_volume_calls().is_empty(),
+            "Audio should be called"
+        );
     }
 
     /// Test that disabled mappings don't trigger actions
@@ -1316,7 +1394,10 @@ mod action_integration_tests {
 
         // Verify NO action event was emitted
         let action_event = action_rx.try_recv();
-        assert!(action_event.is_err(), "Disabled mapping should not trigger action");
+        assert!(
+            action_event.is_err(),
+            "Disabled mapping should not trigger action"
+        );
     }
 
     /// Test learning mode captures button but doesn't emit action
@@ -1355,7 +1436,10 @@ mod action_integration_tests {
 
         // Verify NO action was triggered
         let action_event = action_rx.try_recv();
-        assert!(action_event.is_err(), "Learning mode should not trigger actions");
+        assert!(
+            action_event.is_err(),
+            "Learning mode should not trigger actions"
+        );
 
         // Stop learning mode
         handler.stop_learning_mode();
@@ -1370,8 +1454,8 @@ mod action_integration_tests {
 mod reconnection_stress_tests {
     use super::*;
     use rustride::hid::{
-        DefaultHidDeviceManager, HidConfig, HidDevice, HidDeviceEvent, HidDeviceManager,
-        HidDeviceStatus, get_default_mappings,
+        get_default_mappings, DefaultHidDeviceManager, HidConfig, HidDevice, HidDeviceEvent,
+        HidDeviceManager, HidDeviceStatus,
     };
     use tokio::sync::broadcast;
 
@@ -1387,7 +1471,10 @@ mod reconnection_stress_tests {
 
         match event {
             HidDeviceEvent::DeviceDisconnected(id) => {
-                assert_eq!(id, device_id, "Disconnect event should contain correct device ID");
+                assert_eq!(
+                    id, device_id,
+                    "Disconnect event should contain correct device ID"
+                );
             }
             _ => panic!("Expected DeviceDisconnected event"),
         }
@@ -1439,9 +1526,12 @@ mod reconnection_stress_tests {
         let device3_id = Uuid::new_v4();
 
         // Send multiple disconnect events
-        tx.send(HidDeviceEvent::DeviceDisconnected(device1_id)).unwrap();
-        tx.send(HidDeviceEvent::DeviceDisconnected(device2_id)).unwrap();
-        tx.send(HidDeviceEvent::DeviceDisconnected(device3_id)).unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device1_id))
+            .unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device2_id))
+            .unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device3_id))
+            .unwrap();
 
         // Verify all events received in order
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
@@ -1499,7 +1589,10 @@ mod reconnection_stress_tests {
         // Get default mappings for Stream Deck
         let mappings = get_default_mappings(0x0FD9, 0x0060);
 
-        assert!(!mappings.is_empty(), "Stream Deck should have default mappings");
+        assert!(
+            !mappings.is_empty(),
+            "Stream Deck should have default mappings"
+        );
         assert_eq!(mappings[0].button_code, 0);
         assert_eq!(mappings[0].action, ButtonAction::PauseResume);
 
@@ -1509,9 +1602,7 @@ mod reconnection_stress_tests {
 
         let button_mappings: Vec<ButtonMapping> = mappings
             .iter()
-            .map(|config| {
-                ButtonMapping::new(device_id, config.button_code, config.action.clone())
-            })
+            .map(|config| ButtonMapping::new(device_id, config.button_code, config.action.clone()))
             .collect();
 
         handler.register_mappings(&device_id, button_mappings);
@@ -1528,7 +1619,10 @@ mod reconnection_stress_tests {
 
         match event {
             HidDeviceEvent::DeviceReconnected(id) => {
-                assert_eq!(id, device_id, "Reconnected event should contain correct device ID");
+                assert_eq!(
+                    id, device_id,
+                    "Reconnected event should contain correct device ID"
+                );
             }
             _ => panic!("Expected DeviceReconnected event"),
         }
@@ -1593,7 +1687,8 @@ mod reconnection_stress_tests {
         for i in 0..50 {
             let device = HidDevice::new(0x0FD9, 0x0060, format!("Device {}", i));
             tx.send(HidDeviceEvent::DeviceConnected(device)).unwrap();
-            tx.send(HidDeviceEvent::DeviceDisconnected(device_id)).unwrap();
+            tx.send(HidDeviceEvent::DeviceDisconnected(device_id))
+                .unwrap();
         }
 
         // All 100 events should be sent (50 connect + 50 disconnect)
@@ -1617,18 +1712,31 @@ mod reconnection_stress_tests {
                 ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
             ];
             handler.register_mappings(&device_id, mappings);
-            assert_eq!(handler.get_mappings(&device_id).len(), 2, "Cycle {}: Should have 2 mappings", cycle);
+            assert_eq!(
+                handler.get_mappings(&device_id).len(),
+                2,
+                "Cycle {}: Should have 2 mappings",
+                cycle
+            );
 
             // Clear mappings (simulate disconnect cleanup)
             handler.clear_mappings(&device_id);
-            assert_eq!(handler.get_mappings(&device_id).len(), 0, "Cycle {}: Should have 0 mappings after clear", cycle);
+            assert_eq!(
+                handler.get_mappings(&device_id).len(),
+                0,
+                "Cycle {}: Should have 0 mappings after clear",
+                cycle
+            );
         }
 
         // Final state should be consistent
         assert_eq!(handler.get_mappings(&device_id).len(), 0);
 
         // Can still add mappings after rapid cycles
-        handler.add_mapping(&device_id, ButtonMapping::new(device_id, 5, ButtonAction::VolumeUp));
+        handler.add_mapping(
+            &device_id,
+            ButtonMapping::new(device_id, 5, ButtonAction::VolumeUp),
+        );
         assert_eq!(handler.get_mappings(&device_id).len(), 1);
     }
 
@@ -1643,14 +1751,29 @@ mod reconnection_stress_tests {
 
         // Interleave operations across devices
         for _ in 0..20 {
-            handler.add_mapping(&device1, ButtonMapping::new(device1, 0, ButtonAction::PauseResume));
-            handler.add_mapping(&device2, ButtonMapping::new(device2, 0, ButtonAction::VolumeUp));
-            handler.add_mapping(&device3, ButtonMapping::new(device3, 0, ButtonAction::FanToggle));
+            handler.add_mapping(
+                &device1,
+                ButtonMapping::new(device1, 0, ButtonAction::PauseResume),
+            );
+            handler.add_mapping(
+                &device2,
+                ButtonMapping::new(device2, 0, ButtonAction::VolumeUp),
+            );
+            handler.add_mapping(
+                &device3,
+                ButtonMapping::new(device3, 0, ButtonAction::FanToggle),
+            );
 
             handler.clear_mappings(&device2);
 
-            handler.add_mapping(&device1, ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker));
-            handler.add_mapping(&device3, ButtonMapping::new(device3, 1, ButtonAction::MuteToggle));
+            handler.add_mapping(
+                &device1,
+                ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker),
+            );
+            handler.add_mapping(
+                &device3,
+                ButtonMapping::new(device3, 1, ButtonAction::MuteToggle),
+            );
         }
 
         // Verify each device has correct state
@@ -1681,7 +1804,8 @@ mod reconnection_stress_tests {
 
         // Simulate all devices disconnecting
         for device_id in &devices {
-            tx.send(HidDeviceEvent::DeviceDisconnected(*device_id)).unwrap();
+            tx.send(HidDeviceEvent::DeviceDisconnected(*device_id))
+                .unwrap();
         }
 
         // Collect all disconnect events
@@ -1699,7 +1823,11 @@ mod reconnection_stress_tests {
         // All devices should have disconnect events
         assert_eq!(events.len(), 5);
         for device_id in &devices {
-            assert!(events.contains(device_id), "Missing disconnect for device {:?}", device_id);
+            assert!(
+                events.contains(device_id),
+                "Missing disconnect for device {:?}",
+                device_id
+            );
         }
     }
 
@@ -1709,17 +1837,18 @@ mod reconnection_stress_tests {
         let (tx, mut rx) = broadcast::channel::<HidDeviceEvent>(100);
 
         let devices: Vec<(Uuid, bool)> = vec![
-            (Uuid::new_v4(), true),   // disconnects
-            (Uuid::new_v4(), false),  // stays connected
-            (Uuid::new_v4(), true),   // disconnects
-            (Uuid::new_v4(), false),  // stays connected
-            (Uuid::new_v4(), true),   // disconnects
+            (Uuid::new_v4(), true),  // disconnects
+            (Uuid::new_v4(), false), // stays connected
+            (Uuid::new_v4(), true),  // disconnects
+            (Uuid::new_v4(), false), // stays connected
+            (Uuid::new_v4(), true),  // disconnects
         ];
 
         // Only disconnect some devices
         for (device_id, should_disconnect) in &devices {
             if *should_disconnect {
-                tx.send(HidDeviceEvent::DeviceDisconnected(*device_id)).unwrap();
+                tx.send(HidDeviceEvent::DeviceDisconnected(*device_id))
+                    .unwrap();
             }
         }
 
@@ -1744,17 +1873,24 @@ mod reconnection_stress_tests {
         let device3 = Uuid::new_v4();
 
         // Register mappings for all devices
-        handler.register_mappings(&device1, vec![
-            ButtonMapping::new(device1, 0, ButtonAction::PauseResume),
-            ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker),
-        ]);
-        handler.register_mappings(&device2, vec![
-            ButtonMapping::new(device2, 0, ButtonAction::VolumeUp),
-            ButtonMapping::new(device2, 1, ButtonAction::VolumeDown),
-        ]);
-        handler.register_mappings(&device3, vec![
-            ButtonMapping::new(device3, 0, ButtonAction::FanSpeedUp),
-        ]);
+        handler.register_mappings(
+            &device1,
+            vec![
+                ButtonMapping::new(device1, 0, ButtonAction::PauseResume),
+                ButtonMapping::new(device1, 1, ButtonAction::AddLapMarker),
+            ],
+        );
+        handler.register_mappings(
+            &device2,
+            vec![
+                ButtonMapping::new(device2, 0, ButtonAction::VolumeUp),
+                ButtonMapping::new(device2, 1, ButtonAction::VolumeDown),
+            ],
+        );
+        handler.register_mappings(
+            &device3,
+            vec![ButtonMapping::new(device3, 0, ButtonAction::FanSpeedUp)],
+        );
 
         // Verify initial state
         assert_eq!(handler.get_mappings(&device1).len(), 2);
@@ -1958,10 +2094,13 @@ mod reconnection_stress_tests {
         let device_id = Uuid::new_v4();
 
         // Register mappings
-        handler.register_mappings(&device_id, vec![
-            ButtonMapping::new(device_id, 0, ButtonAction::PauseResume),
-            ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
-        ]);
+        handler.register_mappings(
+            &device_id,
+            vec![
+                ButtonMapping::new(device_id, 0, ButtonAction::PauseResume),
+                ButtonMapping::new(device_id, 1, ButtonAction::AddLapMarker),
+            ],
+        );
 
         // Subscribe to action events
         let mut action_rx = handler.subscribe_actions();
@@ -2009,9 +2148,10 @@ mod reconnection_stress_tests {
         let device_id = Uuid::new_v4();
 
         // Register mappings
-        handler.register_mappings(&device_id, vec![
-            ButtonMapping::new(device_id, 0, ButtonAction::VolumeUp),
-        ]);
+        handler.register_mappings(
+            &device_id,
+            vec![ButtonMapping::new(device_id, 0, ButtonAction::VolumeUp)],
+        );
 
         let mut action_rx = handler.subscribe_actions();
 
@@ -2052,11 +2192,15 @@ mod reconnection_stress_tests {
         tx.send(HidDeviceEvent::Error {
             device_id: Some(device_id),
             error: "Auto-reconnect failed: device busy".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         let event = rx.try_recv().unwrap();
         match event {
-            HidDeviceEvent::Error { device_id: Some(id), error } => {
+            HidDeviceEvent::Error {
+                device_id: Some(id),
+                error,
+            } => {
                 assert_eq!(id, device_id);
                 assert!(error.contains("Auto-reconnect failed"));
             }
@@ -2072,11 +2216,15 @@ mod reconnection_stress_tests {
         tx.send(HidDeviceEvent::Error {
             device_id: None,
             error: "HID API initialization failed".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         let event = rx.try_recv().unwrap();
         match event {
-            HidDeviceEvent::Error { device_id: None, error } => {
+            HidDeviceEvent::Error {
+                device_id: None,
+                error,
+            } => {
                 assert!(error.contains("HID API"));
             }
             _ => panic!("Expected Error event with no device ID"),
@@ -2092,13 +2240,17 @@ mod reconnection_stress_tests {
         let device = HidDevice::new(0x0FD9, 0x0060, "Stream Deck".to_string());
 
         // Simulate a typical reconnect cycle event sequence
-        tx.send(HidDeviceEvent::DeviceDisconnected(device_id)).unwrap();
+        tx.send(HidDeviceEvent::DeviceDisconnected(device_id))
+            .unwrap();
         tx.send(HidDeviceEvent::Error {
             device_id: Some(device_id),
             error: "First reconnect attempt failed".to_string(),
-        }).unwrap();
-        tx.send(HidDeviceEvent::DeviceConnected(device.clone())).unwrap();
-        tx.send(HidDeviceEvent::DeviceReconnected(device_id)).unwrap();
+        })
+        .unwrap();
+        tx.send(HidDeviceEvent::DeviceConnected(device.clone()))
+            .unwrap();
+        tx.send(HidDeviceEvent::DeviceReconnected(device_id))
+            .unwrap();
         tx.send(HidDeviceEvent::DeviceOpened(device_id)).unwrap();
 
         // Collect and verify all events

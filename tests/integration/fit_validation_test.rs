@@ -14,8 +14,7 @@
 use chrono::{TimeZone, Utc};
 use fitparser::profile::MesgNum;
 use rustride::recording::exporter_fit::{
-    export_fit, export_fit_with_laps, export_fit_with_segments, export_fit_with_workout,
-    LapData,
+    export_fit, export_fit_with_laps, export_fit_with_segments, export_fit_with_workout, LapData,
 };
 use rustride::recording::types::{Ride, RideSample};
 use rustride::workouts::{PowerTarget, SegmentType, Workout, WorkoutSegment};
@@ -298,7 +297,10 @@ fn test_validate_fit_contains_lap_message() {
     let records = parse_fit(&data);
 
     let lap = records.iter().find(|r| r.kind() == MesgNum::Lap);
-    assert!(lap.is_some(), "FIT file must contain at least one Lap message");
+    assert!(
+        lap.is_some(),
+        "FIT file must contain at least one Lap message"
+    );
 }
 
 #[test]
@@ -310,10 +312,7 @@ fn test_validate_fit_contains_activity_message() {
     let records = parse_fit(&data);
 
     let activity = records.iter().find(|r| r.kind() == MesgNum::Activity);
-    assert!(
-        activity.is_some(),
-        "FIT file must contain Activity message"
-    );
+    assert!(activity.is_some(), "FIT file must contain Activity message");
 }
 
 #[test]
@@ -536,9 +535,7 @@ fn test_validate_fit_multi_lap_export() {
 
     // Create 3 laps of 50 seconds each
     let laps: Vec<LapData> = (0..3)
-        .filter_map(|i| {
-            LapData::from_samples(&samples, i * 50, (i + 1) * 50, ride.started_at)
-        })
+        .filter_map(|i| LapData::from_samples(&samples, i * 50, (i + 1) * 50, ride.started_at))
         .collect();
 
     let data = export_fit_with_laps(&ride, &samples, &laps).unwrap();
@@ -659,14 +656,8 @@ fn test_validate_fit_torque_effectiveness_fields() {
             .any(|f| f.name() == "right_torque_effectiveness")
     });
 
-    assert!(
-        has_left_te,
-        "Should have left_torque_effectiveness field"
-    );
-    assert!(
-        has_right_te,
-        "Should have right_torque_effectiveness field"
-    );
+    assert!(has_left_te, "Should have left_torque_effectiveness field");
+    assert!(has_right_te, "Should have right_torque_effectiveness field");
 }
 
 #[test]
@@ -683,9 +674,11 @@ fn test_validate_fit_pedal_smoothness_fields() {
         .collect();
 
     // Check for pedal smoothness fields
-    let has_left_ps = record_messages
-        .iter()
-        .any(|r| r.fields().iter().any(|f| f.name() == "left_pedal_smoothness"));
+    let has_left_ps = record_messages.iter().any(|r| {
+        r.fields()
+            .iter()
+            .any(|f| f.name() == "left_pedal_smoothness")
+    });
     let has_right_ps = record_messages.iter().any(|r| {
         r.fields()
             .iter()
@@ -913,10 +906,7 @@ fn test_validate_fit_garmin_sdk_compliance() {
         .iter()
         .filter(|r| r.kind() == MesgNum::Record)
         .count();
-    assert_eq!(
-        record_count, 120,
-        "Record count must match sample count"
-    );
+    assert_eq!(record_count, 120, "Record count must match sample count");
 
     // 7. Verify session has cycling sport type
     let session = records

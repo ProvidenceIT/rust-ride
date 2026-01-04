@@ -13,11 +13,11 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 use uuid::Uuid;
 
+use rustride::metrics::analytics::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
 use rustride::metrics::analytics::{
     AnalyticsExport, AnalyticsExporter, CpModel, DailyLoad, ExportOptions, FtpConfidence,
     FtpEstimate, FtpMethod, PdcPoint, PowerProfile, RiderType,
 };
-use rustride::metrics::analytics::vo2max::{FitnessLevel, Vo2maxMethod, Vo2maxResult};
 use rustride::storage::analytics_store::AnalyticsStore;
 use rustride::storage::Database;
 
@@ -87,12 +87,7 @@ fn setup_test_database() -> (Arc<Database>, Uuid) {
     {
         let store = AnalyticsStore::new(db.connection());
         for (date, tss, atl, ctl, tsb) in daily_loads {
-            let load = DailyLoad {
-                tss,
-                atl,
-                ctl,
-                tsb,
-            };
+            let load = DailyLoad { tss, atl, ctl, tsb };
             store
                 .save_daily_load(&user_id, date, &load)
                 .expect("Failed to save daily load");
@@ -175,7 +170,9 @@ fn test_export_json_full_structure() {
     assert_eq!(pdc.points[4].power_watts, 240);
 
     // Verify training load data
-    let training_load = export.training_load.expect("Training load should be present");
+    let training_load = export
+        .training_load
+        .expect("Training load should be present");
     assert_eq!(training_load.days.len(), 7);
 
     // Verify CP model
@@ -247,11 +244,7 @@ fn test_export_training_load_csv_format() {
 
     let exporter = AnalyticsExporter::new(db);
     let csv = exporter
-        .export_training_load_csv(
-            user_id,
-            today - chrono::Duration::days(6),
-            today,
-        )
+        .export_training_load_csv(user_id, today - chrono::Duration::days(6), today)
         .expect("Failed to export training load CSV");
 
     // Verify headers
@@ -267,7 +260,10 @@ fn test_export_training_load_csv_format() {
         let date_str = line.split(',').next().unwrap();
         let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").unwrap();
         if let Some(prev) = prev_date {
-            assert!(date > prev, "Training load should be chronologically ordered");
+            assert!(
+                date > prev,
+                "Training load should be chronologically ordered"
+            );
         }
         prev_date = Some(date);
     }
@@ -349,9 +345,15 @@ fn test_export_with_options_pdc_only() {
 
     // Only PDC should be present
     assert!(export.pdc.is_some(), "PDC should be included");
-    assert!(export.training_load.is_none(), "Training load should be excluded");
+    assert!(
+        export.training_load.is_none(),
+        "Training load should be excluded"
+    );
     assert!(export.cp_model.is_none(), "CP model should be excluded");
-    assert!(export.fitness_profile.is_none(), "Fitness profile should be excluded");
+    assert!(
+        export.fitness_profile.is_none(),
+        "Fitness profile should be excluded"
+    );
 }
 
 #[test]
@@ -367,9 +369,15 @@ fn test_export_with_options_training_load_only() {
 
     // Only training load should be present
     assert!(export.pdc.is_none(), "PDC should be excluded");
-    assert!(export.training_load.is_some(), "Training load should be included");
+    assert!(
+        export.training_load.is_some(),
+        "Training load should be included"
+    );
     assert!(export.cp_model.is_none(), "CP model should be excluded");
-    assert!(export.fitness_profile.is_none(), "Fitness profile should be excluded");
+    assert!(
+        export.fitness_profile.is_none(),
+        "Fitness profile should be excluded"
+    );
 }
 
 #[test]
@@ -392,8 +400,14 @@ fn test_export_with_date_range_filter() {
         .build_export_with_options(user_id, &options)
         .expect("Failed to build export with date filter");
 
-    let training_load = export.training_load.expect("Training load should be present");
-    assert_eq!(training_load.days.len(), 3, "Should only have 3 days of data");
+    let training_load = export
+        .training_load
+        .expect("Training load should be present");
+    assert_eq!(
+        training_load.days.len(),
+        3,
+        "Should only have 3 days of data"
+    );
 
     // Verify dates are in range
     for day in &training_load.days {
@@ -454,11 +468,8 @@ fn test_export_training_load_csv_insufficient_data_error() {
     let exporter = AnalyticsExporter::new(db);
 
     // Should return InsufficientData error for training load CSV when no data exists
-    let result = exporter.export_training_load_csv(
-        user_id,
-        today - chrono::Duration::days(30),
-        today,
-    );
+    let result =
+        exporter.export_training_load_csv(user_id, today - chrono::Duration::days(30), today);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -477,7 +488,10 @@ fn test_json_export_pretty_printed() {
         .expect("Failed to export JSON");
 
     // Pretty-printed JSON should have newlines and indentation
-    assert!(json.contains('\n'), "JSON should be pretty-printed with newlines");
+    assert!(
+        json.contains('\n'),
+        "JSON should be pretty-printed with newlines"
+    );
     assert!(
         json.contains("  ") || json.contains("\t"),
         "JSON should have indentation"
@@ -498,12 +512,18 @@ fn test_export_preserves_data_precision() {
 
     // Check r_squared precision is preserved
     let cp_model = export.cp_model.unwrap();
-    assert!((cp_model.r_squared - 0.98).abs() < 0.001, "R-squared precision should be preserved");
+    assert!(
+        (cp_model.r_squared - 0.98).abs() < 0.001,
+        "R-squared precision should be preserved"
+    );
 
     // Check VO2max precision is preserved
     let fitness = export.fitness_profile.unwrap();
     let vo2max = fitness.vo2max.unwrap();
-    assert!((vo2max.vo2max - 52.5).abs() < 0.1, "VO2max precision should be preserved");
+    assert!(
+        (vo2max.vo2max - 52.5).abs() < 0.1,
+        "VO2max precision should be preserved"
+    );
 
     // Check power profile percentages are preserved
     let power_profile = fitness.power_profile.unwrap();

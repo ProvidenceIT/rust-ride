@@ -5,7 +5,9 @@
 //!
 //! Acceptance criteria: 100 rapid reconnection cycles complete without errors
 
-use rustride::sensors::conflict::{ConflictDetector, ConflictDetectorConfig, DataType, ResolutionStrategy};
+use rustride::sensors::conflict::{
+    ConflictDetector, ConflictDetectorConfig, DataType, ResolutionStrategy,
+};
 use rustride::sensors::connection_queue::{ConnectionQueue, ConnectionQueueEntry, SensorPriority};
 use rustride::sensors::connection_state::{
     ConnectionLifecycleState, ConnectionStateMachine, ConnectionStateMachineConfig,
@@ -48,7 +50,11 @@ const RESOURCE_LEAK_TEST_CYCLES: usize = 500;
 // ============================================================================
 
 /// Create a mock discovered sensor for testing.
-fn make_discovered_sensor(name: &str, sensor_type: SensorType, protocol: Protocol) -> DiscoveredSensor {
+fn make_discovered_sensor(
+    name: &str,
+    sensor_type: SensorType,
+    protocol: Protocol,
+) -> DiscoveredSensor {
     DiscoveredSensor {
         device_id: format!("{}:{}", protocol, name.replace(' ', "_").to_lowercase()),
         name: name.to_string(),
@@ -66,7 +72,11 @@ fn make_trainer() -> DiscoveredSensor {
 
 /// Create a mock power meter sensor.
 fn make_power_meter() -> DiscoveredSensor {
-    make_discovered_sensor("Stages Power", SensorType::PowerMeter, Protocol::BleCyclingPower)
+    make_discovered_sensor(
+        "Stages Power",
+        SensorType::PowerMeter,
+        Protocol::BleCyclingPower,
+    )
 }
 
 /// Create a mock heart rate sensor.
@@ -156,9 +166,8 @@ impl StressTestStats {
 
     fn success_rate(&self) -> f64 {
         let total = self.connect_attempts + self.disconnect_attempts + self.reconnection_attempts;
-        let successful = self.successful_connects
-            + self.successful_disconnects
-            + self.successful_reconnections;
+        let successful =
+            self.successful_connects + self.successful_disconnects + self.successful_reconnections;
         if total > 0 {
             (successful as f64 / total as f64) * 100.0
         } else {
@@ -225,9 +234,10 @@ impl StressTestCoordinator {
     fn connect(&mut self, device_id: &str) -> Result<(), SensorError> {
         self.stats.connect_attempts += 1;
 
-        let sensor = self.sensors.get(device_id).ok_or_else(|| {
-            SensorError::SensorNotFound(device_id.to_string())
-        })?;
+        let sensor = self
+            .sensors
+            .get(device_id)
+            .ok_or_else(|| SensorError::SensorNotFound(device_id.to_string()))?;
 
         // Transition to connecting state
         self.state_manager
@@ -245,7 +255,8 @@ impl StressTestCoordinator {
             .map_err(|e| SensorError::ConnectionFailed(format!("Connection failed: {:?}", e)))?;
 
         // Update conflict detector
-        self.conflict_detector.update_connection_status(device_id, true);
+        self.conflict_detector
+            .update_connection_status(device_id, true);
 
         // Start health monitoring
         let health_config = match sensor.sensor_type {
@@ -254,7 +265,8 @@ impl StressTestCoordinator {
             }
             _ => ConnectionHealthConfig::default(),
         };
-        self.health_monitor.start_monitoring(device_id, health_config);
+        self.health_monitor
+            .start_monitoring(device_id, health_config);
 
         // Start quality monitoring
         let quality_config = match sensor.sensor_type {
@@ -263,7 +275,8 @@ impl StressTestCoordinator {
             }
             _ => ConnectionQualityConfig::relaxed(),
         };
-        self.quality_monitor.start_monitoring(device_id, quality_config);
+        self.quality_monitor
+            .start_monitoring(device_id, quality_config);
 
         // Save to session
         let session_sensor = SessionSensor::new(
@@ -346,7 +359,9 @@ impl StressTestCoordinator {
             // Exhausted reconnection attempts
             self.state_manager
                 .transition(device_id, StateTransition::ReconnectionExhausted)
-                .map_err(|e| SensorError::ConnectionFailed(format!("Exhaustion failed: {:?}", e)))?;
+                .map_err(|e| {
+                    SensorError::ConnectionFailed(format!("Exhaustion failed: {:?}", e))
+                })?;
 
             self.stats.exhausted_reconnections += 1;
 
@@ -519,11 +534,7 @@ fn test_100_rapid_reconnection_cycles() {
     coordinator.cleanup();
 
     // Verify all cycles completed without errors
-    assert!(
-        cycle_errors.is_empty(),
-        "Cycles failed: {:?}",
-        cycle_errors
-    );
+    assert!(cycle_errors.is_empty(), "Cycles failed: {:?}", cycle_errors);
 
     let stats = coordinator.get_stats();
     assert_eq!(stats.cycles_completed, STRESS_TEST_CYCLES);
@@ -553,11 +564,7 @@ fn test_rapid_reconnection_with_backoff() {
     coordinator.cleanup();
 
     // Verify all cycles completed without errors
-    assert!(
-        cycle_errors.is_empty(),
-        "Cycles failed: {:?}",
-        cycle_errors
-    );
+    assert!(cycle_errors.is_empty(), "Cycles failed: {:?}", cycle_errors);
 
     let stats = coordinator.get_stats();
     assert_eq!(stats.cycles_completed, cycles);
@@ -788,8 +795,12 @@ fn test_quality_monitor_stability() {
         assert_eq!(coordinator.quality_monitoring_count(), 1);
 
         // Simulate some RSSI updates
-        coordinator.quality_monitor.update_rssi(&trainer.device_id, Some(-55));
-        coordinator.quality_monitor.record_data(&trainer.device_id, 10);
+        coordinator
+            .quality_monitor
+            .update_rssi(&trainer.device_id, Some(-55));
+        coordinator
+            .quality_monitor
+            .record_data(&trainer.device_id, 10);
 
         // Disconnect - stops quality monitoring
         assert!(coordinator.disconnect(&trainer.device_id).is_ok());
@@ -842,7 +853,9 @@ fn test_conflict_detector_stability() {
         assert!(coordinator.connect(&power_meter.device_id).is_ok());
 
         // Set primary
-        coordinator.conflict_detector.set_primary(DataType::Power, &power_meter.device_id);
+        coordinator
+            .conflict_detector
+            .set_primary(DataType::Power, &power_meter.device_id);
 
         // Disconnect power meter (triggers failover)
         assert!(coordinator.disconnect(&power_meter.device_id).is_ok());
@@ -898,17 +911,41 @@ fn test_event_generation_correctness() {
     let connecting_events = coordinator
         .events
         .iter()
-        .filter(|e| matches!(e, SensorEvent::ConnectionChanged { state: ConnectionState::Connecting, .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                SensorEvent::ConnectionChanged {
+                    state: ConnectionState::Connecting,
+                    ..
+                }
+            )
+        })
         .count();
     let connected_events = coordinator
         .events
         .iter()
-        .filter(|e| matches!(e, SensorEvent::ConnectionChanged { state: ConnectionState::Connected, .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                SensorEvent::ConnectionChanged {
+                    state: ConnectionState::Connected,
+                    ..
+                }
+            )
+        })
         .count();
     let disconnected_events = coordinator
         .events
         .iter()
-        .filter(|e| matches!(e, SensorEvent::ConnectionChanged { state: ConnectionState::Disconnected, .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                SensorEvent::ConnectionChanged {
+                    state: ConnectionState::Disconnected,
+                    ..
+                }
+            )
+        })
         .count();
 
     // Each cycle should generate: Connecting -> Connected -> Disconnected

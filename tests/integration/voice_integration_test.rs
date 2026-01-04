@@ -33,8 +33,8 @@ use rustride::accessibility::voice_control::{
 };
 use rustride::hid::actions::ButtonAction;
 use rustride::voice::{
-    ActivationMode, CommandCooldown, CommandParser, ExecutorContext,
-    VoiceCommandExecutor, VoiceEngineState, WakeWordDetector, WakeWordConfig,
+    ActivationMode, CommandCooldown, CommandParser, ExecutorContext, VoiceCommandExecutor,
+    VoiceEngineState, WakeWordConfig, WakeWordDetector,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -133,7 +133,6 @@ impl VoiceInputSamples {
             ],
         }
     }
-
 }
 
 // ============================================================================
@@ -270,7 +269,9 @@ fn test_clear_speech_recognition_accuracy() {
     assert!(
         accuracy >= 95.0,
         "Clear speech accuracy should be >= 95%, got {:.1}% ({}/{})",
-        accuracy, correct, total
+        accuracy,
+        correct,
+        total
     );
 }
 
@@ -296,7 +297,9 @@ fn test_accented_speech_recognition_accuracy() {
     assert!(
         accuracy >= 60.0,
         "Accented speech accuracy should be >= 60%, got {:.1}% ({}/{})",
-        accuracy, correct, total
+        accuracy,
+        correct,
+        total
     );
 }
 
@@ -322,7 +325,9 @@ fn test_noisy_environment_recognition_accuracy() {
     assert!(
         accuracy >= 70.0,
         "Noisy environment accuracy should be >= 70%, got {:.1}% ({}/{})",
-        accuracy, correct, total
+        accuracy,
+        correct,
+        total
     );
 }
 
@@ -348,7 +353,9 @@ fn test_common_misrecognition_handling() {
     assert!(
         accuracy >= 90.0,
         "Misrecognition handling accuracy should be >= 90%, got {:.1}% ({}/{})",
-        accuracy, correct, total
+        accuracy,
+        correct,
+        total
     );
 }
 
@@ -358,11 +365,17 @@ fn test_confidence_scores_for_various_inputs() {
 
     // Perfect match should have high confidence
     let result = parser.parse("pause").unwrap();
-    assert_eq!(result.confidence, 1.0, "Perfect match should have 1.0 confidence");
+    assert_eq!(
+        result.confidence, 1.0,
+        "Perfect match should have 1.0 confidence"
+    );
 
     // Misrecognition (corrected) should also have high confidence
     let result = parser.parse("paws").unwrap();
-    assert_eq!(result.confidence, 1.0, "Corrected misrecognition should have 1.0 confidence");
+    assert_eq!(
+        result.confidence, 1.0,
+        "Corrected misrecognition should have 1.0 confidence"
+    );
 
     // Fuzzy match should have lower confidence
     let parser_low = CommandParser::with_min_confidence(0.3);
@@ -407,8 +420,7 @@ fn test_full_command_flow_always_listening() {
 
 #[test]
 fn test_full_command_flow_with_wake_word() {
-    let mut engine = MockVoiceEngine::new()
-        .with_activation_mode(ActivationMode::WakeWord);
+    let mut engine = MockVoiceEngine::new().with_activation_mode(ActivationMode::WakeWord);
     engine.start();
 
     // Before wake word, commands should be ignored
@@ -428,8 +440,7 @@ fn test_full_command_flow_with_wake_word() {
 
 #[test]
 fn test_full_command_flow_with_push_to_talk() {
-    let mut engine = MockVoiceEngine::new()
-        .with_activation_mode(ActivationMode::PushToTalk);
+    let mut engine = MockVoiceEngine::new().with_activation_mode(ActivationMode::PushToTalk);
     engine.start();
 
     // Before activation, commands should be ignored
@@ -551,7 +562,10 @@ fn test_command_cooldown_prevents_rapid_repetition() {
 
     // Immediate repeat should be blocked
     let result2 = engine.feed_text("pause");
-    assert!(result2.is_none(), "Rapid repeat should be blocked by cooldown");
+    assert!(
+        result2.is_none(),
+        "Rapid repeat should be blocked by cooldown"
+    );
 
     // Different command should work
     let result3 = engine.feed_text("resume");
@@ -618,9 +632,9 @@ fn test_wake_word_detection_variations() {
 
     // Test common misrecognition variants
     let misrecognitions = vec![
-        "hey rust right",  // Variant of "hey rust ride"
-        "hey rest ride",   // Variant of "hey rust ride"
-        "okay right",      // Variant of "ok ride"
+        "hey rust right", // Variant of "hey rust ride"
+        "hey rest ride",  // Variant of "hey rust ride"
+        "okay right",     // Variant of "ok ride"
     ];
 
     for phrase in misrecognitions {
@@ -653,8 +667,7 @@ fn test_wake_word_timeout() {
 
 #[test]
 fn test_wake_word_with_command_in_same_phrase() {
-    let mut engine = MockVoiceEngine::new()
-        .with_activation_mode(ActivationMode::WakeWord);
+    let mut engine = MockVoiceEngine::new().with_activation_mode(ActivationMode::WakeWord);
     engine.start();
 
     // Wake word followed by command
@@ -679,13 +692,13 @@ fn test_workout_control_sequence() {
     let mut actions_executed = Vec::new();
 
     let sequence = vec![
-        "take lap",      // Mark lap
-        "skip",          // Skip interval
-        "pause",         // Pause workout
+        "take lap", // Mark lap
+        "skip",     // Skip interval
+        "pause",    // Pause workout
         // Context changes to paused
-        "resume",        // Resume
-        "take lap",      // Another lap
-        "end",           // End workout
+        "resume",   // Resume
+        "take lap", // Another lap
+        "end",      // End workout
     ];
 
     for text in sequence {
@@ -909,14 +922,9 @@ fn test_end_to_end_voice_command_simulation() {
 
     // Sequence of voice commands during a workout
     let voice_inputs = vec![
-        "take lap",
-        "status",
-        "skip",
-        "paws",      // Misrecognition of "pause"
-        "resoom",    // Misrecognition of "resume"
-        "increase",
-        "take lap",
-        "end",
+        "take lap", "status", "skip", "paws",   // Misrecognition of "pause"
+        "resoom", // Misrecognition of "resume"
+        "increase", "take lap", "end",
     ];
 
     let mut executed_actions = Vec::new();
@@ -1028,7 +1036,9 @@ fn test_voice_command_recognition_statistics() {
             assert!(
                 accuracy >= min_threshold,
                 "Category '{}' accuracy {:.1}% below threshold {:.1}%",
-                category, accuracy, min_threshold
+                category,
+                accuracy,
+                min_threshold
             );
         }
     }

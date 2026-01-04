@@ -41,11 +41,7 @@ fn create_tp_workout(
 }
 
 /// Create a simple step with power target
-fn create_step(
-    step_type: &str,
-    duration_secs: f64,
-    power_percent: Option<u8>,
-) -> TPWorkoutStep {
+fn create_step(step_type: &str, duration_secs: f64, power_percent: Option<u8>) -> TPWorkoutStep {
     let targets = power_percent.map(|pct| {
         vec![TPWorkoutTarget {
             target_type: "Power".to_string(),
@@ -145,9 +141,9 @@ fn test_endurance_ride_conversion() {
         primary_length_metric: Some("Duration".to_string()),
         primary_intensity_metric: Some("Power".to_string()),
         steps: vec![
-            create_range_step("Warmup", 600.0, 40, 65),     // 10 min warmup
-            create_range_step("Interval", 4200.0, 65, 75),  // 70 min main set
-            create_range_step("Cooldown", 600.0, 65, 40),   // 10 min cooldown
+            create_range_step("Warmup", 600.0, 40, 65), // 10 min warmup
+            create_range_step("Interval", 4200.0, 65, 75), // 70 min main set
+            create_range_step("Cooldown", 600.0, 65, 40), // 10 min cooldown
         ],
     };
 
@@ -208,7 +204,10 @@ fn test_sweet_spot_workout_conversion() {
     );
 
     let result = workout.to_workout(Some(280));
-    assert!(result.is_ok(), "Sweet spot workout should convert successfully");
+    assert!(
+        result.is_ok(),
+        "Sweet spot workout should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "Sweet Spot 3x15");
@@ -243,16 +242,13 @@ fn test_vo2max_intervals_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1003,
-        "VO2max 5x4",
-        "Bike",
-        Some(3900.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1003, "VO2max 5x4", "Bike", Some(3900.0), Some(structure));
 
     let result = workout.to_workout(Some(300));
-    assert!(result.is_ok(), "VO2max intervals should convert successfully");
+    assert!(
+        result.is_ok(),
+        "VO2max intervals should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "VO2max 5x4");
@@ -294,7 +290,10 @@ fn test_over_under_workout_conversion() {
     );
 
     let result = workout.to_workout(Some(275));
-    assert!(result.is_ok(), "Over-under workout should convert successfully");
+    assert!(
+        result.is_ok(),
+        "Over-under workout should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "Over-Unders 3x12");
@@ -328,7 +327,10 @@ fn test_threshold_intervals_conversion() {
     );
 
     let result = workout.to_workout(Some(260));
-    assert!(result.is_ok(), "Threshold intervals should convert successfully");
+    assert!(
+        result.is_ok(),
+        "Threshold intervals should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "Threshold 2x20");
@@ -361,13 +363,7 @@ fn test_ramp_test_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1006,
-        "Ramp Test",
-        "Bike",
-        Some(2880.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1006, "Ramp Test", "Bike", Some(2880.0), Some(structure));
 
     let result = workout.to_workout(Some(250));
     assert!(result.is_ok(), "Ramp test should convert successfully");
@@ -388,21 +384,15 @@ fn test_sprint_intervals_conversion() {
             create_repeat_step(
                 6,
                 vec![
-                    create_step("Interval", 30.0, Some(150)),   // 30s sprint
-                    create_step("Recovery", 270.0, Some(40)),   // 4.5 min recovery
+                    create_step("Interval", 30.0, Some(150)), // 30s sprint
+                    create_step("Recovery", 270.0, Some(40)), // 4.5 min recovery
                 ],
             ),
             create_step("Cooldown", 600.0, Some(45)),
         ],
     };
 
-    let workout = create_tp_workout(
-        1007,
-        "Sprint 6x30s",
-        "Bike",
-        Some(3300.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1007, "Sprint 6x30s", "Bike", Some(3300.0), Some(structure));
 
     let result = workout.to_workout(Some(290));
     assert!(result.is_ok(), "Sprint workout should convert successfully");
@@ -424,13 +414,7 @@ fn test_recovery_ride_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1008,
-        "Recovery Spin",
-        "Bike",
-        Some(2700.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1008, "Recovery Spin", "Bike", Some(2700.0), Some(structure));
 
     let result = workout.to_workout(Some(250));
     assert!(result.is_ok(), "Recovery ride should convert successfully");
@@ -471,11 +455,11 @@ fn test_cadence_drills_conversion() {
         primary_intensity_metric: Some("Power".to_string()),
         steps: vec![
             create_step("Warmup", 600.0, Some(55)),
-            create_step_with_cadence("Interval", 300.0, 70, 60, 70),   // Low cadence
-            create_step_with_cadence("Interval", 300.0, 70, 90, 100),  // Normal cadence
+            create_step_with_cadence("Interval", 300.0, 70, 60, 70), // Low cadence
+            create_step_with_cadence("Interval", 300.0, 70, 90, 100), // Normal cadence
             create_step_with_cadence("Interval", 300.0, 70, 110, 120), // High cadence
-            create_step_with_cadence("Interval", 300.0, 70, 90, 100),  // Normal
-            create_step_with_cadence("Interval", 300.0, 70, 60, 70),   // Low
+            create_step_with_cadence("Interval", 300.0, 70, 90, 100), // Normal
+            create_step_with_cadence("Interval", 300.0, 70, 60, 70), // Low
             create_step("Cooldown", 600.0, Some(45)),
         ],
     };
@@ -489,7 +473,10 @@ fn test_cadence_drills_conversion() {
     );
 
     let result = workout.to_workout(Some(250));
-    assert!(result.is_ok(), "Cadence drill workout should convert successfully");
+    assert!(
+        result.is_ok(),
+        "Cadence drill workout should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "Cadence Drills");
@@ -536,7 +523,10 @@ fn test_pyramid_intervals_conversion() {
     );
 
     let result = workout.to_workout(Some(270));
-    assert!(result.is_ok(), "Pyramid workout should convert successfully");
+    assert!(
+        result.is_ok(),
+        "Pyramid workout should convert successfully"
+    );
 
     let converted = result.unwrap();
     assert_eq!(converted.name, "Pyramid 1-2-3-2-1");
@@ -560,13 +550,7 @@ fn test_build_intervals_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1011,
-        "Build 3x10",
-        "Bike",
-        Some(3360.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1011, "Build 3x10", "Bike", Some(3360.0), Some(structure));
 
     let result = workout.to_workout(Some(280));
     assert!(result.is_ok(), "Build workout should convert successfully");
@@ -603,13 +587,7 @@ fn test_workout_with_empty_structure_conversion() {
         steps: vec![],
     };
 
-    let workout = create_tp_workout(
-        1013,
-        "Empty Workout",
-        "Bike",
-        Some(0.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1013, "Empty Workout", "Bike", Some(0.0), Some(structure));
 
     let result = workout.to_workout(Some(250));
     assert!(result.is_err(), "Empty structure should fail to convert");
@@ -864,19 +842,13 @@ fn test_total_duration_calculation() {
         primary_length_metric: Some("Duration".to_string()),
         primary_intensity_metric: Some("Power".to_string()),
         steps: vec![
-            create_step("Warmup", 300.0, Some(50)),    // 5 min
-            create_step("Interval", 600.0, Some(80)),  // 10 min
-            create_step("Cooldown", 300.0, Some(45)),  // 5 min
+            create_step("Warmup", 300.0, Some(50)),   // 5 min
+            create_step("Interval", 600.0, Some(80)), // 10 min
+            create_step("Cooldown", 300.0, Some(45)), // 5 min
         ],
     };
 
-    let workout = create_tp_workout(
-        1017,
-        "Duration Test",
-        "Bike",
-        Some(1200.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1017, "Duration Test", "Bike", Some(1200.0), Some(structure));
 
     let result = workout.to_workout(Some(250));
     assert!(result.is_ok());
@@ -941,9 +913,9 @@ fn test_very_long_workout_conversion() {
         primary_length_metric: Some("Duration".to_string()),
         primary_intensity_metric: Some("Power".to_string()),
         steps: vec![
-            create_step("Warmup", 1200.0, Some(50)),     // 20 min
-            create_step("Interval", 12000.0, Some(65)),  // 3h20m
-            create_step("Cooldown", 1200.0, Some(45)),   // 20 min
+            create_step("Warmup", 1200.0, Some(50)),    // 20 min
+            create_step("Interval", 12000.0, Some(65)), // 3h20m
+            create_step("Cooldown", 1200.0, Some(45)),  // 20 min
         ],
     };
 
@@ -981,13 +953,7 @@ fn test_very_short_intervals_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1020,
-        "Tabata",
-        "Bike",
-        Some(1440.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1020, "Tabata", "Bike", Some(1440.0), Some(structure));
 
     let result = workout.to_workout(Some(280));
     assert!(result.is_ok(), "Tabata workout should convert");
@@ -1015,13 +981,7 @@ fn test_high_power_targets_conversion() {
         ],
     };
 
-    let workout = create_tp_workout(
-        1021,
-        "Max Sprints",
-        "Bike",
-        Some(2100.0),
-        Some(structure),
-    );
+    let workout = create_tp_workout(1021, "Max Sprints", "Bike", Some(2100.0), Some(structure));
 
     let result = workout.to_workout(Some(300));
     assert!(result.is_ok(), "High power workout should convert");
@@ -1046,7 +1006,8 @@ fn test_description_preservation() {
         Some(1200.0),
         Some(structure),
     );
-    workout.description = Some("This is a detailed workout description with instructions.".to_string());
+    workout.description =
+        Some("This is a detailed workout description with instructions.".to_string());
 
     let result = workout.to_workout(Some(250));
     assert!(result.is_ok());

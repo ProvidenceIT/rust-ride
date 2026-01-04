@@ -54,10 +54,7 @@ fn test_tts_initialization_graceful() {
         Err(e) => {
             // TTS unavailable - error message should be informative
             let error_msg = format!("{}", e);
-            assert!(
-                !error_msg.is_empty(),
-                "Error message should not be empty"
-            );
+            assert!(!error_msg.is_empty(), "Error message should not be empty");
         }
     }
 }
@@ -73,7 +70,10 @@ fn test_voice_enumeration() {
     let voices = provider.get_voices();
 
     // Should have at least one voice when TTS is available
-    assert!(!voices.is_empty(), "Should have at least one voice available");
+    assert!(
+        !voices.is_empty(),
+        "Should have at least one voice available"
+    );
 
     // Verify voice properties are valid
     for voice in &voices {
@@ -232,7 +232,10 @@ fn test_speak_empty_text() {
     );
 
     // Provider should not be speaking after empty text
-    assert!(!provider.is_speaking(), "Should not be speaking after empty text");
+    assert!(
+        !provider.is_speaking(),
+        "Should not be speaking after empty text"
+    );
 }
 
 /// Test stop() is safe to call when not speaking.
@@ -247,7 +250,10 @@ fn test_stop_when_not_speaking() {
     // Stop should also be safe after initialization
     if provider.initialize().is_ok() {
         provider.stop();
-        assert!(!provider.is_speaking(), "Should not be speaking after stop (post-init)");
+        assert!(
+            !provider.is_speaking(),
+            "Should not be speaking after stop (post-init)"
+        );
     }
 }
 
@@ -680,7 +686,11 @@ fn test_concurrent_voice_enumeration() {
 
     let mut results = vec![];
     for handle in handles {
-        results.push(handle.join().expect("Thread panicked during voice enumeration"));
+        results.push(
+            handle
+                .join()
+                .expect("Thread panicked during voice enumeration"),
+        );
     }
 
     // All threads should get the same number of voices

@@ -49,8 +49,16 @@ fn create_owm_response(
                 "country": "GB"
             }}
         }}"#,
-        temp, feels_like, humidity, pressure, weather_id, weather_main, weather_desc, wind_speed,
-        wind_deg, visibility
+        temp,
+        feels_like,
+        humidity,
+        pressure,
+        weather_id,
+        weather_main,
+        weather_desc,
+        wind_speed,
+        wind_deg,
+        visibility
     )
 }
 
@@ -82,11 +90,11 @@ async fn test_successful_weather_fetch_clear_sky() {
     let mock_server = MockServer::start().await;
 
     let response_body = create_owm_response(
-        22.5,   // temp
-        21.0,   // feels_like
-        65,     // humidity
-        1015,   // pressure
-        800,    // weather_id (clear)
+        22.5, // temp
+        21.0, // feels_like
+        65,   // humidity
+        1015, // pressure
+        800,  // weather_id (clear)
         "Clear",
         "clear sky",
         5.5, // wind_speed
@@ -230,9 +238,7 @@ async fn test_successful_weather_fetch_fog() {
         95,   // humidity
         1010, // pressure
         741,  // weather_id (fog)
-        "Fog",
-        "fog",
-        1.0, // wind_speed
+        "Fog", "fog", 1.0, // wind_speed
         0,   // wind_deg
         200, // low visibility
     );
@@ -482,7 +488,16 @@ async fn test_slow_response_times_out() {
 
     // Simulate a slow server that takes longer than our timeout
     let response_body = create_owm_response(
-        20.0, 19.0, 50, 1013, 800, "Clear", "clear sky", 5.0, 180, 10000,
+        20.0,
+        19.0,
+        50,
+        1013,
+        800,
+        "Clear",
+        "clear sky",
+        5.0,
+        180,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -503,8 +518,7 @@ async fn test_slow_response_times_out() {
     match result.unwrap_err() {
         WeatherError::NetworkError(msg) => {
             assert!(
-                msg.to_lowercase().contains("timeout")
-                    || msg.to_lowercase().contains("timed out"),
+                msg.to_lowercase().contains("timeout") || msg.to_lowercase().contains("timed out"),
                 "Error should mention timeout: {}",
                 msg
             );
@@ -522,7 +536,16 @@ async fn test_cached_response_is_returned() {
     let mock_server = MockServer::start().await;
 
     let response_body = create_owm_response(
-        22.5, 21.0, 65, 1015, 800, "Clear", "clear sky", 5.5, 180, 10000,
+        22.5,
+        21.0,
+        65,
+        1015,
+        800,
+        "Clear",
+        "clear sky",
+        5.5,
+        180,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -557,8 +580,16 @@ async fn test_condition_mapping_drizzle() {
     let mock_server = MockServer::start().await;
 
     let response_body = create_owm_response(
-        12.0, 11.0, 85, 1008, 300, // drizzle code
-        "Drizzle", "light intensity drizzle", 2.0, 90, 7000,
+        12.0,
+        11.0,
+        85,
+        1008,
+        300, // drizzle code
+        "Drizzle",
+        "light intensity drizzle",
+        2.0,
+        90,
+        7000,
     );
 
     Mock::given(method("GET"))
@@ -580,8 +611,16 @@ async fn test_condition_mapping_heavy_rain() {
     let mock_server = MockServer::start().await;
 
     let response_body = create_owm_response(
-        16.0, 15.0, 92, 1002, 522, // shower rain code
-        "Rain", "heavy shower rain", 6.0, 180, 4000,
+        16.0,
+        15.0,
+        92,
+        1002,
+        522, // shower rain code
+        "Rain",
+        "heavy shower rain",
+        6.0,
+        180,
+        4000,
     );
 
     Mock::given(method("GET"))
@@ -604,8 +643,16 @@ async fn test_condition_mapping_cloudy_variants() {
 
     // Test partly cloudy (801)
     let response_body = create_owm_response(
-        18.0, 17.0, 60, 1012, 801, // few clouds
-        "Clouds", "few clouds", 3.0, 270, 10000,
+        18.0,
+        17.0,
+        60,
+        1012,
+        801, // few clouds
+        "Clouds",
+        "few clouds",
+        3.0,
+        270,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -627,8 +674,16 @@ async fn test_condition_mapping_overcast() {
     let mock_server = MockServer::start().await;
 
     let response_body = create_owm_response(
-        14.0, 13.0, 70, 1010, 804, // overcast
-        "Clouds", "overcast clouds", 4.0, 315, 10000,
+        14.0,
+        13.0,
+        70,
+        1010,
+        804, // overcast
+        "Clouds",
+        "overcast clouds",
+        4.0,
+        315,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -681,7 +736,16 @@ async fn test_fallback_to_stale_cache_on_api_failure() {
 
     // First request succeeds
     let response_body = create_owm_response(
-        25.0, 24.0, 60, 1015, 800, "Clear", "clear sky", 5.0, 180, 10000,
+        25.0,
+        24.0,
+        60,
+        1015,
+        800,
+        "Clear",
+        "clear sky",
+        5.0,
+        180,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -883,7 +947,15 @@ async fn test_extreme_temperature_values() {
     // Very cold temperature
     let response_body = create_owm_response(
         -40.0, // extreme cold
-        -45.0, 30, 1035, 600, "Snow", "heavy snow", 15.0, 0, 500,
+        -45.0,
+        30,
+        1035,
+        600,
+        "Snow",
+        "heavy snow",
+        15.0,
+        0,
+        500,
     );
 
     Mock::given(method("GET"))
@@ -935,7 +1007,16 @@ async fn test_fallback_returns_cached_data_on_rate_limit_error() {
 
     // First request succeeds and caches data
     let response_body = create_owm_response(
-        18.0, 17.0, 75, 1012, 500, "Rain", "light rain", 4.0, 270, 8000,
+        18.0,
+        17.0,
+        75,
+        1012,
+        500,
+        "Rain",
+        "light rain",
+        4.0,
+        270,
+        8000,
     );
 
     Mock::given(method("GET"))
@@ -980,7 +1061,16 @@ async fn test_fallback_returns_cached_data_on_network_timeout() {
 
     // First request succeeds and caches data
     let response_body = create_owm_response(
-        10.0, 8.0, 85, 1008, 600, "Snow", "light snow", 6.0, 45, 3000,
+        10.0,
+        8.0,
+        85,
+        1008,
+        600,
+        "Snow",
+        "light snow",
+        6.0,
+        45,
+        3000,
     );
 
     Mock::given(method("GET"))
@@ -1108,7 +1198,16 @@ async fn test_fallback_preserves_cached_data_across_multiple_failures() {
 
     // First request succeeds
     let response_body = create_owm_response(
-        28.0, 30.0, 45, 1010, 800, "Clear", "clear sky", 8.0, 180, 10000,
+        28.0,
+        30.0,
+        45,
+        1010,
+        800,
+        "Clear",
+        "clear sky",
+        8.0,
+        180,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -1281,7 +1380,16 @@ async fn test_override_takes_precedence_over_api_response() {
 
     // Set up server to return clear weather
     let response_body = create_owm_response(
-        25.0, 26.0, 40, 1015, 800, "Clear", "clear sky", 5.0, 180, 10000,
+        25.0,
+        26.0,
+        40,
+        1015,
+        800,
+        "Clear",
+        "clear sky",
+        5.0,
+        180,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -1326,7 +1434,16 @@ async fn test_override_takes_precedence_over_cached_data() {
 
     // First request succeeds and caches data
     let response_body = create_owm_response(
-        30.0, 32.0, 50, 1010, 800, "Clear", "clear sky", 3.0, 90, 10000,
+        30.0,
+        32.0,
+        50,
+        1010,
+        800,
+        "Clear",
+        "clear sky",
+        3.0,
+        90,
+        10000,
     );
 
     Mock::given(method("GET"))
@@ -1428,7 +1545,16 @@ async fn test_disabled_override_falls_through_to_api() {
 
     // Set up server to return rain weather
     let response_body = create_owm_response(
-        12.0, 11.0, 80, 1005, 500, "Rain", "light rain", 6.0, 270, 6000,
+        12.0,
+        11.0,
+        80,
+        1005,
+        500,
+        "Rain",
+        "light rain",
+        6.0,
+        270,
+        6000,
     );
 
     Mock::given(method("GET"))
@@ -1448,7 +1574,7 @@ async fn test_disabled_override_falls_through_to_api() {
         longitude: -0.1278,
         units: WeatherUnits::Metric,
         refresh_interval_minutes: 30,
-        override_enabled: false, // Disabled!
+        override_enabled: false,                          // Disabled!
         override_condition: Some(WeatherCondition::Snow), // Would be snow if enabled
         override_temperature: Some(-10.0),
     };
@@ -1473,7 +1599,16 @@ async fn test_override_without_condition_falls_through_to_api() {
 
     // Set up server to return cloudy weather
     let response_body = create_owm_response(
-        16.0, 15.0, 70, 1012, 803, "Clouds", "broken clouds", 4.0, 180, 9000,
+        16.0,
+        15.0,
+        70,
+        1012,
+        803,
+        "Clouds",
+        "broken clouds",
+        4.0,
+        180,
+        9000,
     );
 
     Mock::given(method("GET"))
@@ -1494,7 +1629,7 @@ async fn test_override_without_condition_falls_through_to_api() {
         units: WeatherUnits::Metric,
         refresh_interval_minutes: 30,
         override_enabled: true,
-        override_condition: None, // No condition!
+        override_condition: None,         // No condition!
         override_temperature: Some(25.0), // Temperature set but irrelevant
     };
     provider.configure(config);
