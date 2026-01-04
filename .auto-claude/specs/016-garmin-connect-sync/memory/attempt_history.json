@@ -239,11 +239,59 @@
         }
       ],
       "status": "completed"
+    },
+    "4.7": {
+      "attempts": [
+        {
+          "session": 22,
+          "timestamp": "2026-01-04T14:58:19.367618",
+          "approach": "Implemented: Add Garmin Connect entry to the main settings screen integrations list",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.1": {
+      "attempts": [
+        {
+          "session": 23,
+          "timestamp": "2026-01-04T15:09:03.429424",
+          "approach": "Implemented: Handle Screen::GarminSettings in the main app render loop",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.2": {
+      "attempts": [
+        {
+          "session": 24,
+          "timestamp": "2026-01-04T15:18:52.448799",
+          "approach": "Implemented: Handle GarminSettingsAction::Connect by starting OAuth flow",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "5.3": {
+      "attempts": [
+        {
+          "session": 25,
+          "timestamp": "2026-01-04T15:23:14.266612",
+          "approach": "Implemented: Handle GarminSettingsAction::Disconnect by calling deauthorize and clearing credentials",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [],
   "metadata": {
     "created_at": "2026-01-04T13:16:52.833378",
-    "last_updated": "2026-01-04T14:54:54.213524"
+    "last_updated": "2026-01-04T15:23:14.266612"
   }
 }

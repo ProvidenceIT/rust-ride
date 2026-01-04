@@ -1839,8 +1839,21 @@ impl eframe::App for RustRideApp {
 
                             self.pending_garmin_disconnect = Some(handle);
                         }
-                        GarminSettingsAction::ToggleAutoSync(_enabled) => {
-                            // TODO: Subtask 5.4 - Handle auto-sync toggle
+                        GarminSettingsAction::ToggleAutoSync(enabled) => {
+                            // T016/5.4: Handle auto-sync toggle for Garmin Connect
+                            tracing::info!(
+                                "Garmin Connect auto-sync {}",
+                                if enabled { "enabled" } else { "disabled" }
+                            );
+
+                            // Update the screen's config with the new auto_sync setting
+                            // The UI already updated self.config.auto_sync, but we ensure consistency
+                            let mut config = self.garmin_settings_screen.config.clone();
+                            config.auto_sync = enabled;
+                            self.garmin_settings_screen.set_config(config);
+
+                            // Note: Persistence to sync service will be handled in subtask 5.5
+                            // when the sync service is fully integrated with the app
                         }
                     }
                 }

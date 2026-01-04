@@ -34,7 +34,12 @@
       "description": "GarminSettingsScreen provides UI for Garmin Connect integration following the Strava pattern: GarminConnectionState enum (5 states), GarminSettingsAction enum (5 actions), screen state with user profile/config/pending uploads. Uses GARMIN_BLUE (rgb 0,118,206) brand color. Renders profile with readable_name() from GarminUserProfile, links to connect.garmin.com/modern/profile/{display_name}.",
       "category": "ui",
       "discovered_at": "2026-01-04T13:42:59.195885+00:00"
+    },
+    "src/app.rs": {
+      "description": "GarminSettingsAction::Connect handler implemented. Uses Arc<DefaultOAuthHandler> initialized with port 8888 for OAuth callback. Garmin credentials loaded from GARMIN_CLIENT_ID and GARMIN_CLIENT_SECRET environment variables. Connect action spawns async task that calls start_authorization(SyncPlatform::GarminConnect), opens browser with auth URL, and stores task handle in pending_garmin_oauth for polling. poll_garmin_oauth() method checks task completion and updates GarminConnectionState. Request repaint enabled when pending_garmin_oauth is Some.",
+      "category": "app_integration",
+      "discovered_at": "2026-01-04T14:18:34.388550+00:00"
     }
   },
-  "last_updated": "2026-01-04T13:42:59.195885+00:00"
+  "last_updated": "2026-01-04T14:18:34.388550+00:00"
 }

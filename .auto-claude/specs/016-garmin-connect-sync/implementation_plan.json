@@ -263,8 +263,9 @@
           "file_paths": [
             "src/ui/screens/settings.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Added Garmin Connect entry to the main settings screen integrations list:\\n\\n1. Added NavigateToGarminSettings action to SettingsAction enum (line 551) with doc comment\\n2. Added navigate_to_garmin flag in render_sync_section() (line 2951)\\n3. Updated has_settings_screen match to include SyncPlatform::GarminConnect (line 2971)\\n4. Added GarminConnect navigation match arm (line 3012) to set navigate_to_garmin when Settings button is clicked\\n5. Added navigation handling (line 3087) to set pending_navigation to NavigateToGarminSettings\\n\\nAdded comprehensive tests:\\n- test_settings_action_navigate_to_garmin_settings: verifies action enum variant\\n- test_settings_action_navigation_not_equal: updated with Garmin inequality checks\\n- test_platform_states_includes_garmin_connect: verifies GarminConnect in platform_states\\n- test_garmin_connect_has_settings_screen: verifies GarminConnect has dedicated settings screen\\n\\nFollows exact pattern used by Strava and TrainingPeaks for navigation.",
+          "updated_at": "2026-01-04T13:58:08.927705+00:00"
         }
       ]
     },
@@ -280,8 +281,9 @@
           "file_paths": [
             "src/app.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Added Screen::GarminSettings handling to main app render loop in app.rs:\\n\\n1. Imported GarminSettingsAction and GarminSettingsScreen from rustride::ui::screens\\n2. Added garmin_settings_screen: GarminSettingsScreen field to RustRideApp struct\\n3. Initialized with GarminSettingsScreen::new() in RustRideApp::new()\\n4. Added Screen::GarminSettings match arm that:\\n   - Calls garmin_settings_screen.show(ui) to render\\n   - Handles navigation via returned Option<Screen>\\n   - Handles GarminSettingsAction (None, Back, Connect, Disconnect, ToggleAutoSync)\\n   - Connect/Disconnect/ToggleAutoSync have TODO stubs for subtasks 5.2-5.4\\n5. Added SettingsAction::NavigateToGarminSettings handler in Screen::Settings case\\n6. Added stub handlers for NavigateToStravaSettings, NavigateToTrainingPeaksSettings, TestAudio, AudioConfigChanged\\n7. Added placeholder Screen::StravaSettings and Screen::TrainingPeaksSettings handlers",
+          "updated_at": "2026-01-04T14:08:21.772338+00:00"
         },
         {
           "id": "5.2",
@@ -290,8 +292,9 @@
           "file_paths": [
             "src/app.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented GarminSettingsAction::Connect handler in app.rs:\\n\\n1. Added imports for OAuth types (DefaultOAuthHandler, OAuthConfig, OAuthHandler, SyncPlatform, GarminConnectionState)\\n2. Added oauth_handler field (Arc<DefaultOAuthHandler>) and pending_garmin_oauth task handle to RustRideApp\\n3. Initialized OAuth handler in new() with port 8888 and Garmin configuration from environment variables (GARMIN_CLIENT_ID, GARMIN_CLIENT_SECRET)\\n4. Implemented Connect action handler that:\\n   - Sets connection state to Connecting\\n   - Spawns async task to call start_authorization(SyncPlatform::GarminConnect)\\n   - Opens browser with authorization URL using open::that()\\n   - Handles errors and sets Error state on failure\\n5. Added poll_garmin_oauth() method to check async task completion\\n6. Called poll_garmin_oauth() in update loop\\n7. Updated request_repaint condition to include GarminSettings screen during OAuth flow\\n\\nThe OAuth flow opens the browser for user authorization. Token exchange and Connected state will be handled by callback server (subtask 5.5).",
+          "updated_at": "2026-01-04T14:18:02.066424+00:00"
         },
         {
           "id": "5.3",
@@ -300,8 +303,9 @@
           "file_paths": [
             "src/app.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented GarminSettingsAction::Disconnect handler in app.rs:\n\n1. Added pending_garmin_disconnect field (JoinHandle<Result<(), String>>) to RustRideApp struct for tracking async disconnect task\n\n2. Added poll_garmin_disconnect() method that:\n   - Polls on GarminSettings screen only\n   - Checks if disconnect task has finished\n   - On success: sets state to Disconnected, clears user profile\n   - On error: sets state to Error with message\n\n3. Implemented Disconnect action handler that:\n   - Sets UI state to GarminConnectionState::Disconnecting\n   - Spawns async task to call oauth_handler.revoke(SyncPlatform::GarminConnect)\n   - Stores task handle in pending_garmin_disconnect\n\n4. Updated update() loop:\n   - Added poll_garmin_disconnect() call after poll_garmin_oauth()\n   - Extended request_repaint condition to include pending_garmin_disconnect.is_some()\n\nFollows the same async pattern as the Connect action handler (subtask 5.2).",
+          "updated_at": "2026-01-04T14:23:03.799961+00:00"
         },
         {
           "id": "5.4",
@@ -444,5 +448,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:54:45.070436+00:00"
+  "last_updated": "2026-01-04T14:23:03.799961+00:00"
 }

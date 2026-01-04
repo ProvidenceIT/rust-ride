@@ -3,23 +3,23 @@
   "spec": "016-garmin-connect-sync",
   "state": "building",
   "subtasks": {
-    "completed": 20,
+    "completed": 24,
     "total": 34,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Settings UI Implementation",
+    "current": "App Integration and Event Handling",
     "id": null,
-    "total": 7
+    "total": 5
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 22,
+    "number": 26,
     "started_at": "2026-01-04T13:16:52.834379"
   },
-  "last_update": "2026-01-04T14:55:07.512093"
+  "last_update": "2026-01-04T15:23:29.857959"
 }
