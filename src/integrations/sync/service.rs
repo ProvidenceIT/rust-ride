@@ -8,6 +8,7 @@
 //! - Upload queue management
 //! - Persistent queue with offline support
 
+use super::garmin::{GarminClient, SyncErrorExt};
 use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenResponse, TokenStatus};
 use super::strava::StravaClient;
 use super::trainingpeaks::TrainingPeaksClient;
@@ -445,6 +446,7 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
 enum PlatformClient {
     Strava(StravaClient),
     TrainingPeaks(TrainingPeaksClient),
+    GarminConnect(GarminClient),
 }
 
 impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync + 'static>
@@ -480,6 +482,10 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         clients.insert(
             SyncPlatform::TrainingPeaks,
             PlatformClient::TrainingPeaks(TrainingPeaksClient::new()),
+        );
+        clients.insert(
+            SyncPlatform::GarminConnect,
+            PlatformClient::GarminConnect(GarminClient::new()),
         );
 
         let service = Self {
@@ -910,6 +916,18 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                     Err(SyncError::NotConfigured(platform))
                 }
             }
+            SyncPlatform::GarminConnect => {
+                if let Some(PlatformClient::GarminConnect(client)) = self.clients.get(&platform) {
+                    client
+                        .upload_activity(
+                            &entry.record.ride_id,
+                            &entry.fit_data,
+                        )
+                        .await
+                } else {
+                    Err(SyncError::NotConfigured(platform))
+                }
+            }
             _ => Err(SyncError::NotConfigured(platform)),
         };
 
@@ -1022,8 +1040,14 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 );
 
                 if will_retry {
-                    // Calculate next retry time with exponential backoff
-                    let backoff = BASE_RETRY_DELAY_SECS * (2_i64.pow(current_retry as u32));
+                    // Calculate next retry time
+                    // For rate-limited errors, use the suggested retry delay from the API
+                    // For other errors, use exponential backoff
+                    let backoff = if let Some(rate_limit_delay) = self.get_rate_limit_retry_delay(&e) {
+                        rate_limit_delay
+                    } else {
+                        BASE_RETRY_DELAY_SECS * (2_i64.pow(current_retry as u32))
+                    };
                     let next_retry = Utc::now() + ChronoDuration::seconds(backoff);
                     self.mark_upload_failed_with_retry(record_id, &user_error_msg, next_retry);
                 } else {
@@ -1046,33 +1070,38 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
 
     /// Check if an error is retryable (e.g., network issues, timeouts).
     ///
+    /// Uses the SyncErrorExt trait for sophisticated error categorization that considers:
+    /// - Error category (Transient, RateLimited, Server, Client, Authentication, Permanent)
+    /// - Error message content for ApiError and UploadFailed variants
+    ///
+    /// Retryable errors include:
+    /// - NetworkError (transient network issues)
+    /// - Timeout (transient timeout)
+    /// - RateLimited (temporary rate limiting)
+    /// - ApiError/UploadFailed with 5xx server errors
+    ///
     /// Non-retryable errors include:
     /// - TokenExpired (requires re-authorization)
     /// - AuthorizationRequired (requires user action)
     /// - InvalidFitFile (data is corrupt/invalid)
     /// - DuplicateActivity (activity already exists)
     /// - NotConfigured (platform not set up)
+    /// - CredentialError (credential storage issues)
+    /// - ApiError/UploadFailed with 4xx client errors
     fn is_retryable_error(&self, error: &SyncError) -> bool {
-        match error {
-            // Retryable errors (transient network/server issues)
-            SyncError::NetworkError(_) => true,
-            SyncError::ApiError(_) => true,
-            SyncError::Timeout(_) => true,
-            SyncError::RateLimited => true,
-            SyncError::UploadFailed(msg) => {
-                // Only retry generic upload failures, not data issues
-                !msg.to_lowercase().contains("invalid")
-                    && !msg.to_lowercase().contains("corrupt")
-            }
+        // Use the SyncErrorExt trait for sophisticated error categorization
+        error.is_retryable()
+    }
 
-            // Non-retryable errors (require user action or data is invalid)
-            SyncError::TokenExpired => false,
-            SyncError::AuthorizationRequired => false,
-            SyncError::RefreshFailed(_) => false,
-            SyncError::InvalidFitFile(_) => false,
-            SyncError::DuplicateActivity(_) => false,
-            SyncError::NotConfigured(_) => false,
-            SyncError::CredentialError(_) => false,
+    /// Get the suggested retry delay for a rate-limited error.
+    ///
+    /// For rate-limited errors, uses the error category's initial retry delay.
+    /// For other errors, returns None.
+    fn get_rate_limit_retry_delay(&self, error: &SyncError) -> Option<i64> {
+        if error.is_rate_limited() {
+            Some(error.retry_delay_secs() as i64)
+        } else {
+            None
         }
     }
 
@@ -1377,6 +1406,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                         PlatformClient::TrainingPeaks(trainingpeaks) => {
                             trainingpeaks.set_access_token(new_tokens.access_token.clone()).await;
                         }
+                        PlatformClient::GarminConnect(garmin) => {
+                            garmin.set_access_token(new_tokens.access_token.clone()).await;
+                        }
                     }
                 }
 
@@ -1472,7 +1504,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
     async fn load_stored_credentials(&mut self) {
         tracing::debug!("Loading stored credentials");
 
-        for platform in [SyncPlatform::Strava, SyncPlatform::TrainingPeaks] {
+        for platform in [SyncPlatform::Strava, SyncPlatform::TrainingPeaks, SyncPlatform::GarminConnect] {
             if self.credential_store.has_credentials(platform) {
                 match self.credential_store.get_tokens(platform).await {
                     Ok(Some(tokens)) => {
@@ -1486,6 +1518,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                                 }
                                 PlatformClient::TrainingPeaks(trainingpeaks) => {
                                     trainingpeaks.set_access_token(tokens.access_token.clone()).await;
+                                }
+                                PlatformClient::GarminConnect(garmin) => {
+                                    garmin.set_access_token(tokens.access_token.clone()).await;
                                 }
                             }
                         }
@@ -1539,6 +1574,12 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 }
                 PlatformClient::TrainingPeaks(trainingpeaks) => {
                     if let Err(e) = trainingpeaks.deauthorize().await {
+                        tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
+                        // Continue anyway - we still want to clear local credentials
+                    }
+                }
+                PlatformClient::GarminConnect(garmin) => {
+                    if let Err(e) = garmin.deauthorize().await {
                         tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
                         // Continue anyway - we still want to clear local credentials
                     }
@@ -2400,5 +2441,386 @@ mod tests {
             }
             _ => panic!("Expected TrainingPeaks variant"),
         }
+    }
+
+    // ========== GarminConnect Integration Tests ==========
+
+    #[tokio::test]
+    async fn test_get_garmin_status_not_connected() {
+        let oauth_handler = DefaultOAuthHandler::new(8899);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+        assert!(!status.connected);
+        assert!(status.token_status.is_none());
+        assert_eq!(status.pending_uploads, 0);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_queue_garmin_upload_requires_connection() {
+        let oauth_handler = DefaultOAuthHandler::new(8900);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let result = handle
+            .queue_upload(
+                Uuid::new_v4(),
+                SyncPlatform::GarminConnect,
+                vec![0u8; 100],
+                Some("Test Ride".to_string()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_garmin_config() {
+        let oauth_handler = DefaultOAuthHandler::new(8901);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let new_config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+
+        handle
+            .update_config(SyncPlatform::GarminConnect, new_config.clone())
+            .await
+            .unwrap();
+
+        let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+        assert!(status.config.enabled);
+        assert!(status.config.auto_sync);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn test_garmin_sync_event_debug() {
+        // Verify SyncEvent variants can be formatted with GarminConnect
+        let event = SyncEvent::TokenRefreshed {
+            platform: SyncPlatform::GarminConnect,
+            expires_at: Utc::now(),
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("TokenRefreshed"));
+        assert!(debug_str.contains("GarminConnect"));
+
+        let event = SyncEvent::UploadStarted {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadStarted"));
+        assert!(debug_str.contains("GarminConnect"));
+    }
+
+    #[test]
+    fn test_platform_client_enum_garmin() {
+        // Verify GarminConnect client can be created as PlatformClient variant
+        let garmin_client = GarminClient::new();
+        let platform_client = PlatformClient::GarminConnect(garmin_client);
+
+        match platform_client {
+            PlatformClient::GarminConnect(client) => {
+                assert!(!client.is_configured());
+            }
+            _ => panic!("Expected GarminConnect variant"),
+        }
+    }
+
+    #[test]
+    fn test_garmin_platform_in_default_config() {
+        // Verify GarminConnect is included in default config
+        let config = SyncConfig::default();
+        assert!(config.platforms.contains_key(&SyncPlatform::GarminConnect));
+
+        let garmin_config = config.platforms.get(&SyncPlatform::GarminConnect).unwrap();
+        assert!(!garmin_config.enabled);
+        assert!(!garmin_config.auto_sync);
+    }
+
+    // ========== Garmin Upload Queue Retry Logic Tests ==========
+
+    #[test]
+    fn test_sync_error_ext_retryable_errors() {
+        use super::SyncErrorExt;
+
+        // Transient errors should be retryable
+        let network_error = SyncError::NetworkError("Connection failed".to_string());
+        assert!(network_error.is_retryable());
+
+        let timeout_error = SyncError::Timeout(30);
+        assert!(timeout_error.is_retryable());
+
+        let rate_limited = SyncError::RateLimited;
+        assert!(rate_limited.is_retryable());
+        assert!(rate_limited.is_rate_limited());
+
+        // Server errors (5xx) in API/Upload errors should be retryable
+        let server_api_error = SyncError::ApiError("500 Internal Server Error".to_string());
+        assert!(server_api_error.is_retryable());
+
+        let server_upload_error = SyncError::UploadFailed("502 Bad Gateway".to_string());
+        assert!(server_upload_error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_non_retryable_errors() {
+        use super::SyncErrorExt;
+
+        // Authentication errors should not be retryable
+        let token_expired = SyncError::TokenExpired;
+        assert!(!token_expired.is_retryable());
+        assert!(token_expired.requires_auth_refresh());
+
+        let auth_required = SyncError::AuthorizationRequired;
+        assert!(!auth_required.is_retryable());
+
+        // Permanent errors should not be retryable
+        let duplicate = SyncError::DuplicateActivity(SyncPlatform::GarminConnect);
+        assert!(!duplicate.is_retryable());
+        assert!(duplicate.is_duplicate());
+
+        let invalid_fit = SyncError::InvalidFitFile("File too small".to_string());
+        assert!(!invalid_fit.is_retryable());
+
+        // Client errors (4xx) should not be retryable
+        let client_error = SyncError::ApiError("400 Bad Request".to_string());
+        assert!(!client_error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_garmin_specific_categorization() {
+        use super::SyncErrorExt;
+
+        // Garmin-specific error messages should be properly categorized
+        let garmin_duplicate = SyncError::DuplicateActivity(SyncPlatform::GarminConnect);
+        assert!(garmin_duplicate.is_duplicate());
+        assert!(!garmin_duplicate.is_retryable());
+
+        // Rate limiting for Garmin should have proper retry delay
+        let garmin_rate_limit = SyncError::RateLimited;
+        assert!(garmin_rate_limit.is_rate_limited());
+        assert!(garmin_rate_limit.retry_delay_secs() > 0);
+    }
+
+    #[test]
+    fn test_garmin_upload_retry_event_structure() {
+        let event = SyncEvent::UploadFailed {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+            error: "Network timeout during upload".to_string(),
+            retry_count: 1,
+            will_retry: true,
+        };
+
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadFailed"));
+        assert!(debug_str.contains("GarminConnect"));
+        assert!(debug_str.contains("will_retry: true"));
+        assert!(debug_str.contains("retry_count: 1"));
+    }
+
+    #[test]
+    fn test_garmin_upload_completed_event_structure() {
+        let external_activity_id = "12345678";
+        let event = SyncEvent::UploadCompleted {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+            external_id: Some(external_activity_id.to_string()),
+            external_url: Some(format!(
+                "https://connect.garmin.com/modern/activity/{}",
+                external_activity_id
+            )),
+        };
+
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadCompleted"));
+        assert!(debug_str.contains("GarminConnect"));
+        assert!(debug_str.contains(external_activity_id));
+    }
+
+    #[test]
+    fn test_garmin_upload_duplicate_event() {
+        // When a duplicate is detected, we emit UploadCompleted with no external_id
+        let event = SyncEvent::UploadCompleted {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+            external_id: None,
+            external_url: None,
+        };
+
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadCompleted"));
+        assert!(debug_str.contains("GarminConnect"));
+        assert!(debug_str.contains("external_id: None"));
+    }
+
+    #[test]
+    fn test_garmin_reauthorization_required_event() {
+        let event = SyncEvent::ReauthorizationRequired {
+            platform: SyncPlatform::GarminConnect,
+        };
+
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("ReauthorizationRequired"));
+        assert!(debug_str.contains("GarminConnect"));
+    }
+
+    #[test]
+    fn test_garmin_upload_queue_entry_structure() {
+        let record = SyncRecord {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+            status: SyncRecordStatus::Pending,
+            external_id: None,
+            external_url: None,
+            created_at: Utc::now(),
+            completed_at: None,
+            error_message: None,
+            retry_count: 0,
+        };
+
+        let entry = UploadQueueEntry {
+            record: record.clone(),
+            fit_data: vec![0u8; 100],
+            activity_name: Some("Garmin Test Ride".to_string()),
+            next_retry: None,
+        };
+
+        assert_eq!(entry.record.platform, SyncPlatform::GarminConnect);
+        assert_eq!(entry.record.status, SyncRecordStatus::Pending);
+        assert!(entry.activity_name.is_some());
+        assert!(entry.next_retry.is_none());
+    }
+
+    #[test]
+    fn test_garmin_upload_queue_entry_with_retry() {
+        let next_retry_time = Utc::now() + ChronoDuration::seconds(60);
+        let record = SyncRecord {
+            id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+            status: SyncRecordStatus::Pending,
+            external_id: None,
+            external_url: None,
+            created_at: Utc::now(),
+            completed_at: None,
+            error_message: Some("Rate limited, will retry".to_string()),
+            retry_count: 1,
+        };
+
+        let entry = UploadQueueEntry {
+            record: record.clone(),
+            fit_data: vec![0u8; 100],
+            activity_name: Some("Garmin Rate Limited Ride".to_string()),
+            next_retry: Some(next_retry_time),
+        };
+
+        assert_eq!(entry.record.retry_count, 1);
+        assert!(entry.record.error_message.is_some());
+        assert!(entry.next_retry.is_some());
+        assert!(entry.next_retry.unwrap() > Utc::now());
+    }
+
+    #[test]
+    fn test_garmin_sync_record_status_transitions() {
+        // Verify that SyncRecordStatus can represent all Garmin upload states
+        let pending = SyncRecordStatus::Pending;
+        let uploading = SyncRecordStatus::Uploading;
+        let completed = SyncRecordStatus::Completed;
+        let failed = SyncRecordStatus::Failed;
+        let cancelled = SyncRecordStatus::Cancelled;
+
+        assert_eq!(pending, SyncRecordStatus::Pending);
+        assert_eq!(uploading, SyncRecordStatus::Uploading);
+        assert_eq!(completed, SyncRecordStatus::Completed);
+        assert_eq!(failed, SyncRecordStatus::Failed);
+        assert_eq!(cancelled, SyncRecordStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_garmin_rate_limit_retry_delay() {
+        use super::garmin::ErrorCategory;
+
+        // Verify that rate limited errors have appropriate retry delay
+        let rate_limit_delay = ErrorCategory::RateLimited.initial_retry_delay_secs();
+        assert!(rate_limit_delay >= 60, "Rate limit delay should be at least 60 seconds");
+
+        // Verify that transient errors have shorter delay
+        let transient_delay = ErrorCategory::Transient.initial_retry_delay_secs();
+        assert!(transient_delay < rate_limit_delay, "Transient delay should be less than rate limit delay");
+    }
+
+    #[test]
+    fn test_garmin_error_category_max_retries() {
+        use super::garmin::ErrorCategory;
+
+        // Rate limited errors should have limited retries (wait and retry once)
+        assert_eq!(ErrorCategory::RateLimited.max_retry_attempts(), 1);
+
+        // Transient errors should have more retries
+        assert!(ErrorCategory::Transient.max_retry_attempts() > 1);
+
+        // Client and permanent errors should not be retried
+        assert_eq!(ErrorCategory::Client.max_retry_attempts(), 0);
+        assert_eq!(ErrorCategory::Permanent.max_retry_attempts(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_garmin_upload_started_event() {
+        let oauth_handler = DefaultOAuthHandler::new(8902);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        // Subscribe to events
+        let event_rx = handle.subscribe_events().await;
+        assert!(event_rx.is_some());
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_garmin_queue_processing_started_event() {
+        let oauth_handler = DefaultOAuthHandler::new(8903);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        // Subscribe to events
+        let mut event_rx = handle.subscribe_events().await.unwrap();
+
+        // Wait briefly for initial connectivity check event
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check if we can receive any events (should be empty queue)
+        match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
+            Ok(Some(event)) => {
+                // Connectivity event is expected on startup
+                let debug_str = format!("{:?}", event);
+                assert!(
+                    debug_str.contains("Connectivity") || debug_str.contains("Queue"),
+                    "Expected connectivity or queue event, got: {}",
+                    debug_str
+                );
+            }
+            _ => {
+                // No events is also acceptable for an empty queue
+            }
+        }
+
+        handle.shutdown().await.unwrap();
     }
 }

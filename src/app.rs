@@ -26,6 +26,10 @@ use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttClient, MqttConfig,
     load_fan_profiles,
 };
+use rustride::integrations::sync::oauth::{
+    CredentialStore, DefaultOAuthHandler, KeyringCredentialStore, OAuthConfig, OAuthHandler,
+};
+use rustride::integrations::sync::{GarminClient, GarminUserProfile, PlatformConfig, SyncPlatform};
 use rustride::integrations::streaming::{
     DefaultPinAuthenticator, DefaultStreamingServer, PinAuthenticator, StreamingConfig,
     StreamingMetrics, StreamingServer,
@@ -41,8 +45,9 @@ use rustride::sensors::{
 use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
 use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, FanControlAction, HomeScreen, OnboardingScreen, RideScreen,
-    RideView, Screen, SensorSetupScreen, SettingsScreen, WorldSelectScreen,
+    AnalyticsScreen, AvatarScreen, FanControlAction, GarminConnectionState, GarminSettingsAction,
+    GarminSettingsScreen, HomeScreen, OnboardingScreen, RideScreen, RideView, Screen,
+    SensorSetupScreen, SettingsScreen, WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
 use rustride::ui::widgets::AchievementNotificationWidget;
@@ -108,6 +113,8 @@ pub struct RustRideApp {
     analytics_screen: AnalyticsScreen,
     /// Settings screen state
     settings_screen: SettingsScreen,
+    /// Garmin Connect settings screen state
+    garmin_settings_screen: GarminSettingsScreen,
     /// T043: Incline/slope mode controller
     incline_controller: DefaultInclineController,
     /// T043: Gradient controller for route-based resistance
@@ -174,6 +181,20 @@ pub struct RustRideApp {
         Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
     /// T050: Mobile companion app server for remote control and metrics
     companion_server: Option<Arc<CompanionServer>>,
+    /// T016: OAuth handler for Garmin Connect and other platforms
+    oauth_handler: Arc<DefaultOAuthHandler>,
+    /// T016: Pending Garmin Connect OAuth connection task
+    pending_garmin_oauth: Option<tokio::task::JoinHandle<Result<String, String>>>,
+    /// T016/5.3: Pending Garmin Connect disconnect task
+    pending_garmin_disconnect: Option<tokio::task::JoinHandle<Result<(), String>>>,
+    /// T016/5.5: Credential store for checking Garmin connection status
+    credential_store: Arc<KeyringCredentialStore>,
+    /// T016/5.5: Pending Garmin profile fetch task
+    pending_garmin_profile: Option<tokio::task::JoinHandle<Result<GarminUserProfile, String>>>,
+    /// T016/5.5: Track Garmin pending uploads count (in-memory cache)
+    garmin_pending_uploads: usize,
+    /// T016/5.5: Track Garmin last sync timestamp (in-memory cache)
+    garmin_last_sync: Option<String>,
 }
 
 impl RustRideApp {
@@ -433,6 +454,41 @@ impl RustRideApp {
             None
         };
 
+        // T016/5.5: Initialize credential store for checking stored OAuth tokens
+        let credential_store = Arc::new(KeyringCredentialStore::new("RustRide"));
+
+        // T016: Initialize OAuth handler for Garmin Connect and other sync platforms
+        // Uses port 8888 for OAuth callback server (standard for desktop OAuth)
+        let oauth_handler = Arc::new(DefaultOAuthHandler::new(8888));
+
+        // Configure Garmin Connect OAuth (credentials from environment or config)
+        // In production, these would come from app configuration or environment variables
+        let garmin_client_id =
+            std::env::var("GARMIN_CLIENT_ID").unwrap_or_else(|_| String::new());
+        let garmin_client_secret = std::env::var("GARMIN_CLIENT_SECRET").ok();
+
+        if !garmin_client_id.is_empty() {
+            let oauth_handler_clone = oauth_handler.clone();
+            tokio_runtime.spawn(async move {
+                oauth_handler_clone
+                    .configure(
+                        SyncPlatform::GarminConnect,
+                        OAuthConfig {
+                            client_id: garmin_client_id,
+                            client_secret: garmin_client_secret,
+                            redirect_uri: "http://localhost:8888/callback".to_string(),
+                            scopes: vec![],
+                        },
+                    )
+                    .await;
+                tracing::info!("Garmin Connect OAuth configured");
+            });
+        } else {
+            tracing::debug!(
+                "Garmin Connect OAuth not configured (GARMIN_CLIENT_ID not set)"
+            );
+        }
+
         // T059: Initialize onboarding screen and check if it should be shown
         // In a real implementation, we'd load the onboarding state from storage
         let onboarding_state = load_onboarding_state();
@@ -454,6 +510,21 @@ impl RustRideApp {
         // Set companion config for settings display
         settings_screen.set_companion_config(config.companion.clone());
 
+        // T016/5.5: Initialize Garmin settings screen and check for stored credentials
+        let mut garmin_settings_screen = GarminSettingsScreen::new();
+
+        // Check if Garmin credentials are already stored (user previously connected)
+        let has_garmin_credentials = credential_store.has_credentials(SyncPlatform::GarminConnect);
+        if has_garmin_credentials {
+            tracing::info!("Found stored Garmin Connect credentials, setting connected state");
+            garmin_settings_screen.set_connection_state(GarminConnectionState::Connected);
+            // Set enabled config since we have credentials
+            garmin_settings_screen.set_config(PlatformConfig {
+                enabled: true,
+                auto_sync: false, // Default to off until loaded from preferences
+            });
+        }
+
         Self {
             current_screen: start_screen,
             theme,
@@ -471,6 +542,7 @@ impl RustRideApp {
             avatar_screen: AvatarScreen::new(),
             analytics_screen: AnalyticsScreen::new(),
             settings_screen,
+            garmin_settings_screen,
             incline_controller,
             gradient_controller,
             mqtt_client,
@@ -504,6 +576,15 @@ impl RustRideApp {
             pending_fan_test: None,
             // T050: Companion server for mobile app connectivity
             companion_server,
+            // T016: OAuth handler for sync platforms
+            oauth_handler,
+            pending_garmin_oauth: None,
+            pending_garmin_disconnect: None,
+            // T016/5.5: Credential store and Garmin state tracking
+            credential_store,
+            pending_garmin_profile: None,
+            garmin_pending_uploads: 0,
+            garmin_last_sync: None,
         }
     }
 
@@ -1037,6 +1118,240 @@ impl RustRideApp {
         }
     }
 
+    /// T016/5.2: Poll for Garmin OAuth result.
+    ///
+    /// Called each frame to check if a pending OAuth authorization has completed.
+    /// Also detects when OAuth callback completes by checking for stored credentials.
+    fn poll_garmin_oauth(&mut self) {
+        // Only poll when on the Garmin Settings screen
+        if self.current_screen != Screen::GarminSettings {
+            return;
+        }
+
+        // Check if we have a pending OAuth task (browser opening)
+        if let Some(handle) = &mut self.pending_garmin_oauth {
+            // Check if the task has completed (non-blocking)
+            if handle.is_finished() {
+                // Take ownership of the handle
+                if let Some(handle) = self.pending_garmin_oauth.take() {
+                    // Block on the result (it's already finished, so this is instant)
+                    match self.tokio_runtime.block_on(handle) {
+                        Ok(Ok(_url)) => {
+                            // OAuth flow started successfully, browser opened
+                            // Stay in Connecting state - callback will complete the flow
+                            tracing::info!(
+                                "Garmin OAuth browser opened, waiting for user authorization"
+                            );
+                        }
+                        Ok(Err(error_msg)) => {
+                            // OAuth flow failed
+                            tracing::error!("Garmin OAuth failed: {}", error_msg);
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Error(error_msg));
+                        }
+                        Err(e) => {
+                            // Task panicked
+                            tracing::error!("Garmin OAuth task panicked: {}", e);
+                            self.garmin_settings_screen.set_connection_state(
+                                GarminConnectionState::Error(format!("Internal error: {}", e)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // T016/5.5: Check if OAuth callback has completed (credentials stored)
+        // This detects when the user completes authorization in the browser
+        if matches!(
+            self.garmin_settings_screen.connection_state,
+            GarminConnectionState::Connecting
+        ) {
+            // Check if credentials appeared (OAuth callback stored them)
+            if self.credential_store.has_credentials(SyncPlatform::GarminConnect) {
+                tracing::info!("Garmin OAuth callback completed, credentials stored");
+
+                // Set connected state
+                self.garmin_settings_screen
+                    .set_connection_state(GarminConnectionState::Connected);
+                self.garmin_settings_screen.set_config(PlatformConfig {
+                    enabled: true,
+                    auto_sync: false, // User can enable this later
+                });
+
+                // Start fetching user profile
+                self.start_garmin_profile_fetch();
+            }
+        }
+    }
+
+    /// T016/5.3: Poll for Garmin disconnect result.
+    ///
+    /// Called each frame to check if a pending disconnect operation has completed.
+    fn poll_garmin_disconnect(&mut self) {
+        // Only poll when on the Garmin Settings screen
+        if self.current_screen != Screen::GarminSettings {
+            return;
+        }
+
+        // Check if we have a pending disconnect task
+        if let Some(handle) = &mut self.pending_garmin_disconnect {
+            // Check if the task has completed (non-blocking)
+            if handle.is_finished() {
+                // Take ownership of the handle
+                if let Some(handle) = self.pending_garmin_disconnect.take() {
+                    // Block on the result (it's already finished, so this is instant)
+                    match self.tokio_runtime.block_on(handle) {
+                        Ok(Ok(())) => {
+                            // Disconnect successful
+                            tracing::info!("Garmin Connect disconnected successfully");
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Disconnected);
+                            // Clear the user profile and sync state
+                            self.garmin_settings_screen.set_user_profile(None);
+                            self.garmin_settings_screen.set_pending_uploads(0);
+                            self.garmin_settings_screen.set_last_sync(None);
+                            // Clear in-memory sync state
+                            self.garmin_pending_uploads = 0;
+                            self.garmin_last_sync = None;
+                        }
+                        Ok(Err(error_msg)) => {
+                            // Disconnect failed
+                            tracing::error!("Garmin disconnect failed: {}", error_msg);
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Error(error_msg));
+                        }
+                        Err(e) => {
+                            // Task panicked
+                            tracing::error!("Garmin disconnect task panicked: {}", e);
+                            self.garmin_settings_screen.set_connection_state(
+                                GarminConnectionState::Error(format!("Internal error: {}", e)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// T016/5.5: Poll for Garmin profile fetch result.
+    ///
+    /// Called each frame to check if a pending profile fetch has completed.
+    fn poll_garmin_profile(&mut self) {
+        // Only poll when on the Garmin Settings screen
+        if self.current_screen != Screen::GarminSettings {
+            return;
+        }
+
+        // Check if we have a pending profile fetch task
+        if let Some(handle) = &mut self.pending_garmin_profile {
+            // Check if the task has completed (non-blocking)
+            if handle.is_finished() {
+                // Take ownership of the handle
+                if let Some(handle) = self.pending_garmin_profile.take() {
+                    // Block on the result (it's already finished, so this is instant)
+                    match self.tokio_runtime.block_on(handle) {
+                        Ok(Ok(profile)) => {
+                            tracing::info!(
+                                "Garmin profile fetched: {} ({})",
+                                profile.readable_name(),
+                                profile.display_name
+                            );
+                            self.garmin_settings_screen.set_user_profile(Some(profile));
+                        }
+                        Ok(Err(error_msg)) => {
+                            tracing::warn!("Failed to fetch Garmin profile: {}", error_msg);
+                            // Don't change connection state - profile fetch is not critical
+                            // User can still see connected state without profile details
+                        }
+                        Err(e) => {
+                            tracing::error!("Garmin profile fetch task panicked: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// T016/5.5: Start fetching the Garmin user profile asynchronously.
+    ///
+    /// This creates a GarminClient, loads credentials, and fetches the user profile.
+    fn start_garmin_profile_fetch(&mut self) {
+        // Don't start a new fetch if one is already in progress
+        if self.pending_garmin_profile.is_some() {
+            return;
+        }
+
+        let credential_store = self.credential_store.clone();
+        let handle = self.tokio_runtime.spawn(async move {
+            // Get stored tokens
+            let tokens = credential_store
+                .get_tokens(SyncPlatform::GarminConnect)
+                .await
+                .map_err(|e| format!("Failed to get credentials: {}", e))?
+                .ok_or_else(|| "No credentials found".to_string())?;
+
+            // Create a GarminClient with the access token
+            let client = GarminClient::new();
+            client.set_access_token(tokens.access_token).await;
+
+            // Fetch the user profile
+            client
+                .get_user_profile()
+                .await
+                .map_err(|e| format!("API error: {}", e))
+        });
+
+        self.pending_garmin_profile = Some(handle);
+    }
+
+    /// T016/5.5: Refresh Garmin settings screen state from stored credentials.
+    ///
+    /// Called when navigating to the Garmin settings screen to ensure
+    /// connection status, profile, and pending uploads are up to date.
+    fn refresh_garmin_settings_state(&mut self) {
+        // Check if we have stored credentials
+        let has_credentials = self.credential_store.has_credentials(SyncPlatform::GarminConnect);
+
+        if has_credentials {
+            // Update connection state if not already connected
+            if !self.garmin_settings_screen.is_connected() {
+                self.garmin_settings_screen
+                    .set_connection_state(GarminConnectionState::Connected);
+                self.garmin_settings_screen.set_config(PlatformConfig {
+                    enabled: true,
+                    auto_sync: self.garmin_settings_screen.config.auto_sync,
+                });
+            }
+
+            // Start profile fetch if we don't have a profile yet
+            if self.garmin_settings_screen.user_profile.is_none()
+                && self.pending_garmin_profile.is_none()
+            {
+                self.start_garmin_profile_fetch();
+            }
+
+            // Update pending uploads count (from in-memory cache for now)
+            self.garmin_settings_screen
+                .set_pending_uploads(self.garmin_pending_uploads);
+
+            // Update last sync timestamp (from in-memory cache for now)
+            // This will be populated when actual syncs complete
+            self.garmin_settings_screen
+                .set_last_sync(self.garmin_last_sync.clone());
+        } else {
+            // No credentials - ensure disconnected state
+            if self.garmin_settings_screen.is_connected() {
+                self.garmin_settings_screen
+                    .set_connection_state(GarminConnectionState::Disconnected);
+                self.garmin_settings_screen.set_user_profile(None);
+                self.garmin_settings_screen.set_config(PlatformConfig::default());
+                self.garmin_settings_screen.set_pending_uploads(0);
+                self.garmin_settings_screen.set_last_sync(None);
+            }
+        }
+    }
+
     /// T091: Process pending executor events for UI navigation.
     ///
     /// Called each frame to handle navigation and fullscreen events from HID button actions.
@@ -1327,16 +1642,29 @@ impl eframe::App for RustRideApp {
         // T012/6.3: Poll for fan test result
         self.poll_fan_test();
 
+        // T016/5.2: Poll for Garmin OAuth result
+        self.poll_garmin_oauth();
+
+        // T016/5.3: Poll for Garmin disconnect result
+        self.poll_garmin_disconnect();
+
+        // T016/5.5: Poll for Garmin profile fetch result
+        self.poll_garmin_profile();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test)
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, OAuth, disconnect, profile fetch)
         if self.current_screen == Screen::Ride
             || self.current_screen == Screen::SensorSetup
             || (self.current_screen == Screen::Settings
                 && (self.button_input_handler.is_learning()
                     || self.pending_mqtt_test.is_some()
                     || self.pending_fan_test.is_some()))
+            || (self.current_screen == Screen::GarminSettings
+                && (self.pending_garmin_oauth.is_some()
+                    || self.pending_garmin_disconnect.is_some()
+                    || self.pending_garmin_profile.is_some()))
         {
             ctx.request_repaint();
         }
@@ -1696,6 +2024,156 @@ impl eframe::App for RustRideApp {
                             self.pending_fan_test = Some(handle);
                         }
                         SettingsAction::None => {}
+                        SettingsAction::TestAudio(_test_type) => {
+                            // TODO: Play test audio sound
+                        }
+                        SettingsAction::AudioConfigChanged(_config) => {
+                            // TODO: Save audio config
+                        }
+                        SettingsAction::NavigateToStravaSettings => {
+                            // Navigate to Strava settings screen
+                            self.navigate(Screen::StravaSettings);
+                        }
+                        SettingsAction::NavigateToTrainingPeaksSettings => {
+                            // Navigate to TrainingPeaks settings screen
+                            self.navigate(Screen::TrainingPeaksSettings);
+                        }
+                        SettingsAction::NavigateToGarminSettings => {
+                            // Navigate to Garmin Connect settings screen
+                            self.navigate(Screen::GarminSettings);
+                        }
+                    }
+                }
+                Screen::GarminSettings => {
+                    // T016/5.5: Refresh Garmin settings state from stored credentials
+                    // This ensures connection status, profile, and pending uploads are up to date
+                    self.refresh_garmin_settings_state();
+
+                    // T016: Garmin Connect settings screen
+                    let (next_screen, action) = self.garmin_settings_screen.show(ui);
+
+                    // Handle navigation
+                    if let Some(screen) = next_screen {
+                        self.navigate(screen);
+                    }
+
+                    // Handle actions (Connect, Disconnect, ToggleAutoSync are handled in subsequent subtasks)
+                    match action {
+                        GarminSettingsAction::None | GarminSettingsAction::Back => {
+                            // Back is already handled via next_screen navigation
+                        }
+                        GarminSettingsAction::Connect => {
+                            // T016/5.2: Start OAuth flow for Garmin Connect
+                            tracing::info!("Starting Garmin Connect OAuth flow");
+
+                            // Set UI state to connecting
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Connecting);
+
+                            // Spawn async task to start OAuth authorization
+                            let oauth_handler = self.oauth_handler.clone();
+                            let handle = self.tokio_runtime.spawn(async move {
+                                match oauth_handler
+                                    .start_authorization(SyncPlatform::GarminConnect)
+                                    .await
+                                {
+                                    Ok(auth_url) => {
+                                        tracing::info!(
+                                            "Garmin OAuth authorization URL generated: {}",
+                                            auth_url.url
+                                        );
+
+                                        // Open browser to authorization URL
+                                        if let Err(e) = open::that(&auth_url.url) {
+                                            tracing::error!(
+                                                "Failed to open browser for Garmin OAuth: {}",
+                                                e
+                                            );
+                                            return Err(format!(
+                                                "Failed to open browser: {}",
+                                                e
+                                            ));
+                                        }
+
+                                        tracing::info!(
+                                            "Browser opened for Garmin Connect authorization"
+                                        );
+                                        Ok(auth_url.url)
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to start Garmin OAuth flow: {}",
+                                            e
+                                        );
+                                        Err(format!("OAuth error: {}", e))
+                                    }
+                                }
+                            });
+
+                            self.pending_garmin_oauth = Some(handle);
+                        }
+                        GarminSettingsAction::Disconnect => {
+                            // T016/5.3: Disconnect from Garmin Connect
+                            tracing::info!("Disconnecting from Garmin Connect");
+
+                            // Set UI state to disconnecting
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Disconnecting);
+
+                            // Spawn async task to revoke authorization
+                            let oauth_handler = self.oauth_handler.clone();
+                            let handle = self.tokio_runtime.spawn(async move {
+                                match oauth_handler.revoke(SyncPlatform::GarminConnect).await {
+                                    Ok(()) => {
+                                        tracing::info!(
+                                            "Garmin Connect authorization revoked successfully"
+                                        );
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to revoke Garmin Connect authorization: {}",
+                                            e
+                                        );
+                                        Err(format!("Disconnect error: {}", e))
+                                    }
+                                }
+                            });
+
+                            self.pending_garmin_disconnect = Some(handle);
+                        }
+                        GarminSettingsAction::ToggleAutoSync(enabled) => {
+                            // T016/5.4: Handle auto-sync toggle for Garmin Connect
+                            tracing::info!(
+                                "Garmin Connect auto-sync {}",
+                                if enabled { "enabled" } else { "disabled" }
+                            );
+
+                            // Update the screen's config with the new auto_sync setting
+                            // The UI already updated self.config.auto_sync, but we ensure consistency
+                            let mut config = self.garmin_settings_screen.config.clone();
+                            config.auto_sync = enabled;
+                            self.garmin_settings_screen.set_config(config);
+
+                            // Note: Persistence to sync service will be handled in subtask 5.5
+                            // when the sync service is fully integrated with the app
+                        }
+                    }
+                }
+                Screen::StravaSettings => {
+                    // TODO: Strava settings screen - to be implemented
+                    ui.heading("Strava Settings");
+                    ui.label("Strava settings - coming soon");
+                    if ui.button("<- Back to Settings").clicked() {
+                        self.navigate(Screen::Settings);
+                    }
+                }
+                Screen::TrainingPeaksSettings => {
+                    // TODO: TrainingPeaks settings screen - to be implemented
+                    ui.heading("TrainingPeaks Settings");
+                    ui.label("TrainingPeaks settings - coming soon");
+                    if ui.button("<- Back to Settings").clicked() {
+                        self.navigate(Screen::Settings);
                     }
                 }
                 Screen::WorldSelect => {

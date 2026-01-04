@@ -23,6 +23,7 @@ pub mod route_browser;
 pub mod route_import;
 pub mod sensor_setup;
 pub mod settings;
+pub mod settings_garmin;
 pub mod settings_strava;
 pub mod settings_trainingpeaks;
 pub mod streaming;
@@ -56,6 +57,9 @@ pub use route_browser::{RouteBrowserAction, RouteBrowserScreen, RouteSortOrder};
 pub use route_import::{RouteImportAction, RouteImportScreen};
 pub use sensor_setup::SensorSetupScreen;
 pub use settings::{SettingsAction, SettingsScreen, TestVoiceSettings};
+pub use settings_garmin::{
+    GarminConnectionState, GarminSettingsAction, GarminSettingsScreen,
+};
 pub use settings_strava::{
     StravaConnectionState, StravaSettingsAction, StravaSettingsScreen,
 };
@@ -90,6 +94,8 @@ pub enum Screen {
     RideDetail,
     /// Settings screen
     Settings,
+    /// Garmin Connect settings screen
+    GarminSettings,
     /// Strava settings screen
     StravaSettings,
     /// TrainingPeaks settings screen

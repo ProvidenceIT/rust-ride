@@ -5,6 +5,7 @@ mod analytics_export_test;
 mod analytics_integration_test;
 mod audio_pipeline_test;
 mod fit_validation_test;
+mod garmin_sync_test;
 mod gradient_ride_test;
 mod hid_test;
 mod mqtt_fan_test;

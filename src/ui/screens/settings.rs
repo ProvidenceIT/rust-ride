@@ -25,7 +25,9 @@ use crate::ui::settings::{
 };
 
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
-use crate::integrations::weather::{WeatherCondition, WeatherConfig, WeatherCredentialStore, WeatherUnits};
+use crate::integrations::weather::{
+    WeatherCondition, WeatherConfig, WeatherCredentialStore, WeatherUnits,
+};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
@@ -643,6 +645,8 @@ pub enum SettingsAction {
     SaveWeatherApiKey(String),
     /// Clear weather API key from OS keyring
     ClearWeatherApiKey,
+    /// Navigate to Garmin Connect settings screen
+    NavigateToGarminSettings,
 }
 
 impl SettingsScreen {
@@ -748,11 +752,9 @@ impl SettingsScreen {
         self.weather_temp_override_input = config
             .override_temperature
             .map(|t| format!("{:.0}", t))
-            .unwrap_or_else(|| {
-                match config.units {
-                    WeatherUnits::Metric => "20".to_string(),
-                    WeatherUnits::Imperial => "68".to_string(),
-                }
+            .unwrap_or_else(|| match config.units {
+                WeatherUnits::Metric => "20".to_string(),
+                WeatherUnits::Imperial => "68".to_string(),
             });
         self.weather_config = config;
     }
@@ -774,7 +776,12 @@ impl SettingsScreen {
 
     /// Set geolocation result with latitude, longitude, and optional city name.
     /// Updates the weather config with the detected location.
-    pub fn set_geolocation_result(&mut self, latitude: f64, longitude: f64, city_name: Option<String>) {
+    pub fn set_geolocation_result(
+        &mut self,
+        latitude: f64,
+        longitude: f64,
+        city_name: Option<String>,
+    ) {
         // Update the config with detected coordinates
         self.weather_config.latitude = latitude;
         self.weather_config.longitude = longitude;
@@ -3595,6 +3602,7 @@ impl SettingsScreen {
                 // T022: Track if we need to navigate to a settings screen
                 let mut navigate_to_strava = false;
                 let mut navigate_to_trainingpeaks = false;
+                let mut navigate_to_garmin = false;
 
                 for platform in platforms {
                     // Get values before closure to avoid borrow conflicts
@@ -3612,8 +3620,12 @@ impl SettingsScreen {
                         .unwrap_or(false);
 
                     // T022: Check if this platform has a dedicated settings screen
-                    let has_settings_screen =
-                        matches!(platform, SyncPlatform::Strava | SyncPlatform::TrainingPeaks);
+                    let has_settings_screen = matches!(
+                        platform,
+                        SyncPlatform::Strava
+                            | SyncPlatform::GarminConnect
+                            | SyncPlatform::TrainingPeaks
+                    );
 
                     ui.horizontal(|ui| {
                         // Platform name with icon
@@ -3653,6 +3665,7 @@ impl SettingsScreen {
                                 {
                                     match platform {
                                         SyncPlatform::Strava => navigate_to_strava = true,
+                                        SyncPlatform::GarminConnect => navigate_to_garmin = true,
                                         SyncPlatform::TrainingPeaks => {
                                             navigate_to_trainingpeaks = true
                                         }
@@ -3728,6 +3741,8 @@ impl SettingsScreen {
                 // T022: Handle navigation after the loop (to avoid borrow conflicts)
                 if navigate_to_strava {
                     self.pending_navigation = Some(SettingsAction::NavigateToStravaSettings);
+                } else if navigate_to_garmin {
+                    self.pending_navigation = Some(SettingsAction::NavigateToGarminSettings);
                 } else if navigate_to_trainingpeaks {
                     self.pending_navigation = Some(SettingsAction::NavigateToTrainingPeaksSettings);
                 }
@@ -5023,9 +5038,23 @@ mod tests {
     }
 
     #[test]
+    fn test_settings_action_navigate_to_garmin_settings() {
+        let action = SettingsAction::NavigateToGarminSettings;
+        assert_eq!(action, SettingsAction::NavigateToGarminSettings);
+    }
+
+    #[test]
     fn test_settings_action_navigation_not_equal() {
         assert_ne!(
             SettingsAction::NavigateToStravaSettings,
+            SettingsAction::NavigateToTrainingPeaksSettings
+        );
+        assert_ne!(
+            SettingsAction::NavigateToStravaSettings,
+            SettingsAction::NavigateToGarminSettings
+        );
+        assert_ne!(
+            SettingsAction::NavigateToGarminSettings,
             SettingsAction::NavigateToTrainingPeaksSettings
         );
         assert_ne!(
@@ -5034,6 +5063,10 @@ mod tests {
         );
         assert_ne!(
             SettingsAction::NavigateToTrainingPeaksSettings,
+            SettingsAction::None
+        );
+        assert_ne!(
+            SettingsAction::NavigateToGarminSettings,
             SettingsAction::None
         );
     }
@@ -5058,6 +5091,33 @@ mod tests {
         assert!(
             has_trainingpeaks,
             "TrainingPeaks should be in platform_states"
+        );
+    }
+
+    #[test]
+    fn test_platform_states_includes_garmin_connect() {
+        let profile = UserProfile::default();
+        let screen = SettingsScreen::new(profile);
+
+        let has_garmin = screen
+            .platform_states
+            .iter()
+            .any(|(p, _)| *p == SyncPlatform::GarminConnect);
+
+        assert!(has_garmin, "GarminConnect should be in platform_states");
+    }
+
+    #[test]
+    fn test_garmin_connect_has_settings_screen() {
+        // Verify GarminConnect is matched as having a dedicated settings screen
+        let platform = SyncPlatform::GarminConnect;
+        let has_settings_screen = matches!(
+            platform,
+            SyncPlatform::Strava | SyncPlatform::GarminConnect | SyncPlatform::TrainingPeaks
+        );
+        assert!(
+            has_settings_screen,
+            "GarminConnect should have a dedicated settings screen"
         );
     }
 

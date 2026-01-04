@@ -198,6 +198,46 @@ impl std::fmt::Display for TrainingPeaksOAuthErrorResponse {
     }
 }
 
+/// Garmin Connect OAuth token response from the token endpoint
+/// Garmin uses standard OAuth 2.0 response format with snake_case field names
+#[derive(Debug, Deserialize)]
+struct GarminTokenResponse {
+    /// The access token for API calls
+    access_token: String,
+    /// The refresh token for getting new access tokens
+    refresh_token: String,
+    /// Token lifetime in seconds
+    expires_in: i64,
+    /// Token type (usually "Bearer")
+    #[allow(dead_code)]
+    token_type: String,
+    /// Optional scope (may be returned by Garmin)
+    #[allow(dead_code)]
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+/// Garmin Connect OAuth error response
+/// Garmin uses standard OAuth 2.0 error format
+#[derive(Debug, Deserialize)]
+struct GarminOAuthErrorResponse {
+    /// Error type (e.g., "invalid_grant", "invalid_client", "invalid_request")
+    error: String,
+    /// Human-readable error description
+    #[serde(default)]
+    error_description: Option<String>,
+}
+
+impl std::fmt::Display for GarminOAuthErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref description) = self.error_description {
+            write!(f, "{}: {}", self.error, description)
+        } else {
+            write!(f, "{}", self.error)
+        }
+    }
+}
+
 /// Default OAuth handler implementation
 #[allow(dead_code)]
 pub struct DefaultOAuthHandler {
@@ -210,6 +250,8 @@ pub struct DefaultOAuthHandler {
     strava_token_url: String,
     /// Base URL for TrainingPeaks OAuth API (overridable for testing)
     trainingpeaks_token_url: String,
+    /// Base URL for Garmin Connect OAuth API (overridable for testing)
+    garmin_token_url: String,
 }
 
 /// Default Strava OAuth token URL
@@ -217,6 +259,10 @@ const STRAVA_TOKEN_URL: &str = "https://www.strava.com/oauth/token";
 
 /// Default TrainingPeaks OAuth token URL
 const TRAININGPEAKS_TOKEN_URL: &str = "https://oauth.trainingpeaks.com/oauth/token";
+
+/// Default Garmin Connect OAuth token URL
+/// Garmin uses a proxy endpoint for OAuth token exchange
+const GARMIN_TOKEN_URL: &str = "https://connect.garmin.com/oauth-service/oauth/token";
 
 impl DefaultOAuthHandler {
     /// Create a new OAuth handler
@@ -229,6 +275,7 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url: STRAVA_TOKEN_URL.to_string(),
             trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
         }
     }
 
@@ -243,6 +290,7 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url,
             trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
         }
     }
 
@@ -261,6 +309,27 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url,
             trainingpeaks_token_url,
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
+        }
+    }
+
+    /// Create a new OAuth handler with all custom token URLs (for testing)
+    #[cfg(test)]
+    pub fn with_all_token_urls(
+        callback_port: u16,
+        strava_token_url: String,
+        trainingpeaks_token_url: String,
+        garmin_token_url: String,
+    ) -> Self {
+        Self {
+            configs: Arc::new(RwLock::new(HashMap::new())),
+            tokens: Arc::new(RwLock::new(HashMap::new())),
+            pending_states: Arc::new(RwLock::new(HashMap::new())),
+            http_client: Client::new(),
+            callback_port,
+            strava_token_url,
+            trainingpeaks_token_url,
+            garmin_token_url,
         }
     }
 
@@ -367,6 +436,9 @@ impl OAuthHandler for DefaultOAuthHandler {
             }
             SyncPlatform::TrainingPeaks => {
                 self.exchange_trainingpeaks_token(code, config).await?
+            }
+            SyncPlatform::GarminConnect => {
+                self.exchange_garmin_token(code, config).await?
             }
             _ => {
                 // For other platforms, return an error until implemented
@@ -527,6 +599,79 @@ impl OAuthHandler for DefaultOAuthHandler {
         })
     }
 
+    /// Exchange authorization code for tokens with Garmin Connect's OAuth endpoint
+    async fn exchange_garmin_token(
+        &self,
+        code: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::GarminConnect))?;
+
+        // Build the token request
+        // Garmin Connect uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", config.redirect_uri.as_str()),
+        ];
+
+        tracing::debug!("Exchanging authorization code with Garmin Connect token endpoint");
+
+        let response = self
+            .http_client
+            .post(&self.garmin_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to send token request: {}", e)))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Garmin OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<GarminOAuthErrorResponse>(&body) {
+                tracing::error!("Garmin Connect token exchange failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Garmin Connect OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!("Garmin Connect token exchange failed with status {}: {}", status, body);
+            return Err(SyncError::ApiError(format!(
+                "Garmin Connect OAuth failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let garmin_response: GarminTokenResponse = serde_json::from_str(&body)
+            .map_err(|e| SyncError::ApiError(format!("Failed to parse token response: {}", e)))?;
+
+        // Garmin returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(garmin_response.expires_in);
+
+        tracing::info!(
+            "Successfully exchanged code for Garmin Connect tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: garmin_response.access_token,
+            refresh_token: Some(garmin_response.refresh_token),
+            expires_at,
+        })
+    }
+
     async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
         let current = self.tokens.read().await.get(&platform).cloned();
 
@@ -546,6 +691,7 @@ impl OAuthHandler for DefaultOAuthHandler {
         let new_tokens = match platform {
             SyncPlatform::Strava => self.refresh_strava_token(&refresh, config).await?,
             SyncPlatform::TrainingPeaks => self.refresh_trainingpeaks_token(&refresh, config).await?,
+            SyncPlatform::GarminConnect => self.refresh_garmin_token(&refresh, config).await?,
             _ => {
                 return Err(SyncError::NotConfigured(platform));
             }
@@ -744,6 +890,99 @@ impl OAuthHandler for DefaultOAuthHandler {
         Ok(TokenResponse {
             access_token: tp_response.access_token,
             refresh_token: Some(tp_response.refresh_token),
+            expires_at,
+        })
+    }
+
+    /// Refresh tokens with Garmin Connect's OAuth endpoint
+    async fn refresh_garmin_token(
+        &self,
+        refresh_token: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::GarminConnect))?;
+
+        // Build the refresh token request
+        // Garmin Connect uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ];
+
+        tracing::debug!("Refreshing Garmin Connect access token");
+
+        let response = self
+            .http_client
+            .post(&self.garmin_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to send refresh token request: {}", e))
+            })?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Garmin OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<GarminOAuthErrorResponse>(&body) {
+                tracing::error!("Garmin Connect token refresh failed: {}", error_response);
+
+                // Check if the refresh token is invalid or expired
+                // Garmin uses standard OAuth2 error codes
+                let requires_reauth = error_response.error == "invalid_grant"
+                    || error_response.error == "invalid_token"
+                    || error_response.error == "unauthorized";
+
+                if requires_reauth {
+                    tracing::warn!(
+                        "Garmin Connect refresh token is invalid/expired, re-authorization required"
+                    );
+                    return Err(SyncError::AuthorizationRequired);
+                }
+
+                return Err(SyncError::RefreshFailed(format!(
+                    "Garmin Connect OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!(
+                "Garmin Connect token refresh failed with status {}: {}",
+                status,
+                body
+            );
+            return Err(SyncError::RefreshFailed(format!(
+                "Garmin Connect refresh failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let garmin_response: GarminTokenResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::RefreshFailed(format!("Failed to parse refresh response: {}", e))
+        })?;
+
+        // Garmin returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(garmin_response.expires_in);
+
+        tracing::info!(
+            "Successfully refreshed Garmin Connect tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: garmin_response.access_token,
+            refresh_token: Some(garmin_response.refresh_token),
             expires_at,
         })
     }
@@ -2109,6 +2348,428 @@ mod tests {
             assert!(auth_url.url.contains("state="));
             assert!(!auth_url.state.is_empty());
         }
+
+        // === Garmin Connect OAuth Tests ===
+
+        /// Helper to set up handler with mock server URL for Garmin Connect
+        async fn setup_garmin_handler_with_mock_server(
+            mock_server: &MockServer,
+        ) -> DefaultOAuthHandler {
+            let handler = DefaultOAuthHandler::with_all_token_urls(
+                8888,
+                STRAVA_TOKEN_URL.to_string(),
+                TRAININGPEAKS_TOKEN_URL.to_string(),
+                format!("{}/oauth/token", mock_server.uri()),
+            );
+
+            // Configure Garmin Connect OAuth
+            handler
+                .configure(
+                    SyncPlatform::GarminConnect,
+                    OAuthConfig {
+                        client_id: "garmin_client_id".to_string(),
+                        client_secret: Some("garmin_client_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["profile:read".to_string(), "activity:read".to_string(), "activity:write".to_string()],
+                    },
+                )
+                .await;
+
+            // Add a pending state for the callback
+            handler
+                .pending_states
+                .write()
+                .await
+                .insert("garmin_test_state".to_string(), SyncPlatform::GarminConnect);
+
+            handler
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_success() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for successful token exchange
+            // Garmin returns expires_in (seconds) like TrainingPeaks
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=authorization_code"))
+                .and(body_string_contains("code=garmin_auth_code"))
+                .and(body_string_contains("client_id=garmin_client_id"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "garmin_access_token_12345",
+                    "refresh_token": "garmin_refresh_token_67890",
+                    "expires_in": 21600  // 6 hours in seconds
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("garmin_auth_code", "garmin_test_state").await;
+
+            assert!(result.is_ok(), "Garmin Connect token exchange should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "garmin_access_token_12345");
+            assert_eq!(token.refresh_token, Some("garmin_refresh_token_67890".to_string()));
+            assert!(handler.is_authorized(SyncPlatform::GarminConnect));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_with_scope_response() {
+            let mock_server = MockServer::start().await;
+
+            // Test that optional scope field in response is handled correctly
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=authorization_code"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "garmin_access_scoped",
+                    "refresh_token": "garmin_refresh_scoped",
+                    "expires_in": 3600,
+                    "scope": "profile:read activity:write"  // Optional scope field
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("code", "garmin_test_state").await;
+
+            assert!(result.is_ok(), "Token exchange with scope should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "garmin_access_scoped");
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_invalid_code_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for error response (invalid authorization code)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "invalid_grant",
+                    "error_description": "The authorization code is invalid or expired."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("invalid_code", "garmin_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("invalid_grant"), "Error should contain error type");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_invalid_client_error() {
+            let mock_server = MockServer::start().await;
+
+            // Test invalid client credentials error
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                    "error": "invalid_client",
+                    "error_description": "Client authentication failed."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "garmin_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("invalid_client"), "Error should contain invalid_client");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_server_error() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock for server error (500)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "garmin_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("500"), "Error should contain status code");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_invalid_json_response() {
+            let mock_server = MockServer::start().await;
+
+            // Set up mock that returns invalid JSON
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            let result = handler.handle_callback("test_code", "garmin_test_state").await;
+
+            assert!(result.is_err());
+            match result {
+                Err(SyncError::ApiError(msg)) => {
+                    assert!(msg.contains("Failed to parse"), "Error should mention parsing failure");
+                }
+                _ => panic!("Expected ApiError, got {:?}", result),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_refresh_success() {
+            let mock_server = MockServer::start().await;
+
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .and(body_string_contains("refresh_token=garmin_original_refresh"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "token_type": "Bearer",
+                    "access_token": "garmin_new_access_token",
+                    "refresh_token": "garmin_new_refresh_token",
+                    "expires_in": 21600
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            // Set up existing tokens
+            handler.tokens.write().await.insert(
+                SyncPlatform::GarminConnect,
+                TokenResponse {
+                    access_token: "garmin_old_access".to_string(),
+                    refresh_token: Some("garmin_original_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1), // Expired
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::GarminConnect).await;
+
+            assert!(result.is_ok(), "Garmin Connect token refresh should succeed");
+            let token = result.unwrap();
+            assert_eq!(token.access_token, "garmin_new_access_token");
+            assert_eq!(token.refresh_token, Some("garmin_new_refresh_token".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_refresh_invalid_grant_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns error indicating refresh token is expired
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "invalid_grant",
+                    "error_description": "The refresh token is expired or revoked."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::GarminConnect,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("expired_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::GarminConnect).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_refresh_invalid_token_requires_reauth() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns invalid_token error
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "invalid_token",
+                    "error_description": "The token is invalid."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::GarminConnect,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("invalid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::GarminConnect).await;
+
+            assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_refresh_generic_error() {
+            let mock_server = MockServer::start().await;
+
+            // Mock returns a generic error
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error": "server_error",
+                    "error_description": "An internal error occurred."
+                })))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::GarminConnect,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("valid_refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::GarminConnect).await;
+
+            assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_refresh_server_error() {
+            let mock_server = MockServer::start().await;
+
+            // Test server error (503)
+            Mock::given(method("POST"))
+                .and(path("/oauth/token"))
+                .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let handler = setup_garmin_handler_with_mock_server(&mock_server).await;
+
+            handler.tokens.write().await.insert(
+                SyncPlatform::GarminConnect,
+                TokenResponse {
+                    access_token: "old_access".to_string(),
+                    refresh_token: Some("refresh".to_string()),
+                    expires_at: Utc::now() - Duration::hours(1),
+                },
+            );
+
+            let result = handler.refresh_token(SyncPlatform::GarminConnect).await;
+
+            assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+        }
+
+        #[tokio::test]
+        async fn test_garmin_start_authorization_builds_correct_url() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            handler
+                .configure(
+                    SyncPlatform::GarminConnect,
+                    OAuthConfig {
+                        client_id: "garmin_my_client_id".to_string(),
+                        client_secret: Some("garmin_my_secret".to_string()),
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["profile:read".to_string(), "activity:write".to_string()],
+                    },
+                )
+                .await;
+
+            let result = handler.start_authorization(SyncPlatform::GarminConnect).await;
+
+            assert!(result.is_ok());
+            let auth_url = result.unwrap();
+            // Garmin auth URL should NOT include scope parameter (it's not in the build_auth_url for Garmin)
+            assert!(auth_url.url.contains("client_id=garmin_my_client_id"));
+            assert!(auth_url.url.contains("connect.garmin.com"));
+            assert!(auth_url.url.contains("redirect_uri="));
+            assert!(auth_url.url.contains("state="));
+            assert!(auth_url.url.contains("response_type=code"));
+            // Garmin uses different auth URL format - scope is NOT included in auth URL
+            assert!(!auth_url.url.contains("scope="), "Garmin auth URL should not include scope parameter");
+            assert!(!auth_url.state.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_garmin_token_exchange_without_client_secret() {
+            let handler = DefaultOAuthHandler::new(8888);
+
+            // Configure without client secret
+            handler
+                .configure(
+                    SyncPlatform::GarminConnect,
+                    OAuthConfig {
+                        client_id: "garmin_client".to_string(),
+                        client_secret: None,  // No secret
+                        redirect_uri: "http://localhost:8888/callback".to_string(),
+                        scopes: vec!["profile:read".to_string()],
+                    },
+                )
+                .await;
+
+            handler
+                .pending_states
+                .write()
+                .await
+                .insert("test_state".to_string(), SyncPlatform::GarminConnect);
+
+            let result = handler.handle_callback("test_code", "test_state").await;
+
+            assert!(matches!(result, Err(SyncError::NotConfigured(SyncPlatform::GarminConnect))));
+        }
     }
 
     // === Credential Store Mock Tests ===
@@ -2433,6 +3094,122 @@ mod tests {
             let display = format!("{}", error);
             assert!(display.contains("invalid_client"));
             assert!(display.contains("client_id or client_secret"));
+        }
+
+        // === Garmin Connect Response Parsing Tests ===
+
+        #[test]
+        fn test_garmin_token_response_deserialization() {
+            // Garmin uses standard OAuth2 snake_case format with expires_in
+            let json = r#"{
+                "token_type": "Bearer",
+                "access_token": "garmin_abc123",
+                "refresh_token": "garmin_def456",
+                "expires_in": 21600
+            }"#;
+
+            let response: GarminTokenResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(response.access_token, "garmin_abc123");
+            assert_eq!(response.refresh_token, "garmin_def456");
+            assert_eq!(response.expires_in, 21600);
+            assert_eq!(response.token_type, "Bearer");
+        }
+
+        #[test]
+        fn test_garmin_token_response_with_optional_scope() {
+            // Garmin may return an optional scope field
+            let json = r#"{
+                "token_type": "Bearer",
+                "access_token": "garmin_access",
+                "refresh_token": "garmin_refresh",
+                "expires_in": 3600,
+                "scope": "profile:read activity:write"
+            }"#;
+
+            let response: GarminTokenResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(response.access_token, "garmin_access");
+            assert_eq!(response.scope, Some("profile:read activity:write".to_string()));
+        }
+
+        #[test]
+        fn test_garmin_token_response_without_scope() {
+            // Scope is optional - should work without it
+            let json = r#"{
+                "token_type": "Bearer",
+                "access_token": "garmin_access",
+                "refresh_token": "garmin_refresh",
+                "expires_in": 3600
+            }"#;
+
+            let response: GarminTokenResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(response.access_token, "garmin_access");
+            assert_eq!(response.scope, None);
+        }
+
+        #[test]
+        fn test_garmin_error_response_with_description() {
+            let json = r#"{
+                "error": "invalid_grant",
+                "error_description": "The authorization code is invalid or expired."
+            }"#;
+
+            let error: GarminOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "invalid_grant");
+            assert_eq!(error.error_description, Some("The authorization code is invalid or expired.".to_string()));
+
+            let display = format!("{}", error);
+            assert!(display.contains("invalid_grant"));
+            assert!(display.contains("The authorization code is invalid or expired."));
+        }
+
+        #[test]
+        fn test_garmin_error_response_without_description() {
+            // Some OAuth errors only have the error code
+            let json = r#"{"error": "server_error"}"#;
+
+            let error: GarminOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "server_error");
+            assert_eq!(error.error_description, None);
+            assert_eq!(format!("{}", error), "server_error");
+        }
+
+        #[test]
+        fn test_garmin_error_response_invalid_client() {
+            let json = r#"{
+                "error": "invalid_client",
+                "error_description": "Client authentication failed."
+            }"#;
+
+            let error: GarminOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "invalid_client");
+
+            let display = format!("{}", error);
+            assert!(display.contains("invalid_client"));
+            assert!(display.contains("Client authentication failed."));
+        }
+
+        #[test]
+        fn test_garmin_error_response_invalid_request() {
+            let json = r#"{
+                "error": "invalid_request",
+                "error_description": "The request is missing a required parameter."
+            }"#;
+
+            let error: GarminOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "invalid_request");
+            assert!(format!("{}", error).contains("invalid_request"));
+        }
+
+        #[test]
+        fn test_garmin_error_response_unauthorized() {
+            let json = r#"{
+                "error": "unauthorized",
+                "error_description": "Access denied."
+            }"#;
+
+            let error: GarminOAuthErrorResponse = serde_json::from_str(json).unwrap();
+            assert_eq!(error.error, "unauthorized");
+            assert!(format!("{}", error).contains("Access denied."));
         }
     }
 }

@@ -1,0 +1,20 @@
+{
+  "discovered_files": {
+    "src/integrations/sync/garmin.rs": {
+      "description": "HTTP mocked tests module uses wiremock for comprehensive API testing. Tests cover: 1) upload_activity with success/error/duplicate/rate-limit/forbidden/malformed-json scenarios, 2) get_user_profile with success/minimal/image-fallback/error scenarios, 3) deauthorize with success and various failure scenarios that still clear local token, 4) auto-refresh wrappers with token refresh success/failure scenarios. Total 43+ async tests in http_mocked_tests module.",
+      "category": "testing",
+      "discovered_at": "2026-01-04T15:41:06.442968+00:00"
+    },
+    "tests/integration/garmin_sync_test.rs": {
+      "description": "Comprehensive Garmin Connect integration tests using wiremock for HTTP mocking. Tests cover: OAuth flow (authorization, callback), upload flow (success, duplicate, rate limit, token expiry), profile fetch, disconnect/deauthorize, complete E2E scenarios, error categorization, token refresh, and FIT file validation. Contains 35+ async tests following the pattern established by sync_integration_test.rs.",
+      "category": "testing",
+      "discovered_at": "2026-01-04T15:55:09.753193+00:00"
+    },
+    "src/integrations/sync/mod.rs": {
+      "description": "Module re-exports required for integration tests. GarminUserProfile and KeyringCredentialStore must be exported from mod.rs for tests in tests/integration/garmin_sync_test.rs to compile. Module exports must match public API surface.",
+      "category": "module_exports",
+      "discovered_at": "2026-01-04T15:59:51.419588+00:00"
+    }
+  },
+  "last_updated": "2026-01-04T15:59:51.419588+00:00"
+}

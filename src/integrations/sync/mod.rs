@@ -15,7 +15,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 // Re-export main types
-pub use oauth::{CallbackResult, CredentialStore, OAuthCallbackServer, OAuthHandler};
+pub use garmin::{ErrorCategory, GarminClient, GarminUserProfile, SyncErrorExt};
+pub use oauth::{
+    CallbackResult, CredentialStore, KeyringCredentialStore, OAuthCallbackServer, OAuthHandler,
+};
 pub use service::{
     create_sync_service, create_sync_service_with_db, PlatformStatus, SyncEvent, SyncMessage,
     SyncService, SyncServiceHandle, UploadQueueEntry,

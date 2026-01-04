@@ -1,15 +1,15 @@
 {
   "active": true,
-  "spec": "012-complete-mqtt-smart-fan-control",
+  "spec": "016-garmin-connect-sync",
   "state": "building",
   "subtasks": {
-    "completed": 13,
-    "total": 27,
+    "completed": 32,
+    "total": 34,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Configuration Persistence & UI Integration",
+    "current": "Final Verification",
     "id": null,
     "total": 4
   },
@@ -19,7 +19,7 @@
   },
   "session": {
     "number": 13,
-    "started_at": "2026-01-04T16:25:09.254498"
+    "started_at": "2026-01-04T16:25:11.945862"
   },
-  "last_update": "2026-01-04T16:25:09.424914"
+  "last_update": "2026-01-04T17:05:30.791823"
 }
