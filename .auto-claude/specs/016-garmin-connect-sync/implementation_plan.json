@@ -208,8 +208,9 @@
           "file_paths": [
             "src/ui/screens/settings_garmin.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "The disconnected state UI was already implemented in subtask 4.1 as part of setting up all state render methods. This subtask verified and added tests for the implementation.\n\nThe render_disconnected_state() method renders:\n1. Information panel with:\n   - Garmin logo placeholder (\"G\" in GARMIN_BLUE color, size 64)\n   - \"Connect your Garmin account\" heading (size 18, strong)\n   - Description text about automatic uploads\n   - \"Connect to Garmin\" button (GARMIN_BLUE fill, white text, 200x44px)\n   - OAuth authorization note\n\n2. Features panel with:\n   - \"Automatic ride upload after each session\"\n   - \"Native FIT file format for complete data preservation\"\n   - \"Upload pending rides when back online\"\n   - \"Sync with Garmin's training ecosystem\"\n   - Each feature prefixed with bullet in GARMIN_BLUE color\n\n3. Garmin branding throughout:\n   - GARMIN_BLUE constant (rgb 0, 118, 206)\n   - Brand color on logo, buttons, bullets\n   - Header text in brand color\n\nAdded 3 new tests:\n- test_disconnected_state_features: verifies state and documents UI components\n- test_garmin_brand_color: verifies GARMIN_BLUE constant\n- test_disconnected_state_is_default: verifies default screen state",
+          "updated_at": "2026-01-04T13:44:58.308558+00:00"
         },
         {
           "id": "4.3",
@@ -218,8 +219,9 @@
           "file_paths": [
             "src/ui/screens/settings_garmin.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented connected state UI in GarminSettingsScreen with all required components:\\n\\n1. User profile section (render_connected_state lines 275-358):\\n   - Avatar with initials display (first 2 chars of readable_name)\\n   - Full name via profile.readable_name() method\\n   - Username with @ prefix (@display_name)\\n   - Green connected status indicator with checkmark\\n\\n2. Sync settings section (lines 362-407):\\n   - Auto-sync toggle checkbox (links to PlatformConfig.auto_sync)\\n   - Pending uploads count with orange highlight for non-zero values\\n   - Last sync timestamp display when available\\n\\n3. Disconnect button (lines 347-356):\\n   - Located in profile section header with right alignment\\n   - Returns GarminSettingsAction::Disconnect on click\\n   - Hover tooltip explains action\\n\\n4. Profile link section (lines 411-435):\\n   - Opens Garmin Connect profile URL in browser\\n   - Uses open::that() for cross-platform browser launch\\n\\nAdded 10 comprehensive tests covering all connected state functionality:\\n- Profile display, pending uploads, sync settings, last sync\\n- Disconnect action, auto-sync toggle action\\n- Profile initials generation, profile URL generation\\n- Complete state setup verification",
+          "updated_at": "2026-01-04T13:47:10.325470+00:00"
         },
         {
           "id": "4.4",
@@ -228,8 +230,9 @@
           "file_paths": [
             "src/ui/screens/settings_garmin.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "in_progress",
+          "notes": "Verifying existing implementation and adding comprehensive tests for connecting and disconnecting state UI",
+          "updated_at": "2026-01-04T13:48:34.380881+00:00"
         },
         {
           "id": "4.5",
@@ -439,5 +442,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:42:59.081453+00:00"
+  "last_updated": "2026-01-04T13:48:34.380881+00:00"
 }

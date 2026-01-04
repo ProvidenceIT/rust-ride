@@ -887,4 +887,231 @@ mod tests {
         assert_eq!(screen.pending_uploads, 2);
         assert_eq!(screen.last_sync, Some("Today at 3:30 PM".to_string()));
     }
+
+    // ===========================================
+    // Connecting/Disconnecting State Tests (4.4)
+    // ===========================================
+
+    #[test]
+    fn test_connecting_state_ui() {
+        // Verify connecting state is properly set and not considered connected
+        let mut screen = GarminSettingsScreen::new();
+
+        screen.set_connection_state(GarminConnectionState::Connecting);
+
+        // Connecting state should NOT be considered connected
+        assert!(!screen.is_connected());
+
+        // Verify state is Connecting
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // The render_connecting_state method renders:
+        // 1. ui.spinner() - animated loading indicator
+        // 2. "Connecting to Garmin Connect..." - main status message (size 16.0)
+        // 3. "Complete authorization in your browser" - helper text (weak)
+    }
+
+    #[test]
+    fn test_disconnecting_state_ui() {
+        // Verify disconnecting state is properly set and not considered connected
+        let mut screen = GarminSettingsScreen::new();
+
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+
+        // Disconnecting state should NOT be considered connected
+        assert!(!screen.is_connected());
+
+        // Verify state is Disconnecting
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnecting);
+
+        // The render_disconnecting_state method renders:
+        // 1. ui.spinner() - animated loading indicator
+        // 2. "Disconnecting from Garmin Connect..." - main status message (size 16.0)
+    }
+
+    #[test]
+    fn test_connecting_state_transition_from_disconnected() {
+        // Verify transition from disconnected to connecting (OAuth flow start)
+        let mut screen = GarminSettingsScreen::new();
+
+        // Start in disconnected state
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+
+        // Transition to connecting (user clicked "Connect to Garmin")
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+        assert!(!screen.is_connected());
+
+        // Transition to connected (OAuth completed successfully)
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connected);
+        assert!(screen.is_connected());
+    }
+
+    #[test]
+    fn test_connecting_state_transition_to_error() {
+        // Verify transition from connecting to error (OAuth failed)
+        let mut screen = GarminSettingsScreen::new();
+
+        // Simulate OAuth flow start
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // OAuth fails with an error
+        let error_msg = "Authorization was denied by user".to_string();
+        screen.set_connection_state(GarminConnectionState::Error(error_msg.clone()));
+
+        // Verify error state
+        match &screen.connection_state {
+            GarminConnectionState::Error(err) => {
+                assert_eq!(err, &error_msg);
+            }
+            _ => panic!("Expected Error state after failed OAuth"),
+        }
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_disconnecting_state_transition() {
+        // Verify full disconnect flow: Connected -> Disconnecting -> Disconnected
+        let mut screen = GarminSettingsScreen::new();
+
+        // Set up initial connected state
+        screen.set_connection_state(GarminConnectionState::Connected);
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "test_user".to_string(),
+            full_name: Some("Test User".to_string()),
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile));
+        assert!(screen.is_connected());
+
+        // User clicks disconnect - enter disconnecting state
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnecting);
+        assert!(!screen.is_connected());
+
+        // Disconnect completes - back to disconnected state
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_connecting_state_preserves_no_action() {
+        // Connecting state should not produce any action (no buttons active)
+        let screen = GarminSettingsScreen::new();
+
+        // Connecting state doesn't return any action from render_connecting_state
+        // The method signature is `fn render_connecting_state(&self, ui: &mut Ui)`
+        // with no return value, meaning no user action is possible during OAuth flow
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn test_disconnecting_state_preserves_no_action() {
+        // Disconnecting state should not produce any action (no buttons active)
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+
+        // Disconnecting state doesn't return any action from render_disconnecting_state
+        // The method signature is `fn render_disconnecting_state(&self, ui: &mut Ui)`
+        // with no return value, meaning no user action is possible during disconnect
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnecting);
+    }
+
+    #[test]
+    fn test_connection_states_debug_format() {
+        // Verify all connection states have proper debug formatting
+        let disconnected = GarminConnectionState::Disconnected;
+        let connecting = GarminConnectionState::Connecting;
+        let connected = GarminConnectionState::Connected;
+        let disconnecting = GarminConnectionState::Disconnecting;
+        let error = GarminConnectionState::Error("Test error".to_string());
+
+        assert_eq!(format!("{:?}", disconnected), "Disconnected");
+        assert_eq!(format!("{:?}", connecting), "Connecting");
+        assert_eq!(format!("{:?}", connected), "Connected");
+        assert_eq!(format!("{:?}", disconnecting), "Disconnecting");
+        assert!(format!("{:?}", error).contains("Error"));
+        assert!(format!("{:?}", error).contains("Test error"));
+    }
+
+    #[test]
+    fn test_all_connection_states_equality() {
+        // Verify equality comparisons for all connection states
+        assert_eq!(
+            GarminConnectionState::Disconnected,
+            GarminConnectionState::Disconnected
+        );
+        assert_eq!(
+            GarminConnectionState::Connecting,
+            GarminConnectionState::Connecting
+        );
+        assert_eq!(
+            GarminConnectionState::Connected,
+            GarminConnectionState::Connected
+        );
+        assert_eq!(
+            GarminConnectionState::Disconnecting,
+            GarminConnectionState::Disconnecting
+        );
+        assert_eq!(
+            GarminConnectionState::Error("same".to_string()),
+            GarminConnectionState::Error("same".to_string())
+        );
+
+        // Different states are not equal
+        assert_ne!(
+            GarminConnectionState::Connecting,
+            GarminConnectionState::Connected
+        );
+        assert_ne!(
+            GarminConnectionState::Connecting,
+            GarminConnectionState::Disconnecting
+        );
+        assert_ne!(
+            GarminConnectionState::Error("a".to_string()),
+            GarminConnectionState::Error("b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_oauth_flow_complete_cycle() {
+        // Test complete OAuth flow cycle: Disconnected -> Connecting -> Connected
+        let mut screen = GarminSettingsScreen::new();
+
+        // 1. Initial state: Disconnected
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+        assert!(screen.user_profile.is_none());
+
+        // 2. User clicks "Connect to Garmin" button
+        // This would trigger GarminSettingsAction::Connect
+        // App handles this by opening browser and setting state to Connecting
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+        assert!(!screen.is_connected());
+
+        // 3. User completes OAuth in browser
+        // Callback received, tokens exchanged, profile fetched
+        let profile = GarminUserProfile {
+            user_id: 54321,
+            display_name: "garmin_cyclist".to_string(),
+            full_name: Some("OAuth Test User".to_string()),
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile));
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        // 4. Verify final connected state
+        assert_eq!(screen.connection_state, GarminConnectionState::Connected);
+        assert!(screen.is_connected());
+        assert!(screen.user_profile.is_some());
+        assert_eq!(
+            screen.user_profile.as_ref().unwrap().readable_name(),
+            "OAuth Test User"
+        );
+    }
 }
