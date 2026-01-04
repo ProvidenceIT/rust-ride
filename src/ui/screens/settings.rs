@@ -92,6 +92,35 @@ impl Default for FanTestStatus {
     }
 }
 
+/// Status of weather location auto-detection.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GeolocationStatus {
+    /// No detection has been run
+    Idle,
+    /// Detection is currently running
+    Detecting,
+    /// Detection completed successfully
+    Success {
+        /// Success message (city name, etc.)
+        message: String,
+        /// Time the detection was completed
+        timestamp: std::time::Instant,
+    },
+    /// Detection failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the detection was completed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for GeolocationStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
 /// Settings screen state.
 pub struct SettingsScreen {
     /// Current user profile being edited
@@ -171,6 +200,10 @@ pub struct SettingsScreen {
     weather_lon_input: String,
     /// T100: Weather temperature override input buffer
     weather_temp_override_input: String,
+    /// Status of weather location auto-detection
+    pub geolocation_status: GeolocationStatus,
+    /// Flag indicating geolocation was requested
+    geolocation_requested: bool,
     /// T109: Sync/platform configuration
     pub sync_config: SyncConfig,
     /// T109: Show/hide sync section
@@ -549,6 +582,8 @@ pub enum SettingsAction {
     NavigateToStravaSettings,
     /// Navigate to TrainingPeaks settings screen
     NavigateToTrainingPeaksSettings,
+    /// Auto-detect weather location using IP geolocation
+    AutoDetectWeatherLocation,
 }
 
 impl SettingsScreen {
@@ -606,6 +641,8 @@ impl SettingsScreen {
             weather_lat_input: "0.0".to_string(),
             weather_lon_input: "0.0".to_string(),
             weather_temp_override_input: "20".to_string(),
+            geolocation_status: GeolocationStatus::Idle,
+            geolocation_requested: false,
             sync_config: SyncConfig::default(),
             show_sync: false,
             platform_states: vec![
@@ -661,6 +698,51 @@ impl SettingsScreen {
     /// Get current weather configuration.
     pub fn get_weather_config(&self) -> &WeatherConfig {
         &self.weather_config
+    }
+
+    /// Check if geolocation was requested.
+    pub fn was_geolocation_requested(&mut self) -> bool {
+        std::mem::take(&mut self.geolocation_requested)
+    }
+
+    /// Set geolocation status to detecting (in progress).
+    pub fn set_geolocation_detecting(&mut self) {
+        self.geolocation_status = GeolocationStatus::Detecting;
+    }
+
+    /// Set geolocation result with latitude, longitude, and optional city name.
+    /// Updates the weather config with the detected location.
+    pub fn set_geolocation_result(&mut self, latitude: f64, longitude: f64, city_name: Option<String>) {
+        // Update the config with detected coordinates
+        self.weather_config.latitude = latitude;
+        self.weather_config.longitude = longitude;
+        self.weather_config.city_name = city_name.clone();
+
+        // Update input buffers
+        self.weather_lat_input = format!("{:.4}", latitude);
+        self.weather_lon_input = format!("{:.4}", longitude);
+
+        // Set success status
+        let message = city_name.unwrap_or_else(|| format!("{:.4}, {:.4}", latitude, longitude));
+        self.geolocation_status = GeolocationStatus::Success {
+            message,
+            timestamp: std::time::Instant::now(),
+        };
+
+        self.has_changes = true;
+    }
+
+    /// Set geolocation error.
+    pub fn set_geolocation_error(&mut self, error: String) {
+        self.geolocation_status = GeolocationStatus::Failed {
+            message: error,
+            timestamp: std::time::Instant::now(),
+        };
+    }
+
+    /// Get the current geolocation status.
+    pub fn get_geolocation_status(&self) -> &GeolocationStatus {
+        &self.geolocation_status
     }
 
     /// Set MQTT configuration.
@@ -1062,6 +1144,13 @@ impl SettingsScreen {
         if self.hid_settings.learning_mode_cancel_requested {
             self.hid_settings.learning_mode_cancel_requested = false;
             return SettingsAction::StopLearningMode;
+        }
+
+        // Check if weather location auto-detect was requested
+        if self.geolocation_requested {
+            self.geolocation_requested = false;
+            self.geolocation_status = GeolocationStatus::Detecting;
+            return SettingsAction::AutoDetectWeatherLocation;
         }
 
         action
@@ -1504,17 +1593,38 @@ impl SettingsScreen {
                     ui.label(RichText::new("Location").strong());
                     ui.add_space(4.0);
 
+                    // Display city name if available
+                    if let Some(city_name) = &self.weather_config.city_name {
+                        if !city_name.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📍").size(14.0));
+                                ui.label(RichText::new(city_name).strong());
+                            });
+                            ui.add_space(4.0);
+                        }
+                    }
+
                     egui::Grid::new("weather_location_grid")
-                        .num_columns(2)
-                        .spacing([16.0, 8.0])
+                        .num_columns(3)
+                        .spacing([8.0, 8.0])
                         .show(ui, |ui| {
                             // Latitude
                             ui.label("Latitude:");
+                            let lat_valid = self.weather_lat_input.parse::<f64>()
+                                .map(|lat| (-90.0..=90.0).contains(&lat))
+                                .unwrap_or(false);
                             let lat_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.weather_lat_input)
-                                    .desired_width(100.0),
+                                    .desired_width(100.0)
+                                    .text_color(if lat_valid || self.weather_lat_input.is_empty() {
+                                        ui.visuals().text_color()
+                                    } else {
+                                        Color32::from_rgb(234, 67, 53)
+                                    }),
                             );
                             if lat_response.changed() {
+                                // Clear city name when manually editing coordinates
+                                self.weather_config.city_name = None;
                                 if let Ok(lat) = self.weather_lat_input.parse::<f64>() {
                                     if (-90.0..=90.0).contains(&lat) {
                                         self.weather_config.latitude = lat;
@@ -1522,15 +1632,31 @@ impl SettingsScreen {
                                     }
                                 }
                             }
+                            // Validation hint
+                            if !lat_valid && !self.weather_lat_input.is_empty() {
+                                ui.label(RichText::new("(-90 to 90)").weak().small());
+                            } else {
+                                ui.label("");
+                            }
                             ui.end_row();
 
                             // Longitude
                             ui.label("Longitude:");
+                            let lon_valid = self.weather_lon_input.parse::<f64>()
+                                .map(|lon| (-180.0..=180.0).contains(&lon))
+                                .unwrap_or(false);
                             let lon_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.weather_lon_input)
-                                    .desired_width(100.0),
+                                    .desired_width(100.0)
+                                    .text_color(if lon_valid || self.weather_lon_input.is_empty() {
+                                        ui.visuals().text_color()
+                                    } else {
+                                        Color32::from_rgb(234, 67, 53)
+                                    }),
                             );
                             if lon_response.changed() {
+                                // Clear city name when manually editing coordinates
+                                self.weather_config.city_name = None;
                                 if let Ok(lon) = self.weather_lon_input.parse::<f64>() {
                                     if (-180.0..=180.0).contains(&lon) {
                                         self.weather_config.longitude = lon;
@@ -1538,12 +1664,65 @@ impl SettingsScreen {
                                     }
                                 }
                             }
+                            // Validation hint
+                            if !lon_valid && !self.weather_lon_input.is_empty() {
+                                ui.label(RichText::new("(-180 to 180)").weak().small());
+                            } else {
+                                ui.label("");
+                            }
                             ui.end_row();
                         });
 
+                    ui.add_space(8.0);
+
+                    // Auto-detect location button
+                    ui.horizontal(|ui| {
+                        let is_detecting = matches!(self.geolocation_status, GeolocationStatus::Detecting);
+                        let button_text = if is_detecting {
+                            "🔄 Detecting..."
+                        } else {
+                            "📍 Auto-detect location"
+                        };
+
+                        if ui.add_enabled(!is_detecting, egui::Button::new(button_text))
+                            .on_hover_text("Detect your approximate location using IP geolocation")
+                            .clicked()
+                        {
+                            self.geolocation_requested = true;
+                        }
+
+                        // Show geolocation status
+                        match &self.geolocation_status {
+                            GeolocationStatus::Idle => {}
+                            GeolocationStatus::Detecting => {
+                                ui.spinner();
+                            }
+                            GeolocationStatus::Success { message, timestamp } => {
+                                // Show success message for 5 seconds
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new(format!("✓ {}", message))
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            GeolocationStatus::Failed { message, timestamp } => {
+                                // Show error message for 10 seconds
+                                if timestamp.elapsed().as_secs() < 10 {
+                                    ui.label(
+                                        RichText::new(format!("✗ {}", message))
+                                            .color(Color32::from_rgb(234, 67, 53))
+                                            .small(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+
                     ui.add_space(4.0);
                     ui.label(
-                        RichText::new("Tip: Search for your city on maps.google.com and copy coordinates from the URL")
+                        RichText::new("Or search for your city on maps.google.com and copy coordinates from the URL")
                             .weak()
                             .small(),
                     );

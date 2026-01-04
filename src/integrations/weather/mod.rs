@@ -51,6 +51,9 @@ pub struct WeatherConfig {
     pub latitude: f64,
     /// Longitude
     pub longitude: f64,
+    /// City/location name (optional, for display purposes)
+    #[serde(default)]
+    pub city_name: Option<String>,
     /// Temperature units
     pub units: WeatherUnits,
     /// Refresh interval in minutes
@@ -70,6 +73,7 @@ impl Default for WeatherConfig {
             api_key_configured: false,
             latitude: 0.0,
             longitude: 0.0,
+            city_name: None,
             units: WeatherUnits::Metric,
             refresh_interval_minutes: 30,
             override_enabled: false,
@@ -661,6 +665,7 @@ mod tests {
             api_key_configured: false,
             latitude: 0.0,
             longitude: 0.0,
+            city_name: None,
             units: WeatherUnits::Metric,
             refresh_interval_minutes: 30,
             override_enabled: true,
@@ -671,6 +676,26 @@ mod tests {
         assert!(config.override_enabled);
         assert_eq!(config.override_condition, Some(WeatherCondition::Rain));
         assert_eq!(config.override_temperature, Some(15.0));
+    }
+
+    #[test]
+    fn test_weather_config_city_name() {
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 40.7128,
+            longitude: -74.0060,
+            city_name: Some("New York".to_string()),
+            units: WeatherUnits::Imperial,
+            refresh_interval_minutes: 30,
+            override_enabled: false,
+            override_condition: None,
+            override_temperature: None,
+        };
+
+        assert_eq!(config.city_name, Some("New York".to_string()));
+        assert!((config.latitude - 40.7128).abs() < 0.0001);
+        assert!((config.longitude - (-74.0060)).abs() < 0.0001);
     }
 
     #[test]
