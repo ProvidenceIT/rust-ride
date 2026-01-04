@@ -41,6 +41,10 @@ pub mod training_plans;
 // Mobile Companion modules (Feature 014)
 pub mod companion;
 
+// Voice Control modules (Feature 018)
+#[cfg(feature = "voice-control")]
+pub mod voice;
+
 // Headless/CLI Mode modules (Feature 009)
 #[cfg(target_os = "linux")]
 pub mod cli;
