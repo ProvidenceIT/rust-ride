@@ -66,6 +66,7 @@ pub mod download;
 pub mod audio_input;
 pub mod recognizer;
 pub mod engine;
+pub mod command_parser;
 
 // Re-export main types
 pub use model_manager::{
@@ -85,4 +86,8 @@ pub use recognizer::{
 };
 pub use engine::{
     VoiceEngine, VoiceEngineConfig, VoiceEngineError, VoiceEngineEvent, VoiceEngineState,
+};
+pub use command_parser::{
+    CommandParser, ParseResult, levenshtein_distance, string_similarity,
+    DEFAULT_MIN_CONFIDENCE,
 };

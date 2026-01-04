@@ -34,7 +34,53 @@ pub enum VoiceCommand {
 
 impl VoiceCommand {
     /// Parse a recognized phrase into a command.
+    ///
+    /// This method uses fuzzy matching with Levenshtein distance to handle
+    /// common speech recognition errors and variations. It applies corrections
+    /// for known misrecognitions (e.g., "paws" -> "pause") and uses a default
+    /// minimum confidence threshold.
+    ///
+    /// For more control over matching, use `from_phrase_with_confidence()` or
+    /// `from_phrase_with_threshold()` from the `voice::command_parser` module.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use rustride::accessibility::voice_control::VoiceCommand;
+    ///
+    /// // Exact match
+    /// assert_eq!(VoiceCommand::from_phrase("pause"), VoiceCommand::Pause);
+    ///
+    /// // Misrecognition handling
+    /// assert_eq!(VoiceCommand::from_phrase("paws"), VoiceCommand::Pause);
+    ///
+    /// // Unknown command
+    /// matches!(VoiceCommand::from_phrase("xyz123"), VoiceCommand::Unknown(_));
+    /// ```
     pub fn from_phrase(phrase: &str) -> Self {
+        #[cfg(feature = "voice-control")]
+        {
+            use crate::voice::command_parser::CommandParser;
+
+            let parser = CommandParser::new();
+            match parser.parse(phrase) {
+                Some(result) => result.command,
+                None => VoiceCommand::Unknown(phrase.to_lowercase()),
+            }
+        }
+
+        #[cfg(not(feature = "voice-control"))]
+        {
+            // Fallback to simple matching when voice-control feature is not enabled
+            Self::from_phrase_simple(phrase)
+        }
+    }
+
+    /// Simple phrase matching without fuzzy matching support.
+    ///
+    /// This is used as a fallback when the voice-control feature is not enabled,
+    /// or for basic testing without the full command parser.
+    pub fn from_phrase_simple(phrase: &str) -> Self {
         let phrase = phrase.to_lowercase();
 
         // Match common phrases and variations
