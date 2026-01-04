@@ -3,13 +3,13 @@
   "spec": "012-complete-mqtt-smart-fan-control",
   "state": "building",
   "subtasks": {
-    "completed": 11,
+    "completed": 13,
     "total": 27,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "App Integration",
+    "current": "Configuration Persistence & UI Integration",
     "id": null,
     "total": 4
   },

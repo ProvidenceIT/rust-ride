@@ -16,9 +16,14 @@ use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use std::collections::HashMap;
 
 use crate::audio::{AlertCategory, AlertType, AudioConfig, VoiceInfo};
-use crate::ui::settings::{AudioSettingsAction, AudioSettingsPanel, AudioSettingsPanelConfig, AudioTestType};
-use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
+use crate::hid::{
+    get_default_mappings, ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus,
+};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, MqttCredentialStore, PayloadFormat};
+use crate::ui::settings::{
+    AudioSettingsAction, AudioSettingsPanel, AudioSettingsPanelConfig, AudioTestType,
+};
+
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
 use crate::integrations::weather::{WeatherConfig, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
@@ -438,17 +443,31 @@ impl HidSettings {
             .find(|c| &c.device_id == device_id)
     }
 
-    /// Get or create mutable config for a device
+    /// Get or create mutable config for a device.
+    ///
+    /// When creating a new config for a known device (e.g., Stream Deck),
+    /// default button mappings are automatically applied so users have
+    /// useful controls out of the box.
     pub fn get_or_create_device_config(&mut self, device: &HidDevice) -> &mut HidDeviceConfig {
         let device_id = device.id;
         if !self.device_configs.iter().any(|c| c.device_id == device_id) {
+            // Get default mappings for known devices (e.g., Stream Deck variants)
+            let default_mappings = get_default_mappings(device.vendor_id, device.product_id);
+            if !default_mappings.is_empty() {
+                tracing::info!(
+                    "Creating config for {} with {} default button mappings",
+                    device.name,
+                    default_mappings.len()
+                );
+            }
+
             self.device_configs.push(HidDeviceConfig {
                 device_id,
                 vendor_id: device.vendor_id,
                 product_id: device.product_id,
                 name: device.name.clone(),
                 enabled: true,
-                mappings: Vec::new(),
+                mappings: default_mappings,
             });
         }
         self.device_configs
@@ -659,7 +678,10 @@ impl SettingsScreen {
         // Try to load password from keyring if username is set
         self.mqtt_password_input = if let Some(username) = &config.username {
             if !username.is_empty() {
-                match self.mqtt_credential_store.get_password(username, &config.broker_host) {
+                match self
+                    .mqtt_credential_store
+                    .get_password(username, &config.broker_host)
+                {
                     Ok(Some(password)) => password,
                     Ok(None) => String::new(),
                     Err(e) => {
@@ -738,7 +760,11 @@ impl SettingsScreen {
     /// Update the current speed during fan testing.
     /// Called by app.rs during the test cycle.
     pub fn update_fan_test_speed(&mut self, speed: u8) {
-        if let FanTestStatus::Testing { ref mut current_speed, .. } = self.fan_test_status {
+        if let FanTestStatus::Testing {
+            ref mut current_speed,
+            ..
+        } = self.fan_test_status
+        {
             *current_speed = speed;
         }
     }
@@ -818,7 +844,10 @@ impl SettingsScreen {
     ///
     /// This should be called periodically from the main app to update
     /// the connected devices display in the settings panel.
-    pub fn set_companion_clients(&mut self, clients: Vec<crate::companion::types::CompanionClient>) {
+    pub fn set_companion_clients(
+        &mut self,
+        clients: Vec<crate::companion::types::CompanionClient>,
+    ) {
         self.companion_clients = clients;
     }
 
@@ -1741,7 +1770,11 @@ impl SettingsScreen {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
-                        .button(if self.show_audio_settings { "Hide" } else { "Show" })
+                        .button(if self.show_audio_settings {
+                            "Hide"
+                        } else {
+                            "Show"
+                        })
                         .clicked()
                     {
                         self.show_audio_settings = !self.show_audio_settings;
@@ -1775,11 +1808,15 @@ impl SettingsScreen {
                         }
                         AudioSettingsAction::ToggleMute => {
                             self.has_changes = true;
-                            result_action = Some(SettingsAction::AudioConfigChanged(self.audio_config.clone()));
+                            result_action = Some(SettingsAction::AudioConfigChanged(
+                                self.audio_config.clone(),
+                            ));
                         }
                         AudioSettingsAction::ToggleCategoryMute(_) => {
                             self.has_changes = true;
-                            result_action = Some(SettingsAction::AudioConfigChanged(self.audio_config.clone()));
+                            result_action = Some(SettingsAction::AudioConfigChanged(
+                                self.audio_config.clone(),
+                            ));
                         }
                     }
                 } else if response.settings_changed {
@@ -1874,21 +1911,22 @@ impl SettingsScreen {
                     ui.label("Voice:");
 
                     // Get the selected voice display text
-                    let selected_text = if let Some(ref voice_id) = self.audio_alert_settings.preferred_voice {
-                        // Find the voice name from available voices
-                        self.available_voices
-                            .iter()
-                            .find(|v| &v.id == voice_id)
-                            .map(|v| format!("{} ({})", v.name, v.language))
-                            .unwrap_or_else(|| voice_id.clone())
-                    } else {
-                        // Find the default voice
-                        self.available_voices
-                            .iter()
-                            .find(|v| v.is_default)
-                            .map(|v| format!("{} ({})", v.name, v.language))
-                            .unwrap_or_else(|| "System Default".to_string())
-                    };
+                    let selected_text =
+                        if let Some(ref voice_id) = self.audio_alert_settings.preferred_voice {
+                            // Find the voice name from available voices
+                            self.available_voices
+                                .iter()
+                                .find(|v| &v.id == voice_id)
+                                .map(|v| format!("{} ({})", v.name, v.language))
+                                .unwrap_or_else(|| voice_id.clone())
+                        } else {
+                            // Find the default voice
+                            self.available_voices
+                                .iter()
+                                .find(|v| v.is_default)
+                                .map(|v| format!("{} ({})", v.name, v.language))
+                                .unwrap_or_else(|| "System Default".to_string())
+                        };
 
                     egui::ComboBox::from_id_salt("voice_selection")
                         .selected_text(&selected_text)
@@ -1919,7 +1957,8 @@ impl SettingsScreen {
 
                                 let label = format!("{} ({})", voice.name, voice.language);
                                 if ui.selectable_label(is_selected, &label).clicked() {
-                                    self.audio_alert_settings.preferred_voice = Some(voice.id.clone());
+                                    self.audio_alert_settings.preferred_voice =
+                                        Some(voice.id.clone());
                                     self.has_changes = true;
                                 }
                             }
@@ -2045,9 +2084,11 @@ impl SettingsScreen {
                     ui.label(RichText::new("Voice vs. Sound per Alert Type").strong());
                     ui.add_space(4.0);
                     ui.label(
-                        RichText::new("Customize which alerts use voice announcements vs. sound effects")
-                            .size(12.0)
-                            .color(Color32::GRAY),
+                        RichText::new(
+                            "Customize which alerts use voice announcements vs. sound effects",
+                        )
+                        .size(12.0)
+                        .color(Color32::GRAY),
                     );
                     ui.add_space(8.0);
 
@@ -2823,18 +2864,18 @@ impl SettingsScreen {
                             // Test fan button
                             ui.horizontal(|ui| {
                                 // Determine if we can test (not already testing)
-                                let is_testing = matches!(self.fan_test_status, FanTestStatus::Testing { .. });
+                                let is_testing =
+                                    matches!(self.fan_test_status, FanTestStatus::Testing { .. });
 
                                 // Button - disabled while testing
-                                let button_text = if is_testing {
-                                    "Testing..."
-                                } else {
-                                    "Test Fan"
-                                };
+                                let button_text =
+                                    if is_testing { "Testing..." } else { "Test Fan" };
 
                                 let button = egui::Button::new(button_text);
-                                let button_response = ui.add_enabled(!is_testing, button)
-                                    .on_hover_text("Cycle through fan speeds to verify configuration");
+                                let button_response =
+                                    ui.add_enabled(!is_testing, button).on_hover_text(
+                                        "Cycle through fan speeds to verify configuration",
+                                    );
 
                                 if button_response.clicked() && !is_testing {
                                     // Store the request to be processed in show()
@@ -2851,24 +2892,47 @@ impl SettingsScreen {
                                     FanTestStatus::Idle => {
                                         // No message
                                     }
-                                    FanTestStatus::Testing { current_speed, profile_name } => {
+                                    FanTestStatus::Testing {
+                                        current_speed,
+                                        profile_name,
+                                    } => {
                                         ui.spinner();
-                                        ui.label(RichText::new(format!("Testing {} at {}%...", profile_name, current_speed)).weak());
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "Testing {} at {}%...",
+                                                profile_name, current_speed
+                                            ))
+                                            .weak(),
+                                        );
                                     }
                                     FanTestStatus::Success { message, timestamp } => {
                                         // Show success for 10 seconds, then fade
                                         let elapsed = timestamp.elapsed().as_secs();
                                         if elapsed < 10 {
-                                            ui.label(RichText::new("✓").color(Color32::from_rgb(52, 168, 83)));
-                                            ui.label(RichText::new(message).color(Color32::from_rgb(52, 168, 83)).small());
+                                            ui.label(
+                                                RichText::new("✓")
+                                                    .color(Color32::from_rgb(52, 168, 83)),
+                                            );
+                                            ui.label(
+                                                RichText::new(message)
+                                                    .color(Color32::from_rgb(52, 168, 83))
+                                                    .small(),
+                                            );
                                         }
                                     }
                                     FanTestStatus::Failed { message, timestamp } => {
                                         // Show failure for 30 seconds
                                         let elapsed = timestamp.elapsed().as_secs();
                                         if elapsed < 30 {
-                                            ui.label(RichText::new("✗").color(Color32::from_rgb(234, 67, 53)));
-                                            ui.label(RichText::new(message).color(Color32::from_rgb(234, 67, 53)).small());
+                                            ui.label(
+                                                RichText::new("✗")
+                                                    .color(Color32::from_rgb(234, 67, 53)),
+                                            );
+                                            ui.label(
+                                                RichText::new(message)
+                                                    .color(Color32::from_rgb(234, 67, 53))
+                                                    .small(),
+                                            );
                                         }
                                     }
                                 }
@@ -2963,10 +3027,8 @@ impl SettingsScreen {
                         .unwrap_or(false);
 
                     // T022: Check if this platform has a dedicated settings screen
-                    let has_settings_screen = matches!(
-                        platform,
-                        SyncPlatform::Strava | SyncPlatform::TrainingPeaks
-                    );
+                    let has_settings_screen =
+                        matches!(platform, SyncPlatform::Strava | SyncPlatform::TrainingPeaks);
 
                     ui.horizontal(|ui| {
                         // Platform name with icon
@@ -3006,7 +3068,9 @@ impl SettingsScreen {
                                 {
                                     match platform {
                                         SyncPlatform::Strava => navigate_to_strava = true,
-                                        SyncPlatform::TrainingPeaks => navigate_to_trainingpeaks = true,
+                                        SyncPlatform::TrainingPeaks => {
+                                            navigate_to_trainingpeaks = true
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -3018,10 +3082,7 @@ impl SettingsScreen {
                                             .color(Color32::from_rgb(52, 168, 83)),
                                     );
                                 } else {
-                                    ui.label(
-                                        RichText::new("Not connected")
-                                            .weak(),
-                                    );
+                                    ui.label(RichText::new("Not connected").weak());
                                 }
                             } else {
                                 // For other platforms, use inline connect/disconnect
@@ -3047,7 +3108,10 @@ impl SettingsScreen {
                                     }
                                 } else if ui
                                     .button("Connect")
-                                    .on_hover_text(format!("Connect to {}", platform.display_name()))
+                                    .on_hover_text(format!(
+                                        "Connect to {}",
+                                        platform.display_name()
+                                    ))
                                     .clicked()
                                 {
                                     tracing::info!("Connect to {:?}", platform);
@@ -3679,7 +3743,10 @@ impl SettingsScreen {
 
             // Master enable/disable toggle
             if ui
-                .checkbox(&mut self.companion_config.enabled, "Enable companion server")
+                .checkbox(
+                    &mut self.companion_config.enabled,
+                    "Enable companion server",
+                )
                 .on_hover_text("Allow mobile devices to connect and control workouts over LAN")
                 .changed()
             {
@@ -3733,9 +3800,8 @@ impl SettingsScreen {
                                             self.companion_config.port = port;
                                             self.error_message = None;
                                         } else {
-                                            self.error_message = Some(
-                                                "Port must be 1024 or higher".to_string(),
-                                            );
+                                            self.error_message =
+                                                Some("Port must be 1024 or higher".to_string());
                                         }
                                     }
                                 }
@@ -3769,7 +3835,10 @@ impl SettingsScreen {
 
                     // Require PIN toggle
                     if ui
-                        .checkbox(&mut self.companion_config.require_pin, "Require PIN to connect")
+                        .checkbox(
+                            &mut self.companion_config.require_pin,
+                            "Require PIN to connect",
+                        )
                         .on_hover_text("Mobile devices must enter a PIN to access workout controls")
                         .changed()
                     {
@@ -3789,11 +3858,7 @@ impl SettingsScreen {
                                         .color(Color32::from_rgb(66, 133, 244)),
                                 );
                             } else {
-                                ui.label(
-                                    RichText::new("------")
-                                        .monospace()
-                                        .color(Color32::GRAY),
-                                );
+                                ui.label(RichText::new("------").monospace().color(Color32::GRAY));
                             }
                             // T048: Regenerate PIN button
                             if ui
@@ -3828,7 +3893,8 @@ impl SettingsScreen {
                                     let quiet_zone = 2; // Quiet zone in modules
 
                                     // Reserve space for QR code with quiet zone
-                                    let total_size = qr_size + (quiet_zone as f32 * module_size * 2.0);
+                                    let total_size =
+                                        qr_size + (quiet_zone as f32 * module_size * 2.0);
                                     let (response, painter) = ui.allocate_painter(
                                         egui::vec2(total_size, total_size),
                                         egui::Sense::hover(),
@@ -3848,10 +3914,12 @@ impl SettingsScreen {
                                         for (x, &is_dark) in row.iter().enumerate() {
                                             if is_dark {
                                                 let module_rect = egui::Rect::from_min_size(
-                                                    rect.min + offset + egui::vec2(
-                                                        x as f32 * module_size,
-                                                        y as f32 * module_size,
-                                                    ),
+                                                    rect.min
+                                                        + offset
+                                                        + egui::vec2(
+                                                            x as f32 * module_size,
+                                                            y as f32 * module_size,
+                                                        ),
                                                     egui::vec2(module_size, module_size),
                                                 );
                                                 painter.rect_filled(
@@ -3926,8 +3994,7 @@ impl SettingsScreen {
                                 Color32::GRAY
                             };
                             ui.label(
-                                RichText::new(format!("({})", client_count))
-                                    .color(count_color),
+                                RichText::new(format!("({})", client_count)).color(count_color),
                             );
                         });
                         ui.add_space(4.0);
@@ -3967,17 +4034,23 @@ impl SettingsScreen {
                                             ui.vertical(|ui| {
                                                 // IP Address with auth status
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RichText::new(&client.remote_addr).strong());
+                                                    ui.label(
+                                                        RichText::new(&client.remote_addr).strong(),
+                                                    );
                                                     if client.is_authenticated {
                                                         ui.label(
                                                             RichText::new(" ✓ Authenticated")
-                                                                .color(Color32::from_rgb(52, 168, 83))
+                                                                .color(Color32::from_rgb(
+                                                                    52, 168, 83,
+                                                                ))
                                                                 .small(),
                                                         );
                                                     } else {
                                                         ui.label(
                                                             RichText::new(" ○ Pending auth")
-                                                                .color(Color32::from_rgb(251, 188, 4))
+                                                                .color(Color32::from_rgb(
+                                                                    251, 188, 4,
+                                                                ))
                                                                 .small(),
                                                         );
                                                     }
@@ -3986,15 +4059,20 @@ impl SettingsScreen {
                                                 // Connection details
                                                 ui.horizontal(|ui| {
                                                     ui.label(
-                                                        RichText::new(format!("Connected: {}", client.connected_at))
-                                                            .weak()
-                                                            .small(),
+                                                        RichText::new(format!(
+                                                            "Connected: {}",
+                                                            client.connected_at
+                                                        ))
+                                                        .weak()
+                                                        .small(),
                                                     );
                                                     if client.subscribed_to_metrics {
                                                         ui.add_space(8.0);
                                                         ui.label(
                                                             RichText::new("📊 Streaming metrics")
-                                                                .color(Color32::from_rgb(66, 133, 244))
+                                                                .color(Color32::from_rgb(
+                                                                    66, 133, 244,
+                                                                ))
                                                                 .small(),
                                                         );
                                                     }
@@ -4002,15 +4080,23 @@ impl SettingsScreen {
                                             });
 
                                             // Disconnect button on the right
-                                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                if ui
-                                                    .button(RichText::new("Disconnect").color(Color32::from_rgb(234, 67, 53)))
-                                                    .on_hover_text("Disconnect this device")
-                                                    .clicked()
-                                                {
-                                                    self.disconnect_companion_session_id = Some(client.session_id);
-                                                }
-                                            });
+                                            ui.with_layout(
+                                                Layout::right_to_left(Align::Center),
+                                                |ui| {
+                                                    if ui
+                                                        .button(
+                                                            RichText::new("Disconnect").color(
+                                                                Color32::from_rgb(234, 67, 53),
+                                                            ),
+                                                        )
+                                                        .on_hover_text("Disconnect this device")
+                                                        .clicked()
+                                                    {
+                                                        self.disconnect_companion_session_id =
+                                                            Some(client.session_id);
+                                                    }
+                                                },
+                                            );
                                         });
                                     });
 
@@ -4074,7 +4160,9 @@ impl SettingsScreen {
                         ui.label("1. Enable the companion server above");
                         ui.label("2. Open the RustRide companion app on your mobile device");
                         ui.label("3. Ensure both devices are on the same WiFi network");
-                        ui.label("4. The app will auto-discover this computer, or scan the QR code");
+                        ui.label(
+                            "4. The app will auto-discover this computer, or scan the QR code",
+                        );
                         if self.companion_config.require_pin {
                             ui.label("5. Enter the PIN shown above when prompted");
                         }
@@ -4382,7 +4470,10 @@ mod tests {
             .iter()
             .any(|(p, _)| *p == SyncPlatform::TrainingPeaks);
 
-        assert!(has_trainingpeaks, "TrainingPeaks should be in platform_states");
+        assert!(
+            has_trainingpeaks,
+            "TrainingPeaks should be in platform_states"
+        );
     }
 
     #[test]

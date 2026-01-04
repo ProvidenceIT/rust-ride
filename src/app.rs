@@ -19,7 +19,8 @@ use rustride::audio::{AudioEngine, DefaultAudioEngine};
 use rustride::companion::CompanionServer;
 use rustride::hid::{
     load_hid_config_from_db, save_hid_config_to_db, ButtonInputHandler, ButtonMapping,
-    DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, NavigationTarget,
+    DefaultButtonInputHandler, DefaultHidDeviceManager, ExecutorEvent, HidConfig, HidDeviceManager,
+    HidInputReader, NavigationTarget,
 };
 use rustride::integrations::mqtt::{
     DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttClient, MqttConfig,
@@ -125,9 +126,10 @@ pub struct RustRideApp {
     /// T091: HID device manager for USB buttons/Stream Deck (reserved for future use)
     #[allow(dead_code)]
     hid_device_manager: Arc<DefaultHidDeviceManager>,
-    /// T091: Button input handler for mapping (reserved for future use)
-    #[allow(dead_code)]
+    /// T091: Button input handler for mapping
     button_input_handler: Arc<DefaultButtonInputHandler>,
+    /// T091: HID input reader for reading button presses from devices
+    hid_input_reader: Arc<HidInputReader>,
     /// T091: Executor event receiver for UI navigation actions
     executor_event_rx: Option<tokio::sync::broadcast::Receiver<ExecutorEvent>>,
     /// Sensor event receiver
@@ -298,7 +300,27 @@ impl RustRideApp {
         let hid_device_manager = Arc::new(DefaultHidDeviceManager::new(hid_config.clone()));
         let button_input_handler = Arc::new(DefaultButtonInputHandler::new());
 
-        // T091: Register loaded button mappings with the handler
+        // T091: Create HID input reader with device handles and button handler
+        // This enables the button handler to receive real button presses from devices
+        let hid_input_reader = Arc::new(
+            HidInputReader::new(hid_device_manager.device_handles())
+                .with_button_handler(button_input_handler.clone()),
+        );
+
+        // T091: Start the HID input reader background task
+        {
+            let reader = hid_input_reader.clone();
+            let rt = tokio_runtime.clone();
+            rt.spawn(async move {
+                if let Err(e) = reader.start().await {
+                    tracing::error!("Failed to start HID input reader: {}", e);
+                } else {
+                    tracing::info!("HID input reader started");
+                }
+            });
+        }
+
+        // T091: Register loaded button mappings with the handler and open enabled devices
         for device_config in &hid_config.devices {
             if device_config.enabled {
                 let mappings: Vec<ButtonMapping> = device_config
@@ -314,6 +336,30 @@ impl RustRideApp {
                         device_config.name
                     );
                 }
+
+                // Open enabled devices and register with input reader
+                let device_id = device_config.device_id;
+                let vendor_id = device_config.vendor_id;
+                let product_id = device_config.product_id;
+                let device_name = device_config.name.clone();
+                let manager = hid_device_manager.clone();
+                let reader = hid_input_reader.clone();
+                let rt = tokio_runtime.clone();
+
+                rt.spawn(async move {
+                    // First try to scan for the device to ensure it's in the device list
+                    manager.scan_devices();
+
+                    match manager.open_device(&device_id).await {
+                        Ok(()) => {
+                            tracing::info!("Opened enabled device {} at startup", device_name);
+                            reader.register_device(device_id, vendor_id, product_id).await;
+                        }
+                        Err(e) => {
+                            tracing::debug!("Could not open device {} at startup: {} (device may not be connected)", device_name, e);
+                        }
+                    }
+                });
             }
         }
 
@@ -434,6 +480,7 @@ impl RustRideApp {
             streaming_config,
             hid_device_manager,
             button_input_handler,
+            hid_input_reader,
             executor_event_rx: Some(executor_event_rx),
             sensor_event_rx,
             last_update: Instant::now(),
@@ -1485,19 +1532,61 @@ impl eframe::App for RustRideApp {
                                     tracing::info!("HID config saved to database");
                                 }
 
-                                // Update button mappings in the handler
+                                // Update button mappings and open/close devices based on enabled status
                                 for device_config in &hid_config.devices {
-                                    // Clear existing mappings for this device
-                                    self.button_input_handler.clear_mappings(&device_config.device_id);
+                                    let device_id = device_config.device_id;
+                                    let is_open = self.hid_device_manager.is_open(&device_id);
 
-                                    // Register new mappings if device is enabled
-                                    if device_config.enabled && !device_config.mappings.is_empty() {
-                                        let mappings: Vec<ButtonMapping> = device_config
-                                            .mappings
-                                            .iter()
-                                            .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
-                                            .collect();
-                                        self.button_input_handler.register_mappings(&device_config.device_id, mappings);
+                                    // Clear existing mappings for this device
+                                    self.button_input_handler.clear_mappings(&device_id);
+
+                                    if device_config.enabled {
+                                        // Register new mappings if device is enabled
+                                        if !device_config.mappings.is_empty() {
+                                            let mappings: Vec<ButtonMapping> = device_config
+                                                .mappings
+                                                .iter()
+                                                .map(|m| ButtonMapping::new(device_id, m.button_code, m.action.clone()))
+                                                .collect();
+                                            self.button_input_handler.register_mappings(&device_id, mappings);
+                                        }
+
+                                        // Open device if not already open
+                                        if !is_open {
+                                            let manager = self.hid_device_manager.clone();
+                                            let reader = self.hid_input_reader.clone();
+                                            let vendor_id = device_config.vendor_id;
+                                            let product_id = device_config.product_id;
+                                            let device_name = device_config.name.clone();
+                                            let rt = self.tokio_runtime.clone();
+
+                                            rt.spawn(async move {
+                                                match manager.open_device(&device_id).await {
+                                                    Ok(()) => {
+                                                        tracing::info!("Opened device {} for button input", device_name);
+                                                        reader.register_device(device_id, vendor_id, product_id).await;
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!("Failed to open device {}: {}", device_name, e);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    } else if is_open {
+                                        // Close device if it's open but now disabled
+                                        let manager = self.hid_device_manager.clone();
+                                        let reader = self.hid_input_reader.clone();
+                                        let device_name = device_config.name.clone();
+                                        let rt = self.tokio_runtime.clone();
+
+                                        rt.spawn(async move {
+                                            reader.unregister_device(&device_id).await;
+                                            if let Err(e) = manager.close_device(&device_id).await {
+                                                tracing::warn!("Failed to close device {}: {}", device_name, e);
+                                            } else {
+                                                tracing::info!("Closed device {} (disabled)", device_name);
+                                            }
+                                        });
                                     }
                                 }
                             }
@@ -1542,6 +1631,35 @@ impl eframe::App for RustRideApp {
                         SettingsAction::StartLearningMode(device_id) => {
                             // T091: Start button learning mode for the specified device
                             tracing::info!("Starting button learning mode for device {:?}", device_id);
+
+                            // Ensure the device is open so we can read button presses
+                            if !self.hid_device_manager.is_open(&device_id) {
+                                // Try to open the device
+                                let manager = self.hid_device_manager.clone();
+                                let reader = self.hid_input_reader.clone();
+                                let rt = self.tokio_runtime.clone();
+
+                                // Get device info for registration
+                                if let Some(device) = self.hid_device_manager.get_device(&device_id) {
+                                    let vendor_id = device.vendor_id;
+                                    let product_id = device.product_id;
+                                    let device_name = device.name.clone();
+
+                                    rt.spawn(async move {
+                                        match manager.open_device(&device_id).await {
+                                            Ok(()) => {
+                                                tracing::info!("Opened device {} for learning mode", device_name);
+                                                // Register with input reader
+                                                reader.register_device(device_id, vendor_id, product_id).await;
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to open device for learning mode: {}", e);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+
                             self.button_input_handler.start_learning_mode(&device_id);
                         }
                         SettingsAction::StopLearningMode => {
