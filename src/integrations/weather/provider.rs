@@ -11,6 +11,12 @@ use tokio::sync::RwLock;
 /// HTTP request timeout in seconds
 const HTTP_TIMEOUT_SECS: u64 = 10;
 
+/// Initial backoff delay in seconds after first failure
+const INITIAL_BACKOFF_SECS: u64 = 60;
+
+/// Maximum backoff delay in seconds (15 minutes)
+const MAX_BACKOFF_SECS: u64 = 900;
+
 /// Trait for weather providers
 pub trait WeatherProvider: Send + Sync {
     /// Configure the provider
@@ -77,12 +83,23 @@ struct OwmSys {
     country: Option<String>,
 }
 
+/// Tracks error state for exponential backoff
+#[derive(Debug, Default)]
+struct ErrorState {
+    /// Time of last error
+    last_error_time: Option<DateTime<Utc>>,
+    /// Number of consecutive failures
+    consecutive_failures: u32,
+}
+
 /// Default weather provider using OpenWeatherMap
 pub struct OpenWeatherMapProvider {
     config: Arc<RwLock<WeatherConfig>>,
     api_key: Arc<RwLock<Option<String>>>,
     cached_data: Arc<RwLock<Option<WeatherData>>>,
     last_fetch: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Error state for exponential backoff
+    error_state: Arc<RwLock<ErrorState>>,
 }
 
 impl Default for OpenWeatherMapProvider {
@@ -99,6 +116,7 @@ impl OpenWeatherMapProvider {
             api_key: Arc::new(RwLock::new(None)),
             cached_data: Arc::new(RwLock::new(None)),
             last_fetch: Arc::new(RwLock::new(None)),
+            error_state: Arc::new(RwLock::new(ErrorState::default())),
         }
     }
 
@@ -267,23 +285,114 @@ impl OpenWeatherMapProvider {
             weather_data.condition
         );
 
-        // Cache the result
+        // Cache the result and reset error state on success
         *self.cached_data.write().await = Some(weather_data.clone());
         *self.last_fetch.write().await = Some(Utc::now());
+        self.record_success().await;
 
         Ok(weather_data)
     }
 
-    /// Check if cache is valid
+    /// Check if cache is valid (respects refresh_interval_minutes from config)
     async fn is_cache_valid(&self) -> bool {
         let config = self.config.read().await;
         let cached = self.cached_data.read().await;
 
         if let Some(data) = cached.as_ref() {
-            !data.is_stale(config.refresh_interval_minutes)
+            let is_fresh = !data.is_stale(config.refresh_interval_minutes);
+            if is_fresh {
+                tracing::trace!(
+                    refresh_interval = config.refresh_interval_minutes,
+                    fetched_at = %data.fetched_at,
+                    "Cache is still valid"
+                );
+            }
+            is_fresh
         } else {
             false
         }
+    }
+
+    /// Calculate exponential backoff delay based on consecutive failures.
+    /// Returns delay in seconds: 60, 120, 240, 480, 900 (capped at 15 min)
+    fn calculate_backoff_secs(consecutive_failures: u32) -> u64 {
+        if consecutive_failures == 0 {
+            return 0;
+        }
+        // Exponential backoff: initial_delay * 2^(failures-1)
+        // 60, 120, 240, 480, 960 -> capped at 900
+        let backoff = INITIAL_BACKOFF_SECS.saturating_mul(1 << (consecutive_failures - 1).min(10));
+        backoff.min(MAX_BACKOFF_SECS)
+    }
+
+    /// Check if we should retry based on exponential backoff
+    async fn should_retry(&self) -> bool {
+        let error_state = self.error_state.read().await;
+
+        // If no errors, always allow retry
+        if error_state.consecutive_failures == 0 {
+            return true;
+        }
+
+        let Some(last_error) = error_state.last_error_time else {
+            return true;
+        };
+
+        let backoff_secs = Self::calculate_backoff_secs(error_state.consecutive_failures);
+        let elapsed = (Utc::now() - last_error).num_seconds() as u64;
+
+        if elapsed >= backoff_secs {
+            tracing::debug!(
+                consecutive_failures = error_state.consecutive_failures,
+                backoff_secs = backoff_secs,
+                elapsed_secs = elapsed,
+                "Backoff period expired, allowing retry"
+            );
+            true
+        } else {
+            tracing::trace!(
+                consecutive_failures = error_state.consecutive_failures,
+                backoff_secs = backoff_secs,
+                elapsed_secs = elapsed,
+                remaining_secs = backoff_secs - elapsed,
+                "Still in backoff period"
+            );
+            false
+        }
+    }
+
+    /// Record a successful fetch, resetting error state
+    async fn record_success(&self) {
+        let mut error_state = self.error_state.write().await;
+        if error_state.consecutive_failures > 0 {
+            tracing::debug!(
+                previous_failures = error_state.consecutive_failures,
+                "Weather fetch succeeded, resetting error state"
+            );
+        }
+        error_state.last_error_time = None;
+        error_state.consecutive_failures = 0;
+    }
+
+    /// Record a failure for exponential backoff
+    async fn record_failure(&self, error: &WeatherError) {
+        let mut error_state = self.error_state.write().await;
+        error_state.consecutive_failures = error_state.consecutive_failures.saturating_add(1);
+        error_state.last_error_time = Some(Utc::now());
+
+        let next_backoff = Self::calculate_backoff_secs(error_state.consecutive_failures);
+        tracing::warn!(
+            error = %error,
+            consecutive_failures = error_state.consecutive_failures,
+            next_retry_in_secs = next_backoff,
+            "Weather API failure recorded, applying exponential backoff"
+        );
+    }
+
+    /// Get the current consecutive failure count (for testing/monitoring)
+    #[allow(dead_code)]
+    pub async fn consecutive_failures(&self) -> u32 {
+        self.error_state.read().await.consecutive_failures
     }
 }
 
@@ -295,19 +404,54 @@ impl WeatherProvider for OpenWeatherMapProvider {
     }
 
     async fn get_weather(&self) -> Result<WeatherData, WeatherError> {
-        // Check cache first
+        // Check cache first - respects refresh_interval_minutes
         if self.is_cache_valid().await {
             if let Some(data) = self.get_cached() {
+                tracing::trace!("Returning cached weather data");
                 return Ok(data);
             }
         }
 
+        // Check if we're in a backoff period due to previous failures
+        if !self.should_retry().await {
+            // If we have cached data (even stale), return it during backoff
+            if let Some(data) = self.get_cached() {
+                tracing::debug!(
+                    "Returning stale cached data during backoff period"
+                );
+                return Ok(data);
+            }
+            // No cached data available and in backoff - return error
+            return Err(WeatherError::NetworkError(
+                "In backoff period after previous failures".to_string(),
+            ));
+        }
+
         // Fetch fresh data
-        self.fetch_from_api().await
+        match self.fetch_from_api().await {
+            Ok(data) => Ok(data),
+            Err(error) => {
+                self.record_failure(&error).await;
+                Err(error)
+            }
+        }
     }
 
     async fn refresh(&self) -> Result<WeatherData, WeatherError> {
-        self.fetch_from_api().await
+        // Force refresh - check backoff but don't use cache
+        if !self.should_retry().await {
+            return Err(WeatherError::NetworkError(
+                "In backoff period after previous failures".to_string(),
+            ));
+        }
+
+        match self.fetch_from_api().await {
+            Ok(data) => Ok(data),
+            Err(error) => {
+                self.record_failure(&error).await;
+                Err(error)
+            }
+        }
     }
 
     fn is_available(&self) -> bool {
@@ -352,5 +496,71 @@ mod tests {
         let provider = OpenWeatherMapProvider::new();
         assert!(!provider.is_available());
         assert!(provider.get_cached().is_none());
+    }
+
+    #[test]
+    fn test_exponential_backoff_calculation() {
+        // No failures = no backoff
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(0), 0);
+
+        // First failure = 60 seconds (1 minute)
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(1), 60);
+
+        // Second failure = 120 seconds (2 minutes)
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(2), 120);
+
+        // Third failure = 240 seconds (4 minutes)
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(3), 240);
+
+        // Fourth failure = 480 seconds (8 minutes)
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(4), 480);
+
+        // Fifth failure = capped at 900 seconds (15 minutes)
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(5), 900);
+
+        // Further failures stay capped at 900 seconds
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(10), 900);
+        assert_eq!(OpenWeatherMapProvider::calculate_backoff_secs(100), 900);
+    }
+
+    #[tokio::test]
+    async fn test_error_state_tracking() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Initially no failures
+        assert_eq!(provider.consecutive_failures().await, 0);
+
+        // Record a failure
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+        assert_eq!(provider.consecutive_failures().await, 1);
+
+        // Record another failure
+        provider.record_failure(&error).await;
+        assert_eq!(provider.consecutive_failures().await, 2);
+
+        // Success resets failure count
+        provider.record_success().await;
+        assert_eq!(provider.consecutive_failures().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_should_retry_no_failures() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Should always retry when no failures
+        assert!(provider.should_retry().await);
+    }
+
+    #[tokio::test]
+    async fn test_should_retry_during_backoff() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Record a failure
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Should NOT retry immediately (within backoff period)
+        assert!(!provider.should_retry().await);
     }
 }
