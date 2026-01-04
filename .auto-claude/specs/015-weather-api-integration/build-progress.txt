@@ -28,7 +28,7 @@ Complete the weather provider HTTP implementation to fetch real weather data fro
 
 ### Phase 5: Testing (3 subtasks)
 - [x] 5.1 Add unit tests for HTTP parsing (25 min) ✅ Completed
-- [ ] 5.2 Add integration tests with wiremock (35 min)
+- [x] 5.2 Add integration tests with wiremock (35 min) ✅ Completed
 - [ ] 5.3 Add tests for fallback behavior (20 min)
 
 ### Phase 6: Documentation and Polish (3 subtasks)
@@ -79,6 +79,19 @@ Complete the weather provider HTTP implementation to fetch real weather data fro
   - Added 13 comprehensive condition code mapping tests covering all OWM code ranges
   - Added 4 URL building tests for metric/imperial units
   - Added 3 error handling tests for missing API key, zero coordinates, error display
+  - Manual verification required (cargo test not available in this environment)
+
+- ✅ **5.2 Completed**: Add integration tests with wiremock
+  - Added with_base_url() method to OpenWeatherMapProvider for testing with mock servers
+  - Created tests/integration/weather_api_test.rs with comprehensive wiremock tests:
+    - 6 successful weather fetch tests (clear, rain, thunderstorm, snow, fog, imperial units)
+    - 7 error response tests (rate limit 429, server errors 500/502/503, unauthorized 401, invalid JSON)
+    - 1 timeout test (slow response exceeds 10s timeout)
+    - 2 caching tests (cached response returned, cache vs API behavior)
+    - 4 condition code mapping tests (drizzle, heavy rain, cloudy variants, overcast)
+    - 2 fallback behavior tests (default on failure, stale cache on failure)
+    - 4 edge case tests (multiple conditions, missing optional fields, empty weather array, extremes)
+  - Total: 26 integration tests covering all acceptance criteria scenarios
   - Manual verification required (cargo test not available in this environment)
 
 ---

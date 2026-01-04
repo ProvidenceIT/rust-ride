@@ -93,6 +93,9 @@ struct ErrorState {
     consecutive_failures: u32,
 }
 
+/// Default API base URL for OpenWeatherMap
+const DEFAULT_API_BASE_URL: &str = "https://api.openweathermap.org";
+
 /// Default weather provider using OpenWeatherMap
 pub struct OpenWeatherMapProvider {
     config: Arc<RwLock<WeatherConfig>>,
@@ -101,6 +104,8 @@ pub struct OpenWeatherMapProvider {
     last_fetch: Arc<RwLock<Option<DateTime<Utc>>>>,
     /// Error state for exponential backoff
     error_state: Arc<RwLock<ErrorState>>,
+    /// Base URL for API requests (configurable for testing)
+    base_url: String,
 }
 
 impl Default for OpenWeatherMapProvider {
@@ -118,6 +123,22 @@ impl OpenWeatherMapProvider {
             cached_data: Arc::new(RwLock::new(None)),
             last_fetch: Arc::new(RwLock::new(None)),
             error_state: Arc::new(RwLock::new(ErrorState::default())),
+            base_url: DEFAULT_API_BASE_URL.to_string(),
+        }
+    }
+
+    /// Create a new provider with a custom base URL.
+    ///
+    /// This is primarily useful for testing with mock servers.
+    #[doc(hidden)]
+    pub fn with_base_url(base_url: String) -> Self {
+        Self {
+            config: Arc::new(RwLock::new(WeatherConfig::default())),
+            api_key: Arc::new(RwLock::new(None)),
+            cached_data: Arc::new(RwLock::new(None)),
+            last_fetch: Arc::new(RwLock::new(None)),
+            error_state: Arc::new(RwLock::new(ErrorState::default())),
+            base_url,
         }
     }
 
@@ -153,8 +174,8 @@ impl OpenWeatherMapProvider {
         };
 
         format!(
-            "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&units={}&appid={}",
-            config.latitude, config.longitude, units, api_key
+            "{}/data/2.5/weather?lat={}&lon={}&units={}&appid={}",
+            self.base_url, config.latitude, config.longitude, units, api_key
         )
     }
 
