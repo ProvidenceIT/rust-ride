@@ -2,9 +2,9 @@
   "feature": "Complete HID Device Support",
   "description": "Finish HID device enumeration and control for Stream Deck and USB button controllers. Enable configurable button mappings for workout control without touching keyboard/mouse.",
   "created_at": "2026-01-03T05:14:00.927Z",
-  "updated_at": "2026-01-03T06:00:00.000Z",
+  "updated_at": "2026-01-04T15:24:59.198Z",
   "status": "in_progress",
-  "planStatus": "approved",
+  "planStatus": "in_progress",
   "phases": [
     {
       "id": "phase-1",
@@ -294,7 +294,7 @@
           "id": "4.2",
           "title": "Complete settings screen device scanning",
           "description": "Wire the 'Scan for Devices' button in settings to trigger actual HID device scanning and update the device list.",
-          "status": "pending",
+          "status": "completed",
           "estimated_effort": "small",
           "files": [
             "src/ui/screens/settings.rs",
@@ -306,7 +306,8 @@
             "Status indicators reflect actual device state",
             "Newly detected devices can be enabled/disabled"
           ],
-          "notes": "UI code exists, needs to be connected to device manager."
+          "notes": "Verified that 'Scan for Devices' button wiring is complete:\n\n- settings.rs: \"Scan\" button (when no devices) and \"Refresh\" button (when devices present) both set scan_requested = true\n- settings.rs: show() method returns SettingsAction::ScanHidDevices when scan_requested is true\n- app.rs: Handles ScanHidDevices by calling hid_device_manager.scan_devices() which uses hidapi for real device enumeration\n- app.rs: Updates UI via settings_screen.set_hid_devices(devices)\n- settings.rs: Device list renders with status indicators (Detected/Opening/Open/Error/Disconnected)\n- settings.rs: Enable/disable checkbox for each device updates config\n\nAll acceptance criteria met:\n\u2705 Scan button triggers HidDeviceManager.scan_devices()\n\u2705 Device list UI updates with detected devices\n\u2705 Status indicators reflect actual device state\n\u2705 Newly detected devices can be enabled/disabled",
+          "updated_at": "2026-01-04T15:27:39.765709+00:00"
         },
         {
           "id": "4.3",
@@ -464,5 +465,6 @@
     "issues": "",
     "tests_passed": ""
   },
-  "last_updated": "2026-01-03T06:57:19.107692+00:00"
+  "last_updated": "2026-01-04T15:27:39.765709+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-04T14:58:06.859Z"
 }
