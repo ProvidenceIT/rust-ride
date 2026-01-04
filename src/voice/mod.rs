@@ -62,6 +62,8 @@
 //! - Linux: `~/.local/share/RustRide/vosk-model`
 
 pub mod model_manager;
+pub mod download;
 
 // Re-export main types
 pub use model_manager::{ModelState, VoskModelManager, VoskModelError};
+pub use download::{DownloadError, DownloadProgress, ModelDownloader, format_bytes};

@@ -93,8 +93,8 @@ crossbeam = "0.8"
 # Random number generation
 rand = "0.8"
 
-# HTTP Client (for ML cloud API)
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "multipart"], default-features = false }
+# HTTP Client (for ML cloud API and model downloads)
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "multipart", "stream"], default-features = false }
 
 # 3D Rendering & Math
 glam = { version = "0.27", features = ["serde"] }
@@ -125,6 +125,9 @@ dark-light = "1.1"
 
 # Voice Recognition (UX & Accessibility Feature - optional)
 vosk = { version = "0.3", optional = true }
+sha2 = { version = "0.10", optional = true }
+hex = { version = "0.4", optional = true }
+zip = { version = "0.6", optional = true }
 
 # Platform-specific disk space checking
 [target.'cfg(windows)'.dependencies]
@@ -143,7 +146,7 @@ signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 default = []
 video = []  # Enable video sync (requires FFmpeg)
 healthkit = []  # Enable Apple HealthKit (macOS only)
-voice-control = ["vosk"]  # Enable voice control (requires Vosk model)
+voice-control = ["vosk", "sha2", "hex", "zip"]  # Enable voice control (requires Vosk model)
 
 [dev-dependencies]
 tempfile = "3.0"

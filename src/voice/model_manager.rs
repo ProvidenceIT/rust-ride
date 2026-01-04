@@ -432,6 +432,165 @@ impl VoskModelManager {
 
         Ok(())
     }
+
+    /// Download and install the Vosk model.
+    ///
+    /// This method handles the complete download lifecycle:
+    /// 1. Download the model archive with progress tracking
+    /// 2. Verify the SHA256 checksum
+    /// 3. Extract the zip archive
+    /// 4. Move to final installation location
+    ///
+    /// Progress is reported via the callback function.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use rustride::voice::{VoskModelManager, DownloadProgress};
+    ///
+    /// let mut manager = VoskModelManager::new();
+    ///
+    /// manager.download_model(|progress| {
+    ///     if let Some(percent) = progress.percent() {
+    ///         println!("Progress: {}%", percent);
+    ///     }
+    /// }).await?;
+    /// ```
+    pub async fn download_model<F>(&mut self, progress_callback: F) -> Result<(), super::download::DownloadError>
+    where
+        F: Fn(super::download::DownloadProgress) + Send + Sync,
+    {
+        use super::download::{DownloadProgress, ModelDownloader};
+
+        // Check if already ready
+        if self.is_ready() {
+            tracing::info!("Model already installed, skipping download");
+            progress_callback(DownloadProgress::Complete);
+            return Ok(());
+        }
+
+        // Check if currently installing
+        if self.is_installing() {
+            tracing::warn!("Model download already in progress");
+            return Err(super::download::DownloadError::InstallationFailed(
+                "Download already in progress".to_string(),
+            ));
+        }
+
+        // Ensure base directory exists
+        self.ensure_directory()?;
+
+        let download_path = self.download_path();
+        let model_path = self.model_path();
+
+        // Create wrapper callback that updates our state
+        let progress_wrapper = |progress: DownloadProgress| {
+            match &progress {
+                DownloadProgress::Downloading { bytes_received, total_bytes } => {
+                    let percent = total_bytes
+                        .map(|total| if total > 0 { (bytes_received * 100 / total) as u8 } else { 0 })
+                        .unwrap_or(0);
+                    // Note: Can't update self.state here since we're in a closure
+                    tracing::trace!("Download progress: {}%", percent);
+                }
+                DownloadProgress::Extracting => {
+                    tracing::info!("Extracting model...");
+                }
+                DownloadProgress::Complete => {
+                    tracing::info!("Model installation complete");
+                }
+                DownloadProgress::Error(e) => {
+                    tracing::error!("Download error: {}", e);
+                }
+                _ => {}
+            }
+            progress_callback(progress);
+        };
+
+        // Update state to downloading
+        self.set_downloading(0);
+
+        let downloader = ModelDownloader::new();
+
+        // Perform download and installation
+        match downloader.download_and_install(&download_path, &model_path, progress_wrapper).await {
+            Ok(()) => {
+                self.set_ready();
+                Ok(())
+            }
+            Err(e) => {
+                self.set_error(e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Download the model with a channel-based progress receiver.
+    ///
+    /// This is useful when you need to receive progress updates asynchronously,
+    /// for example in a UI thread.
+    ///
+    /// Returns a receiver that will receive progress updates during the download.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use rustride::voice::VoskModelManager;
+    ///
+    /// let mut manager = VoskModelManager::new();
+    /// let mut rx = manager.download_model_with_channel().await?;
+    ///
+    /// while let Some(progress) = rx.recv().await {
+    ///     println!("Progress: {:?}", progress);
+    /// }
+    /// ```
+    pub async fn download_model_with_channel(
+        &mut self,
+    ) -> Result<tokio::sync::mpsc::Receiver<super::download::DownloadProgress>, super::download::DownloadError>
+    {
+        use super::download::{DownloadProgress, ModelDownloader};
+
+        // Check if already ready
+        if self.is_ready() {
+            tracing::info!("Model already installed, skipping download");
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let _ = tx.send(DownloadProgress::Complete).await;
+            return Ok(rx);
+        }
+
+        // Check if currently installing
+        if self.is_installing() {
+            return Err(super::download::DownloadError::InstallationFailed(
+                "Download already in progress".to_string(),
+            ));
+        }
+
+        // Ensure base directory exists
+        self.ensure_directory()?;
+
+        let download_path = self.download_path();
+        let model_path = self.model_path();
+
+        // Create progress channel
+        let (callback, rx) = ModelDownloader::create_progress_channel();
+
+        // Update state to downloading
+        self.set_downloading(0);
+
+        let downloader = ModelDownloader::new();
+
+        // Perform download and installation
+        match downloader.download_and_install(&download_path, &model_path, move |p| callback(p)).await {
+            Ok(()) => {
+                self.set_ready();
+                Ok(rx)
+            }
+            Err(e) => {
+                self.set_error(e.to_string());
+                Err(e)
+            }
+        }
+    }
 }
 
 impl Default for VoskModelManager {
