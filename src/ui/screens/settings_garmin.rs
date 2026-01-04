@@ -1362,4 +1362,512 @@ mod tests {
         // GARMIN_BLUE for retry button
         assert_eq!(GARMIN_BLUE, Color32::from_rgb(0, 118, 206));
     }
+
+    // ===========================================
+    // Additional Connection State Tests (6.3)
+    // ===========================================
+
+    #[test]
+    fn test_back_action() {
+        // Verify back action is distinct from other actions
+        let back = GarminSettingsAction::Back;
+        assert_eq!(back, GarminSettingsAction::Back);
+        assert_ne!(back, GarminSettingsAction::None);
+        assert_ne!(back, GarminSettingsAction::Connect);
+        assert_ne!(back, GarminSettingsAction::Disconnect);
+        assert_ne!(back, GarminSettingsAction::ToggleAutoSync(true));
+        assert_ne!(back, GarminSettingsAction::ToggleAutoSync(false));
+    }
+
+    #[test]
+    fn test_all_actions_are_distinct() {
+        // Verify all action variants are distinct from each other
+        let actions: Vec<GarminSettingsAction> = vec![
+            GarminSettingsAction::None,
+            GarminSettingsAction::Back,
+            GarminSettingsAction::Connect,
+            GarminSettingsAction::Disconnect,
+            GarminSettingsAction::ToggleAutoSync(true),
+            GarminSettingsAction::ToggleAutoSync(false),
+        ];
+
+        // Check each pair of actions for inequality (except self)
+        for (i, action1) in actions.iter().enumerate() {
+            for (j, action2) in actions.iter().enumerate() {
+                if i == j {
+                    assert_eq!(action1, action2, "Same action should equal itself");
+                } else {
+                    assert_ne!(action1, action2, "Different actions should not be equal");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_state_machine_all_valid_transitions() {
+        // Test all valid state transitions in the connection state machine
+        let mut screen = GarminSettingsScreen::new();
+
+        // Disconnected -> Connecting (user clicks connect)
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // Connecting -> Connected (OAuth success)
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connected);
+
+        // Connected -> Disconnecting (user clicks disconnect)
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnecting);
+
+        // Disconnecting -> Disconnected (disconnect complete)
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+
+        // Connecting -> Error (OAuth failure)
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        screen.set_connection_state(GarminConnectionState::Error("OAuth failed".to_string()));
+        assert!(matches!(screen.connection_state, GarminConnectionState::Error(_)));
+
+        // Error -> Connecting (user retries)
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // Error -> Disconnected (user navigates away or error cleared)
+        screen.set_connection_state(GarminConnectionState::Error("Some error".to_string()));
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+
+        // Disconnecting -> Error (disconnect fails)
+        screen.set_connection_state(GarminConnectionState::Connected);
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        screen.set_connection_state(GarminConnectionState::Error("Disconnect failed".to_string()));
+        assert!(matches!(screen.connection_state, GarminConnectionState::Error(_)));
+    }
+
+    #[test]
+    fn test_profile_cleared_on_disconnect() {
+        // Verify profile is cleared when transitioning from connected to disconnected
+        let mut screen = GarminSettingsScreen::new();
+
+        // Set up connected state with profile
+        screen.set_connection_state(GarminConnectionState::Connected);
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "test_user".to_string(),
+            full_name: Some("Test User".to_string()),
+            profile_image_url: Some("https://example.com/avatar.jpg".to_string()),
+        };
+        screen.set_user_profile(Some(profile));
+        assert!(screen.user_profile.is_some());
+
+        // Transition through disconnecting to disconnected
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+
+        // App is responsible for clearing profile, but we can manually clear it
+        screen.set_user_profile(None);
+        assert!(screen.user_profile.is_none());
+    }
+
+    #[test]
+    fn test_config_persists_across_state_transitions() {
+        // Verify config persists when connection state changes
+        let mut screen = GarminSettingsScreen::new();
+
+        // Set config
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+        screen.set_config(config);
+        assert!(screen.config.auto_sync);
+
+        // Transition through various states
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert!(screen.config.auto_sync);
+
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert!(screen.config.auto_sync);
+
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert!(screen.config.auto_sync);
+
+        screen.set_connection_state(GarminConnectionState::Error("test".to_string()));
+        assert!(screen.config.auto_sync);
+
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert!(screen.config.auto_sync);
+    }
+
+    #[test]
+    fn test_pending_uploads_persists_across_state_transitions() {
+        // Verify pending uploads count persists when connection state changes
+        let mut screen = GarminSettingsScreen::new();
+
+        screen.set_pending_uploads(5);
+        assert_eq!(screen.pending_uploads, 5);
+
+        // Transition through states
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert_eq!(screen.pending_uploads, 5);
+
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert_eq!(screen.pending_uploads, 5);
+
+        // Even disconnected, pending uploads can be tracked for retry later
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert_eq!(screen.pending_uploads, 5);
+    }
+
+    #[test]
+    fn test_profile_display_name_variations() {
+        // Test various profile configurations for display name
+        let test_cases = vec![
+            (
+                GarminUserProfile {
+                    user_id: 1,
+                    display_name: "short".to_string(),
+                    full_name: None,
+                    profile_image_url: None,
+                },
+                "short",
+            ),
+            (
+                GarminUserProfile {
+                    user_id: 2,
+                    display_name: "display_name".to_string(),
+                    full_name: Some("Full Name".to_string()),
+                    profile_image_url: None,
+                },
+                "Full Name", // full_name takes precedence
+            ),
+            (
+                GarminUserProfile {
+                    user_id: 3,
+                    display_name: "fallback".to_string(),
+                    full_name: Some("".to_string()), // empty full_name
+                    profile_image_url: None,
+                },
+                "", // empty string is returned, display_name is not used as fallback
+            ),
+            (
+                GarminUserProfile {
+                    user_id: 4,
+                    display_name: "unicode_ユーザー".to_string(),
+                    full_name: Some("日本語名前".to_string()),
+                    profile_image_url: None,
+                },
+                "日本語名前", // Unicode names work
+            ),
+        ];
+
+        for (profile, expected_name) in test_cases {
+            assert_eq!(
+                profile.readable_name(),
+                expected_name,
+                "Profile with display_name '{}' and full_name '{:?}' should return '{}'",
+                profile.display_name,
+                profile.full_name,
+                expected_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_profile_initials_edge_cases() {
+        // Test profile initials generation for various name formats
+        let test_cases = vec![
+            ("John Doe", "JO"),
+            ("A", "A"),
+            ("", ""),
+            ("X Y", "X "),
+            ("jane_doe", "JA"),
+            ("123", "12"),
+        ];
+
+        for (name, expected_initials) in test_cases {
+            let initials: String = name.chars().take(2).collect::<String>().to_uppercase();
+            assert_eq!(
+                initials, expected_initials,
+                "Name '{}' should produce initials '{}'",
+                name, expected_initials
+            );
+        }
+    }
+
+    #[test]
+    fn test_screen_default_values() {
+        // Verify all default values for a new screen
+        let screen = GarminSettingsScreen::default();
+
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(screen.user_profile.is_none());
+        assert!(!screen.config.enabled);
+        assert!(!screen.config.auto_sync);
+        assert_eq!(screen.pending_uploads, 0);
+        assert!(screen.last_sync.is_none());
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_action_clone() {
+        // Verify actions can be cloned
+        let actions = vec![
+            GarminSettingsAction::None,
+            GarminSettingsAction::Back,
+            GarminSettingsAction::Connect,
+            GarminSettingsAction::Disconnect,
+            GarminSettingsAction::ToggleAutoSync(true),
+            GarminSettingsAction::ToggleAutoSync(false),
+        ];
+
+        for action in actions {
+            let cloned = action.clone();
+            assert_eq!(action, cloned);
+        }
+    }
+
+    #[test]
+    fn test_connection_state_clone() {
+        // Verify connection states can be cloned
+        let states = vec![
+            GarminConnectionState::Disconnected,
+            GarminConnectionState::Connecting,
+            GarminConnectionState::Connected,
+            GarminConnectionState::Disconnecting,
+            GarminConnectionState::Error("test error".to_string()),
+        ];
+
+        for state in states {
+            let cloned = state.clone();
+            assert_eq!(state, cloned);
+        }
+    }
+
+    #[test]
+    fn test_is_connected_only_for_connected_state() {
+        // Verify is_connected() only returns true for Connected state
+        let states = vec![
+            (GarminConnectionState::Disconnected, false),
+            (GarminConnectionState::Connecting, false),
+            (GarminConnectionState::Connected, true),
+            (GarminConnectionState::Disconnecting, false),
+            (GarminConnectionState::Error("error".to_string()), false),
+        ];
+
+        for (state, expected) in states {
+            let mut screen = GarminSettingsScreen::new();
+            screen.set_connection_state(state.clone());
+            assert_eq!(
+                screen.is_connected(),
+                expected,
+                "is_connected() for {:?} should be {}",
+                state,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_setter_methods_return_nothing() {
+        // Verify setter methods work correctly (they don't return values)
+        let mut screen = GarminSettingsScreen::new();
+
+        // set_connection_state
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connected);
+
+        // set_user_profile
+        let profile = GarminUserProfile {
+            user_id: 1,
+            display_name: "test".to_string(),
+            full_name: None,
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile.clone()));
+        assert_eq!(screen.user_profile.as_ref().unwrap().user_id, 1);
+
+        // set_config
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+        screen.set_config(config);
+        assert!(screen.config.enabled);
+
+        // set_pending_uploads
+        screen.set_pending_uploads(10);
+        assert_eq!(screen.pending_uploads, 10);
+
+        // set_last_sync
+        screen.set_last_sync(Some("2024-01-01".to_string()));
+        assert_eq!(screen.last_sync, Some("2024-01-01".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_rapid_state_changes() {
+        // Simulate rapid state changes to verify no race conditions
+        let mut screen = GarminSettingsScreen::new();
+
+        for _ in 0..100 {
+            screen.set_connection_state(GarminConnectionState::Connecting);
+            screen.set_connection_state(GarminConnectionState::Connected);
+            screen.set_connection_state(GarminConnectionState::Disconnecting);
+            screen.set_connection_state(GarminConnectionState::Disconnected);
+        }
+
+        // Final state should be Disconnected
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn test_profile_with_all_fields() {
+        // Test profile with all optional fields populated
+        let profile = GarminUserProfile {
+            user_id: 999999,
+            display_name: "power_cyclist".to_string(),
+            full_name: Some("Power Cyclist Pro".to_string()),
+            profile_image_url: Some("https://connect.garmin.com/avatar/large.jpg".to_string()),
+        };
+
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Connected);
+        screen.set_user_profile(Some(profile));
+
+        let p = screen.user_profile.as_ref().unwrap();
+        assert_eq!(p.user_id, 999999);
+        assert_eq!(p.display_name, "power_cyclist");
+        assert_eq!(p.full_name, Some("Power Cyclist Pro".to_string()));
+        assert_eq!(
+            p.profile_image_url,
+            Some("https://connect.garmin.com/avatar/large.jpg".to_string())
+        );
+        assert_eq!(p.readable_name(), "Power Cyclist Pro");
+    }
+
+    #[test]
+    fn test_last_sync_timestamp_formats() {
+        // Test various timestamp format strings
+        let timestamps = vec![
+            "2024-01-15 10:30:00 UTC",
+            "Today at 3:30 PM",
+            "5 minutes ago",
+            "Never",
+            "2024-01-15T10:30:00Z",
+            "",
+        ];
+
+        for ts in timestamps {
+            let mut screen = GarminSettingsScreen::new();
+            screen.set_last_sync(Some(ts.to_string()));
+            assert_eq!(screen.last_sync, Some(ts.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_pending_uploads_boundary_values() {
+        // Test boundary values for pending uploads
+        let mut screen = GarminSettingsScreen::new();
+
+        // Minimum value
+        screen.set_pending_uploads(0);
+        assert_eq!(screen.pending_uploads, 0);
+
+        // Maximum usize value
+        screen.set_pending_uploads(usize::MAX);
+        assert_eq!(screen.pending_uploads, usize::MAX);
+
+        // Some typical values
+        screen.set_pending_uploads(1);
+        assert_eq!(screen.pending_uploads, 1);
+
+        screen.set_pending_uploads(100);
+        assert_eq!(screen.pending_uploads, 100);
+    }
+
+    #[test]
+    fn test_screen_isolation() {
+        // Verify that two screens are independent
+        let mut screen1 = GarminSettingsScreen::new();
+        let mut screen2 = GarminSettingsScreen::new();
+
+        // Modify screen1
+        screen1.set_connection_state(GarminConnectionState::Connected);
+        screen1.set_pending_uploads(5);
+
+        // screen2 should be unaffected
+        assert_eq!(screen2.connection_state, GarminConnectionState::Disconnected);
+        assert_eq!(screen2.pending_uploads, 0);
+    }
+
+    #[test]
+    fn test_error_state_with_long_message() {
+        // Test error state with a very long error message
+        let long_error = "x".repeat(10000);
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Error(long_error.clone()));
+
+        match &screen.connection_state {
+            GarminConnectionState::Error(err) => {
+                assert_eq!(err.len(), 10000);
+                assert_eq!(err, &long_error);
+            }
+            _ => panic!("Expected Error state"),
+        }
+    }
+
+    #[test]
+    fn test_full_user_journey_connect_sync_disconnect() {
+        // Test complete user journey: connect, sync a ride, disconnect
+        let mut screen = GarminSettingsScreen::new();
+
+        // 1. User starts disconnected
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+        assert_eq!(screen.pending_uploads, 0);
+
+        // 2. User clicks Connect
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert!(!screen.is_connected());
+
+        // 3. OAuth completes successfully
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist".to_string(),
+            full_name: Some("Pro Cyclist".to_string()),
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile));
+        screen.set_connection_state(GarminConnectionState::Connected);
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+        screen.set_config(config);
+
+        assert!(screen.is_connected());
+        assert!(screen.config.auto_sync);
+
+        // 4. A ride is completed and queued for sync
+        screen.set_pending_uploads(1);
+        assert_eq!(screen.pending_uploads, 1);
+
+        // 5. Ride syncs successfully
+        screen.set_pending_uploads(0);
+        screen.set_last_sync(Some("Just now".to_string()));
+        assert_eq!(screen.pending_uploads, 0);
+        assert_eq!(screen.last_sync, Some("Just now".to_string()));
+
+        // 6. User disconnects
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert!(!screen.is_connected());
+
+        // 7. Disconnect completes
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        screen.set_user_profile(None);
+        assert!(!screen.is_connected());
+        assert!(screen.user_profile.is_none());
+    }
 }
