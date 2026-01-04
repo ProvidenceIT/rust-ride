@@ -10,6 +10,7 @@ A cross-platform indoor cycling application built in Rust with real-time sensor 
 - **Structured Workouts** - Import and execute workouts from ZWO (Zwift) and MRC/ERG formats
 - **ERG Mode** - Automatic resistance control to match target power during workouts
 - **Voice Alerts** - Text-to-speech announcements for interval changes, countdowns, and workout events
+- **Voice Control** - Hands-free workout control via offline Vosk speech recognition (optional feature)
 - **Ride Recording** - Automatic recording with pause detection and lap markers
 - **Strava Sync** - Automatic upload to Strava with OAuth authentication, token refresh, and retry support
 - **Export Formats** - Export rides to FIT, TCX, and CSV for upload to TrainingPeaks, Garmin Connect, etc.
@@ -125,6 +126,84 @@ sudo pacman -S speech-dispatcher espeak-ng
 - **Voice Availability**: Available voices depend on the system language packs installed
 - **Linux Virtual Environments**: TTS may not work in Docker containers or VMs without proper audio passthrough configuration
 - **Simultaneous Speech**: Only one voice announcement plays at a time; high-priority alerts (interval changes) interrupt lower-priority ones
+
+## Voice Control (Optional Feature)
+
+RustRide supports hands-free workout control using offline voice recognition powered by [Vosk](https://alphacephei.com/vosk/). This is an optional feature that must be enabled at compile time.
+
+### Enabling Voice Control
+
+Build RustRide with the `voice-control` feature:
+
+```bash
+cargo build --release --features voice-control
+```
+
+On first use, a Vosk speech model (~50MB) will be downloaded automatically.
+
+### Supported Voice Commands
+
+| Command | Phrases | Action |
+|---------|---------|--------|
+| Pause | "pause", "stop", "hold" | Pause the current ride/workout |
+| Resume | "resume", "continue", "unpause" | Resume paused activity |
+| Skip | "skip", "next interval", "skip interval" | Skip to next workout interval |
+| End | "end workout", "finish", "done" | End the current workout |
+| Take Lap | "take lap", "lap", "mark lap" | Mark a lap |
+| Status | "status", "how am I doing" | Announce current metrics |
+
+Commands also work with common misrecognitions (e.g., "paws" → pause, "resoom" → resume).
+
+### Activation Modes
+
+Voice control can be activated in three ways:
+
+1. **Wake Word** - Say "Hey Rust Ride" or "OK Ride" to begin listening for 5 seconds
+2. **Push-to-Talk** - Hold the F4 key (configurable) while speaking
+3. **Always Listening** - Continuously listen for commands (higher battery usage)
+
+Configure the activation mode in **Settings > Voice Control**.
+
+### Audio Feedback
+
+When a command is recognized:
+- An audio tone confirms recognition
+- TTS speaks the action (e.g., "Pausing")
+- A visual indicator shows the recognized text
+
+### Platform Requirements
+
+#### Windows
+- Microphone access (Settings > Privacy > Microphone)
+- Audio input device
+
+#### macOS
+- Microphone permission (System Preferences > Security & Privacy > Microphone)
+- Audio input device
+
+#### Linux
+```bash
+# Install audio capture dependencies
+sudo apt install libasound2-dev  # ALSA
+# or
+sudo apt install libpulse-dev     # PulseAudio
+
+# Ensure user has audio group membership
+sudo usermod -aG audio $USER
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "No microphone found" | Check microphone is connected and permissions are granted |
+| Model download fails | Verify internet connection; check disk space (~100MB needed) |
+| Commands not recognized | Speak clearly; check microphone volume; try push-to-talk mode |
+| Recognition timeout | Speak within 5 seconds of wake word; try push-to-talk mode |
+
+### Privacy
+
+All voice recognition happens **locally** on your device using the Vosk engine. No audio is ever sent to the cloud. The downloaded model runs entirely offline.
 
 ## Quick Start
 
@@ -271,6 +350,16 @@ src/
 │   ├── engine.rs       # Audio engine with priority queue
 │   ├── cues.rs         # Message templates for workout announcements
 │   └── workout_bridge.rs # Bridges workout events to audio alerts
+├── voice/              # Voice control (optional: voice-control feature)
+│   ├── model_manager.rs # Vosk model download and initialization
+│   ├── audio_input.rs  # Microphone capture via cpal
+│   ├── recognizer.rs   # Vosk speech recognition wrapper
+│   ├── engine.rs       # Voice recognition pipeline
+│   ├── command_parser.rs # Fuzzy command matching
+│   ├── wake_word.rs    # Wake word detection
+│   ├── push_to_talk.rs # Push-to-talk activation
+│   ├── feedback.rs     # Audio feedback for voice events
+│   └── error.rs        # User-friendly error handling
 ├── sensors/            # Bluetooth sensor management and FTMS parsing
 ├── metrics/            # Real-time metrics calculation and zones
 ├── recording/          # Ride recording and export (TCX, CSV)

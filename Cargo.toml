@@ -147,7 +147,16 @@ signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 default = []
 video = []  # Enable video sync (requires FFmpeg)
 healthkit = []  # Enable Apple HealthKit (macOS only)
-voice-control = ["vosk", "sha2", "hex", "zip", "cpal"]  # Enable voice control (requires Vosk model)
+
+# Voice Control Feature (Feature 018)
+# Enables offline voice control using Vosk speech recognition for hands-free workout control.
+# Commands: 'pause', 'resume', 'skip interval', 'end workout', 'take lap', 'status'
+# Activation modes: Wake word ("Hey Rust Ride"), Push-to-talk (F4 key), Always listening
+# Requirements:
+#   - Vosk model (~50MB) downloaded on first use
+#   - Microphone access for audio capture (via cpal)
+# Build: cargo build --features voice-control
+voice-control = ["vosk", "sha2", "hex", "zip", "cpal"]
 
 [dev-dependencies]
 tempfile = "3.0"
