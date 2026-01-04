@@ -17,9 +17,40 @@
 //! - Windows: `%APPDATA%\RustRide\vosk-model`
 //! - macOS: `~/Library/Application Support/RustRide/vosk-model`
 //! - Linux: `~/.local/share/RustRide/vosk-model`
+//!
+//! ## State Machine
+//!
+//! The model lifecycle follows this state machine:
+//!
+//! ```text
+//!                    ┌─────────────┐
+//!                    │ Uninitialized│
+//!                    └──────┬──────┘
+//!                           │ check_state()
+//!                    ┌──────▼──────┐
+//!              ┌─────│ NotInstalled │
+//!              │     └──────┬──────┘
+//!              │            │ start_download()
+//!              │     ┌──────▼──────┐
+//!              │     │ Downloading  │◄───────┐
+//!              │     │  (progress)  │        │ resume
+//!              │     └──────┬──────┘        │
+//!              │            │ download complete
+//!              │     ┌──────▼──────┐        │
+//!              │     │  Extracting  │        │
+//!              │     └──────┬──────┘        │
+//!              │            │               │
+//!     ┌────────▼────────────▼───────────────┴──┐
+//!     │                                         │
+//! ┌───▼───┐                                 ┌───▼───┐
+//! │ Error │                                 │ Ready │
+//! └───────┘                                 └───────┘
+//! ```
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 /// Default model name for English (US) recognition.
 pub const DEFAULT_MODEL_NAME: &str = "vosk-model-small-en-us-0.15";
@@ -104,6 +135,136 @@ impl std::fmt::Display for ModelState {
             ModelState::Error => write!(f, "Error"),
         }
     }
+}
+
+/// Events emitted during model lifecycle transitions.
+///
+/// These events are designed for UI progress updates and can be sent
+/// through a channel for async handling.
+#[derive(Debug, Clone)]
+pub enum ModelLifecycleEvent {
+    /// State has transitioned to a new value.
+    StateChanged {
+        /// The previous state.
+        from: ModelState,
+        /// The new current state.
+        to: ModelState,
+    },
+
+    /// Download progress has been updated.
+    DownloadProgress {
+        /// Bytes downloaded so far.
+        bytes_received: u64,
+        /// Total bytes to download (if known).
+        total_bytes: Option<u64>,
+        /// Progress percentage (0-100).
+        percent: u8,
+    },
+
+    /// Extraction progress (file count based).
+    ExtractionProgress {
+        /// Number of files extracted so far.
+        files_extracted: u32,
+        /// Total number of files (if known).
+        total_files: Option<u32>,
+    },
+
+    /// Download is being resumed from a partial file.
+    DownloadResuming {
+        /// Bytes already downloaded in the partial file.
+        bytes_already_downloaded: u64,
+    },
+
+    /// Model installation completed successfully.
+    InstallationComplete {
+        /// Path where the model was installed.
+        model_path: PathBuf,
+    },
+
+    /// An error occurred during the lifecycle.
+    Error {
+        /// The error message.
+        message: String,
+        /// Whether the error is recoverable (can retry).
+        recoverable: bool,
+    },
+}
+
+impl ModelLifecycleEvent {
+    /// Check if this is an error event.
+    pub fn is_error(&self) -> bool {
+        matches!(self, ModelLifecycleEvent::Error { .. })
+    }
+
+    /// Check if this is a completion event.
+    pub fn is_complete(&self) -> bool {
+        matches!(self, ModelLifecycleEvent::InstallationComplete { .. })
+    }
+
+    /// Get the progress percentage if this is a progress event.
+    pub fn progress_percent(&self) -> Option<u8> {
+        match self {
+            ModelLifecycleEvent::DownloadProgress { percent, .. } => Some(*percent),
+            ModelLifecycleEvent::StateChanged { to: ModelState::Downloading { progress_percent }, .. } => {
+                Some(*progress_percent)
+            }
+            ModelLifecycleEvent::StateChanged { to: ModelState::Extracting, .. } => Some(95),
+            ModelLifecycleEvent::StateChanged { to: ModelState::Ready, .. } => Some(100),
+            ModelLifecycleEvent::InstallationComplete { .. } => Some(100),
+            _ => None,
+        }
+    }
+
+    /// Get a human-readable status message for this event.
+    pub fn status_message(&self) -> String {
+        match self {
+            ModelLifecycleEvent::StateChanged { to, .. } => to.to_string(),
+            ModelLifecycleEvent::DownloadProgress { percent, bytes_received, total_bytes } => {
+                if let Some(total) = total_bytes {
+                    format!(
+                        "Downloading: {}% ({} / {})",
+                        percent,
+                        super::download::format_bytes(*bytes_received),
+                        super::download::format_bytes(*total)
+                    )
+                } else {
+                    format!(
+                        "Downloading: {} received",
+                        super::download::format_bytes(*bytes_received)
+                    )
+                }
+            }
+            ModelLifecycleEvent::ExtractionProgress { files_extracted, total_files } => {
+                if let Some(total) = total_files {
+                    format!("Extracting: {}/{} files", files_extracted, total)
+                } else {
+                    format!("Extracting: {} files", files_extracted)
+                }
+            }
+            ModelLifecycleEvent::DownloadResuming { bytes_already_downloaded } => {
+                format!(
+                    "Resuming download from {}",
+                    super::download::format_bytes(*bytes_already_downloaded)
+                )
+            }
+            ModelLifecycleEvent::InstallationComplete { .. } => "Model installed successfully".to_string(),
+            ModelLifecycleEvent::Error { message, .. } => format!("Error: {}", message),
+        }
+    }
+}
+
+/// Callback type for receiving lifecycle events.
+pub type LifecycleEventCallback = Arc<dyn Fn(ModelLifecycleEvent) + Send + Sync>;
+
+/// Information about a partial/interrupted download.
+#[derive(Debug, Clone)]
+pub struct PartialDownloadInfo {
+    /// Path to the partial download file.
+    pub path: PathBuf,
+    /// Size of the partial file in bytes.
+    pub bytes_downloaded: u64,
+    /// Whether the partial file appears valid for resumption.
+    pub can_resume: bool,
 }
 
 /// Information about the installed model.
@@ -388,6 +549,20 @@ impl VoskModelManager {
         self.state = ModelState::Error;
     }
 
+    /// Reset the state to NotInstalled.
+    ///
+    /// This is useful for cancelling a download or retrying after an error.
+    pub fn reset_to_not_installed(&mut self) {
+        self.state = ModelState::NotInstalled;
+    }
+
+    /// Set a custom error message without changing state to Error.
+    ///
+    /// This is useful for storing cancel reasons.
+    pub fn set_last_error(&mut self, error: Option<String>) {
+        self.last_error = error;
+    }
+
     /// Get information about the installed model.
     ///
     /// Returns `None` if the model is not installed.
@@ -427,8 +602,75 @@ impl VoskModelManager {
             let _ = std::fs::remove_file(&download_path);
         }
 
+        // Clean up partial downloads too
+        let temp_path = self.partial_download_path();
+        if temp_path.exists() {
+            let _ = std::fs::remove_file(&temp_path);
+        }
+
         self.state = ModelState::NotInstalled;
         self.last_error = None;
+
+        Ok(())
+    }
+
+    /// Get the path where partial downloads are stored.
+    ///
+    /// This is used for resume functionality.
+    pub fn partial_download_path(&self) -> PathBuf {
+        self.download_path().with_extension("zip.partial")
+    }
+
+    /// Check for a partial/interrupted download that can be resumed.
+    ///
+    /// Returns information about the partial download if one exists.
+    pub fn check_partial_download(&self) -> Option<PartialDownloadInfo> {
+        let partial_path = self.partial_download_path();
+
+        if !partial_path.exists() {
+            return None;
+        }
+
+        match std::fs::metadata(&partial_path) {
+            Ok(metadata) => {
+                let bytes_downloaded = metadata.len();
+                // A partial download is valid for resumption if it has some content
+                // but is less than the expected size (approximately 50MB for the model)
+                let can_resume = bytes_downloaded > 0 && bytes_downloaded < 100_000_000;
+
+                tracing::debug!(
+                    "Found partial download at {:?}: {} bytes, can_resume={}",
+                    partial_path,
+                    bytes_downloaded,
+                    can_resume
+                );
+
+                Some(PartialDownloadInfo {
+                    path: partial_path,
+                    bytes_downloaded,
+                    can_resume,
+                })
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read partial download metadata: {}", e);
+                None
+            }
+        }
+    }
+
+    /// Clean up any partial download files.
+    pub fn cleanup_partial_download(&self) -> Result<(), VoskModelError> {
+        let partial_path = self.partial_download_path();
+        if partial_path.exists() {
+            tracing::info!("Cleaning up partial download at {:?}", partial_path);
+            std::fs::remove_file(&partial_path)?;
+        }
+
+        // Also clean up temp extraction directories
+        let extract_dir = self.download_path().with_extension("extract");
+        if extract_dir.exists() {
+            let _ = std::fs::remove_dir_all(&extract_dir);
+        }
 
         Ok(())
     }
@@ -596,6 +838,384 @@ impl VoskModelManager {
 impl Default for VoskModelManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// State machine for managing the Vosk model lifecycle with event emission.
+///
+/// This wraps `VoskModelManager` and provides event-driven state transitions
+/// suitable for UI integration. Events are emitted through a callback or channel
+/// for progress updates.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use rustride::voice::{ModelLifecycleStateMachine, ModelLifecycleEvent};
+/// use std::sync::Arc;
+///
+/// // Create with callback
+/// let state_machine = ModelLifecycleStateMachine::with_callback(Arc::new(|event| {
+///     println!("Event: {:?}", event);
+/// }));
+///
+/// // Or create with channel
+/// let (state_machine, mut rx) = ModelLifecycleStateMachine::with_channel();
+///
+/// // Start the download
+/// state_machine.start_download().await?;
+///
+/// // Receive events
+/// while let Some(event) = rx.recv().await {
+///     match event {
+///         ModelLifecycleEvent::DownloadProgress { percent, .. } => {
+///             println!("Progress: {}%", percent);
+///         }
+///         ModelLifecycleEvent::InstallationComplete { .. } => {
+///             println!("Done!");
+///             break;
+///         }
+///         _ => {}
+///     }
+/// }
+/// ```
+pub struct ModelLifecycleStateMachine {
+    /// The underlying model manager.
+    manager: VoskModelManager,
+
+    /// Optional callback for receiving lifecycle events.
+    event_callback: Option<LifecycleEventCallback>,
+
+    /// Optional channel sender for lifecycle events.
+    event_sender: Option<mpsc::Sender<ModelLifecycleEvent>>,
+}
+
+impl ModelLifecycleStateMachine {
+    /// Create a new state machine with a callback for events.
+    pub fn with_callback(callback: LifecycleEventCallback) -> Self {
+        Self {
+            manager: VoskModelManager::new(),
+            event_callback: Some(callback),
+            event_sender: None,
+        }
+    }
+
+    /// Create a new state machine with a custom base directory and callback.
+    pub fn with_base_dir_and_callback(base_dir: PathBuf, callback: LifecycleEventCallback) -> Self {
+        Self {
+            manager: VoskModelManager::with_base_dir(base_dir),
+            event_callback: Some(callback),
+            event_sender: None,
+        }
+    }
+
+    /// Create a new state machine with a channel for receiving events.
+    ///
+    /// Returns the state machine and a receiver for events.
+    pub fn with_channel() -> (Self, mpsc::Receiver<ModelLifecycleEvent>) {
+        let (tx, rx) = mpsc::channel(100);
+        let state_machine = Self {
+            manager: VoskModelManager::new(),
+            event_callback: None,
+            event_sender: Some(tx),
+        };
+        (state_machine, rx)
+    }
+
+    /// Create a new state machine with a custom base directory and channel.
+    pub fn with_base_dir_and_channel(
+        base_dir: PathBuf,
+    ) -> (Self, mpsc::Receiver<ModelLifecycleEvent>) {
+        let (tx, rx) = mpsc::channel(100);
+        let state_machine = Self {
+            manager: VoskModelManager::with_base_dir(base_dir),
+            event_callback: None,
+            event_sender: Some(tx),
+        };
+        (state_machine, rx)
+    }
+
+    /// Get the current model state.
+    pub fn state(&self) -> ModelState {
+        self.manager.state()
+    }
+
+    /// Check if the model is ready to use.
+    pub fn is_ready(&self) -> bool {
+        self.manager.is_ready()
+    }
+
+    /// Check if the model is currently being installed.
+    pub fn is_installing(&self) -> bool {
+        self.manager.is_installing()
+    }
+
+    /// Get the model path.
+    pub fn model_path(&self) -> PathBuf {
+        self.manager.model_path()
+    }
+
+    /// Get the last error message if any.
+    pub fn last_error(&self) -> Option<&str> {
+        self.manager.last_error()
+    }
+
+    /// Check for a partial download that can be resumed.
+    pub fn check_partial_download(&self) -> Option<PartialDownloadInfo> {
+        self.manager.check_partial_download()
+    }
+
+    /// Get access to the underlying manager.
+    pub fn manager(&self) -> &VoskModelManager {
+        &self.manager
+    }
+
+    /// Get mutable access to the underlying manager.
+    pub fn manager_mut(&mut self) -> &mut VoskModelManager {
+        &mut self.manager
+    }
+
+    /// Emit an event to callback and/or channel.
+    fn emit_event(&self, event: ModelLifecycleEvent) {
+        // Send to callback if present
+        if let Some(callback) = &self.event_callback {
+            callback(event.clone());
+        }
+
+        // Send to channel if present
+        if let Some(sender) = &self.event_sender {
+            // Use try_send to avoid blocking
+            let _ = sender.try_send(event);
+        }
+    }
+
+    /// Transition to a new state and emit the appropriate event.
+    fn transition_to(&mut self, new_state: ModelState) {
+        let old_state = self.manager.state();
+
+        // Apply the state change
+        match new_state {
+            ModelState::Unknown => {
+                // Can't transition to Unknown
+            }
+            ModelState::NotInstalled => {
+                // Reset state - happens after errors or cleanup
+            }
+            ModelState::Downloading { progress_percent } => {
+                self.manager.set_downloading(progress_percent);
+            }
+            ModelState::Extracting => {
+                self.manager.set_extracting();
+            }
+            ModelState::Ready => {
+                self.manager.set_ready();
+            }
+            ModelState::Error => {
+                // Error state should be set with a message via set_error
+            }
+        }
+
+        // Emit state change event
+        if old_state != new_state {
+            self.emit_event(ModelLifecycleEvent::StateChanged {
+                from: old_state,
+                to: new_state,
+            });
+        }
+    }
+
+    /// Start the model download process.
+    ///
+    /// This method handles the complete lifecycle:
+    /// 1. Check for partial downloads and optionally resume
+    /// 2. Download the model with progress events
+    /// 3. Verify the checksum
+    /// 4. Extract the model
+    /// 5. Install to the final location
+    ///
+    /// Events are emitted throughout the process for UI updates.
+    pub async fn start_download(&mut self) -> Result<(), super::download::DownloadError> {
+        self.start_download_with_resume(true).await
+    }
+
+    /// Start the model download process with optional resume support.
+    ///
+    /// If `try_resume` is true and a partial download exists, it will be
+    /// cleaned up and a fresh download will be started. Full resume support
+    /// requires HTTP Range header support from the server.
+    pub async fn start_download_with_resume(
+        &mut self,
+        try_resume: bool,
+    ) -> Result<(), super::download::DownloadError> {
+        use super::download::{DownloadProgress, ModelDownloader};
+
+        // Check if already ready
+        if self.manager.is_ready() {
+            tracing::info!("Model already installed, skipping download");
+            self.emit_event(ModelLifecycleEvent::InstallationComplete {
+                model_path: self.manager.model_path(),
+            });
+            return Ok(());
+        }
+
+        // Check if currently installing
+        if self.manager.is_installing() {
+            tracing::warn!("Model download already in progress");
+            return Err(super::download::DownloadError::InstallationFailed(
+                "Download already in progress".to_string(),
+            ));
+        }
+
+        // Check for partial download
+        if try_resume {
+            if let Some(partial) = self.manager.check_partial_download() {
+                if partial.can_resume {
+                    self.emit_event(ModelLifecycleEvent::DownloadResuming {
+                        bytes_already_downloaded: partial.bytes_downloaded,
+                    });
+                    // For now, we clean up and restart
+                    // Full HTTP Range resume would require server support
+                    tracing::info!(
+                        "Found partial download ({} bytes), cleaning up for fresh download",
+                        partial.bytes_downloaded
+                    );
+                }
+                // Clean up the partial file
+                let _ = self.manager.cleanup_partial_download();
+            }
+        } else {
+            // Clean up any partial downloads
+            let _ = self.manager.cleanup_partial_download();
+        }
+
+        // Ensure base directory exists
+        self.manager.ensure_directory()?;
+
+        // Transition to downloading state
+        self.transition_to(ModelState::Downloading { progress_percent: 0 });
+
+        let download_path = self.manager.download_path();
+        let model_path = self.manager.model_path();
+
+        // Create a clone of event sender/callback for the progress callback
+        let event_callback = self.event_callback.clone();
+        let event_sender = self.event_sender.clone();
+
+        let progress_wrapper = move |progress: DownloadProgress| {
+            let event = match &progress {
+                DownloadProgress::Starting => Some(ModelLifecycleEvent::StateChanged {
+                    from: ModelState::NotInstalled,
+                    to: ModelState::Downloading { progress_percent: 0 },
+                }),
+                DownloadProgress::Downloading { bytes_received, total_bytes } => {
+                    let percent = total_bytes
+                        .map(|total| if total > 0 { (bytes_received * 100 / total) as u8 } else { 0 })
+                        .unwrap_or(0);
+                    Some(ModelLifecycleEvent::DownloadProgress {
+                        bytes_received: *bytes_received,
+                        total_bytes: *total_bytes,
+                        percent,
+                    })
+                }
+                DownloadProgress::Verifying => Some(ModelLifecycleEvent::StateChanged {
+                    from: ModelState::Downloading { progress_percent: 100 },
+                    to: ModelState::Extracting,
+                }),
+                DownloadProgress::Extracting => Some(ModelLifecycleEvent::StateChanged {
+                    from: ModelState::Downloading { progress_percent: 100 },
+                    to: ModelState::Extracting,
+                }),
+                DownloadProgress::Installing => None, // Covered by Extracting
+                DownloadProgress::Complete => Some(ModelLifecycleEvent::StateChanged {
+                    from: ModelState::Extracting,
+                    to: ModelState::Ready,
+                }),
+                DownloadProgress::Error(e) => Some(ModelLifecycleEvent::Error {
+                    message: e.clone(),
+                    recoverable: true,
+                }),
+            };
+
+            if let Some(evt) = event {
+                if let Some(cb) = &event_callback {
+                    cb(evt.clone());
+                }
+                if let Some(tx) = &event_sender {
+                    let _ = tx.try_send(evt);
+                }
+            }
+        };
+
+        let downloader = ModelDownloader::new();
+
+        // Perform download and installation
+        match downloader
+            .download_and_install(&download_path, &model_path, progress_wrapper)
+            .await
+        {
+            Ok(()) => {
+                self.manager.set_ready();
+                self.emit_event(ModelLifecycleEvent::InstallationComplete {
+                    model_path: model_path.clone(),
+                });
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                self.manager.set_error(&error_msg);
+                self.emit_event(ModelLifecycleEvent::Error {
+                    message: error_msg,
+                    recoverable: true,
+                });
+                Err(e)
+            }
+        }
+    }
+
+    /// Cancel an in-progress download.
+    ///
+    /// Note: This currently just resets the state. The actual download
+    /// cancellation would require additional cancellation token support.
+    pub fn cancel_download(&mut self) {
+        if self.manager.is_installing() {
+            let old_state = self.manager.state();
+            self.manager.reset_to_not_installed();
+            self.manager.set_last_error(Some("Download cancelled".to_string()));
+
+            self.emit_event(ModelLifecycleEvent::StateChanged {
+                from: old_state,
+                to: ModelState::NotInstalled,
+            });
+
+            // Clean up partial files
+            let _ = self.manager.cleanup_partial_download();
+        }
+    }
+
+    /// Retry a failed download.
+    pub async fn retry_download(&mut self) -> Result<(), super::download::DownloadError> {
+        // Clean up any partial files from the failed attempt
+        let _ = self.manager.cleanup_partial_download();
+
+        // Reset state
+        self.manager.reset_to_not_installed();
+        self.manager.set_last_error(None);
+
+        // Try again
+        self.start_download().await
+    }
+
+    /// Refresh the model state from disk.
+    pub fn refresh_state(&mut self) {
+        let old_state = self.manager.state();
+        self.manager.refresh_state();
+        let new_state = self.manager.state();
+
+        if old_state != new_state {
+            self.emit_event(ModelLifecycleEvent::StateChanged {
+                from: old_state,
+                to: new_state,
+            });
+        }
     }
 }
 
@@ -915,5 +1535,324 @@ mod tests {
         let size = calculate_dir_size(&path).unwrap();
         // 5 + 6 + 4 = 15 bytes
         assert_eq!(size, 15);
+    }
+
+    // ==========================================================================
+    // ModelLifecycleEvent tests
+    // ==========================================================================
+
+    #[test]
+    fn test_lifecycle_event_is_error() {
+        let event = ModelLifecycleEvent::Error {
+            message: "test error".to_string(),
+            recoverable: true,
+        };
+        assert!(event.is_error());
+
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 100,
+            total_bytes: Some(1000),
+            percent: 10,
+        };
+        assert!(!event.is_error());
+    }
+
+    #[test]
+    fn test_lifecycle_event_is_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let event = ModelLifecycleEvent::InstallationComplete {
+            model_path: temp_dir.path().to_path_buf(),
+        };
+        assert!(event.is_complete());
+
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 100,
+            total_bytes: Some(1000),
+            percent: 10,
+        };
+        assert!(!event.is_complete());
+    }
+
+    #[test]
+    fn test_lifecycle_event_progress_percent() {
+        // Download progress event
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 500,
+            total_bytes: Some(1000),
+            percent: 50,
+        };
+        assert_eq!(event.progress_percent(), Some(50));
+
+        // State change to downloading
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::NotInstalled,
+            to: ModelState::Downloading { progress_percent: 25 },
+        };
+        assert_eq!(event.progress_percent(), Some(25));
+
+        // State change to extracting
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::Downloading { progress_percent: 100 },
+            to: ModelState::Extracting,
+        };
+        assert_eq!(event.progress_percent(), Some(95));
+
+        // State change to ready
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::Extracting,
+            to: ModelState::Ready,
+        };
+        assert_eq!(event.progress_percent(), Some(100));
+
+        // Installation complete
+        let temp_dir = TempDir::new().unwrap();
+        let event = ModelLifecycleEvent::InstallationComplete {
+            model_path: temp_dir.path().to_path_buf(),
+        };
+        assert_eq!(event.progress_percent(), Some(100));
+
+        // Error - no progress
+        let event = ModelLifecycleEvent::Error {
+            message: "test".to_string(),
+            recoverable: false,
+        };
+        assert_eq!(event.progress_percent(), None);
+    }
+
+    #[test]
+    fn test_lifecycle_event_status_message() {
+        // Download progress with known total
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 1048576, // 1 MB
+            total_bytes: Some(52428800), // 50 MB
+            percent: 2,
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("2%"));
+        assert!(msg.contains("1.0 MB"));
+
+        // Extraction progress
+        let event = ModelLifecycleEvent::ExtractionProgress {
+            files_extracted: 10,
+            total_files: Some(100),
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("10/100"));
+
+        // Resuming download
+        let event = ModelLifecycleEvent::DownloadResuming {
+            bytes_already_downloaded: 5242880, // 5 MB
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("5.0 MB"));
+
+        // Error
+        let event = ModelLifecycleEvent::Error {
+            message: "Connection failed".to_string(),
+            recoverable: true,
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("Connection failed"));
+    }
+
+    // ==========================================================================
+    // Partial download tests
+    // ==========================================================================
+
+    #[test]
+    fn test_partial_download_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+        let partial_path = manager.partial_download_path();
+
+        assert!(partial_path.to_string_lossy().ends_with(".zip.partial"));
+    }
+
+    #[test]
+    fn test_check_partial_download_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+
+        // No partial download file exists
+        assert!(manager.check_partial_download().is_none());
+    }
+
+    #[test]
+    fn test_check_partial_download_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        // Ensure parent directory exists
+        fs::create_dir_all(temp_dir.path()).unwrap();
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+        let partial_path = manager.partial_download_path();
+
+        // Create a partial download file
+        fs::write(&partial_path, vec![0u8; 1000]).unwrap();
+
+        let info = manager.check_partial_download();
+        assert!(info.is_some());
+
+        let info = info.unwrap();
+        assert_eq!(info.bytes_downloaded, 1000);
+        assert!(info.can_resume);
+        assert_eq!(info.path, partial_path);
+    }
+
+    #[test]
+    fn test_cleanup_partial_download() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        fs::create_dir_all(temp_dir.path()).unwrap();
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+        let partial_path = manager.partial_download_path();
+
+        // Create a partial download file
+        fs::write(&partial_path, vec![0u8; 1000]).unwrap();
+        assert!(partial_path.exists());
+
+        // Clean up
+        manager.cleanup_partial_download().unwrap();
+        assert!(!partial_path.exists());
+    }
+
+    // ==========================================================================
+    // State machine tests
+    // ==========================================================================
+
+    #[test]
+    fn test_state_machine_with_channel() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+        assert!(!state_machine.is_ready());
+        assert!(!state_machine.is_installing());
+    }
+
+    #[test]
+    fn test_state_machine_with_callback() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let event_count = Arc::new(AtomicU32::new(0));
+        let event_count_clone = event_count.clone();
+
+        let callback = Arc::new(move |_event: ModelLifecycleEvent| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let state_machine = ModelLifecycleStateMachine::with_base_dir_and_callback(
+            model_dir,
+            callback,
+        );
+
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+    }
+
+    #[test]
+    fn test_state_machine_model_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir.clone());
+
+        assert_eq!(state_machine.model_path(), model_dir);
+    }
+
+    #[test]
+    fn test_state_machine_check_partial_download() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        fs::create_dir_all(temp_dir.path()).unwrap();
+
+        let (state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+        let partial_path = state_machine.manager().partial_download_path();
+
+        // Initially no partial download
+        assert!(state_machine.check_partial_download().is_none());
+
+        // Create a partial download
+        fs::write(&partial_path, vec![0u8; 5000]).unwrap();
+
+        let info = state_machine.check_partial_download();
+        assert!(info.is_some());
+        assert_eq!(info.unwrap().bytes_downloaded, 5000);
+    }
+
+    #[test]
+    fn test_state_machine_refresh_state() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir.clone());
+
+        // Initially not installed
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+
+        // Create valid model structure
+        fs::create_dir_all(model_dir.join("am")).unwrap();
+        fs::write(model_dir.join("am").join("final.mdl"), b"model data").unwrap();
+
+        // Refresh should detect the model
+        state_machine.refresh_state();
+        assert_eq!(state_machine.state(), ModelState::Ready);
+    }
+
+    #[test]
+    fn test_state_machine_cancel_not_installing() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        // Not installing, cancel should do nothing
+        state_machine.cancel_download();
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+    }
+
+    #[test]
+    fn test_manager_reset_to_not_installed() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let mut manager = VoskModelManager::with_base_dir(model_dir);
+
+        // Set to downloading
+        manager.set_downloading(50);
+        assert!(manager.is_installing());
+
+        // Reset
+        manager.reset_to_not_installed();
+        assert_eq!(manager.state(), ModelState::NotInstalled);
+        assert!(!manager.is_installing());
+    }
+
+    #[test]
+    fn test_manager_set_last_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let mut manager = VoskModelManager::with_base_dir(model_dir);
+
+        // Set error message
+        manager.set_last_error(Some("Test error".to_string()));
+        assert_eq!(manager.last_error(), Some("Test error"));
+
+        // Clear error message
+        manager.set_last_error(None);
+        assert!(manager.last_error().is_none());
     }
 }

@@ -65,5 +65,9 @@ pub mod model_manager;
 pub mod download;
 
 // Re-export main types
-pub use model_manager::{ModelState, VoskModelManager, VoskModelError};
+pub use model_manager::{
+    ModelState, VoskModelManager, VoskModelError,
+    ModelLifecycleEvent, ModelLifecycleStateMachine, PartialDownloadInfo,
+    LifecycleEventCallback,
+};
 pub use download::{DownloadError, DownloadProgress, ModelDownloader, format_bytes};
