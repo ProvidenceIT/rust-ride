@@ -78,6 +78,10 @@ use super::recognizer::{
     RecognizerConfig, RecognizerError, ThreadSafeRecognizer,
     RECOGNIZER_SAMPLE_RATE,
 };
+use super::wake_word::{
+    WakeWordConfig, WakeWordDetector, WakeWordEvent, WakeWordState,
+    DEFAULT_ACTIVE_LISTENING_DURATION_MS,
+};
 
 /// Default audio buffer read interval in milliseconds.
 const DEFAULT_AUDIO_READ_INTERVAL_MS: u64 = 100;
@@ -98,6 +102,36 @@ const DEFAULT_COMMAND_COOLDOWN_MS: u64 = 1000;
 /// Default debounce timeout for brief silences during speech (in milliseconds).
 /// Prevents false command triggers from brief pauses while speaking.
 const DEFAULT_DEBOUNCE_MS: u64 = 300;
+
+/// Voice engine activation mode.
+///
+/// Determines how the engine responds to audio input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivationMode {
+    /// Always listening and immediately processes commands.
+    /// No wake word required - all recognized speech is treated as commands.
+    AlwaysListening,
+
+    /// Requires wake word to activate.
+    /// The engine listens for "Hey Rust Ride" or "OK Ride" before processing commands.
+    /// After wake word detection, enters active listening mode for a configurable duration.
+    #[default]
+    WakeWord,
+
+    /// Requires manual activation (push-to-talk).
+    /// Commands only processed when manually triggered via `activate()`.
+    PushToTalk,
+}
+
+impl std::fmt::Display for ActivationMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActivationMode::AlwaysListening => write!(f, "Always Listening"),
+            ActivationMode::WakeWord => write!(f, "Wake Word"),
+            ActivationMode::PushToTalk => write!(f, "Push to Talk"),
+        }
+    }
+}
 
 /// Errors that can occur during voice engine operations.
 #[derive(Debug, Error)]
@@ -234,6 +268,29 @@ pub enum VoiceEngineEvent {
         command: VoiceCommand,
         /// Time remaining on cooldown in milliseconds.
         remaining_ms: u64,
+    },
+
+    /// Wake word was detected, entering active listening mode.
+    WakeWordDetected {
+        /// The wake phrase that was recognized.
+        phrase: String,
+        /// How long active listening mode will last (milliseconds).
+        duration_ms: u64,
+    },
+
+    /// Active listening mode timed out, returning to dormant.
+    WakeWordTimeout,
+
+    /// Active listening mode was extended.
+    WakeWordExtended {
+        /// Time remaining in active mode (milliseconds).
+        remaining_ms: u64,
+    },
+
+    /// Activation mode changed.
+    ActivationModeChanged {
+        /// New activation mode.
+        mode: ActivationMode,
     },
 }
 
@@ -383,6 +440,12 @@ pub struct VoiceEngineConfig {
     pub debounce_ms: u64,
     /// Whether to enable command cooldown.
     pub enable_cooldown: bool,
+    /// Activation mode for the voice engine.
+    pub activation_mode: ActivationMode,
+    /// Duration to stay in active listening mode after wake word (milliseconds).
+    pub wake_word_active_duration_ms: u64,
+    /// Whether wake word detection is enabled (for WakeWord mode).
+    pub wake_word_enabled: bool,
 }
 
 impl VoiceEngineConfig {
@@ -401,6 +464,9 @@ impl VoiceEngineConfig {
             command_cooldown_ms: DEFAULT_COMMAND_COOLDOWN_MS,
             debounce_ms: DEFAULT_DEBOUNCE_MS,
             enable_cooldown: true,
+            activation_mode: ActivationMode::default(),
+            wake_word_active_duration_ms: DEFAULT_ACTIVE_LISTENING_DURATION_MS,
+            wake_word_enabled: true,
         }
     }
 
@@ -419,6 +485,9 @@ impl VoiceEngineConfig {
             command_cooldown_ms: DEFAULT_COMMAND_COOLDOWN_MS,
             debounce_ms: DEFAULT_DEBOUNCE_MS,
             enable_cooldown: true,
+            activation_mode: ActivationMode::WakeWord,
+            wake_word_active_duration_ms: DEFAULT_ACTIVE_LISTENING_DURATION_MS,
+            wake_word_enabled: true,
         }
     }
 
@@ -473,6 +542,41 @@ impl VoiceEngineConfig {
         self.enable_cooldown = enabled;
         self
     }
+
+    /// Set the activation mode.
+    ///
+    /// - `AlwaysListening`: Immediately processes all recognized speech as commands.
+    /// - `WakeWord`: Requires "Hey Rust Ride" or "OK Ride" before processing commands.
+    /// - `PushToTalk`: Only processes commands when manually activated.
+    pub fn with_activation_mode(mut self, mode: ActivationMode) -> Self {
+        self.activation_mode = mode;
+        self
+    }
+
+    /// Set the wake word active listening duration in milliseconds.
+    ///
+    /// After a wake word is detected, the engine will actively listen for
+    /// commands for this duration before returning to dormant mode.
+    pub fn with_wake_word_duration(mut self, duration_ms: u64) -> Self {
+        self.wake_word_active_duration_ms = duration_ms;
+        self
+    }
+
+    /// Enable or disable wake word detection.
+    pub fn with_wake_word_enabled(mut self, enabled: bool) -> Self {
+        self.wake_word_enabled = enabled;
+        self
+    }
+
+    /// Create a configuration for always-on listening (no wake word).
+    pub fn always_listening(model_path: impl AsRef<Path>) -> Self {
+        Self::for_commands(&model_path).with_activation_mode(ActivationMode::AlwaysListening)
+    }
+
+    /// Create a configuration for push-to-talk mode.
+    pub fn push_to_talk(model_path: impl AsRef<Path>) -> Self {
+        Self::for_commands(&model_path).with_activation_mode(ActivationMode::PushToTalk)
+    }
 }
 
 /// Commands sent to the engine worker thread.
@@ -505,6 +609,20 @@ enum EngineCommand {
     /// Update configuration.
     UpdateConfig {
         config: VoiceEngineConfig,
+        response_tx: Sender<Result<(), VoiceEngineError>>,
+    },
+    /// Set the activation mode.
+    SetActivationMode {
+        mode: ActivationMode,
+        response_tx: Sender<Result<(), VoiceEngineError>>,
+    },
+    /// Manually activate (enter active listening mode).
+    /// Used for push-to-talk or manual activation.
+    Activate {
+        response_tx: Sender<Result<(), VoiceEngineError>>,
+    },
+    /// Manually deactivate (return to dormant mode).
+    Deactivate {
         response_tx: Sender<Result<(), VoiceEngineError>>,
     },
     /// Shutdown the worker thread.
@@ -668,6 +786,14 @@ impl VoiceEngine {
         // to prevent false triggers from brief pauses
         let mut last_audio_activity: Option<Instant> = None;
 
+        // Wake word detector for activation mode
+        let wake_word_config = WakeWordConfig::new(current_config.wake_word_active_duration_ms)
+            .with_enabled(current_config.wake_word_enabled);
+        let mut wake_word_detector = WakeWordDetector::new(wake_word_config);
+
+        // Current activation mode
+        let mut activation_mode = current_config.activation_mode;
+
         // Helper to update state
         let update_state = |new_state: VoiceEngineState| {
             let old_state = {
@@ -765,7 +891,57 @@ impl VoiceEngine {
                         config: new_config,
                         response_tx,
                     } => {
+                        // Update wake word detector if settings changed
+                        if new_config.wake_word_active_duration_ms
+                            != current_config.wake_word_active_duration_ms
+                            || new_config.wake_word_enabled != current_config.wake_word_enabled
+                        {
+                            let new_wake_config =
+                                WakeWordConfig::new(new_config.wake_word_active_duration_ms)
+                                    .with_enabled(new_config.wake_word_enabled);
+                            wake_word_detector.update_config(new_wake_config);
+                        }
+
+                        // Update activation mode if changed
+                        if new_config.activation_mode != current_config.activation_mode {
+                            activation_mode = new_config.activation_mode;
+                            emit(VoiceEngineEvent::ActivationModeChanged {
+                                mode: activation_mode,
+                            });
+
+                            // Reset wake word detector when mode changes
+                            wake_word_detector.reset();
+                        }
+
                         current_config = new_config;
+                        let _ = response_tx.send(Ok(()));
+                    }
+                    EngineCommand::SetActivationMode { mode, response_tx } => {
+                        if mode != activation_mode {
+                            activation_mode = mode;
+                            wake_word_detector.reset();
+                            emit(VoiceEngineEvent::ActivationModeChanged { mode });
+                            tracing::info!("Activation mode changed to: {}", mode);
+                        }
+                        let _ = response_tx.send(Ok(()));
+                    }
+                    EngineCommand::Activate { response_tx } => {
+                        // Manually enter active mode (for push-to-talk)
+                        if let Some(event) = wake_word_detector.activate() {
+                            if let WakeWordEvent::StateChanged { to: WakeWordState::Active, .. } = event {
+                                emit(VoiceEngineEvent::WakeWordDetected {
+                                    phrase: "manual activation".to_string(),
+                                    duration_ms: current_config.wake_word_active_duration_ms,
+                                });
+                            }
+                        }
+                        let _ = response_tx.send(Ok(()));
+                    }
+                    EngineCommand::Deactivate { response_tx } => {
+                        // Manually exit active mode
+                        if let Some(_event) = wake_word_detector.deactivate() {
+                            emit(VoiceEngineEvent::WakeWordTimeout);
+                        }
                         let _ = response_tx.send(Ok(()));
                     }
                     EngineCommand::Shutdown => {
@@ -783,6 +959,17 @@ impl VoiceEngine {
 
             // Process audio when listening
             if is_listening {
+                // Check for wake word timeout (only in WakeWord mode)
+                if activation_mode == ActivationMode::WakeWord {
+                    if let Some(event) = wake_word_detector.check_timeout() {
+                        if let WakeWordEvent::StateChanged { to: WakeWordState::Dormant, .. } = event
+                        {
+                            emit(VoiceEngineEvent::WakeWordTimeout);
+                            tracing::debug!("Wake word active period expired");
+                        }
+                    }
+                }
+
                 if let (Some(ref capture), Some(ref rec)) = (&audio_capture, &recognizer) {
                     // Read audio samples from buffer
                     let samples = capture.read_samples(current_config.samples_per_read);
@@ -822,22 +1009,26 @@ impl VoiceEngine {
                                             debounce_elapsed
                                         );
                                     } else {
-                                        // Process the final result with cooldown check
-                                        Self::process_final_result(
+                                        // Process based on activation mode
+                                        Self::process_final_result_with_activation(
                                             rec,
                                             &current_config,
                                             &event_tx,
                                             &mut last_partial_text,
                                             &mut cooldown,
+                                            &mut wake_word_detector,
+                                            activation_mode,
                                         );
                                     }
                                     last_speech_time = Some(Instant::now());
                                 } else if current_config.emit_partial_results {
-                                    // Get partial result
-                                    Self::process_partial_result(
+                                    // Get partial result and check for wake word
+                                    Self::process_partial_result_with_activation(
                                         rec,
                                         &event_tx,
                                         &mut last_partial_text,
+                                        &mut wake_word_detector,
+                                        activation_mode,
                                     );
                                 }
                             }
@@ -861,14 +1052,16 @@ impl VoiceEngine {
                         if last_time.elapsed().as_millis()
                             > current_config.silence_timeout_ms as u128
                         {
-                            // Force final result after silence (with cooldown check)
+                            // Force final result after silence (with activation check)
                             if !last_partial_text.is_empty() {
-                                Self::process_final_result(
+                                Self::process_final_result_with_activation(
                                     rec,
                                     &current_config,
                                     &event_tx,
                                     &mut last_partial_text,
                                     &mut cooldown,
+                                    &mut wake_word_detector,
+                                    activation_mode,
                                 );
                             }
                             last_speech_time = Some(Instant::now());
@@ -1035,6 +1228,215 @@ impl VoiceEngine {
         }
     }
 
+    /// Process a partial result with activation mode awareness.
+    ///
+    /// In WakeWord mode, this checks partial results for wake phrases.
+    /// In other modes, it simply forwards the partial result.
+    fn process_partial_result_with_activation(
+        recognizer: &ThreadSafeRecognizer,
+        event_tx: &broadcast::Sender<VoiceEngineEvent>,
+        last_partial_text: &mut String,
+        wake_word_detector: &mut WakeWordDetector,
+        activation_mode: ActivationMode,
+    ) {
+        if let Ok(result) = recognizer.partial_result() {
+            if result.is_empty() {
+                return;
+            }
+
+            let text = result.text.clone();
+
+            // In WakeWord mode, check for wake phrases in partial results
+            if activation_mode == ActivationMode::WakeWord && !wake_word_detector.is_active() {
+                if let Some(wake_event) = wake_word_detector.process_text(&text) {
+                    match wake_event {
+                        WakeWordEvent::Detected { phrase, duration_ms } => {
+                            let _ = event_tx.send(VoiceEngineEvent::WakeWordDetected {
+                                phrase,
+                                duration_ms,
+                            });
+                        }
+                        WakeWordEvent::Extended { remaining_ms } => {
+                            let _ = event_tx.send(VoiceEngineEvent::WakeWordExtended {
+                                remaining_ms,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Emit partial result if changed
+            if text != *last_partial_text {
+                *last_partial_text = text.clone();
+                let _ = event_tx.send(VoiceEngineEvent::PartialResult { text });
+            }
+        }
+    }
+
+    /// Process a final result with activation mode awareness.
+    ///
+    /// - In `AlwaysListening` mode: Process all recognized speech as commands.
+    /// - In `WakeWord` mode: Check for wake word first, then process commands only when active.
+    /// - In `PushToTalk` mode: Only process commands when manually activated.
+    fn process_final_result_with_activation(
+        recognizer: &ThreadSafeRecognizer,
+        config: &VoiceEngineConfig,
+        event_tx: &broadcast::Sender<VoiceEngineEvent>,
+        last_partial_text: &mut String,
+        cooldown: &mut CommandCooldown,
+        wake_word_detector: &mut WakeWordDetector,
+        activation_mode: ActivationMode,
+    ) {
+        if let Ok(result) = recognizer.final_result() {
+            last_partial_text.clear();
+
+            if result.is_empty() {
+                return;
+            }
+
+            let text = result.text.trim().to_string();
+            let confidence = result.confidence;
+
+            // Skip low confidence results
+            if let Some(conf) = confidence {
+                if conf < config.min_confidence {
+                    tracing::debug!(
+                        "Skipping low confidence result: '{}' ({:.2})",
+                        text,
+                        conf
+                    );
+                    return;
+                }
+            }
+
+            // Handle based on activation mode
+            match activation_mode {
+                ActivationMode::AlwaysListening => {
+                    // Process all speech as commands
+                    Self::process_command_with_cooldown(
+                        &text,
+                        confidence,
+                        config,
+                        event_tx,
+                        cooldown,
+                    );
+                }
+                ActivationMode::WakeWord => {
+                    // Check for wake word first
+                    if let Some(wake_event) = wake_word_detector.process_text(&text) {
+                        match wake_event {
+                            WakeWordEvent::Detected { phrase, duration_ms } => {
+                                let _ = event_tx.send(VoiceEngineEvent::WakeWordDetected {
+                                    phrase,
+                                    duration_ms,
+                                });
+                                // Don't process the wake word as a command
+                                return;
+                            }
+                            WakeWordEvent::Extended { remaining_ms } => {
+                                let _ = event_tx.send(VoiceEngineEvent::WakeWordExtended {
+                                    remaining_ms,
+                                });
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Only process commands when in active mode
+                    if wake_word_detector.is_active() {
+                        // Extend the active period when receiving commands
+                        if let Some(WakeWordEvent::Extended { remaining_ms }) =
+                            wake_word_detector.extend_active()
+                        {
+                            let _ = event_tx.send(VoiceEngineEvent::WakeWordExtended {
+                                remaining_ms,
+                            });
+                        }
+
+                        Self::process_command_with_cooldown(
+                            &text,
+                            confidence,
+                            config,
+                            event_tx,
+                            cooldown,
+                        );
+                    } else {
+                        // Not active - emit as final result but don't process as command
+                        tracing::trace!(
+                            "Ignoring '{}' - not in active mode (say 'Hey Rust Ride' first)",
+                            text
+                        );
+                        let _ = event_tx.send(VoiceEngineEvent::FinalResult { text, confidence });
+                    }
+                }
+                ActivationMode::PushToTalk => {
+                    // Only process commands when manually activated
+                    if wake_word_detector.is_active() {
+                        Self::process_command_with_cooldown(
+                            &text,
+                            confidence,
+                            config,
+                            event_tx,
+                            cooldown,
+                        );
+                    } else {
+                        // Not active - ignore
+                        tracing::trace!(
+                            "Ignoring '{}' - push-to-talk not active",
+                            text
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Process recognized text as a command with cooldown checking.
+    fn process_command_with_cooldown(
+        text: &str,
+        confidence: Option<f32>,
+        config: &VoiceEngineConfig,
+        event_tx: &broadcast::Sender<VoiceEngineEvent>,
+        cooldown: &mut CommandCooldown,
+    ) {
+        let command = VoiceCommand::from_phrase(text);
+
+        if matches!(command, VoiceCommand::Unknown(_)) {
+            // Not a recognized command, emit as final result
+            let _ = event_tx.send(VoiceEngineEvent::FinalResult {
+                text: text.to_string(),
+                confidence,
+            });
+        } else {
+            // Check cooldown if enabled
+            if config.enable_cooldown {
+                if let Some(remaining_ms) = cooldown.remaining_cooldown_ms(&command) {
+                    tracing::debug!(
+                        "Command {:?} blocked by cooldown ({}ms remaining)",
+                        command,
+                        remaining_ms
+                    );
+                    let _ = event_tx.send(VoiceEngineEvent::CommandCooldown {
+                        command,
+                        remaining_ms,
+                    });
+                    return;
+                }
+            }
+
+            // Record the command for cooldown tracking
+            cooldown.record_command(&command);
+
+            // Recognized command
+            let _ = event_tx.send(VoiceEngineEvent::CommandRecognized {
+                command,
+                text: text.to_string(),
+                confidence,
+            });
+        }
+    }
+
     /// Calculate the RMS audio level from samples.
     fn calculate_audio_level(samples: &[i16]) -> f32 {
         if samples.is_empty() {
@@ -1164,6 +1566,54 @@ impl VoiceEngine {
         }
 
         Ok(())
+    }
+
+    /// Set the activation mode.
+    ///
+    /// - `AlwaysListening`: Immediately processes all recognized speech as commands.
+    /// - `WakeWord`: Requires "Hey Rust Ride" or "OK Ride" before processing commands.
+    /// - `PushToTalk`: Only processes commands when manually activated via `activate()`.
+    pub fn set_activation_mode(&self, mode: ActivationMode) -> Result<(), VoiceEngineError> {
+        if !self.initialized.load(Ordering::Acquire) {
+            // Update local config, will take effect when initialized
+            self.config.write().unwrap().activation_mode = mode;
+            return Ok(());
+        }
+
+        // Update local config
+        self.config.write().unwrap().activation_mode = mode;
+
+        // Update worker
+        self.send_command(|response_tx| EngineCommand::SetActivationMode { mode, response_tx })
+    }
+
+    /// Get the current activation mode.
+    pub fn activation_mode(&self) -> ActivationMode {
+        self.config.read().unwrap().activation_mode
+    }
+
+    /// Manually enter active listening mode.
+    ///
+    /// This is used for push-to-talk or manual activation. In WakeWord mode,
+    /// this is equivalent to detecting the wake word.
+    pub fn activate(&self) -> Result<(), VoiceEngineError> {
+        if !self.initialized.load(Ordering::Acquire) {
+            return Err(VoiceEngineError::NotInitialized);
+        }
+
+        self.send_command(|response_tx| EngineCommand::Activate { response_tx })
+    }
+
+    /// Manually exit active listening mode.
+    ///
+    /// Returns to dormant mode (in WakeWord mode) or stops processing commands
+    /// (in PushToTalk mode).
+    pub fn deactivate(&self) -> Result<(), VoiceEngineError> {
+        if !self.initialized.load(Ordering::Acquire) {
+            return Err(VoiceEngineError::NotInitialized);
+        }
+
+        self.send_command(|response_tx| EngineCommand::Deactivate { response_tx })
     }
 }
 
@@ -1598,6 +2048,150 @@ mod tests {
             assert_eq!(remaining_ms, 500);
         } else {
             panic!("Expected CommandCooldown event");
+        }
+    }
+
+    // ========================================
+    // Activation Mode Tests
+    // ========================================
+
+    #[test]
+    fn test_activation_mode_default() {
+        assert_eq!(ActivationMode::default(), ActivationMode::WakeWord);
+    }
+
+    #[test]
+    fn test_activation_mode_display() {
+        assert_eq!(ActivationMode::AlwaysListening.to_string(), "Always Listening");
+        assert_eq!(ActivationMode::WakeWord.to_string(), "Wake Word");
+        assert_eq!(ActivationMode::PushToTalk.to_string(), "Push to Talk");
+    }
+
+    #[test]
+    fn test_config_activation_mode_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path);
+        assert_eq!(config.activation_mode, ActivationMode::WakeWord);
+        assert!(config.wake_word_enabled);
+        assert_eq!(config.wake_word_active_duration_ms, DEFAULT_ACTIVE_LISTENING_DURATION_MS);
+    }
+
+    #[test]
+    fn test_config_activation_mode_builder() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path)
+            .with_activation_mode(ActivationMode::AlwaysListening)
+            .with_wake_word_duration(10000)
+            .with_wake_word_enabled(false);
+
+        assert_eq!(config.activation_mode, ActivationMode::AlwaysListening);
+        assert_eq!(config.wake_word_active_duration_ms, 10000);
+        assert!(!config.wake_word_enabled);
+    }
+
+    #[test]
+    fn test_config_always_listening() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::always_listening(&model_path);
+        assert_eq!(config.activation_mode, ActivationMode::AlwaysListening);
+        assert!(config.grammar.is_some()); // Should still have grammar
+    }
+
+    #[test]
+    fn test_config_push_to_talk() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::push_to_talk(&model_path);
+        assert_eq!(config.activation_mode, ActivationMode::PushToTalk);
+        assert!(config.grammar.is_some());
+    }
+
+    #[test]
+    fn test_engine_activation_mode_getter() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path)
+            .with_activation_mode(ActivationMode::PushToTalk);
+        let engine = VoiceEngine::new(config).unwrap();
+
+        assert_eq!(engine.activation_mode(), ActivationMode::PushToTalk);
+    }
+
+    #[test]
+    fn test_engine_set_activation_mode_before_init() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path);
+        let engine = VoiceEngine::new(config).unwrap();
+
+        // Can set mode before initialization
+        let result = engine.set_activation_mode(ActivationMode::AlwaysListening);
+        assert!(result.is_ok());
+        assert_eq!(engine.activation_mode(), ActivationMode::AlwaysListening);
+    }
+
+    #[test]
+    fn test_wake_word_event_variants() {
+        // Test WakeWordDetected
+        let _e1 = VoiceEngineEvent::WakeWordDetected {
+            phrase: "hey rust ride".to_string(),
+            duration_ms: 5000,
+        };
+
+        // Test WakeWordTimeout
+        let _e2 = VoiceEngineEvent::WakeWordTimeout;
+
+        // Test WakeWordExtended
+        let _e3 = VoiceEngineEvent::WakeWordExtended {
+            remaining_ms: 4000,
+        };
+
+        // Test ActivationModeChanged
+        let _e4 = VoiceEngineEvent::ActivationModeChanged {
+            mode: ActivationMode::WakeWord,
+        };
+    }
+
+    #[test]
+    fn test_wake_word_detected_event() {
+        let event = VoiceEngineEvent::WakeWordDetected {
+            phrase: "ok ride".to_string(),
+            duration_ms: 5000,
+        };
+
+        if let VoiceEngineEvent::WakeWordDetected { phrase, duration_ms } = event {
+            assert_eq!(phrase, "ok ride");
+            assert_eq!(duration_ms, 5000);
+        } else {
+            panic!("Expected WakeWordDetected event");
+        }
+    }
+
+    #[test]
+    fn test_activation_mode_changed_event() {
+        let event = VoiceEngineEvent::ActivationModeChanged {
+            mode: ActivationMode::PushToTalk,
+        };
+
+        if let VoiceEngineEvent::ActivationModeChanged { mode } = event {
+            assert_eq!(mode, ActivationMode::PushToTalk);
+        } else {
+            panic!("Expected ActivationModeChanged event");
         }
     }
 

@@ -67,6 +67,7 @@ pub mod audio_input;
 pub mod recognizer;
 pub mod engine;
 pub mod command_parser;
+pub mod wake_word;
 
 // Re-export main types
 pub use model_manager::{
@@ -86,9 +87,13 @@ pub use recognizer::{
 };
 pub use engine::{
     VoiceEngine, VoiceEngineConfig, VoiceEngineError, VoiceEngineEvent, VoiceEngineState,
-    CommandCooldown,
+    CommandCooldown, ActivationMode,
 };
 pub use command_parser::{
     CommandParser, ParseResult, levenshtein_distance, string_similarity,
     DEFAULT_MIN_CONFIDENCE,
+};
+pub use wake_word::{
+    WakeWordDetector, WakeWordConfig, WakeWordEvent, WakeWordState,
+    DEFAULT_ACTIVE_LISTENING_DURATION_MS, WAKE_PHRASES, wake_word_grammar,
 };
