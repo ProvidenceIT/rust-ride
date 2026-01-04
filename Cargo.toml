@@ -108,6 +108,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Native File Dialogs
 rfd = "0.14"
 
+# Open URLs in browser
+open = "5.0"
+
 # GPS File Parsing
 gpx = "0.9"
 fitparser = "0.5"

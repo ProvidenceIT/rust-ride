@@ -20,7 +20,7 @@ use crate::ui::settings::{AudioSettingsAction, AudioSettingsPanel, AudioSettings
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, MqttCredentialStore, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
-use crate::integrations::weather::{WeatherCondition, WeatherConfig, WeatherUnits};
+use crate::integrations::weather::{WeatherCondition, WeatherConfig, WeatherCredentialStore, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
@@ -121,6 +121,36 @@ impl Default for GeolocationStatus {
     }
 }
 
+/// Status of weather API key operations.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WeatherApiKeyStatus {
+    /// No operation in progress
+    Idle,
+    /// API key was saved successfully
+    Saved {
+        /// Time the key was saved
+        timestamp: std::time::Instant,
+    },
+    /// API key was cleared successfully
+    Cleared {
+        /// Time the key was cleared
+        timestamp: std::time::Instant,
+    },
+    /// Operation failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the operation failed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for WeatherApiKeyStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
 /// Settings screen state.
 pub struct SettingsScreen {
     /// Current user profile being edited
@@ -204,6 +234,12 @@ pub struct SettingsScreen {
     pub geolocation_status: GeolocationStatus,
     /// Flag indicating geolocation was requested
     geolocation_requested: bool,
+    /// Weather API key input buffer (stored in OS keyring, not in config)
+    weather_api_key_input: String,
+    /// Credential store for securely saving weather API keys to OS keyring
+    weather_credential_store: WeatherCredentialStore,
+    /// Status of weather API key operations
+    pub weather_api_key_status: WeatherApiKeyStatus,
     /// T109: Sync/platform configuration
     pub sync_config: SyncConfig,
     /// T109: Show/hide sync section
@@ -584,6 +620,10 @@ pub enum SettingsAction {
     NavigateToTrainingPeaksSettings,
     /// Auto-detect weather location using IP geolocation
     AutoDetectWeatherLocation,
+    /// Save weather API key to OS keyring
+    SaveWeatherApiKey(String),
+    /// Clear weather API key from OS keyring
+    ClearWeatherApiKey,
 }
 
 impl SettingsScreen {
@@ -643,6 +683,9 @@ impl SettingsScreen {
             weather_temp_override_input: "20".to_string(),
             geolocation_status: GeolocationStatus::Idle,
             geolocation_requested: false,
+            weather_api_key_input: String::new(),
+            weather_credential_store: WeatherCredentialStore::new(),
+            weather_api_key_status: WeatherApiKeyStatus::Idle,
             sync_config: SyncConfig::default(),
             show_sync: false,
             platform_states: vec![
@@ -743,6 +786,44 @@ impl SettingsScreen {
     /// Get the current geolocation status.
     pub fn get_geolocation_status(&self) -> &GeolocationStatus {
         &self.geolocation_status
+    }
+
+    /// Set weather API key saved status.
+    pub fn set_weather_api_key_saved(&mut self) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Saved {
+            timestamp: std::time::Instant::now(),
+        };
+        self.weather_config.api_key_configured = true;
+        self.has_changes = true;
+    }
+
+    /// Set weather API key cleared status.
+    pub fn set_weather_api_key_cleared(&mut self) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Cleared {
+            timestamp: std::time::Instant::now(),
+        };
+        self.weather_config.api_key_configured = false;
+        self.weather_api_key_input.clear();
+        self.has_changes = true;
+    }
+
+    /// Set weather API key error status.
+    pub fn set_weather_api_key_error(&mut self, error: String) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+            message: error,
+            timestamp: std::time::Instant::now(),
+        };
+    }
+
+    /// Get the current weather API key status.
+    pub fn get_weather_api_key_status(&self) -> &WeatherApiKeyStatus {
+        &self.weather_api_key_status
+    }
+
+    /// Get a reference to the weather credential store.
+    /// Use this to store or retrieve API keys from the OS keyring.
+    pub fn weather_credential_store(&self) -> &WeatherCredentialStore {
+        &self.weather_credential_store
     }
 
     /// Set MQTT configuration.
@@ -1733,28 +1814,183 @@ impl SettingsScreen {
                     ui.label(RichText::new("API Settings").strong());
                     ui.add_space(4.0);
 
-                    // API key status
+                    // API key status indicator
                     ui.horizontal(|ui| {
-                        ui.label("API Key:");
+                        ui.label("Status:");
                         if self.weather_config.api_key_configured {
                             ui.label(
-                                RichText::new("Configured")
+                                RichText::new("✓ API key configured")
                                     .color(Color32::from_rgb(52, 168, 83)),
                             );
                         } else {
                             ui.label(
-                                RichText::new("Not configured")
+                                RichText::new("✗ API key not configured")
                                     .color(Color32::from_rgb(234, 67, 53)),
                             );
                         }
                     });
 
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("Get a free API key from openweathermap.org")
-                            .weak()
-                            .small(),
-                    );
+
+                    // API key input field
+                    egui::Grid::new("weather_api_key_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("API Key:");
+                            ui.horizontal(|ui| {
+                                // Password field for API key
+                                let _api_key_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.weather_api_key_input)
+                                        .password(true)
+                                        .desired_width(200.0)
+                                        .hint_text("Enter your OpenWeatherMap API key"),
+                                );
+                            });
+                            ui.end_row();
+                        });
+
+                    ui.add_space(4.0);
+
+                    // Save and Clear buttons
+                    ui.horizontal(|ui| {
+                        // Save button - enabled only when there's text to save
+                        let can_save = !self.weather_api_key_input.trim().is_empty();
+                        if ui
+                            .add_enabled(can_save, egui::Button::new("💾 Save API Key"))
+                            .on_hover_text("Store the API key securely in your system's keyring")
+                            .clicked()
+                        {
+                            // Save to keyring
+                            let api_key = self.weather_api_key_input.trim().to_string();
+                            match self.weather_credential_store.save_api_key(&api_key) {
+                                Ok(()) => {
+                                    self.weather_config.api_key_configured = true;
+                                    self.weather_api_key_input.clear();
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Saved {
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    self.has_changes = true;
+                                    tracing::info!("Saved weather API key to OS keyring");
+                                }
+                                Err(e) => {
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+                                        message: format!("Failed to save: {}", e),
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    tracing::error!("Failed to save weather API key: {}", e);
+                                }
+                            }
+                        }
+
+                        // Clear button - enabled only when a key is configured
+                        if ui
+                            .add_enabled(
+                                self.weather_config.api_key_configured,
+                                egui::Button::new("🗑 Clear API Key"),
+                            )
+                            .on_hover_text("Remove the API key from your system's keyring")
+                            .clicked()
+                        {
+                            // Clear from keyring
+                            match self.weather_credential_store.clear_api_key() {
+                                Ok(()) => {
+                                    self.weather_config.api_key_configured = false;
+                                    self.weather_api_key_input.clear();
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Cleared {
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    self.has_changes = true;
+                                    tracing::info!("Cleared weather API key from OS keyring");
+                                }
+                                Err(e) => {
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+                                        message: format!("Failed to clear: {}", e),
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    tracing::error!("Failed to clear weather API key: {}", e);
+                                }
+                            }
+                        }
+
+                        // Show status messages
+                        match &self.weather_api_key_status {
+                            WeatherApiKeyStatus::Idle => {}
+                            WeatherApiKeyStatus::Saved { timestamp } => {
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new("✓ Saved")
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            WeatherApiKeyStatus::Cleared { timestamp } => {
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new("✓ Cleared")
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            WeatherApiKeyStatus::Failed { message, timestamp } => {
+                                if timestamp.elapsed().as_secs() < 10 {
+                                    ui.label(
+                                        RichText::new(format!("✗ {}", message))
+                                            .color(Color32::from_rgb(234, 67, 53))
+                                            .small(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Instructions and link to get API key
+                    ui.group(|ui| {
+                        ui.set_min_width(ui.available_width() - 8.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("📋 How to get an API key:").strong().small());
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new("1. Visit openweathermap.org and create a free account")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.label(
+                                RichText::new("2. Go to 'API keys' in your account settings")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.label(
+                                RichText::new("3. Copy your default key or generate a new one")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.add_space(4.0);
+
+                            // Clickable link to OpenWeatherMap
+                            if ui
+                                .add(
+                                    egui::Label::new(
+                                        RichText::new("🔗 Open openweathermap.org")
+                                            .color(Color32::from_rgb(66, 133, 244))
+                                            .underline(),
+                                    )
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_text("Open OpenWeatherMap website in your browser")
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                if let Err(e) = open::that("https://openweathermap.org/api") {
+                                    tracing::warn!("Failed to open browser: {}", e);
+                                }
+                            }
+                        });
+                    });
 
                     ui.add_space(8.0);
 
