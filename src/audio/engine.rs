@@ -594,6 +594,13 @@ impl DefaultAudioEngine {
     ///
     /// Each audio item is played with its category-specific volume, which combines
     /// the master volume with the category volume.
+    ///
+    /// ## Timing Safeguards
+    ///
+    /// - **Expiration**: Items that have been in queue too long are dropped
+    /// - **Minimum Gap**: Enforces minimum gap between audio items to prevent overlap
+    /// - **Priority Interruption**: High-priority items can interrupt lower-priority playback
+    /// - **Time-Critical Handling**: Countdown sounds have very short expiration (500ms default)
     pub async fn process_queue(&self) {
         // Clear any stale interrupt flag
         self.clear_interrupt();
@@ -619,11 +626,38 @@ impl DefaultAudioEngine {
                 }
             }
 
+            // Enforce minimum audio gap to prevent overlap
+            // Skip the gap for time-critical items (countdown) that need to play immediately
+            if !item.is_time_critical() && !self.min_gap_elapsed() {
+                let timing_config = self.config.lock().unwrap().timing.clone();
+                let gap_duration = Duration::from_millis(timing_config.min_audio_gap_ms);
+
+                // Calculate remaining wait time
+                if let Some(last_end) = *self.last_playback_end.lock().unwrap() {
+                    let elapsed = last_end.elapsed();
+                    if elapsed < gap_duration {
+                        let remaining = gap_duration - elapsed;
+                        tracing::trace!("Waiting {:?} for min audio gap", remaining);
+                        tokio::time::sleep(remaining).await;
+                    }
+                }
+            }
+
             // Calculate the effective volume for this item
             let effective_volume = {
                 let config = self.config.lock().unwrap();
                 item.effective_volume(&config)
             };
+
+            // Log time-critical item playback timing
+            if item.is_time_critical() {
+                let age = item.age_ms();
+                tracing::debug!(
+                    "Playing time-critical audio (age: {}ms): {}",
+                    age,
+                    item.type_description()
+                );
+            }
 
             // Set current priority before playing
             *self.current_priority.lock().unwrap() = Some(item.priority);
@@ -641,6 +675,9 @@ impl DefaultAudioEngine {
                         .await
                 }
             };
+
+            // Record when playback ended for gap enforcement
+            self.record_playback_end();
 
             // Clear current priority after playing
             *self.current_priority.lock().unwrap() = None;
