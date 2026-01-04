@@ -181,6 +181,8 @@ pub struct RustRideApp {
     oauth_handler: Arc<DefaultOAuthHandler>,
     /// T016: Pending Garmin Connect OAuth connection task
     pending_garmin_oauth: Option<tokio::task::JoinHandle<Result<String, String>>>,
+    /// T016/5.3: Pending Garmin Connect disconnect task
+    pending_garmin_disconnect: Option<tokio::task::JoinHandle<Result<(), String>>>,
 }
 
 impl RustRideApp {
@@ -502,6 +504,7 @@ impl RustRideApp {
             // T016: OAuth handler for sync platforms
             oauth_handler,
             pending_garmin_oauth: None,
+            pending_garmin_disconnect: None,
         }
     }
 
@@ -1081,6 +1084,50 @@ impl RustRideApp {
         }
     }
 
+    /// T016/5.3: Poll for Garmin disconnect result.
+    ///
+    /// Called each frame to check if a pending disconnect operation has completed.
+    fn poll_garmin_disconnect(&mut self) {
+        // Only poll when on the Garmin Settings screen
+        if self.current_screen != Screen::GarminSettings {
+            return;
+        }
+
+        // Check if we have a pending disconnect task
+        if let Some(handle) = &mut self.pending_garmin_disconnect {
+            // Check if the task has completed (non-blocking)
+            if handle.is_finished() {
+                // Take ownership of the handle
+                if let Some(handle) = self.pending_garmin_disconnect.take() {
+                    // Block on the result (it's already finished, so this is instant)
+                    match self.tokio_runtime.block_on(handle) {
+                        Ok(Ok(())) => {
+                            // Disconnect successful
+                            tracing::info!("Garmin Connect disconnected successfully");
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Disconnected);
+                            // Clear the user profile
+                            self.garmin_settings_screen.set_user_profile(None);
+                        }
+                        Ok(Err(error_msg)) => {
+                            // Disconnect failed
+                            tracing::error!("Garmin disconnect failed: {}", error_msg);
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Error(error_msg));
+                        }
+                        Err(e) => {
+                            // Task panicked
+                            tracing::error!("Garmin disconnect task panicked: {}", e);
+                            self.garmin_settings_screen.set_connection_state(
+                                GarminConnectionState::Error(format!("Internal error: {}", e)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// T091: Process pending executor events for UI navigation.
     ///
     /// Called each frame to handle navigation and fullscreen events from HID button actions.
@@ -1374,10 +1421,13 @@ impl eframe::App for RustRideApp {
         // T016/5.2: Poll for Garmin OAuth result
         self.poll_garmin_oauth();
 
+        // T016/5.3: Poll for Garmin disconnect result
+        self.poll_garmin_disconnect();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, OAuth)
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, OAuth, disconnect)
         if self.current_screen == Screen::Ride
             || self.current_screen == Screen::SensorSetup
             || (self.current_screen == Screen::Settings
@@ -1385,7 +1435,8 @@ impl eframe::App for RustRideApp {
                     || self.pending_mqtt_test.is_some()
                     || self.pending_fan_test.is_some()))
             || (self.current_screen == Screen::GarminSettings
-                && self.pending_garmin_oauth.is_some())
+                && (self.pending_garmin_oauth.is_some()
+                    || self.pending_garmin_disconnect.is_some()))
         {
             ctx.request_repaint();
         }
@@ -1759,7 +1810,34 @@ impl eframe::App for RustRideApp {
                             self.pending_garmin_oauth = Some(handle);
                         }
                         GarminSettingsAction::Disconnect => {
-                            // TODO: Subtask 5.3 - Handle disconnect
+                            // T016/5.3: Disconnect from Garmin Connect
+                            tracing::info!("Disconnecting from Garmin Connect");
+
+                            // Set UI state to disconnecting
+                            self.garmin_settings_screen
+                                .set_connection_state(GarminConnectionState::Disconnecting);
+
+                            // Spawn async task to revoke authorization
+                            let oauth_handler = self.oauth_handler.clone();
+                            let handle = self.tokio_runtime.spawn(async move {
+                                match oauth_handler.revoke(SyncPlatform::GarminConnect).await {
+                                    Ok(()) => {
+                                        tracing::info!(
+                                            "Garmin Connect authorization revoked successfully"
+                                        );
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to revoke Garmin Connect authorization: {}",
+                                            e
+                                        );
+                                        Err(format!("Disconnect error: {}", e))
+                                    }
+                                }
+                            });
+
+                            self.pending_garmin_disconnect = Some(handle);
                         }
                         GarminSettingsAction::ToggleAutoSync(_enabled) => {
                             // TODO: Subtask 5.4 - Handle auto-sync toggle
