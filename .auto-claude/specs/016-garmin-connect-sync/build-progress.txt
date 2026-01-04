@@ -83,7 +83,7 @@
 - 1.5 ✅ Implemented Garmin deauthorization/logout
 - 1.6 ✅ Added Garmin API error handling
 
-### Phase 2 - IN PROGRESS
+### Phase 2 - COMPLETED
 - 2.1 ✅ Added Garmin OAuth provider configuration
   - Added comprehensive HTTP mocked tests for Garmin OAuth token exchange
   - Added HTTP mocked tests for Garmin OAuth token refresh
@@ -101,3 +101,21 @@
   - State parameter validation for CSRF protection
   - Comprehensive test coverage (success, errors, edge cases)
   - Implementation completed as part of Phase 1 and 2.1, verified complete
+- 2.3 ✅ Implemented Garmin token refresh
+  - Added TokenRefresher trait for pluggable token refresh callback
+  - Added token_refresher infrastructure to GarminClient (set/clear/has_token_refresher)
+  - Added attempt_token_refresh() internal method
+  - Added with_auto_refresh() helper for automatic retry on TokenExpired
+  - Added upload_activity_with_refresh() and get_user_profile_with_refresh() wrapper methods
+  - Limits refresh attempts to MAX_AUTO_REFRESH_ATTEMPTS (1)
+  - Propagates AuthorizationRequired from refresh failures
+  - Comprehensive unit and HTTP mocked tests
+- 2.4 ✅ Added Garmin credentials storage
+  - Added GarminClient import and PlatformClient::GarminConnect enum variant in service.rs
+  - Initialized GarminClient in spawn_with_db() alongside Strava and TrainingPeaks
+  - Updated load_stored_credentials() to load Garmin tokens from keyring on startup
+  - Updated handle_disconnect() to call garmin.deauthorize() and clear credentials
+  - Updated check_and_refresh_token() to set Garmin access token after refresh
+  - Updated process_single_upload() to call garmin.upload_activity() for GarminConnect
+  - Keyring storage uses lowercase platform name "garminconnect" as credential key
+  - Added comprehensive tests for Garmin service integration

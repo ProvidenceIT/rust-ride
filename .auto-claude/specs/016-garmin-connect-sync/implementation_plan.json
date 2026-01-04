@@ -115,8 +115,9 @@
           "file_paths": [
             "src/integrations/sync/garmin.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented automatic token refresh for GarminClient:\n\n1. Added TokenRefresher trait for pluggable token refresh callback:\n   - refresh_token() method returns new access token\n   - Supports async operation via Pin<Box<dyn Future>>\n\n2. Added token refresh infrastructure to GarminClient:\n   - token_refresher: Arc<RwLock<Option<Arc<dyn TokenRefresher>>>>\n   - set_token_refresher() / clear_token_refresher() / has_token_refresher()\n   - attempt_token_refresh() internal method\n\n3. Added with_auto_refresh() helper method:\n   - Wraps API operations with automatic retry on TokenExpired\n   - Limits refresh attempts to MAX_AUTO_REFRESH_ATTEMPTS (1)\n   - Propagates AuthorizationRequired from refresh failures\n\n4. Added auto-refresh wrapper methods:\n   - upload_activity_with_refresh(ride_id, fit_data)\n   - get_user_profile_with_refresh()\n\n5. Comprehensive test coverage:\n   - Unit tests for TokenRefresher trait methods\n   - Unit tests for with_auto_refresh helper\n   - HTTP mocked tests for wrapper methods with token refresh scenarios",
+          "updated_at": "2026-01-04T13:16:03.742241+00:00"
         },
         {
           "id": "2.4",
@@ -126,8 +127,9 @@
             "src/integrations/sync/garmin.rs",
             "src/integrations/sync/service.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented Garmin OAuth token storage using existing keyring/credential storage pattern:\n\n1. Added GarminClient import and PlatformClient::GarminConnect enum variant in service.rs\n2. Initialized GarminClient in spawn_with_db() alongside Strava and TrainingPeaks\n3. Updated load_stored_credentials() to load Garmin tokens from keyring on startup\n4. Updated handle_disconnect() to call garmin.deauthorize() and clear credentials\n5. Updated check_and_refresh_token() to set Garmin access token after refresh\n6. Updated process_single_upload() to call garmin.upload_activity() for GarminConnect platform\n7. Added comprehensive tests: test_get_garmin_status_not_connected, test_queue_garmin_upload_requires_connection, test_update_garmin_config, test_garmin_sync_event_debug, test_platform_client_enum_garmin, test_garmin_platform_in_default_config\n\nKeyring storage uses lowercase platform name \"garminconnect\" as credential key (via KeyringCredentialStore::key_for_platform). Tokens are serialized to JSON and stored securely in OS credential store (Windows Credential Manager, macOS Keychain, or Linux Secret Service).",
+          "updated_at": "2026-01-04T13:22:30.381801+00:00"
         }
       ]
     },
@@ -432,5 +434,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:06:37.075615+00:00"
+  "last_updated": "2026-01-04T13:22:30.381801+00:00"
 }

@@ -8,6 +8,7 @@
 //! - Upload queue management
 //! - Persistent queue with offline support
 
+use super::garmin::GarminClient;
 use super::oauth::{CredentialStore, KeyringCredentialStore, OAuthHandler, TokenResponse, TokenStatus};
 use super::strava::StravaClient;
 use super::trainingpeaks::TrainingPeaksClient;
@@ -445,6 +446,7 @@ pub struct SyncService<O: OAuthHandler + 'static, C: CredentialStore + 'static> 
 enum PlatformClient {
     Strava(StravaClient),
     TrainingPeaks(TrainingPeaksClient),
+    GarminConnect(GarminClient),
 }
 
 impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync + 'static>
@@ -480,6 +482,10 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
         clients.insert(
             SyncPlatform::TrainingPeaks,
             PlatformClient::TrainingPeaks(TrainingPeaksClient::new()),
+        );
+        clients.insert(
+            SyncPlatform::GarminConnect,
+            PlatformClient::GarminConnect(GarminClient::new()),
         );
 
         let service = Self {
@@ -904,6 +910,18 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                             &entry.fit_data,
                             entry.activity_name.as_deref(),
                             None, // description
+                        )
+                        .await
+                } else {
+                    Err(SyncError::NotConfigured(platform))
+                }
+            }
+            SyncPlatform::GarminConnect => {
+                if let Some(PlatformClient::GarminConnect(client)) = self.clients.get(&platform) {
+                    client
+                        .upload_activity(
+                            &entry.record.ride_id,
+                            &entry.fit_data,
                         )
                         .await
                 } else {
@@ -1377,6 +1395,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                         PlatformClient::TrainingPeaks(trainingpeaks) => {
                             trainingpeaks.set_access_token(new_tokens.access_token.clone()).await;
                         }
+                        PlatformClient::GarminConnect(garmin) => {
+                            garmin.set_access_token(new_tokens.access_token.clone()).await;
+                        }
                     }
                 }
 
@@ -1472,7 +1493,7 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
     async fn load_stored_credentials(&mut self) {
         tracing::debug!("Loading stored credentials");
 
-        for platform in [SyncPlatform::Strava, SyncPlatform::TrainingPeaks] {
+        for platform in [SyncPlatform::Strava, SyncPlatform::TrainingPeaks, SyncPlatform::GarminConnect] {
             if self.credential_store.has_credentials(platform) {
                 match self.credential_store.get_tokens(platform).await {
                     Ok(Some(tokens)) => {
@@ -1486,6 +1507,9 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                                 }
                                 PlatformClient::TrainingPeaks(trainingpeaks) => {
                                     trainingpeaks.set_access_token(tokens.access_token.clone()).await;
+                                }
+                                PlatformClient::GarminConnect(garmin) => {
+                                    garmin.set_access_token(tokens.access_token.clone()).await;
                                 }
                             }
                         }
@@ -1539,6 +1563,12 @@ impl<O: OAuthHandler + Send + Sync + 'static, C: CredentialStore + Send + Sync +
                 }
                 PlatformClient::TrainingPeaks(trainingpeaks) => {
                     if let Err(e) = trainingpeaks.deauthorize().await {
+                        tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
+                        // Continue anyway - we still want to clear local credentials
+                    }
+                }
+                PlatformClient::GarminConnect(garmin) => {
+                    if let Err(e) = garmin.deauthorize().await {
                         tracing::warn!("Deauthorization failed for {:?}: {}", platform, e);
                         // Continue anyway - we still want to clear local credentials
                     }
@@ -2400,5 +2430,110 @@ mod tests {
             }
             _ => panic!("Expected TrainingPeaks variant"),
         }
+    }
+
+    // ========== GarminConnect Integration Tests ==========
+
+    #[tokio::test]
+    async fn test_get_garmin_status_not_connected() {
+        let oauth_handler = DefaultOAuthHandler::new(8899);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+        assert!(!status.connected);
+        assert!(status.token_status.is_none());
+        assert_eq!(status.pending_uploads, 0);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_queue_garmin_upload_requires_connection() {
+        let oauth_handler = DefaultOAuthHandler::new(8900);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let result = handle
+            .queue_upload(
+                Uuid::new_v4(),
+                SyncPlatform::GarminConnect,
+                vec![0u8; 100],
+                Some("Test Ride".to_string()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_garmin_config() {
+        let oauth_handler = DefaultOAuthHandler::new(8901);
+        let config = SyncConfig::default();
+        let handle = create_sync_service(oauth_handler, config);
+
+        let new_config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+
+        handle
+            .update_config(SyncPlatform::GarminConnect, new_config.clone())
+            .await
+            .unwrap();
+
+        let status = handle.get_status(SyncPlatform::GarminConnect).await.unwrap();
+        assert!(status.config.enabled);
+        assert!(status.config.auto_sync);
+
+        handle.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn test_garmin_sync_event_debug() {
+        // Verify SyncEvent variants can be formatted with GarminConnect
+        let event = SyncEvent::TokenRefreshed {
+            platform: SyncPlatform::GarminConnect,
+            expires_at: Utc::now(),
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("TokenRefreshed"));
+        assert!(debug_str.contains("GarminConnect"));
+
+        let event = SyncEvent::UploadStarted {
+            record_id: Uuid::new_v4(),
+            ride_id: Uuid::new_v4(),
+            platform: SyncPlatform::GarminConnect,
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("UploadStarted"));
+        assert!(debug_str.contains("GarminConnect"));
+    }
+
+    #[test]
+    fn test_platform_client_enum_garmin() {
+        // Verify GarminConnect client can be created as PlatformClient variant
+        let garmin_client = GarminClient::new();
+        let platform_client = PlatformClient::GarminConnect(garmin_client);
+
+        match platform_client {
+            PlatformClient::GarminConnect(client) => {
+                assert!(!client.is_configured());
+            }
+            _ => panic!("Expected GarminConnect variant"),
+        }
+    }
+
+    #[test]
+    fn test_garmin_platform_in_default_config() {
+        // Verify GarminConnect is included in default config
+        let config = SyncConfig::default();
+        assert!(config.platforms.contains_key(&SyncPlatform::GarminConnect));
+
+        let garmin_config = config.platforms.get(&SyncPlatform::GarminConnect).unwrap();
+        assert!(!garmin_config.enabled);
+        assert!(!garmin_config.auto_sync);
     }
 }

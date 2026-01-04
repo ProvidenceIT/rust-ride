@@ -1,0 +1,30 @@
+{
+  "discovered_files": {
+    "src/integrations/sync/garmin.rs": {
+      "description": "Automatic token refresh implemented via TokenRefresher trait and with_auto_refresh() helper. Use upload_activity_with_refresh() and get_user_profile_with_refresh() for operations that should auto-retry on token expiry. Set refresher via set_token_refresher(Arc::new(my_refresher)). The refresher should implement TokenRefresher::refresh_token() returning the new access token.",
+      "category": "pattern",
+      "discovered_at": "2026-01-04T13:16:11.842677+00:00"
+    },
+    "src/integrations/sync/strava.rs": {
+      "description": "Fully implemented Strava client with multipart FIT upload, OAuth token management, athlete profile retrieval, deauthorization, and comprehensive error handling. Use as pattern for Garmin implementation.",
+      "category": "sync_integration",
+      "discovered_at": "2026-01-04T12:21:58.333975+00:00"
+    },
+    "src/ui/screens/settings_strava.rs": {
+      "description": "StravaSettingsScreen provides the UI pattern for connection settings: connection states (Disconnected, Connecting, Connected, Disconnecting, Error), athlete profile display, auto-sync toggle, and action handling. Copy this pattern for GarminSettingsScreen.",
+      "category": "ui",
+      "discovered_at": "2026-01-04T12:21:58.402332+00:00"
+    },
+    "src/integrations/sync/oauth.rs": {
+      "description": "Garmin OAuth token exchange is fully implemented: exchange_garmin_token (lines 603-673) handles authorization code exchange, refresh_garmin_token (lines 898+) handles token refresh, handle_callback routes GarminConnect correctly. Uses GarminTokenResponse with expires_in (not expires_at like Strava) and GarminOAuthErrorResponse for errors. Comprehensive test coverage in the garmin_oauth_tests module.",
+      "category": "oauth",
+      "discovered_at": "2026-01-04T13:07:15.504255+00:00"
+    },
+    "src/integrations/sync/service.rs": {
+      "description": "GarminClient integrated into SyncService. Token loading from keyring (load_stored_credentials), disconnect/deauthorize, token refresh, and upload queue processing all handle GarminConnect platform. Uses same PlatformClient enum pattern as Strava/TrainingPeaks. Keyring storage uses lowercase platform name (\"garminconnect\") as the credential key.",
+      "category": "integration",
+      "discovered_at": "2026-01-04T13:22:18.636259+00:00"
+    }
+  },
+  "last_updated": "2026-01-04T13:22:18.636259+00:00"
+}

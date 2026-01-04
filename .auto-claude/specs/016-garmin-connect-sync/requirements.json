@@ -1,0 +1,4 @@
+{
+  "task_description": "# Garmin Connect Sync\n\nAdd Garmin Connect API integration for uploading completed rides. Support automatic background sync to ensure rides are always backed up to Garmin's ecosystem.\n\n## Rationale\nGarmin has a massive ecosystem of users who track all activities in Garmin Connect. Native sync makes RustRide seamlessly integrate into their existing training workflow.\n\n## User Stories\n- As a Garmin user, I want my indoor rides in Garmin Connect alongside my outdoor rides so that my training history is complete\n- As a cyclist, I want automatic sync so that I don't have to manually export and upload files\n\n## Acceptance Criteria\n- [ ] User can connect Garmin Connect account\n- [ ] Rides upload to Garmin Connect automatically\n- [ ] FIT files upload correctly with all data preserved\n- [ ] Connection status visible in settings\n- [ ] Failed uploads queue for retry\n",
+  "workflow_type": "feature"
+}
