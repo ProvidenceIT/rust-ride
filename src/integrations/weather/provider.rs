@@ -417,15 +417,21 @@ impl WeatherProvider for OpenWeatherMapProvider {
         if !self.should_retry().await {
             // If we have cached data (even stale), return it during backoff
             if let Some(data) = self.get_cached() {
-                tracing::debug!(
-                    "Returning stale cached data during backoff period"
+                tracing::warn!(
+                    "API unavailable, returning stale cached weather data"
                 );
                 return Ok(data);
             }
-            // No cached data available and in backoff - return error
-            return Err(WeatherError::NetworkError(
-                "In backoff period after previous failures".to_string(),
-            ));
+            // No cached data available - return default weather
+            let config = self.config.read().await;
+            tracing::warn!(
+                "API unavailable and no cache available, using default weather (clear, {})",
+                match config.units {
+                    WeatherUnits::Metric => "20°C",
+                    WeatherUnits::Imperial => "68°F",
+                }
+            );
+            return Ok(WeatherData::default_weather(config.units));
         }
 
         // Fetch fresh data
@@ -433,7 +439,27 @@ impl WeatherProvider for OpenWeatherMapProvider {
             Ok(data) => Ok(data),
             Err(error) => {
                 self.record_failure(&error).await;
-                Err(error)
+
+                // Fallback: try to return cached data (even stale)
+                if let Some(data) = self.get_cached() {
+                    tracing::warn!(
+                        error = %error,
+                        "API request failed, returning stale cached weather data"
+                    );
+                    return Ok(data);
+                }
+
+                // Fallback: return default weather if no cache
+                let config = self.config.read().await;
+                tracing::warn!(
+                    error = %error,
+                    "API request failed and no cache available, using default weather (clear, {})",
+                    match config.units {
+                        WeatherUnits::Metric => "20°C",
+                        WeatherUnits::Imperial => "68°F",
+                    }
+                );
+                Ok(WeatherData::default_weather(config.units))
             }
         }
     }
@@ -879,5 +905,144 @@ mod tests {
         // Should have stopped quickly, not waited 60 seconds
         assert!(start.elapsed() < Duration::from_secs(1));
         assert!(handle.is_stopped());
+    }
+
+    // ========== Fallback Behavior Tests ==========
+
+    #[tokio::test]
+    async fn test_fallback_returns_default_weather_when_no_cache_and_in_backoff() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with metric units
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Record a failure to trigger backoff
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Now get_weather should return default weather (no cache, in backoff)
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Check it's the default weather (20°C, clear)
+        assert!((weather.temperature - 20.0).abs() < 0.1);
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+        assert_eq!(weather.description, "Clear (default)");
+    }
+
+    #[tokio::test]
+    async fn test_fallback_returns_default_weather_imperial() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with imperial units
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 40.7128,
+            longitude: -74.0060,
+            units: WeatherUnits::Imperial,
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Record a failure to trigger backoff
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Now get_weather should return default weather in imperial
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Check it's the default weather (68°F, clear)
+        assert!((weather.temperature - 68.0).abs() < 0.1);
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+    }
+
+    #[tokio::test]
+    async fn test_fallback_returns_cached_data_during_backoff() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure provider
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            refresh_interval_minutes: 1, // Very short for testing
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Manually set cached data
+        let cached_weather = super::WeatherData {
+            temperature: 15.0,
+            feels_like: 14.0,
+            humidity: 70,
+            condition: WeatherCondition::Rain,
+            description: "Light rain".to_string(),
+            wind_speed: 5.0,
+            wind_direction: 180,
+            pressure: 1010,
+            visibility: 8000,
+            uv_index: None,
+            fetched_at: chrono::Utc::now() - chrono::Duration::minutes(60), // Stale data
+        };
+        *provider.cached_data.write().await = Some(cached_weather);
+
+        // Record a failure to trigger backoff
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Now get_weather should return the cached data (even though stale)
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Check it's the cached weather, not default
+        assert!((weather.temperature - 15.0).abs() < 0.1);
+        assert_eq!(weather.condition, WeatherCondition::Rain);
+        assert_eq!(weather.description, "Light rain");
+    }
+
+    #[tokio::test]
+    async fn test_fallback_default_weather_has_calm_wind() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Record a failure to trigger backoff
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Check calm wind
+        assert!((weather.wind_speed - 0.0).abs() < 0.1);
+        assert_eq!(weather.wind_direction, 0);
     }
 }

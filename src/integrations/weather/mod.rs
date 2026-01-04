@@ -200,6 +200,38 @@ impl WeatherCondition {
 }
 
 impl WeatherData {
+    /// Create default weather data for fallback when API is unavailable.
+    ///
+    /// Returns clear weather with mild temperature:
+    /// - 20°C (68°F) temperature
+    /// - Clear sky
+    /// - Calm wind (0 km/h)
+    /// - 50% humidity
+    /// - Normal atmospheric pressure
+    ///
+    /// # Arguments
+    /// * `units` - The temperature units to use for the default values
+    pub fn default_weather(units: WeatherUnits) -> Self {
+        let (temperature, feels_like) = match units {
+            WeatherUnits::Metric => (20.0, 20.0),   // 20°C
+            WeatherUnits::Imperial => (68.0, 68.0), // 68°F
+        };
+
+        Self {
+            temperature,
+            feels_like,
+            humidity: 50,
+            condition: WeatherCondition::Clear,
+            description: "Clear (default)".to_string(),
+            wind_speed: 0.0, // Calm wind
+            wind_direction: 0,
+            pressure: 1013, // Standard atmospheric pressure
+            visibility: 10000,
+            uv_index: None,
+            fetched_at: chrono::Utc::now(),
+        }
+    }
+
     /// Format temperature with unit
     pub fn formatted_temperature(&self, units: WeatherUnits) -> String {
         match units {
@@ -520,5 +552,49 @@ mod tests {
                     | WeatherType::Snow
             ));
         }
+    }
+
+    #[test]
+    fn test_default_weather_metric() {
+        let weather = WeatherData::default_weather(WeatherUnits::Metric);
+
+        // Check temperature is 20°C
+        assert!((weather.temperature - 20.0).abs() < 0.1);
+        assert!((weather.feels_like - 20.0).abs() < 0.1);
+
+        // Check clear conditions
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+        assert_eq!(weather.description, "Clear (default)");
+
+        // Check calm wind
+        assert!((weather.wind_speed - 0.0).abs() < 0.1);
+
+        // Check other defaults
+        assert_eq!(weather.humidity, 50);
+        assert_eq!(weather.pressure, 1013);
+        assert_eq!(weather.visibility, 10000);
+    }
+
+    #[test]
+    fn test_default_weather_imperial() {
+        let weather = WeatherData::default_weather(WeatherUnits::Imperial);
+
+        // Check temperature is 68°F
+        assert!((weather.temperature - 68.0).abs() < 0.1);
+        assert!((weather.feels_like - 68.0).abs() < 0.1);
+
+        // Check clear conditions
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+    }
+
+    #[test]
+    fn test_default_weather_has_current_timestamp() {
+        let before = chrono::Utc::now();
+        let weather = WeatherData::default_weather(WeatherUnits::Metric);
+        let after = chrono::Utc::now();
+
+        // Timestamp should be between before and after
+        assert!(weather.fetched_at >= before);
+        assert!(weather.fetched_at <= after);
     }
 }
