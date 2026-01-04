@@ -5,7 +5,11 @@
 use super::{WeatherCondition, WeatherConfig, WeatherData, WeatherError, WeatherUnits};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+
+/// HTTP request timeout in seconds
+const HTTP_TIMEOUT_SECS: u64 = 10;
 
 /// Trait for weather providers
 pub trait WeatherProvider: Send + Sync {
@@ -148,34 +152,86 @@ impl OpenWeatherMapProvider {
 
         let url = self.build_url(&config, api_key);
 
-        tracing::debug!("Fetching weather data from OpenWeatherMap");
+        tracing::info!(
+            lat = config.latitude,
+            lon = config.longitude,
+            units = ?config.units,
+            "Fetching weather data from OpenWeatherMap"
+        );
 
-        // Make the HTTP request
-        let client = reqwest::Client::new();
-        let response = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| WeatherError::NetworkError(e.to_string()))?;
+        // Create HTTP client with timeout
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to build HTTP client");
+                WeatherError::NetworkError(format!("Failed to build HTTP client: {}", e))
+            })?;
+
+        // Make the HTTP request with timing
+        let start_time = std::time::Instant::now();
+        let response = client.get(&url).send().await.map_err(|e| {
+            let elapsed = start_time.elapsed();
+            if e.is_timeout() {
+                tracing::warn!(
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    timeout_secs = HTTP_TIMEOUT_SECS,
+                    "Weather API request timed out"
+                );
+                WeatherError::NetworkError(format!(
+                    "Request timed out after {} seconds",
+                    HTTP_TIMEOUT_SECS
+                ))
+            } else if e.is_connect() {
+                tracing::warn!(
+                    error = %e,
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    "Failed to connect to weather API"
+                );
+                WeatherError::NetworkError(format!("Connection failed: {}", e))
+            } else {
+                tracing::warn!(
+                    error = %e,
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    "Weather API network error"
+                );
+                WeatherError::NetworkError(e.to_string())
+            }
+        })?;
+
+        let elapsed = start_time.elapsed();
+        let status = response.status();
+
+        tracing::debug!(
+            status = status.as_u16(),
+            elapsed_ms = elapsed.as_millis() as u64,
+            "Weather API response received"
+        );
 
         // Check for HTTP errors
-        if !response.status().is_success() {
-            let status = response.status();
+        if !status.is_success() {
             if status.as_u16() == 429 {
+                tracing::warn!("Weather API rate limit exceeded (HTTP 429)");
                 return Err(WeatherError::RateLimited);
             }
+            let reason = status.canonical_reason().unwrap_or("Unknown error");
+            tracing::error!(
+                status = status.as_u16(),
+                reason = reason,
+                "Weather API request failed"
+            );
             return Err(WeatherError::RequestFailed(format!(
                 "HTTP {} - {}",
                 status.as_u16(),
-                status.canonical_reason().unwrap_or("Unknown error")
+                reason
             )));
         }
 
         // Parse JSON response
-        let owm_response: OwmResponse = response
-            .json()
-            .await
-            .map_err(|e| WeatherError::InvalidResponse(format!("Failed to parse JSON: {}", e)))?;
+        let owm_response: OwmResponse = response.json().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to parse weather API JSON response");
+            WeatherError::InvalidResponse(format!("Failed to parse JSON: {}", e))
+        })?;
 
         // Extract condition from first weather entry
         let condition = owm_response
