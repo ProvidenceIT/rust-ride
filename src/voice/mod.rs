@@ -86,6 +86,7 @@ pub use recognizer::{
 };
 pub use engine::{
     VoiceEngine, VoiceEngineConfig, VoiceEngineError, VoiceEngineEvent, VoiceEngineState,
+    CommandCooldown,
 };
 pub use command_parser::{
     CommandParser, ParseResult, levenshtein_distance, string_similarity,

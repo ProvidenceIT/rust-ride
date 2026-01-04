@@ -91,6 +91,14 @@ const DEFAULT_MIN_CONFIDENCE: f32 = 0.5;
 /// Timeout for silence before finalizing recognition (in milliseconds).
 const DEFAULT_SILENCE_TIMEOUT_MS: u64 = 1500;
 
+/// Default cooldown period between same commands (in milliseconds).
+/// Prevents rapid repetition of the same command.
+const DEFAULT_COMMAND_COOLDOWN_MS: u64 = 1000;
+
+/// Default debounce timeout for brief silences during speech (in milliseconds).
+/// Prevents false command triggers from brief pauses while speaking.
+const DEFAULT_DEBOUNCE_MS: u64 = 300;
+
 /// Errors that can occur during voice engine operations.
 #[derive(Debug, Error)]
 pub enum VoiceEngineError {
@@ -219,6 +227,131 @@ pub enum VoiceEngineEvent {
 
     /// Engine stopped listening.
     Stopped,
+
+    /// Command was blocked by cooldown.
+    CommandCooldown {
+        /// The blocked command.
+        command: VoiceCommand,
+        /// Time remaining on cooldown in milliseconds.
+        remaining_ms: u64,
+    },
+}
+
+/// Tracks cooldown state for voice commands to prevent rapid repetition.
+///
+/// This struct maintains the last executed command and its timestamp,
+/// allowing the engine to reject duplicate commands within the cooldown period.
+#[derive(Debug, Clone)]
+pub struct CommandCooldown {
+    /// The last command that was executed.
+    last_command: Option<VoiceCommand>,
+    /// Timestamp when the last command was executed.
+    last_command_time: Option<Instant>,
+    /// Cooldown duration in milliseconds.
+    cooldown_ms: u64,
+}
+
+impl CommandCooldown {
+    /// Create a new cooldown tracker with the specified duration.
+    pub fn new(cooldown_ms: u64) -> Self {
+        Self {
+            last_command: None,
+            last_command_time: None,
+            cooldown_ms,
+        }
+    }
+
+    /// Check if a command is allowed (not in cooldown).
+    ///
+    /// Returns `true` if the command can be executed, `false` if it's blocked
+    /// by cooldown. A command is blocked if it's the same as the last command
+    /// and the cooldown period hasn't elapsed.
+    pub fn is_allowed(&self, command: &VoiceCommand) -> bool {
+        // Unknown commands are always allowed (no cooldown)
+        if matches!(command, VoiceCommand::Unknown(_)) {
+            return true;
+        }
+
+        match (&self.last_command, self.last_command_time) {
+            (Some(last_cmd), Some(last_time)) => {
+                // Check if it's the same command
+                if std::mem::discriminant(last_cmd) == std::mem::discriminant(command) {
+                    // Check if cooldown has elapsed
+                    last_time.elapsed().as_millis() >= self.cooldown_ms as u128
+                } else {
+                    // Different command, always allowed
+                    true
+                }
+            }
+            _ => true, // No previous command, allowed
+        }
+    }
+
+    /// Get the remaining cooldown time for a command in milliseconds.
+    ///
+    /// Returns `None` if the command is allowed (not in cooldown).
+    pub fn remaining_cooldown_ms(&self, command: &VoiceCommand) -> Option<u64> {
+        if matches!(command, VoiceCommand::Unknown(_)) {
+            return None;
+        }
+
+        match (&self.last_command, self.last_command_time) {
+            (Some(last_cmd), Some(last_time)) => {
+                if std::mem::discriminant(last_cmd) == std::mem::discriminant(command) {
+                    let elapsed = last_time.elapsed().as_millis() as u64;
+                    if elapsed < self.cooldown_ms {
+                        Some(self.cooldown_ms - elapsed)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Record that a command was executed.
+    pub fn record_command(&mut self, command: &VoiceCommand) {
+        // Don't record unknown commands
+        if !matches!(command, VoiceCommand::Unknown(_)) {
+            self.last_command = Some(command.clone());
+            self.last_command_time = Some(Instant::now());
+        }
+    }
+
+    /// Reset the cooldown state.
+    pub fn reset(&mut self) {
+        self.last_command = None;
+        self.last_command_time = None;
+    }
+
+    /// Get the cooldown duration in milliseconds.
+    pub fn cooldown_ms(&self) -> u64 {
+        self.cooldown_ms
+    }
+
+    /// Set the cooldown duration in milliseconds.
+    pub fn set_cooldown_ms(&mut self, cooldown_ms: u64) {
+        self.cooldown_ms = cooldown_ms;
+    }
+
+    /// Get the last executed command, if any.
+    pub fn last_command(&self) -> Option<&VoiceCommand> {
+        self.last_command.as_ref()
+    }
+
+    /// Get the time since the last command was executed, if any.
+    pub fn time_since_last_command(&self) -> Option<Duration> {
+        self.last_command_time.map(|t| t.elapsed())
+    }
+}
+
+impl Default for CommandCooldown {
+    fn default() -> Self {
+        Self::new(DEFAULT_COMMAND_COOLDOWN_MS)
+    }
 }
 
 /// Configuration for the voice engine.
@@ -242,6 +375,14 @@ pub struct VoiceEngineConfig {
     pub emit_audio_levels: bool,
     /// Custom grammar for constrained recognition.
     pub grammar: Option<Vec<String>>,
+    /// Cooldown period between same commands in milliseconds.
+    /// Prevents rapid repetition of the same command.
+    pub command_cooldown_ms: u64,
+    /// Debounce timeout for brief silences during speech in milliseconds.
+    /// Prevents false command triggers from brief pauses while speaking.
+    pub debounce_ms: u64,
+    /// Whether to enable command cooldown.
+    pub enable_cooldown: bool,
 }
 
 impl VoiceEngineConfig {
@@ -257,6 +398,9 @@ impl VoiceEngineConfig {
             emit_partial_results: true,
             emit_audio_levels: false,
             grammar: None,
+            command_cooldown_ms: DEFAULT_COMMAND_COOLDOWN_MS,
+            debounce_ms: DEFAULT_DEBOUNCE_MS,
+            enable_cooldown: true,
         }
     }
 
@@ -272,6 +416,9 @@ impl VoiceEngineConfig {
             emit_partial_results: true,
             emit_audio_levels: false,
             grammar: Some(RecognizerConfig::for_commands(&model_path).grammar.unwrap()),
+            command_cooldown_ms: DEFAULT_COMMAND_COOLDOWN_MS,
+            debounce_ms: DEFAULT_DEBOUNCE_MS,
+            enable_cooldown: true,
         }
     }
 
@@ -302,6 +449,28 @@ impl VoiceEngineConfig {
     /// Set a custom grammar for constrained recognition.
     pub fn with_grammar(mut self, grammar: Vec<String>) -> Self {
         self.grammar = Some(grammar);
+        self
+    }
+
+    /// Set the command cooldown duration in milliseconds.
+    ///
+    /// This prevents rapid repetition of the same command. Set to 0 to disable.
+    pub fn with_command_cooldown(mut self, cooldown_ms: u64) -> Self {
+        self.command_cooldown_ms = cooldown_ms;
+        self
+    }
+
+    /// Set the debounce timeout for brief silences in milliseconds.
+    ///
+    /// This helps prevent false triggers from brief pauses while speaking.
+    pub fn with_debounce(mut self, debounce_ms: u64) -> Self {
+        self.debounce_ms = debounce_ms;
+        self
+    }
+
+    /// Enable or disable command cooldown.
+    pub fn with_cooldown_enabled(mut self, enabled: bool) -> Self {
+        self.enable_cooldown = enabled;
         self
     }
 }
@@ -492,6 +661,13 @@ impl VoiceEngine {
         let mut last_speech_time: Option<Instant> = None;
         let mut last_partial_text = String::new();
 
+        // Command cooldown tracker to prevent rapid repetition
+        let mut cooldown = CommandCooldown::new(current_config.command_cooldown_ms);
+
+        // Debounce timer - tracks when we last had speech activity
+        // to prevent false triggers from brief pauses
+        let mut last_audio_activity: Option<Instant> = None;
+
         // Helper to update state
         let update_state = |new_state: VoiceEngineState| {
             let old_state = {
@@ -612,23 +788,49 @@ impl VoiceEngine {
                     let samples = capture.read_samples(current_config.samples_per_read);
 
                     if !samples.is_empty() {
-                        // Calculate audio level if enabled
+                        // Calculate audio level
+                        let level = Self::calculate_audio_level(&samples);
+
+                        // Emit audio level if enabled
                         if current_config.emit_audio_levels {
-                            let level = Self::calculate_audio_level(&samples);
                             emit(VoiceEngineEvent::AudioLevel { level });
+                        }
+
+                        // Update audio activity tracker for debouncing
+                        if level > 0.01 {
+                            last_audio_activity = Some(Instant::now());
                         }
 
                         // Feed samples to recognizer
                         match rec.accept_waveform(&samples) {
                             Ok(has_final) => {
                                 if has_final {
-                                    // Get final result
-                                    Self::process_final_result(
-                                        rec,
-                                        &current_config,
-                                        &event_tx,
-                                        &mut last_partial_text,
-                                    );
+                                    // Apply debounce: only process if we've had
+                                    // continuous activity or sufficient silence
+                                    let debounce_elapsed = last_audio_activity
+                                        .map(|t| t.elapsed().as_millis() as u64)
+                                        .unwrap_or(current_config.debounce_ms);
+
+                                    // If there's been recent activity, wait for debounce
+                                    // This prevents partial speech from triggering commands
+                                    if debounce_elapsed < current_config.debounce_ms
+                                        && !last_partial_text.is_empty()
+                                    {
+                                        // Still have activity, wait a bit more
+                                        tracing::trace!(
+                                            "Debouncing: {}ms since last activity",
+                                            debounce_elapsed
+                                        );
+                                    } else {
+                                        // Process the final result with cooldown check
+                                        Self::process_final_result(
+                                            rec,
+                                            &current_config,
+                                            &event_tx,
+                                            &mut last_partial_text,
+                                            &mut cooldown,
+                                        );
+                                    }
                                     last_speech_time = Some(Instant::now());
                                 } else if current_config.emit_partial_results {
                                     // Get partial result
@@ -648,7 +850,6 @@ impl VoiceEngine {
                         }
 
                         // Update last speech time if we have audio activity
-                        let level = Self::calculate_audio_level(&samples);
                         if level > 0.01 {
                             // Threshold for "activity"
                             last_speech_time = Some(Instant::now());
@@ -660,13 +861,14 @@ impl VoiceEngine {
                         if last_time.elapsed().as_millis()
                             > current_config.silence_timeout_ms as u128
                         {
-                            // Force final result after silence
+                            // Force final result after silence (with cooldown check)
                             if !last_partial_text.is_empty() {
                                 Self::process_final_result(
                                     rec,
                                     &current_config,
                                     &event_tx,
                                     &mut last_partial_text,
+                                    &mut cooldown,
                                 );
                             }
                             last_speech_time = Some(Instant::now());
@@ -767,11 +969,15 @@ impl VoiceEngine {
     }
 
     /// Process and emit a final recognition result.
+    ///
+    /// This method applies cooldown checking to prevent rapid command repetition.
+    /// If a command is blocked by cooldown, a `CommandCooldown` event is emitted.
     fn process_final_result(
         recognizer: &ThreadSafeRecognizer,
         config: &VoiceEngineConfig,
         event_tx: &broadcast::Sender<VoiceEngineEvent>,
         last_partial_text: &mut String,
+        cooldown: &mut CommandCooldown,
     ) {
         if let Ok(result) = recognizer.final_result() {
             last_partial_text.clear();
@@ -799,6 +1005,25 @@ impl VoiceEngine {
                     // Not a recognized command, emit as final result
                     let _ = event_tx.send(VoiceEngineEvent::FinalResult { text, confidence });
                 } else {
+                    // Check cooldown if enabled
+                    if config.enable_cooldown {
+                        if let Some(remaining_ms) = cooldown.remaining_cooldown_ms(&command) {
+                            tracing::debug!(
+                                "Command {:?} blocked by cooldown ({}ms remaining)",
+                                command,
+                                remaining_ms
+                            );
+                            let _ = event_tx.send(VoiceEngineEvent::CommandCooldown {
+                                command,
+                                remaining_ms,
+                            });
+                            return;
+                        }
+                    }
+
+                    // Record the command for cooldown tracking
+                    cooldown.record_command(&command);
+
                     // Recognized command
                     let _ = event_tx.send(VoiceEngineEvent::CommandRecognized {
                         command,
@@ -1177,6 +1402,203 @@ mod tests {
         // Reset without initialization should fail
         let result = engine.reset();
         assert!(matches!(result, Err(VoiceEngineError::NotInitialized)));
+    }
+
+    // ========================================
+    // Command Cooldown Tests
+    // ========================================
+
+    #[test]
+    fn test_cooldown_creation() {
+        let cooldown = CommandCooldown::new(1000);
+        assert_eq!(cooldown.cooldown_ms(), 1000);
+        assert!(cooldown.last_command().is_none());
+        assert!(cooldown.time_since_last_command().is_none());
+    }
+
+    #[test]
+    fn test_cooldown_default() {
+        let cooldown = CommandCooldown::default();
+        assert_eq!(cooldown.cooldown_ms(), DEFAULT_COMMAND_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn test_cooldown_allows_first_command() {
+        let cooldown = CommandCooldown::new(1000);
+        assert!(cooldown.is_allowed(&VoiceCommand::Pause));
+        assert!(cooldown.is_allowed(&VoiceCommand::Resume));
+        assert!(cooldown.is_allowed(&VoiceCommand::Start));
+    }
+
+    #[test]
+    fn test_cooldown_blocks_same_command() {
+        let mut cooldown = CommandCooldown::new(1000);
+
+        // First command should be allowed
+        assert!(cooldown.is_allowed(&VoiceCommand::Pause));
+        cooldown.record_command(&VoiceCommand::Pause);
+
+        // Same command immediately after should be blocked
+        assert!(!cooldown.is_allowed(&VoiceCommand::Pause));
+
+        // Different command should be allowed
+        assert!(cooldown.is_allowed(&VoiceCommand::Resume));
+    }
+
+    #[test]
+    fn test_cooldown_remaining_time() {
+        let mut cooldown = CommandCooldown::new(1000);
+
+        // No remaining time before first command
+        assert!(cooldown.remaining_cooldown_ms(&VoiceCommand::Pause).is_none());
+
+        cooldown.record_command(&VoiceCommand::Pause);
+
+        // Should have remaining time for same command
+        let remaining = cooldown.remaining_cooldown_ms(&VoiceCommand::Pause);
+        assert!(remaining.is_some());
+        assert!(remaining.unwrap() <= 1000);
+        assert!(remaining.unwrap() > 0);
+
+        // No remaining time for different command
+        assert!(cooldown.remaining_cooldown_ms(&VoiceCommand::Resume).is_none());
+    }
+
+    #[test]
+    fn test_cooldown_unknown_command_always_allowed() {
+        let mut cooldown = CommandCooldown::new(1000);
+
+        // Unknown commands should always be allowed
+        let unknown = VoiceCommand::Unknown("test".to_string());
+        assert!(cooldown.is_allowed(&unknown));
+
+        cooldown.record_command(&unknown);
+
+        // Should still be allowed (unknown commands don't get recorded)
+        assert!(cooldown.is_allowed(&unknown));
+        assert!(cooldown.remaining_cooldown_ms(&unknown).is_none());
+    }
+
+    #[test]
+    fn test_cooldown_reset() {
+        let mut cooldown = CommandCooldown::new(1000);
+
+        cooldown.record_command(&VoiceCommand::Pause);
+        assert!(!cooldown.is_allowed(&VoiceCommand::Pause));
+
+        cooldown.reset();
+
+        // Should be allowed again after reset
+        assert!(cooldown.is_allowed(&VoiceCommand::Pause));
+        assert!(cooldown.last_command().is_none());
+    }
+
+    #[test]
+    fn test_cooldown_set_cooldown_ms() {
+        let mut cooldown = CommandCooldown::new(1000);
+        assert_eq!(cooldown.cooldown_ms(), 1000);
+
+        cooldown.set_cooldown_ms(2000);
+        assert_eq!(cooldown.cooldown_ms(), 2000);
+    }
+
+    #[test]
+    fn test_cooldown_last_command() {
+        let mut cooldown = CommandCooldown::new(1000);
+        assert!(cooldown.last_command().is_none());
+
+        cooldown.record_command(&VoiceCommand::Pause);
+        assert_eq!(cooldown.last_command(), Some(&VoiceCommand::Pause));
+
+        cooldown.record_command(&VoiceCommand::Resume);
+        assert_eq!(cooldown.last_command(), Some(&VoiceCommand::Resume));
+    }
+
+    #[test]
+    fn test_cooldown_time_since_last_command() {
+        let mut cooldown = CommandCooldown::new(1000);
+        assert!(cooldown.time_since_last_command().is_none());
+
+        cooldown.record_command(&VoiceCommand::Pause);
+
+        let elapsed = cooldown.time_since_last_command();
+        assert!(elapsed.is_some());
+        // Should be very small since we just recorded it
+        assert!(elapsed.unwrap().as_millis() < 100);
+    }
+
+    #[test]
+    fn test_cooldown_expires_over_time() {
+        let mut cooldown = CommandCooldown::new(10); // Very short cooldown for testing
+
+        cooldown.record_command(&VoiceCommand::Pause);
+        assert!(!cooldown.is_allowed(&VoiceCommand::Pause));
+
+        // Wait for cooldown to expire
+        std::thread::sleep(std::time::Duration::from_millis(15));
+
+        // Should be allowed now
+        assert!(cooldown.is_allowed(&VoiceCommand::Pause));
+        assert!(cooldown.remaining_cooldown_ms(&VoiceCommand::Pause).is_none());
+    }
+
+    // ========================================
+    // Config Cooldown/Debounce Tests
+    // ========================================
+
+    #[test]
+    fn test_config_cooldown_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path);
+        assert_eq!(config.command_cooldown_ms, DEFAULT_COMMAND_COOLDOWN_MS);
+        assert_eq!(config.debounce_ms, DEFAULT_DEBOUNCE_MS);
+        assert!(config.enable_cooldown);
+    }
+
+    #[test]
+    fn test_config_cooldown_builder() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path)
+            .with_command_cooldown(2000)
+            .with_debounce(500)
+            .with_cooldown_enabled(false);
+
+        assert_eq!(config.command_cooldown_ms, 2000);
+        assert_eq!(config.debounce_ms, 500);
+        assert!(!config.enable_cooldown);
+    }
+
+    #[test]
+    fn test_config_for_commands_has_cooldown() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::for_commands(&model_path);
+        assert_eq!(config.command_cooldown_ms, DEFAULT_COMMAND_COOLDOWN_MS);
+        assert!(config.enable_cooldown);
+    }
+
+    #[test]
+    fn test_command_cooldown_event_variant() {
+        let event = VoiceEngineEvent::CommandCooldown {
+            command: VoiceCommand::Pause,
+            remaining_ms: 500,
+        };
+
+        // Verify the event can be constructed and matches
+        if let VoiceEngineEvent::CommandCooldown { command, remaining_ms } = event {
+            assert_eq!(command, VoiceCommand::Pause);
+            assert_eq!(remaining_ms, 500);
+        } else {
+            panic!("Expected CommandCooldown event");
+        }
     }
 
     // Note: Tests that require actual audio hardware and Vosk model are in tests/voice_integration.rs
