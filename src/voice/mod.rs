@@ -63,6 +63,7 @@
 
 pub mod model_manager;
 pub mod download;
+pub mod audio_input;
 
 // Re-export main types
 pub use model_manager::{
@@ -71,3 +72,8 @@ pub use model_manager::{
     LifecycleEventCallback,
 };
 pub use download::{DownloadError, DownloadProgress, ModelDownloader, format_bytes};
+pub use audio_input::{
+    AudioInputCapture, AudioInputConfig, AudioInputError,
+    AudioInputDeviceInfo, AudioRingBuffer, CaptureState,
+    VOSK_SAMPLE_RATE, VOSK_CHANNELS, DEFAULT_BUFFER_SIZE,
+};
