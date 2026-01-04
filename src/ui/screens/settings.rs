@@ -16,7 +16,9 @@ use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use std::collections::HashMap;
 
 use crate::audio::{AlertCategory, AlertType, VoiceInfo};
-use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
+use crate::hid::{
+    get_default_mappings, ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus,
+};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
 use crate::integrations::weather::{WeatherConfig, WeatherUnits};
@@ -330,17 +332,31 @@ impl HidSettings {
             .find(|c| &c.device_id == device_id)
     }
 
-    /// Get or create mutable config for a device
+    /// Get or create mutable config for a device.
+    ///
+    /// When creating a new config for a known device (e.g., Stream Deck),
+    /// default button mappings are automatically applied so users have
+    /// useful controls out of the box.
     pub fn get_or_create_device_config(&mut self, device: &HidDevice) -> &mut HidDeviceConfig {
         let device_id = device.id;
         if !self.device_configs.iter().any(|c| c.device_id == device_id) {
+            // Get default mappings for known devices (e.g., Stream Deck variants)
+            let default_mappings = get_default_mappings(device.vendor_id, device.product_id);
+            if !default_mappings.is_empty() {
+                tracing::info!(
+                    "Creating config for {} with {} default button mappings",
+                    device.name,
+                    default_mappings.len()
+                );
+            }
+
             self.device_configs.push(HidDeviceConfig {
                 device_id,
                 vendor_id: device.vendor_id,
                 product_id: device.product_id,
                 name: device.name.clone(),
                 enabled: true,
-                mappings: Vec::new(),
+                mappings: default_mappings,
             });
         }
         self.device_configs
