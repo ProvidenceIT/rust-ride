@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 // Re-export main types
-pub use provider::WeatherProvider;
+pub use provider::{
+    OpenWeatherMapProvider, WeatherProvider, WeatherRefreshHandle, WeatherRefreshScheduler,
+};
 
 /// Weather-related errors
 #[derive(Debug, Error)]

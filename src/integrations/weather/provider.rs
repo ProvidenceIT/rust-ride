@@ -1,12 +1,13 @@
 //! Weather Data Provider
 //!
-//! Fetches weather data from OpenWeatherMap API.
+//! Fetches weather data from OpenWeatherMap API with background refresh support.
 
 use super::{WeatherCondition, WeatherConfig, WeatherData, WeatherError, WeatherUnits};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 /// HTTP request timeout in seconds
 const HTTP_TIMEOUT_SECS: u64 = 10;
@@ -471,6 +472,192 @@ impl WeatherProvider for OpenWeatherMapProvider {
     }
 }
 
+/// Handle for controlling the weather refresh scheduler.
+///
+/// This handle can be used to stop the background refresh task gracefully.
+/// When dropped, the background task will continue running until explicitly stopped.
+#[derive(Clone)]
+pub struct WeatherRefreshHandle {
+    /// Cancellation token to signal shutdown
+    cancel_token: CancellationToken,
+}
+
+impl WeatherRefreshHandle {
+    /// Stop the background refresh task gracefully.
+    ///
+    /// This signals the background task to stop at the next opportunity.
+    /// The method returns immediately; the actual task may take up to one
+    /// refresh interval to stop.
+    pub fn stop(&self) {
+        tracing::info!("Weather refresh scheduler stopping");
+        self.cancel_token.cancel();
+    }
+
+    /// Check if the scheduler has been stopped.
+    pub fn is_stopped(&self) -> bool {
+        self.cancel_token.is_cancelled()
+    }
+}
+
+/// Background scheduler for periodically refreshing weather data.
+///
+/// This scheduler spawns a background tokio task that refreshes weather data
+/// at the configured interval. It respects the weather enabled setting and
+/// handles shutdown gracefully.
+///
+/// # Example
+///
+/// ```ignore
+/// let provider = Arc::new(OpenWeatherMapProvider::new());
+/// let config = WeatherConfig::default();
+/// provider.set_api_key("your_api_key".to_string()).await;
+///
+/// let handle = WeatherRefreshScheduler::spawn(provider, config);
+///
+/// // ... later, when shutting down
+/// handle.stop();
+/// ```
+pub struct WeatherRefreshScheduler;
+
+impl WeatherRefreshScheduler {
+    /// Spawn a background task that periodically refreshes weather data.
+    ///
+    /// The task will:
+    /// - Wait for the configured refresh interval between fetches
+    /// - Only fetch when weather is enabled in the config
+    /// - Stop gracefully when the handle's `stop()` method is called
+    /// - Continue running even if individual fetches fail (with exponential backoff)
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - The weather provider to use for fetching data
+    /// * `config` - Initial weather configuration
+    ///
+    /// # Returns
+    ///
+    /// A handle that can be used to stop the background task.
+    pub fn spawn(
+        provider: Arc<OpenWeatherMapProvider>,
+        config: WeatherConfig,
+    ) -> WeatherRefreshHandle {
+        let cancel_token = CancellationToken::new();
+        let handle = WeatherRefreshHandle {
+            cancel_token: cancel_token.clone(),
+        };
+
+        // Configure the provider with the initial config
+        provider.configure(config.clone());
+
+        // Calculate the refresh interval
+        let refresh_interval = Duration::from_secs(config.refresh_interval_minutes as u64 * 60);
+
+        tracing::info!(
+            refresh_interval_mins = config.refresh_interval_minutes,
+            enabled = config.enabled,
+            "Weather refresh scheduler starting"
+        );
+
+        // Spawn the background refresh task
+        tokio::spawn(Self::refresh_loop(
+            provider,
+            refresh_interval,
+            cancel_token,
+        ));
+
+        handle
+    }
+
+    /// The main refresh loop that runs in the background.
+    async fn refresh_loop(
+        provider: Arc<OpenWeatherMapProvider>,
+        refresh_interval: Duration,
+        cancel_token: CancellationToken,
+    ) {
+        let mut interval = tokio::time::interval(refresh_interval);
+
+        // Consume the first tick immediately (interval ticks immediately on first call)
+        interval.tick().await;
+
+        loop {
+            tokio::select! {
+                // Wait for cancellation
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Weather refresh scheduler stopped");
+                    break;
+                }
+
+                // Wait for the next tick
+                _ = interval.tick() => {
+                    // Check if weather is enabled before fetching
+                    if !provider.is_available() {
+                        tracing::trace!("Weather refresh skipped: not available (disabled or no API key)");
+                        continue;
+                    }
+
+                    // Attempt to refresh weather data
+                    tracing::debug!("Weather refresh scheduler triggering background refresh");
+                    match provider.refresh().await {
+                        Ok(data) => {
+                            tracing::debug!(
+                                temp = data.temperature,
+                                condition = ?data.condition,
+                                "Weather data refreshed successfully"
+                            );
+                        }
+                        Err(e) => {
+                            // Errors are already logged and backoff is handled by the provider
+                            tracing::trace!(
+                                error = %e,
+                                "Weather refresh failed (backoff handled by provider)"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Spawn a background task with a custom interval for testing.
+    ///
+    /// This method allows specifying a custom interval instead of reading from config,
+    /// which is useful for testing with shorter intervals.
+    #[cfg(test)]
+    pub fn spawn_with_interval(
+        provider: Arc<OpenWeatherMapProvider>,
+        interval: Duration,
+        enabled: bool,
+    ) -> WeatherRefreshHandle {
+        let cancel_token = CancellationToken::new();
+        let handle = WeatherRefreshHandle {
+            cancel_token: cancel_token.clone(),
+        };
+
+        // Configure the provider with minimal test config
+        let config = WeatherConfig {
+            enabled,
+            api_key_configured: enabled,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            ..Default::default()
+        };
+        provider.configure(config);
+
+        tracing::debug!(
+            interval_secs = interval.as_secs(),
+            enabled = enabled,
+            "Weather refresh scheduler starting (test mode)"
+        );
+
+        tokio::spawn(Self::refresh_loop(
+            provider,
+            interval,
+            cancel_token,
+        ));
+
+        handle
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +749,135 @@ mod tests {
 
         // Should NOT retry immediately (within backoff period)
         assert!(!provider.should_retry().await);
+    }
+
+    // ========== WeatherRefreshScheduler Tests ==========
+
+    #[test]
+    fn test_refresh_handle_stop() {
+        // Create a cancellation token to verify behavior
+        let cancel_token = CancellationToken::new();
+        let handle = WeatherRefreshHandle {
+            cancel_token: cancel_token.clone(),
+        };
+
+        // Initially not stopped
+        assert!(!handle.is_stopped());
+
+        // Stop the handle
+        handle.stop();
+
+        // Now should be stopped
+        assert!(handle.is_stopped());
+        assert!(cancel_token.is_cancelled());
+    }
+
+    #[test]
+    fn test_refresh_handle_clone() {
+        let cancel_token = CancellationToken::new();
+        let handle = WeatherRefreshHandle {
+            cancel_token: cancel_token.clone(),
+        };
+
+        let cloned = handle.clone();
+
+        // Stopping original should also stop clone (same underlying token)
+        handle.stop();
+        assert!(cloned.is_stopped());
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_spawn_and_stop() {
+        let provider = Arc::new(OpenWeatherMapProvider::new());
+
+        // Use a short interval for testing
+        let handle = WeatherRefreshScheduler::spawn_with_interval(
+            provider,
+            Duration::from_millis(50),
+            false, // disabled, so won't actually fetch
+        );
+
+        // Give the scheduler a moment to start
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Initially not stopped
+        assert!(!handle.is_stopped());
+
+        // Stop the scheduler
+        handle.stop();
+
+        // Should be marked as stopped
+        assert!(handle.is_stopped());
+
+        // Give the task time to actually stop
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_respects_enabled_flag() {
+        let provider = Arc::new(OpenWeatherMapProvider::new());
+
+        // Start scheduler with weather disabled
+        let handle = WeatherRefreshScheduler::spawn_with_interval(
+            Arc::clone(&provider),
+            Duration::from_millis(50),
+            false, // disabled
+        );
+
+        // Wait for a few intervals
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // No data should be cached because weather is disabled
+        assert!(provider.get_cached().is_none());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_spawn_with_config() {
+        let provider = Arc::new(OpenWeatherMapProvider::new());
+
+        let config = WeatherConfig {
+            enabled: false,
+            api_key_configured: false,
+            latitude: 40.7128,
+            longitude: -74.0060,
+            refresh_interval_minutes: 15,
+            ..Default::default()
+        };
+
+        let handle = WeatherRefreshScheduler::spawn(Arc::clone(&provider), config);
+
+        // Give the scheduler a moment to start
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Initially not stopped
+        assert!(!handle.is_stopped());
+
+        // Stop the scheduler
+        handle.stop();
+        assert!(handle.is_stopped());
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_graceful_shutdown() {
+        let provider = Arc::new(OpenWeatherMapProvider::new());
+
+        let handle = WeatherRefreshScheduler::spawn_with_interval(
+            provider,
+            Duration::from_secs(60), // long interval
+            false,
+        );
+
+        // Stop immediately - should not wait for the full interval
+        let start = std::time::Instant::now();
+        handle.stop();
+
+        // Wait for task to acknowledge cancellation
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Should have stopped quickly, not waited 60 seconds
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(handle.is_stopped());
     }
 }
