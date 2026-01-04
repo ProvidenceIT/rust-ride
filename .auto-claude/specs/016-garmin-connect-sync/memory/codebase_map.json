@@ -1,45 +1,20 @@
 {
   "discovered_files": {
     "src/integrations/sync/garmin.rs": {
-      "description": "Garmin Connect API uses SYNCHRONOUS upload processing - returns activity ID immediately in the response (unlike Strava which uses async and requires polling). The upload_activity() method returns SyncRecordStatus::Completed directly. No check_upload_status() method is needed for Garmin.",
-      "category": "api-behavior",
-      "discovered_at": "2026-01-04T13:39:09.604038+00:00"
+      "description": "HTTP mocked tests module uses wiremock for comprehensive API testing. Tests cover: 1) upload_activity with success/error/duplicate/rate-limit/forbidden/malformed-json scenarios, 2) get_user_profile with success/minimal/image-fallback/error scenarios, 3) deauthorize with success and various failure scenarios that still clear local token, 4) auto-refresh wrappers with token refresh success/failure scenarios. Total 43+ async tests in http_mocked_tests module.",
+      "category": "testing",
+      "discovered_at": "2026-01-04T15:41:06.442968+00:00"
     },
-    "src/integrations/sync/strava.rs": {
-      "description": "Fully implemented Strava client with multipart FIT upload, OAuth token management, athlete profile retrieval, deauthorization, and comprehensive error handling. Use as pattern for Garmin implementation.",
-      "category": "sync_integration",
-      "discovered_at": "2026-01-04T12:21:58.333975+00:00"
-    },
-    "src/ui/screens/settings_strava.rs": {
-      "description": "StravaSettingsScreen provides the UI pattern for connection settings: connection states (Disconnected, Connecting, Connected, Disconnecting, Error), athlete profile display, auto-sync toggle, and action handling. Copy this pattern for GarminSettingsScreen.",
-      "category": "ui",
-      "discovered_at": "2026-01-04T12:21:58.402332+00:00"
-    },
-    "src/integrations/sync/oauth.rs": {
-      "description": "Garmin OAuth token exchange is fully implemented: exchange_garmin_token (lines 603-673) handles authorization code exchange, refresh_garmin_token (lines 898+) handles token refresh, handle_callback routes GarminConnect correctly. Uses GarminTokenResponse with expires_in (not expires_at like Strava) and GarminOAuthErrorResponse for errors. Comprehensive test coverage in the garmin_oauth_tests module.",
-      "category": "oauth",
-      "discovered_at": "2026-01-04T13:07:15.504255+00:00"
-    },
-    "src/integrations/sync/service.rs": {
-      "description": "Upload queue retry logic uses SyncErrorExt trait from garmin.rs for sophisticated error categorization. is_retryable_error() delegates to SyncErrorExt::is_retryable() which considers error category (Transient, RateLimited, Server, Client, Authentication, Permanent) and message content. Rate-limited errors use get_rate_limit_retry_delay() for API-suggested delays instead of exponential backoff. Garmin uploads are processed via process_single_upload() which handles TokenExpired (re-auth required), DuplicateActivity (marked completed), InvalidFitFile (permanent failure), and retryable errors (scheduled for retry with backoff).",
-      "category": "implementation",
-      "discovered_at": "2026-01-04T13:35:13.244722+00:00"
+    "tests/integration/garmin_sync_test.rs": {
+      "description": "Comprehensive Garmin Connect integration tests using wiremock for HTTP mocking. Tests cover: OAuth flow (authorization, callback), upload flow (success, duplicate, rate limit, token expiry), profile fetch, disconnect/deauthorize, complete E2E scenarios, error categorization, token refresh, and FIT file validation. Contains 35+ async tests following the pattern established by sync_integration_test.rs.",
+      "category": "testing",
+      "discovered_at": "2026-01-04T15:55:09.753193+00:00"
     },
     "src/integrations/sync/mod.rs": {
-      "description": "SyncPlatform enum defines all supported sync platforms (GarminConnect, Strava, TrainingPeaks, IntervalsIcu, HealthKit). Each platform has display_name(), auth_url_base(), and uses_oauth() methods. SyncConfig::default() initializes all platforms with default PlatformConfig (enabled=false, auto_sync=false).",
-      "category": "architecture",
-      "discovered_at": "2026-01-04T13:25:58.406785+00:00"
-    },
-    "src/ui/screens/settings_garmin.rs": {
-      "description": "GarminSettingsScreen provides UI for Garmin Connect integration following the Strava pattern: GarminConnectionState enum (5 states), GarminSettingsAction enum (5 actions), screen state with user profile/config/pending uploads. Uses GARMIN_BLUE (rgb 0,118,206) brand color. Renders profile with readable_name() from GarminUserProfile, links to connect.garmin.com/modern/profile/{display_name}.",
-      "category": "ui",
-      "discovered_at": "2026-01-04T13:42:59.195885+00:00"
-    },
-    "src/app.rs": {
-      "description": "GarminSettingsAction::Connect handler implemented. Uses Arc<DefaultOAuthHandler> initialized with port 8888 for OAuth callback. Garmin credentials loaded from GARMIN_CLIENT_ID and GARMIN_CLIENT_SECRET environment variables. Connect action spawns async task that calls start_authorization(SyncPlatform::GarminConnect), opens browser with auth URL, and stores task handle in pending_garmin_oauth for polling. poll_garmin_oauth() method checks task completion and updates GarminConnectionState. Request repaint enabled when pending_garmin_oauth is Some.",
-      "category": "app_integration",
-      "discovered_at": "2026-01-04T14:18:34.388550+00:00"
+      "description": "Module re-exports required for integration tests. GarminUserProfile and KeyringCredentialStore must be exported from mod.rs for tests in tests/integration/garmin_sync_test.rs to compile. Module exports must match public API surface.",
+      "category": "module_exports",
+      "discovered_at": "2026-01-04T15:59:51.419588+00:00"
     }
   },
-  "last_updated": "2026-01-04T14:18:34.388550+00:00"
+  "last_updated": "2026-01-04T15:59:51.419588+00:00"
 }
