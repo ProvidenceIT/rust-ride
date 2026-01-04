@@ -3602,4 +3602,352 @@ mod http_mocked_tests {
         // Refresh should have been called once
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
+
+    // ============================================================================
+    // Additional Edge Case Tests for Comprehensive Coverage
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_upload_activity_malformed_json_response() {
+        let mock_server = MockServer::start().await;
+
+        // Return invalid JSON that can't be parsed
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{ invalid json }"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        // Should return an error when JSON parsing fails
+        assert!(result.is_err());
+        assert!(matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("parse") || msg.contains("JSON") || msg.contains("json")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_empty_response() {
+        let mock_server = MockServer::start().await;
+
+        // Return empty response body
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(""))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        // Should return an error when response is empty
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_malformed_json_response() {
+        let mock_server = MockServer::start().await;
+
+        // Return invalid JSON
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        // Should return an error when JSON parsing fails
+        assert!(result.is_err());
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("parse") || msg.contains("JSON") || msg.contains("json")));
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_large_image_only() {
+        let mock_server = MockServer::start().await;
+
+        // Response with only large image URL
+        let response_body = r#"{
+            "id": 22222,
+            "displayName": "user22222",
+            "profileImageUrlLarge": "https://example.com/large.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        // Should fallback to large image when medium and small not available
+        assert_eq!(
+            profile.profile_image_url,
+            Some("https://example.com/large.jpg".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_empty_response() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(""))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        // Should return an error when response is empty
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_refresh_reauth_required() {
+        let mock_server = MockServer::start().await;
+
+        // Request returns 401
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        /// Refresher that indicates re-authorization is required
+        struct ReauthRefresher;
+
+        impl TokenRefresher for ReauthRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async { Err(SyncError::AuthorizationRequired) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client
+            .set_access_token("expired_token".to_string())
+            .await;
+        client.set_token_refresher(Arc::new(ReauthRefresher)).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client
+            .upload_activity_with_refresh(ride_id, fit_data)
+            .await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_service_unavailable() {
+        let mock_server = MockServer::start().await;
+
+        // Return 503 Service Unavailable
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        // 503 should return an upload error that is retryable
+        assert!(matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("503")));
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_service_unavailable() {
+        let mock_server = MockServer::start().await;
+
+        // Return 503 Service Unavailable
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        // 503 should return an API error
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("503")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_all_optional_fields() {
+        let mock_server = MockServer::start().await;
+
+        // Response with all fields populated
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {
+                    "uuid": "complete-upload-uuid"
+                },
+                "successes": [
+                    {
+                        "internalId": 11111111,
+                        "externalId": "full-ride-uuid"
+                    }
+                ],
+                "failures": [],
+                "processedCount": 1,
+                "totalCount": 1
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("11111111".to_string()));
+        assert_eq!(
+            record.external_url,
+            Some("https://connect.garmin.com/modern/activity/11111111".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_full_name() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 33333,
+            "displayName": "cyclist_jane",
+            "fullName": "Jane Cyclist",
+            "profileImageUrlMedium": "https://example.com/jane.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.user_id, 33333);
+        assert_eq!(profile.display_name, "cyclist_jane");
+        assert_eq!(profile.full_name, Some("Jane Cyclist".to_string()));
+        // readable_name should return full_name when available
+        assert_eq!(profile.readable_name(), "Jane Cyclist");
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_network_failure_still_clears_token() {
+        // This test verifies that even if the revoke request fails completely
+        // (e.g., due to network issues), the local token is still cleared.
+        // Note: We can't easily simulate network failures with wiremock,
+        // so we test the server error case instead.
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        assert!(client.is_configured());
+
+        let result = client.deauthorize().await;
+
+        // Deauthorize should succeed even with gateway errors
+        assert!(result.is_ok());
+        // Token should be cleared locally regardless of server response
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_partial_success_response() {
+        let mock_server = MockServer::start().await;
+
+        // Response with both success and failure
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {
+                    "uuid": "partial-upload-uuid"
+                },
+                "successes": [
+                    {
+                        "internalId": 77777777
+                    }
+                ],
+                "failures": [
+                    {
+                        "externalId": "other-file",
+                        "messages": [{"code": 500, "content": "Other file failed"}]
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        // Should succeed since our file was in the successes list
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("77777777".to_string()));
+    }
 }
