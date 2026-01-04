@@ -198,6 +198,46 @@ impl std::fmt::Display for TrainingPeaksOAuthErrorResponse {
     }
 }
 
+/// Garmin Connect OAuth token response from the token endpoint
+/// Garmin uses standard OAuth 2.0 response format with snake_case field names
+#[derive(Debug, Deserialize)]
+struct GarminTokenResponse {
+    /// The access token for API calls
+    access_token: String,
+    /// The refresh token for getting new access tokens
+    refresh_token: String,
+    /// Token lifetime in seconds
+    expires_in: i64,
+    /// Token type (usually "Bearer")
+    #[allow(dead_code)]
+    token_type: String,
+    /// Optional scope (may be returned by Garmin)
+    #[allow(dead_code)]
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+/// Garmin Connect OAuth error response
+/// Garmin uses standard OAuth 2.0 error format
+#[derive(Debug, Deserialize)]
+struct GarminOAuthErrorResponse {
+    /// Error type (e.g., "invalid_grant", "invalid_client", "invalid_request")
+    error: String,
+    /// Human-readable error description
+    #[serde(default)]
+    error_description: Option<String>,
+}
+
+impl std::fmt::Display for GarminOAuthErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref description) = self.error_description {
+            write!(f, "{}: {}", self.error, description)
+        } else {
+            write!(f, "{}", self.error)
+        }
+    }
+}
+
 /// Default OAuth handler implementation
 #[allow(dead_code)]
 pub struct DefaultOAuthHandler {
@@ -210,6 +250,8 @@ pub struct DefaultOAuthHandler {
     strava_token_url: String,
     /// Base URL for TrainingPeaks OAuth API (overridable for testing)
     trainingpeaks_token_url: String,
+    /// Base URL for Garmin Connect OAuth API (overridable for testing)
+    garmin_token_url: String,
 }
 
 /// Default Strava OAuth token URL
@@ -217,6 +259,10 @@ const STRAVA_TOKEN_URL: &str = "https://www.strava.com/oauth/token";
 
 /// Default TrainingPeaks OAuth token URL
 const TRAININGPEAKS_TOKEN_URL: &str = "https://oauth.trainingpeaks.com/oauth/token";
+
+/// Default Garmin Connect OAuth token URL
+/// Garmin uses a proxy endpoint for OAuth token exchange
+const GARMIN_TOKEN_URL: &str = "https://connect.garmin.com/oauth-service/oauth/token";
 
 impl DefaultOAuthHandler {
     /// Create a new OAuth handler
@@ -229,6 +275,7 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url: STRAVA_TOKEN_URL.to_string(),
             trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
         }
     }
 
@@ -243,6 +290,7 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url,
             trainingpeaks_token_url: TRAININGPEAKS_TOKEN_URL.to_string(),
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
         }
     }
 
@@ -261,6 +309,27 @@ impl DefaultOAuthHandler {
             callback_port,
             strava_token_url,
             trainingpeaks_token_url,
+            garmin_token_url: GARMIN_TOKEN_URL.to_string(),
+        }
+    }
+
+    /// Create a new OAuth handler with all custom token URLs (for testing)
+    #[cfg(test)]
+    pub fn with_all_token_urls(
+        callback_port: u16,
+        strava_token_url: String,
+        trainingpeaks_token_url: String,
+        garmin_token_url: String,
+    ) -> Self {
+        Self {
+            configs: Arc::new(RwLock::new(HashMap::new())),
+            tokens: Arc::new(RwLock::new(HashMap::new())),
+            pending_states: Arc::new(RwLock::new(HashMap::new())),
+            http_client: Client::new(),
+            callback_port,
+            strava_token_url,
+            trainingpeaks_token_url,
+            garmin_token_url,
         }
     }
 
@@ -367,6 +436,9 @@ impl OAuthHandler for DefaultOAuthHandler {
             }
             SyncPlatform::TrainingPeaks => {
                 self.exchange_trainingpeaks_token(code, config).await?
+            }
+            SyncPlatform::GarminConnect => {
+                self.exchange_garmin_token(code, config).await?
             }
             _ => {
                 // For other platforms, return an error until implemented
@@ -527,6 +599,79 @@ impl OAuthHandler for DefaultOAuthHandler {
         })
     }
 
+    /// Exchange authorization code for tokens with Garmin Connect's OAuth endpoint
+    async fn exchange_garmin_token(
+        &self,
+        code: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::GarminConnect))?;
+
+        // Build the token request
+        // Garmin Connect uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", config.redirect_uri.as_str()),
+        ];
+
+        tracing::debug!("Exchanging authorization code with Garmin Connect token endpoint");
+
+        let response = self
+            .http_client
+            .post(&self.garmin_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to send token request: {}", e)))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Garmin OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<GarminOAuthErrorResponse>(&body) {
+                tracing::error!("Garmin Connect token exchange failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Garmin Connect OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!("Garmin Connect token exchange failed with status {}: {}", status, body);
+            return Err(SyncError::ApiError(format!(
+                "Garmin Connect OAuth failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let garmin_response: GarminTokenResponse = serde_json::from_str(&body)
+            .map_err(|e| SyncError::ApiError(format!("Failed to parse token response: {}", e)))?;
+
+        // Garmin returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(garmin_response.expires_in);
+
+        tracing::info!(
+            "Successfully exchanged code for Garmin Connect tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: garmin_response.access_token,
+            refresh_token: Some(garmin_response.refresh_token),
+            expires_at,
+        })
+    }
+
     async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
         let current = self.tokens.read().await.get(&platform).cloned();
 
@@ -546,6 +691,7 @@ impl OAuthHandler for DefaultOAuthHandler {
         let new_tokens = match platform {
             SyncPlatform::Strava => self.refresh_strava_token(&refresh, config).await?,
             SyncPlatform::TrainingPeaks => self.refresh_trainingpeaks_token(&refresh, config).await?,
+            SyncPlatform::GarminConnect => self.refresh_garmin_token(&refresh, config).await?,
             _ => {
                 return Err(SyncError::NotConfigured(platform));
             }
@@ -744,6 +890,99 @@ impl OAuthHandler for DefaultOAuthHandler {
         Ok(TokenResponse {
             access_token: tp_response.access_token,
             refresh_token: Some(tp_response.refresh_token),
+            expires_at,
+        })
+    }
+
+    /// Refresh tokens with Garmin Connect's OAuth endpoint
+    async fn refresh_garmin_token(
+        &self,
+        refresh_token: &str,
+        config: &OAuthConfig,
+    ) -> Result<TokenResponse, SyncError> {
+        let client_secret = config
+            .client_secret
+            .as_ref()
+            .ok_or_else(|| SyncError::NotConfigured(SyncPlatform::GarminConnect))?;
+
+        // Build the refresh token request
+        // Garmin Connect uses standard OAuth2 form-encoded parameters
+        let params = [
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ];
+
+        tracing::debug!("Refreshing Garmin Connect access token");
+
+        let response = self
+            .http_client
+            .post(&self.garmin_token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| {
+                SyncError::NetworkError(format!("Failed to send refresh token request: {}", e))
+            })?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        if !status.is_success() {
+            // Try to parse as Garmin OAuth error response
+            if let Ok(error_response) = serde_json::from_str::<GarminOAuthErrorResponse>(&body) {
+                tracing::error!("Garmin Connect token refresh failed: {}", error_response);
+
+                // Check if the refresh token is invalid or expired
+                // Garmin uses standard OAuth2 error codes
+                let requires_reauth = error_response.error == "invalid_grant"
+                    || error_response.error == "invalid_token"
+                    || error_response.error == "unauthorized";
+
+                if requires_reauth {
+                    tracing::warn!(
+                        "Garmin Connect refresh token is invalid/expired, re-authorization required"
+                    );
+                    return Err(SyncError::AuthorizationRequired);
+                }
+
+                return Err(SyncError::RefreshFailed(format!(
+                    "Garmin Connect OAuth error: {}",
+                    error_response
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!(
+                "Garmin Connect token refresh failed with status {}: {}",
+                status,
+                body
+            );
+            return Err(SyncError::RefreshFailed(format!(
+                "Garmin Connect refresh failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse successful response
+        let garmin_response: GarminTokenResponse = serde_json::from_str(&body).map_err(|e| {
+            SyncError::RefreshFailed(format!("Failed to parse refresh response: {}", e))
+        })?;
+
+        // Garmin returns expires_in (seconds until expiry), not expires_at
+        let expires_at = Utc::now() + Duration::seconds(garmin_response.expires_in);
+
+        tracing::info!(
+            "Successfully refreshed Garmin Connect tokens (expires at: {})",
+            expires_at
+        );
+
+        Ok(TokenResponse {
+            access_token: garmin_response.access_token,
+            refresh_token: Some(garmin_response.refresh_token),
             expires_at,
         })
     }

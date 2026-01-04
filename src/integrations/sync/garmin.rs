@@ -224,6 +224,32 @@ impl GarminActivityType {
     }
 }
 
+/// Garmin Connect OAuth scopes
+///
+/// Garmin Connect uses OAuth 2.0 with specific scopes for different API capabilities.
+/// These scopes control what data the application can access and modify.
+pub mod scopes {
+    /// Read user profile information
+    pub const PROFILE_READ: &str = "profile:read";
+    /// Read activity data (workouts, activities, etc.)
+    pub const ACTIVITY_READ: &str = "activity:read";
+    /// Write activity data (upload workouts, activities)
+    pub const ACTIVITY_WRITE: &str = "activity:write";
+    /// Read device information
+    pub const DEVICE_READ: &str = "device:read";
+}
+
+/// Get default OAuth scopes for Garmin Connect
+///
+/// Returns the standard scopes needed for uploading activities and reading user profile.
+pub fn default_scopes() -> Vec<String> {
+    vec![
+        scopes::PROFILE_READ.to_string(),
+        scopes::ACTIVITY_READ.to_string(),
+        scopes::ACTIVITY_WRITE.to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +290,22 @@ mod tests {
             GarminActivityType::IndoorCycling.type_key(),
             "indoor_cycling"
         );
+    }
+
+    #[test]
+    fn test_default_scopes() {
+        let scopes = default_scopes();
+        assert!(scopes.contains(&scopes::ACTIVITY_WRITE.to_string()));
+        assert!(scopes.contains(&scopes::PROFILE_READ.to_string()));
+        assert!(scopes.contains(&scopes::ACTIVITY_READ.to_string()));
+        assert!(!scopes.contains(&scopes::DEVICE_READ.to_string()));
+    }
+
+    #[test]
+    fn test_scope_values() {
+        assert_eq!(scopes::PROFILE_READ, "profile:read");
+        assert_eq!(scopes::ACTIVITY_READ, "activity:read");
+        assert_eq!(scopes::ACTIVITY_WRITE, "activity:write");
+        assert_eq!(scopes::DEVICE_READ, "device:read");
     }
 }
