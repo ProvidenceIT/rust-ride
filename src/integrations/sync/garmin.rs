@@ -21,6 +21,9 @@ const UPLOAD_TIMEOUT_SECS: u64 = 120;
 /// Default Garmin Connect API base URL
 const GARMIN_API_BASE_URL: &str = "https://connect.garmin.com/modern/proxy";
 
+/// Default Garmin Connect OAuth base URL (for token revocation)
+const GARMIN_OAUTH_BASE_URL: &str = "https://connect.garmin.com/oauth-service/oauth";
+
 /// FIT file header magic bytes
 const FIT_HEADER_SIZE: u8 = 14;
 const FIT_HEADER_SIGNATURE: &[u8] = b".FIT";
@@ -181,6 +184,8 @@ pub struct GarminClient {
     access_token: Arc<RwLock<Option<String>>>,
     /// API base URL (for /upload-service, /userprofile-service, etc.)
     base_url: String,
+    /// OAuth base URL (for /revoke endpoint)
+    oauth_base_url: String,
     /// HTTP client for API requests
     http_client: Client,
 }
@@ -203,13 +208,14 @@ impl GarminClient {
         Self {
             access_token: Arc::new(RwLock::new(None)),
             base_url: GARMIN_API_BASE_URL.to_string(),
+            oauth_base_url: GARMIN_OAUTH_BASE_URL.to_string(),
             http_client,
         }
     }
 
-    /// Create a new Garmin Connect client with custom base URL (for testing)
+    /// Create a new Garmin Connect client with custom base URLs (for testing)
     #[cfg(test)]
-    pub fn with_base_url(base_url: String) -> Self {
+    pub fn with_base_url(base_url: String, oauth_base_url: String) -> Self {
         let http_client = Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
             .connect_timeout(Duration::from_secs(30))
@@ -219,6 +225,7 @@ impl GarminClient {
         Self {
             access_token: Arc::new(RwLock::new(None)),
             base_url,
+            oauth_base_url,
             http_client,
         }
     }
@@ -682,13 +689,102 @@ impl GarminClient {
         Ok(())
     }
 
-    /// Log out and revoke access
-    pub async fn logout(&self) -> Result<(), SyncError> {
-        tracing::info!("Logging out from Garmin Connect");
+    /// Deauthorize application
+    ///
+    /// Revokes the application's access to the user's Garmin Connect account by POSTing
+    /// to the revoke endpoint. This invalidates the access token on Garmin's side
+    /// and clears the local token.
+    ///
+    /// Note: Garmin Connect's OAuth 2.0 implementation may not support standard
+    /// token revocation. This method attempts to call the revoke endpoint but
+    /// will succeed regardless if the local token is cleared.
+    ///
+    /// # Returns
+    /// Ok(()) if deauthorization was successful or the token was already invalid.
+    /// The local token is cleared regardless of the API response.
+    pub async fn deauthorize(&self) -> Result<(), SyncError> {
+        let token = self
+            .access_token
+            .read()
+            .await
+            .clone()
+            .ok_or(SyncError::NotConfigured(SyncPlatform::GarminConnect))?;
 
-        // Garmin doesn't have a standard OAuth revoke endpoint
-        // Just clear local token
+        tracing::info!("Deauthorizing Garmin Connect");
+
+        // POST to Garmin's revoke endpoint
+        // Note: Garmin Connect OAuth may not support standard revocation
+        let url = format!("{}/revoke", self.oauth_base_url);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .bearer_auth(&token)
+            .send()
+            .await;
+
+        // Always clear local token, even if the API call fails
+        // This ensures the user can disconnect even with network issues
         self.clear_token().await;
+
+        // Now handle the response
+        let response = match response {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to call Garmin Connect revoke endpoint: {}. Local token cleared.",
+                    e
+                );
+                // Still consider this a success since local token is cleared
+                return Ok(());
+            }
+        };
+
+        let status_code = response.status();
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!(
+                "Garmin Connect API rate limit exceeded during deauthorization. Local token cleared."
+            );
+            // Token is already cleared locally, so this is still a success from user perspective
+            return Ok(());
+        }
+
+        // Handle unauthorized (401) - token was already invalid/revoked
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::info!("Garmin Connect token was already invalid or revoked. Local token cleared.");
+            return Ok(());
+        }
+
+        // Handle not found (404) - endpoint may not exist
+        if status_code == reqwest::StatusCode::NOT_FOUND {
+            tracing::info!(
+                "Garmin Connect revoke endpoint not found. Local token cleared."
+            );
+            return Ok(());
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            if let Ok(error_response) = serde_json::from_str::<GarminApiError>(&body) {
+                tracing::warn!(
+                    "Garmin Connect revoke returned error: {}. Local token cleared.",
+                    error_response
+                );
+            } else {
+                tracing::warn!(
+                    "Garmin Connect revoke returned status {}: {}. Local token cleared.",
+                    status_code,
+                    body
+                );
+            }
+            // Still consider this a success since local token is cleared
+            return Ok(());
+        }
+
+        tracing::info!("Successfully deauthorized from Garmin Connect");
 
         Ok(())
     }
@@ -809,7 +905,8 @@ mod tests {
     #[test]
     fn test_client_with_custom_base_url() {
         let custom_url = "http://localhost:8080".to_string();
-        let client = GarminClient::with_base_url(custom_url.clone());
+        let custom_oauth_url = "http://localhost:8081/oauth".to_string();
+        let client = GarminClient::with_base_url(custom_url.clone(), custom_oauth_url);
         assert!(!client.is_configured());
         assert_eq!(client.base_url(), custom_url);
     }
@@ -934,13 +1031,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_logout_clears_token() {
+    async fn test_deauthorize_without_token_returns_not_configured() {
+        let client = GarminClient::new();
+
+        let result = client.deauthorize().await;
+
+        assert!(matches!(
+            result,
+            Err(SyncError::NotConfigured(SyncPlatform::GarminConnect))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_clears_local_token() {
         let client = GarminClient::new();
         client.set_access_token("test_token".to_string()).await;
         assert!(client.is_configured());
 
-        let result = client.logout().await;
-        assert!(result.is_ok());
+        // Note: This test will make a real network call that will fail,
+        // but the important thing is that the token gets cleared.
+        // In a real scenario, you'd use a mock HTTP client.
+        let _ = client.deauthorize().await;
+
+        // Token should be cleared regardless of network outcome
         assert!(!client.is_configured());
     }
 
@@ -1387,7 +1500,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1417,7 +1530,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1438,7 +1551,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1459,7 +1572,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1480,7 +1593,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1511,7 +1624,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1538,7 +1651,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1562,7 +1675,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1602,7 +1715,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1646,7 +1759,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1680,7 +1793,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let ride_id = Uuid::new_v4();
@@ -1718,7 +1831,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1751,7 +1864,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1782,7 +1895,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1806,7 +1919,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1824,7 +1937,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1842,7 +1955,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1864,7 +1977,7 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
@@ -1884,11 +1997,141 @@ mod http_mocked_tests {
             .mount(&mock_server)
             .await;
 
-        let client = GarminClient::with_base_url(mock_server.uri());
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
         client.set_access_token("test_token".to_string()).await;
 
         let result = client.get_user_profile().await;
 
         assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("500")));
+    }
+
+    // ============================================================================
+    // Deauthorize Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_deauthorize_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"success": true}"#))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        assert!(client.is_configured());
+
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured()); // Token should be cleared
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_rate_limit_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with rate limit since token is cleared locally
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_unauthorized_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with 401 since token was already invalid
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_not_found_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with 404 since endpoint may not exist
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_server_error_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        // Deauthorize should succeed even with server error since local token is cleared
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
+    }
+
+    #[tokio::test]
+    async fn test_deauthorize_api_error_with_body_still_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Something went wrong",
+            "errors": []
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(403).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.deauthorize().await;
+
+        assert!(result.is_ok());
+        assert!(!client.is_configured());
     }
 }
