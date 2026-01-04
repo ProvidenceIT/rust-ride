@@ -369,6 +369,11 @@ impl CommandParser {
                 primary_keywords: &["status", "metrics", "how am i doing"],
                 secondary_keywords: &["stats", "info", "update", "progress"],
             },
+            CommandDef {
+                command: VoiceCommand::TakeLap,
+                primary_keywords: &["lap", "take lap", "mark lap"],
+                secondary_keywords: &["new lap", "split", "mark"],
+            },
         ]
     }
 }
@@ -609,6 +614,9 @@ mod tests {
             ("less", VoiceCommand::Decrease),
             ("status", VoiceCommand::Status),
             ("metrics", VoiceCommand::Status),
+            ("lap", VoiceCommand::TakeLap),
+            ("take lap", VoiceCommand::TakeLap),
+            ("mark lap", VoiceCommand::TakeLap),
         ];
 
         for (phrase, expected_command) in test_cases {
@@ -682,6 +690,9 @@ mod tests {
             ("skipt", VoiceCommand::Skip),
             ("necks", VoiceCommand::Skip),
             ("statis", VoiceCommand::Status),
+            ("lab", VoiceCommand::TakeLap),
+            ("lapp", VoiceCommand::TakeLap),
+            ("lack", VoiceCommand::TakeLap),
         ];
 
         for (phrase, expected_command) in misrecognitions {
@@ -733,5 +744,34 @@ mod tests {
         assert_eq!(result.command, VoiceCommand::Increase);
         assert!(result.confidence < 1.0);
         assert!(result.confidence >= 0.9);
+    }
+
+    #[test]
+    fn test_lap_command_variations() {
+        let parser = CommandParser::new();
+
+        // Test primary lap keywords
+        let result = parser.parse("lap").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
+        assert_eq!(result.confidence, 1.0);
+
+        let result = parser.parse("take lap").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
+        assert_eq!(result.confidence, 1.0);
+
+        let result = parser.parse("mark lap").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
+        assert_eq!(result.confidence, 1.0);
+
+        // Test with surrounding words
+        let result = parser.parse("please take lap now").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
+
+        // Test misrecognitions
+        let result = parser.parse("lab").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
+
+        let result = parser.parse("lapp").unwrap();
+        assert_eq!(result.command, VoiceCommand::TakeLap);
     }
 }

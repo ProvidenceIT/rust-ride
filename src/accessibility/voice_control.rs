@@ -28,6 +28,8 @@ pub enum VoiceCommand {
     Decrease,
     /// Request current metrics to be announced
     Status,
+    /// Take a lap marker
+    TakeLap,
     /// Unknown/unrecognized command
     Unknown(String),
 }
@@ -107,6 +109,8 @@ impl VoiceCommand {
             || phrase.contains("how am i doing")
         {
             VoiceCommand::Status
+        } else if phrase.contains("lap") || phrase.contains("mark lap") || phrase.contains("take lap") {
+            VoiceCommand::TakeLap
         } else {
             VoiceCommand::Unknown(phrase)
         }
@@ -238,6 +242,7 @@ impl VoskVoiceControl {
             VoiceCommand::Increase => "Increasing",
             VoiceCommand::Decrease => "Decreasing",
             VoiceCommand::Status => "Reading metrics",
+            VoiceCommand::TakeLap => "Marking lap",
             VoiceCommand::Unknown(_) => "Command not recognized",
         }
     }
@@ -247,7 +252,7 @@ impl VoskVoiceControl {
         match command {
             VoiceCommand::Start | VoiceCommand::Resume => CommandAudioCue::Positive,
             VoiceCommand::End | VoiceCommand::Pause => CommandAudioCue::Neutral,
-            VoiceCommand::Skip => CommandAudioCue::Action,
+            VoiceCommand::Skip | VoiceCommand::TakeLap => CommandAudioCue::Action,
             VoiceCommand::Increase | VoiceCommand::Decrease => CommandAudioCue::Adjustment,
             VoiceCommand::Status => CommandAudioCue::Info,
             VoiceCommand::Unknown(_) => CommandAudioCue::Error,
