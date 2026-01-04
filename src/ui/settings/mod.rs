@@ -4,8 +4,13 @@
 //! in the main settings screen or used independently.
 
 pub mod audio_settings;
+pub mod voice_settings;
 
 pub use audio_settings::{
     AudioSettingsAction, AudioSettingsPanel, AudioSettingsPanelConfig, AudioSettingsResponse,
     AudioTestType,
+};
+pub use voice_settings::{
+    VoiceSettingsAction, VoiceSettingsPanel, VoiceSettingsPanelConfig, VoiceSettingsResponse,
+    VoiceSettings, VoiceModelStatus,
 };
