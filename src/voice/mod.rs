@@ -71,6 +71,7 @@ pub mod wake_word;
 pub mod push_to_talk;
 pub mod feedback;
 pub mod executor;
+pub mod error;
 
 // Re-export main types
 pub use model_manager::{
@@ -111,4 +112,7 @@ pub use feedback::{
 };
 pub use executor::{
     VoiceCommandExecutor, VoiceExecutorError, ExecutorContext, MappingResult,
+};
+pub use error::{
+    VoiceControlError, VoiceErrorCategory, RetryConfig, RetryState,
 };
