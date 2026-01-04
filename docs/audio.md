@@ -179,21 +179,45 @@ let timing = AudioTimingConfig {
 
 ### WorkoutAudioBridgeConfig
 
-Configure countdown behavior:
+Configure workout audio behavior including countdown sounds and announcements:
 
 ```rust
 use rustride::audio::WorkoutAudioBridgeConfig;
 
 let config = WorkoutAudioBridgeConfig {
-    enabled: true,
-    countdown_sounds_enabled: true,
-    countdown_voice_enabled: true,
-    countdown_thresholds: vec![10, 5, 3, 2, 1],      // Which seconds to announce
-    countdown_voice_thresholds: vec![10, 5],         // Which get voice + tone
-    voice_interval_changes: true,
-    voice_zone_changes: true,
+    // Announcement toggles
+    announce_interval_changes: true,       // Announce when intervals change
+    announce_countdowns: true,             // Announce countdown before intervals
+    announce_workout_lifecycle: true,      // Announce workout start/pause/complete
+    announce_trainer_status: true,         // Announce trainer connect/disconnect
+    announce_recovery_intervals: true,     // Special announcements for recovery
+    announce_motivational_messages: false, // Motivational messages (off by default)
+
+    // Countdown sound settings
+    countdown_sounds_enabled: true,        // Enable countdown tones
+    countdown_voice_enabled: true,         // Enable voice for 10s, 5s countdown
+    countdown_thresholds: vec![10, 5, 3, 2, 1],  // Which seconds trigger audio
+    countdown_voice_thresholds: vec![10, 5],     // Which get voice announcements
+
+    // Timing and synchronization
+    countdown_max_age_ms: 500,             // Max delay before skipping (sync)
+    use_queued_countdown: true,            // Use queue-based timing (recommended)
 };
 ```
+
+#### Countdown Sound Strategy
+
+The bridge implements a differentiated countdown system to prevent audio overlap:
+
+| Seconds | Audio Type | Rationale |
+|---------|------------|-----------|
+| 10s | Voice + gentle tone | Early warning, plenty of time |
+| 5s | Voice + attention tone | Mid-point reminder |
+| 3s | Tone only (escalating) | Final countdown begins |
+| 2s | Tone only (higher pitch) | Urgency increases |
+| 1s | Tone only (highest pitch) | Imminent transition |
+
+This prevents voice announcements from overlapping during the critical final seconds.
 
 ---
 
@@ -355,6 +379,33 @@ pub fn from_name(name: &str) -> Option<SoundAsset> {
     }
 }
 ```
+
+### Frequency Reference
+
+The `tones::frequencies` module provides predefined frequencies for consistent audio design:
+
+| Constant | Frequency | Note | Use Case |
+|----------|-----------|------|----------|
+| `LOW` | 261.63 Hz | C4 | Recovery zones, calm feedback |
+| `MEDIUM` | 329.63 Hz | E4 | Tempo zones, standard notifications |
+| `HIGH` | 392.00 Hz | G4 | Threshold zones, important alerts |
+| `VERY_HIGH` | 523.25 Hz | C5 | VO2max zones, urgent feedback |
+| `ALERT` | 880.00 Hz | A5 | Warning alerts |
+| `SUCCESS` | 1046.50 Hz | C6 | Achievement celebrations |
+| `ERROR` | 220.00 Hz | A3 | Error notifications |
+
+**Countdown Frequencies** (escalating urgency):
+- `COUNTDOWN_10`: 392.00 Hz (G4) - Gentle reminder
+- `COUNTDOWN_5`: 440.00 Hz (A4) - Attention
+- `COUNTDOWN_3`: 493.88 Hz (B4) - Preparation
+- `COUNTDOWN_2`: 523.25 Hz (C5) - Alert
+- `COUNTDOWN_1`: 587.33 Hz (D5) - Urgent
+
+**Achievement Frequencies** (tiered celebration):
+- Bronze: 329.63 Hz (E4)
+- Silver: 392.00 Hz → 493.88 Hz (G4 → B4)
+- Gold: 523.25 Hz → 659.25 Hz → 783.99 Hz (C5 → E5 → G5)
+- Platinum: Uses full range up to 1174.66 Hz (D6)
 
 ### Adding New Cue Patterns
 
