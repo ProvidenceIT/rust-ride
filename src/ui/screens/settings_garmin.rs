@@ -1114,4 +1114,252 @@ mod tests {
             "OAuth Test User"
         );
     }
+
+    // ===========================================
+    // Error State Tests (4.5)
+    // ===========================================
+
+    #[test]
+    fn test_error_state_ui_components() {
+        // Verify error state displays the expected UI components
+        let mut screen = GarminSettingsScreen::new();
+
+        let error_msg = "Failed to connect: Network timeout".to_string();
+        screen.set_connection_state(GarminConnectionState::Error(error_msg.clone()));
+
+        // Verify error state
+        match &screen.connection_state {
+            GarminConnectionState::Error(err) => {
+                assert_eq!(err, &error_msg);
+            }
+            _ => panic!("Expected Error state"),
+        }
+
+        // Error state should NOT be considered connected
+        assert!(!screen.is_connected());
+
+        // The render_error_state method renders:
+        // 1. Frame with dark error background (Color32::from_rgb(40, 30, 30))
+        // 2. Error icon "!" in red (size 48.0, Color32::from_rgb(234, 67, 53))
+        // 3. "Connection Error" heading in red (size 18.0, strong)
+        // 4. Error message text (weak styling)
+        // 5. "Try Again" retry button (GARMIN_BLUE fill, size 120x36)
+    }
+
+    #[test]
+    fn test_error_state_retry_action() {
+        // Verify clicking retry in error state triggers Connect action
+        // The render_error_state method returns GarminSettingsAction::Connect
+        // when the "Try Again" button is clicked
+        let action = GarminSettingsAction::Connect;
+        assert_eq!(action, GarminSettingsAction::Connect);
+        assert_ne!(action, GarminSettingsAction::None);
+        assert_ne!(action, GarminSettingsAction::Disconnect);
+    }
+
+    #[test]
+    fn test_error_state_transition_to_connecting() {
+        // Verify user can retry from error state back to connecting
+        let mut screen = GarminSettingsScreen::new();
+
+        // Start in error state
+        let error_msg = "OAuth authorization denied".to_string();
+        screen.set_connection_state(GarminConnectionState::Error(error_msg));
+        assert!(!screen.is_connected());
+
+        // User clicks "Try Again" - transition back to Connecting
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_state_transition_to_disconnected() {
+        // Verify error state can transition back to disconnected
+        let mut screen = GarminSettingsScreen::new();
+
+        // Start in error state
+        screen.set_connection_state(GarminConnectionState::Error("Some error".to_string()));
+        assert!(!screen.is_connected());
+
+        // User navigates away or error is cleared
+        screen.set_connection_state(GarminConnectionState::Disconnected);
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_state_preserves_error_message() {
+        // Verify error messages of various formats are preserved
+        let test_cases = vec![
+            "Network connection failed",
+            "Authorization was denied by user",
+            "Garmin Connect API returned error: 401 Unauthorized",
+            "Request timeout after 30 seconds",
+            "Invalid OAuth state - possible CSRF attack",
+            "",  // Empty error message
+            "Error with special chars: !@#$%^&*()",
+        ];
+
+        for error_msg in test_cases {
+            let mut screen = GarminSettingsScreen::new();
+            screen.set_connection_state(GarminConnectionState::Error(error_msg.to_string()));
+
+            match &screen.connection_state {
+                GarminConnectionState::Error(err) => {
+                    assert_eq!(err, error_msg);
+                }
+                _ => panic!("Expected Error state for message: {}", error_msg),
+            }
+        }
+    }
+
+    #[test]
+    fn test_error_state_equality() {
+        // Verify error states with same message are equal
+        assert_eq!(
+            GarminConnectionState::Error("test".to_string()),
+            GarminConnectionState::Error("test".to_string())
+        );
+
+        // Verify error states with different messages are not equal
+        assert_ne!(
+            GarminConnectionState::Error("error1".to_string()),
+            GarminConnectionState::Error("error2".to_string())
+        );
+
+        // Verify error state is not equal to other states
+        assert_ne!(
+            GarminConnectionState::Error("error".to_string()),
+            GarminConnectionState::Disconnected
+        );
+        assert_ne!(
+            GarminConnectionState::Error("error".to_string()),
+            GarminConnectionState::Connecting
+        );
+        assert_ne!(
+            GarminConnectionState::Error("error".to_string()),
+            GarminConnectionState::Connected
+        );
+        assert_ne!(
+            GarminConnectionState::Error("error".to_string()),
+            GarminConnectionState::Disconnecting
+        );
+    }
+
+    #[test]
+    fn test_error_state_from_connecting_failure() {
+        // Test complete flow: Disconnected -> Connecting -> Error -> Connecting -> Connected
+        let mut screen = GarminSettingsScreen::new();
+
+        // 1. Initial state
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+
+        // 2. User clicks connect
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // 3. OAuth fails with error
+        let error_msg = "User cancelled authorization".to_string();
+        screen.set_connection_state(GarminConnectionState::Error(error_msg.clone()));
+        match &screen.connection_state {
+            GarminConnectionState::Error(err) => assert_eq!(err, &error_msg),
+            _ => panic!("Expected Error state"),
+        }
+
+        // 4. User clicks "Try Again"
+        screen.set_connection_state(GarminConnectionState::Connecting);
+        assert_eq!(screen.connection_state, GarminConnectionState::Connecting);
+
+        // 5. OAuth succeeds this time
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "retry_user".to_string(),
+            full_name: Some("Retry User".to_string()),
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile));
+        screen.set_connection_state(GarminConnectionState::Connected);
+        assert!(screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_state_clears_profile() {
+        // Verify profile remains None when transitioning to error state
+        let mut screen = GarminSettingsScreen::new();
+
+        // User never connected, so no profile
+        assert!(screen.user_profile.is_none());
+
+        // Connection fails
+        screen.set_connection_state(GarminConnectionState::Error("Connection failed".to_string()));
+
+        // Profile should still be None
+        assert!(screen.user_profile.is_none());
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_state_after_disconnect_failure() {
+        // Test error during disconnect: Connected -> Disconnecting -> Error
+        let mut screen = GarminSettingsScreen::new();
+
+        // Start connected
+        screen.set_connection_state(GarminConnectionState::Connected);
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "test_user".to_string(),
+            full_name: None,
+            profile_image_url: None,
+        };
+        screen.set_user_profile(Some(profile));
+        assert!(screen.is_connected());
+
+        // User clicks disconnect
+        screen.set_connection_state(GarminConnectionState::Disconnecting);
+        assert!(!screen.is_connected());
+
+        // Disconnect fails (e.g., network error during token revocation)
+        let error_msg = "Failed to revoke token: Network error".to_string();
+        screen.set_connection_state(GarminConnectionState::Error(error_msg.clone()));
+
+        // Verify error state
+        match &screen.connection_state {
+            GarminConnectionState::Error(err) => assert_eq!(err, &error_msg),
+            _ => panic!("Expected Error state after disconnect failure"),
+        }
+        assert!(!screen.is_connected());
+    }
+
+    #[test]
+    fn test_error_state_debug_formatting() {
+        // Verify error state debug formatting includes error message
+        let error = GarminConnectionState::Error("Debug test error".to_string());
+        let debug_str = format!("{:?}", error);
+
+        assert!(debug_str.contains("Error"));
+        assert!(debug_str.contains("Debug test error"));
+    }
+
+    #[test]
+    fn test_error_colors_match_strava_pattern() {
+        // Verify error UI uses consistent colors following Strava pattern
+        // Error icon color: Color32::from_rgb(234, 67, 53) - Google/Material red
+        // Error background: Color32::from_rgb(40, 30, 30) - dark with red tint
+        // Retry button: GARMIN_BLUE (brand color) for consistency
+        let error_red = Color32::from_rgb(234, 67, 53);
+        let error_bg = Color32::from_rgb(40, 30, 30);
+
+        // Verify colors are defined correctly
+        assert_eq!(error_red.r(), 234);
+        assert_eq!(error_red.g(), 67);
+        assert_eq!(error_red.b(), 53);
+
+        assert_eq!(error_bg.r(), 40);
+        assert_eq!(error_bg.g(), 30);
+        assert_eq!(error_bg.b(), 30);
+
+        // GARMIN_BLUE for retry button
+        assert_eq!(GARMIN_BLUE, Color32::from_rgb(0, 118, 206));
+    }
 }

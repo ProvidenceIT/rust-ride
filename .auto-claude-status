@@ -3,7 +3,7 @@
   "spec": "016-garmin-connect-sync",
   "state": "building",
   "subtasks": {
-    "completed": 17,
+    "completed": 18,
     "total": 34,
     "in_progress": 1,
     "failed": 0
@@ -18,8 +18,8 @@
     "max": 1
   },
   "session": {
-    "number": 19,
+    "number": 20,
     "started_at": "2026-01-04T13:16:52.834379"
   },
-  "last_update": "2026-01-04T14:47:43.937427"
+  "last_update": "2026-01-04T14:50:28.227300"
 }

@@ -230,9 +230,9 @@
           "file_paths": [
             "src/ui/screens/settings_garmin.rs"
           ],
-          "status": "in_progress",
-          "notes": "Verifying existing implementation and adding comprehensive tests for connecting and disconnecting state UI",
-          "updated_at": "2026-01-04T13:48:34.380881+00:00"
+          "status": "completed",
+          "notes": "The connecting/disconnecting state UI was already implemented in subtask 4.1 with proper spinner and status messages following the Strava pattern:\n\n1. render_connecting_state() (lines 249-269):\n   - ui.spinner() - animated loading indicator\n   - \"Connecting to Garmin Connect...\" - main status message (size 16.0)\n   - \"Complete authorization in your browser\" - helper text (weak)\n\n2. render_disconnecting_state() (lines 440-455):\n   - ui.spinner() - animated loading indicator\n   - \"Disconnecting from Garmin Connect...\" - main status message (size 16.0)\n\nAdded 10 comprehensive tests for connecting and disconnecting states:\n- test_connecting_state_ui, test_disconnecting_state_ui\n- test_connecting_state_transition_from_disconnected\n- test_connecting_state_transition_to_error\n- test_disconnecting_state_transition\n- test_connecting_state_preserves_no_action\n- test_disconnecting_state_preserves_no_action\n- test_connection_states_debug_format\n- test_all_connection_states_equality\n- test_oauth_flow_complete_cycle",
+          "updated_at": "2026-01-04T13:50:00.049129+00:00"
         },
         {
           "id": "4.5",
@@ -442,5 +442,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:48:34.380881+00:00"
+  "last_updated": "2026-01-04T13:50:00.049129+00:00"
 }
