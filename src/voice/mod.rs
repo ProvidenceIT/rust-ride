@@ -65,6 +65,7 @@ pub mod model_manager;
 pub mod download;
 pub mod audio_input;
 pub mod recognizer;
+pub mod engine;
 
 // Re-export main types
 pub use model_manager::{
@@ -81,4 +82,7 @@ pub use audio_input::{
 pub use recognizer::{
     ThreadSafeRecognizer, RecognizerConfig, RecognizerError, RecognitionResult,
     RECOGNIZER_SAMPLE_RATE, DEFAULT_RECOGNITION_TIMEOUT_MS,
+};
+pub use engine::{
+    VoiceEngine, VoiceEngineConfig, VoiceEngineError, VoiceEngineEvent, VoiceEngineState,
 };
