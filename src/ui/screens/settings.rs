@@ -25,7 +25,7 @@ use crate::ui::settings::{
 };
 
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
-use crate::integrations::weather::{WeatherConfig, WeatherUnits};
+use crate::integrations::weather::{WeatherCondition, WeatherConfig, WeatherCredentialStore, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
@@ -92,6 +92,65 @@ pub enum FanTestStatus {
 }
 
 impl Default for FanTestStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
+/// Status of weather location auto-detection.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GeolocationStatus {
+    /// No detection has been run
+    Idle,
+    /// Detection is currently running
+    Detecting,
+    /// Detection completed successfully
+    Success {
+        /// Success message (city name, etc.)
+        message: String,
+        /// Time the detection was completed
+        timestamp: std::time::Instant,
+    },
+    /// Detection failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the detection was completed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for GeolocationStatus {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
+
+/// Status of weather API key operations.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WeatherApiKeyStatus {
+    /// No operation in progress
+    Idle,
+    /// API key was saved successfully
+    Saved {
+        /// Time the key was saved
+        timestamp: std::time::Instant,
+    },
+    /// API key was cleared successfully
+    Cleared {
+        /// Time the key was cleared
+        timestamp: std::time::Instant,
+    },
+    /// Operation failed
+    Failed {
+        /// Error message describing the failure
+        message: String,
+        /// Time the operation failed
+        timestamp: std::time::Instant,
+    },
+}
+
+impl Default for WeatherApiKeyStatus {
     fn default() -> Self {
         Self::Idle
     }
@@ -174,6 +233,18 @@ pub struct SettingsScreen {
     weather_lat_input: String,
     /// T100: Weather longitude input buffer
     weather_lon_input: String,
+    /// T100: Weather temperature override input buffer
+    weather_temp_override_input: String,
+    /// Status of weather location auto-detection
+    pub geolocation_status: GeolocationStatus,
+    /// Flag indicating geolocation was requested
+    geolocation_requested: bool,
+    /// Weather API key input buffer (stored in OS keyring, not in config)
+    weather_api_key_input: String,
+    /// Credential store for securely saving weather API keys to OS keyring
+    weather_credential_store: WeatherCredentialStore,
+    /// Status of weather API key operations
+    pub weather_api_key_status: WeatherApiKeyStatus,
     /// T109: Sync/platform configuration
     pub sync_config: SyncConfig,
     /// T109: Show/hide sync section
@@ -566,6 +637,12 @@ pub enum SettingsAction {
     NavigateToStravaSettings,
     /// Navigate to TrainingPeaks settings screen
     NavigateToTrainingPeaksSettings,
+    /// Auto-detect weather location using IP geolocation
+    AutoDetectWeatherLocation,
+    /// Save weather API key to OS keyring
+    SaveWeatherApiKey(String),
+    /// Clear weather API key from OS keyring
+    ClearWeatherApiKey,
 }
 
 impl SettingsScreen {
@@ -622,6 +699,12 @@ impl SettingsScreen {
             show_weather: false,
             weather_lat_input: "0.0".to_string(),
             weather_lon_input: "0.0".to_string(),
+            weather_temp_override_input: "20".to_string(),
+            geolocation_status: GeolocationStatus::Idle,
+            geolocation_requested: false,
+            weather_api_key_input: String::new(),
+            weather_credential_store: WeatherCredentialStore::new(),
+            weather_api_key_status: WeatherApiKeyStatus::Idle,
             sync_config: SyncConfig::default(),
             show_sync: false,
             platform_states: vec![
@@ -661,12 +744,105 @@ impl SettingsScreen {
     pub fn set_weather_config(&mut self, config: WeatherConfig) {
         self.weather_lat_input = format!("{:.4}", config.latitude);
         self.weather_lon_input = format!("{:.4}", config.longitude);
+        // Initialize temperature override input from config or use default based on units
+        self.weather_temp_override_input = config
+            .override_temperature
+            .map(|t| format!("{:.0}", t))
+            .unwrap_or_else(|| {
+                match config.units {
+                    WeatherUnits::Metric => "20".to_string(),
+                    WeatherUnits::Imperial => "68".to_string(),
+                }
+            });
         self.weather_config = config;
     }
 
     /// Get current weather configuration.
     pub fn get_weather_config(&self) -> &WeatherConfig {
         &self.weather_config
+    }
+
+    /// Check if geolocation was requested.
+    pub fn was_geolocation_requested(&mut self) -> bool {
+        std::mem::take(&mut self.geolocation_requested)
+    }
+
+    /// Set geolocation status to detecting (in progress).
+    pub fn set_geolocation_detecting(&mut self) {
+        self.geolocation_status = GeolocationStatus::Detecting;
+    }
+
+    /// Set geolocation result with latitude, longitude, and optional city name.
+    /// Updates the weather config with the detected location.
+    pub fn set_geolocation_result(&mut self, latitude: f64, longitude: f64, city_name: Option<String>) {
+        // Update the config with detected coordinates
+        self.weather_config.latitude = latitude;
+        self.weather_config.longitude = longitude;
+        self.weather_config.city_name = city_name.clone();
+
+        // Update input buffers
+        self.weather_lat_input = format!("{:.4}", latitude);
+        self.weather_lon_input = format!("{:.4}", longitude);
+
+        // Set success status
+        let message = city_name.unwrap_or_else(|| format!("{:.4}, {:.4}", latitude, longitude));
+        self.geolocation_status = GeolocationStatus::Success {
+            message,
+            timestamp: std::time::Instant::now(),
+        };
+
+        self.has_changes = true;
+    }
+
+    /// Set geolocation error.
+    pub fn set_geolocation_error(&mut self, error: String) {
+        self.geolocation_status = GeolocationStatus::Failed {
+            message: error,
+            timestamp: std::time::Instant::now(),
+        };
+    }
+
+    /// Get the current geolocation status.
+    pub fn get_geolocation_status(&self) -> &GeolocationStatus {
+        &self.geolocation_status
+    }
+
+    /// Set weather API key saved status.
+    pub fn set_weather_api_key_saved(&mut self) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Saved {
+            timestamp: std::time::Instant::now(),
+        };
+        self.weather_config.api_key_configured = true;
+        self.has_changes = true;
+    }
+
+    /// Set weather API key cleared status.
+    pub fn set_weather_api_key_cleared(&mut self) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Cleared {
+            timestamp: std::time::Instant::now(),
+        };
+        self.weather_config.api_key_configured = false;
+        self.weather_api_key_input.clear();
+        self.has_changes = true;
+    }
+
+    /// Set weather API key error status.
+    pub fn set_weather_api_key_error(&mut self, error: String) {
+        self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+            message: error,
+            timestamp: std::time::Instant::now(),
+        };
+    }
+
+    /// Get the current weather API key status.
+    pub fn get_weather_api_key_status(&self) -> &WeatherApiKeyStatus {
+        &self.weather_api_key_status
+    }
+
+    /// Get a reference to the weather credential store.
+    /// Use this to store or retrieve API keys from the OS keyring.
+    pub fn weather_credential_store(&self) -> &WeatherCredentialStore {
+        &self.weather_credential_store
     }
 
     /// Set MQTT configuration.
@@ -1078,6 +1254,13 @@ impl SettingsScreen {
         if self.hid_settings.learning_mode_cancel_requested {
             self.hid_settings.learning_mode_cancel_requested = false;
             return SettingsAction::StopLearningMode;
+        }
+
+        // Check if weather location auto-detect was requested
+        if self.geolocation_requested {
+            self.geolocation_requested = false;
+            self.geolocation_status = GeolocationStatus::Detecting;
+            return SettingsAction::AutoDetectWeatherLocation;
         }
 
         action
@@ -1520,17 +1703,38 @@ impl SettingsScreen {
                     ui.label(RichText::new("Location").strong());
                     ui.add_space(4.0);
 
+                    // Display city name if available
+                    if let Some(city_name) = &self.weather_config.city_name {
+                        if !city_name.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📍").size(14.0));
+                                ui.label(RichText::new(city_name).strong());
+                            });
+                            ui.add_space(4.0);
+                        }
+                    }
+
                     egui::Grid::new("weather_location_grid")
-                        .num_columns(2)
-                        .spacing([16.0, 8.0])
+                        .num_columns(3)
+                        .spacing([8.0, 8.0])
                         .show(ui, |ui| {
                             // Latitude
                             ui.label("Latitude:");
+                            let lat_valid = self.weather_lat_input.parse::<f64>()
+                                .map(|lat| (-90.0..=90.0).contains(&lat))
+                                .unwrap_or(false);
                             let lat_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.weather_lat_input)
-                                    .desired_width(100.0),
+                                    .desired_width(100.0)
+                                    .text_color(if lat_valid || self.weather_lat_input.is_empty() {
+                                        ui.visuals().text_color()
+                                    } else {
+                                        Color32::from_rgb(234, 67, 53)
+                                    }),
                             );
                             if lat_response.changed() {
+                                // Clear city name when manually editing coordinates
+                                self.weather_config.city_name = None;
                                 if let Ok(lat) = self.weather_lat_input.parse::<f64>() {
                                     if (-90.0..=90.0).contains(&lat) {
                                         self.weather_config.latitude = lat;
@@ -1538,15 +1742,31 @@ impl SettingsScreen {
                                     }
                                 }
                             }
+                            // Validation hint
+                            if !lat_valid && !self.weather_lat_input.is_empty() {
+                                ui.label(RichText::new("(-90 to 90)").weak().small());
+                            } else {
+                                ui.label("");
+                            }
                             ui.end_row();
 
                             // Longitude
                             ui.label("Longitude:");
+                            let lon_valid = self.weather_lon_input.parse::<f64>()
+                                .map(|lon| (-180.0..=180.0).contains(&lon))
+                                .unwrap_or(false);
                             let lon_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.weather_lon_input)
-                                    .desired_width(100.0),
+                                    .desired_width(100.0)
+                                    .text_color(if lon_valid || self.weather_lon_input.is_empty() {
+                                        ui.visuals().text_color()
+                                    } else {
+                                        Color32::from_rgb(234, 67, 53)
+                                    }),
                             );
                             if lon_response.changed() {
+                                // Clear city name when manually editing coordinates
+                                self.weather_config.city_name = None;
                                 if let Ok(lon) = self.weather_lon_input.parse::<f64>() {
                                     if (-180.0..=180.0).contains(&lon) {
                                         self.weather_config.longitude = lon;
@@ -1554,12 +1774,65 @@ impl SettingsScreen {
                                     }
                                 }
                             }
+                            // Validation hint
+                            if !lon_valid && !self.weather_lon_input.is_empty() {
+                                ui.label(RichText::new("(-180 to 180)").weak().small());
+                            } else {
+                                ui.label("");
+                            }
                             ui.end_row();
                         });
 
+                    ui.add_space(8.0);
+
+                    // Auto-detect location button
+                    ui.horizontal(|ui| {
+                        let is_detecting = matches!(self.geolocation_status, GeolocationStatus::Detecting);
+                        let button_text = if is_detecting {
+                            "🔄 Detecting..."
+                        } else {
+                            "📍 Auto-detect location"
+                        };
+
+                        if ui.add_enabled(!is_detecting, egui::Button::new(button_text))
+                            .on_hover_text("Detect your approximate location using IP geolocation")
+                            .clicked()
+                        {
+                            self.geolocation_requested = true;
+                        }
+
+                        // Show geolocation status
+                        match &self.geolocation_status {
+                            GeolocationStatus::Idle => {}
+                            GeolocationStatus::Detecting => {
+                                ui.spinner();
+                            }
+                            GeolocationStatus::Success { message, timestamp } => {
+                                // Show success message for 5 seconds
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new(format!("✓ {}", message))
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            GeolocationStatus::Failed { message, timestamp } => {
+                                // Show error message for 10 seconds
+                                if timestamp.elapsed().as_secs() < 10 {
+                                    ui.label(
+                                        RichText::new(format!("✗ {}", message))
+                                            .color(Color32::from_rgb(234, 67, 53))
+                                            .small(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+
                     ui.add_space(4.0);
                     ui.label(
-                        RichText::new("Tip: Search for your city on maps.google.com and copy coordinates from the URL")
+                        RichText::new("Or search for your city on maps.google.com and copy coordinates from the URL")
                             .weak()
                             .small(),
                     );
@@ -1570,28 +1843,183 @@ impl SettingsScreen {
                     ui.label(RichText::new("API Settings").strong());
                     ui.add_space(4.0);
 
-                    // API key status
+                    // API key status indicator
                     ui.horizontal(|ui| {
-                        ui.label("API Key:");
+                        ui.label("Status:");
                         if self.weather_config.api_key_configured {
                             ui.label(
-                                RichText::new("Configured")
+                                RichText::new("✓ API key configured")
                                     .color(Color32::from_rgb(52, 168, 83)),
                             );
                         } else {
                             ui.label(
-                                RichText::new("Not configured")
+                                RichText::new("✗ API key not configured")
                                     .color(Color32::from_rgb(234, 67, 53)),
                             );
                         }
                     });
 
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("Get a free API key from openweathermap.org")
-                            .weak()
-                            .small(),
-                    );
+
+                    // API key input field
+                    egui::Grid::new("weather_api_key_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("API Key:");
+                            ui.horizontal(|ui| {
+                                // Password field for API key
+                                let _api_key_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.weather_api_key_input)
+                                        .password(true)
+                                        .desired_width(200.0)
+                                        .hint_text("Enter your OpenWeatherMap API key"),
+                                );
+                            });
+                            ui.end_row();
+                        });
+
+                    ui.add_space(4.0);
+
+                    // Save and Clear buttons
+                    ui.horizontal(|ui| {
+                        // Save button - enabled only when there's text to save
+                        let can_save = !self.weather_api_key_input.trim().is_empty();
+                        if ui
+                            .add_enabled(can_save, egui::Button::new("💾 Save API Key"))
+                            .on_hover_text("Store the API key securely in your system's keyring")
+                            .clicked()
+                        {
+                            // Save to keyring
+                            let api_key = self.weather_api_key_input.trim().to_string();
+                            match self.weather_credential_store.save_api_key(&api_key) {
+                                Ok(()) => {
+                                    self.weather_config.api_key_configured = true;
+                                    self.weather_api_key_input.clear();
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Saved {
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    self.has_changes = true;
+                                    tracing::info!("Saved weather API key to OS keyring");
+                                }
+                                Err(e) => {
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+                                        message: format!("Failed to save: {}", e),
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    tracing::error!("Failed to save weather API key: {}", e);
+                                }
+                            }
+                        }
+
+                        // Clear button - enabled only when a key is configured
+                        if ui
+                            .add_enabled(
+                                self.weather_config.api_key_configured,
+                                egui::Button::new("🗑 Clear API Key"),
+                            )
+                            .on_hover_text("Remove the API key from your system's keyring")
+                            .clicked()
+                        {
+                            // Clear from keyring
+                            match self.weather_credential_store.clear_api_key() {
+                                Ok(()) => {
+                                    self.weather_config.api_key_configured = false;
+                                    self.weather_api_key_input.clear();
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Cleared {
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    self.has_changes = true;
+                                    tracing::info!("Cleared weather API key from OS keyring");
+                                }
+                                Err(e) => {
+                                    self.weather_api_key_status = WeatherApiKeyStatus::Failed {
+                                        message: format!("Failed to clear: {}", e),
+                                        timestamp: std::time::Instant::now(),
+                                    };
+                                    tracing::error!("Failed to clear weather API key: {}", e);
+                                }
+                            }
+                        }
+
+                        // Show status messages
+                        match &self.weather_api_key_status {
+                            WeatherApiKeyStatus::Idle => {}
+                            WeatherApiKeyStatus::Saved { timestamp } => {
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new("✓ Saved")
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            WeatherApiKeyStatus::Cleared { timestamp } => {
+                                if timestamp.elapsed().as_secs() < 5 {
+                                    ui.label(
+                                        RichText::new("✓ Cleared")
+                                            .color(Color32::from_rgb(52, 168, 83))
+                                            .small(),
+                                    );
+                                }
+                            }
+                            WeatherApiKeyStatus::Failed { message, timestamp } => {
+                                if timestamp.elapsed().as_secs() < 10 {
+                                    ui.label(
+                                        RichText::new(format!("✗ {}", message))
+                                            .color(Color32::from_rgb(234, 67, 53))
+                                            .small(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Instructions and link to get API key
+                    ui.group(|ui| {
+                        ui.set_min_width(ui.available_width() - 8.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("📋 How to get an API key:").strong().small());
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new("1. Visit openweathermap.org and create a free account")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.label(
+                                RichText::new("2. Go to 'API keys' in your account settings")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.label(
+                                RichText::new("3. Copy your default key or generate a new one")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.add_space(4.0);
+
+                            // Clickable link to OpenWeatherMap
+                            if ui
+                                .add(
+                                    egui::Label::new(
+                                        RichText::new("🔗 Open openweathermap.org")
+                                            .color(Color32::from_rgb(66, 133, 244))
+                                            .underline(),
+                                    )
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_text("Open OpenWeatherMap website in your browser")
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                if let Err(e) = open::that("https://openweathermap.org/api") {
+                                    tracing::warn!("Failed to open browser: {}", e);
+                                }
+                            }
+                        });
+                    });
 
                     ui.add_space(8.0);
 
@@ -1611,9 +2039,166 @@ impl SettingsScreen {
                             self.has_changes = true;
                         }
                     });
+
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+
+                    // Manual Override section
+                    ui.label(RichText::new("Manual Override").strong());
+                    ui.add_space(4.0);
+
+                    // Override toggle
+                    if ui
+                        .checkbox(
+                            &mut self.weather_config.override_enabled,
+                            "Use manual weather conditions",
+                        )
+                        .on_hover_text("Override live weather with manually selected conditions")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    // Override controls (only shown when override is enabled)
+                    ui.add_enabled_ui(self.weather_config.override_enabled, |ui| {
+                        ui.add_space(4.0);
+
+                        // Weather condition dropdown
+                        ui.horizontal(|ui| {
+                            ui.label("Condition:");
+                            let current_condition = self.weather_config.override_condition
+                                .unwrap_or(WeatherCondition::Clear);
+                            let selected_text = format!(
+                                "{} {}",
+                                current_condition.emoji(),
+                                Self::weather_condition_name(current_condition)
+                            );
+
+                            egui::ComboBox::from_id_salt("weather_condition_override")
+                                .selected_text(selected_text)
+                                .width(180.0)
+                                .show_ui(ui, |ui| {
+                                    for condition in Self::all_weather_conditions() {
+                                        let label = format!(
+                                            "{} {}",
+                                            condition.emoji(),
+                                            Self::weather_condition_name(condition)
+                                        );
+                                        if ui
+                                            .selectable_label(
+                                                self.weather_config.override_condition == Some(condition),
+                                                label,
+                                            )
+                                            .clicked()
+                                        {
+                                            self.weather_config.override_condition = Some(condition);
+                                            self.has_changes = true;
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(4.0);
+
+                        // Temperature slider
+                        ui.horizontal(|ui| {
+                            ui.label("Temperature:");
+                            let (min_temp, max_temp, suffix) = match self.weather_config.units {
+                                WeatherUnits::Metric => (-20.0, 45.0, "°C"),
+                                WeatherUnits::Imperial => (-4.0, 113.0, "°F"),
+                            };
+                            let mut temp = self.weather_config.override_temperature
+                                .unwrap_or(match self.weather_config.units {
+                                    WeatherUnits::Metric => 20.0,
+                                    WeatherUnits::Imperial => 68.0,
+                                });
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut temp, min_temp..=max_temp)
+                                        .suffix(suffix)
+                                        .step_by(1.0),
+                                )
+                                .changed()
+                            {
+                                self.weather_config.override_temperature = Some(temp);
+                                self.weather_temp_override_input = format!("{:.0}", temp);
+                                self.has_changes = true;
+                            }
+                        });
+
+                        ui.add_space(8.0);
+
+                        // Preview of selected weather
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width() - 8.0);
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Preview:").weak());
+                                let condition = self.weather_config.override_condition
+                                    .unwrap_or(WeatherCondition::Clear);
+                                let temp = self.weather_config.override_temperature
+                                    .unwrap_or(match self.weather_config.units {
+                                        WeatherUnits::Metric => 20.0,
+                                        WeatherUnits::Imperial => 68.0,
+                                    });
+                                let temp_suffix = match self.weather_config.units {
+                                    WeatherUnits::Metric => "°C",
+                                    WeatherUnits::Imperial => "°F",
+                                };
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{}  {}  {:.0}{}",
+                                        condition.emoji(),
+                                        Self::weather_condition_name(condition),
+                                        temp,
+                                        temp_suffix
+                                    ))
+                                    .size(16.0),
+                                );
+                            });
+                        });
+                    });
                 });
             }
         });
+    }
+
+    /// Get all weather conditions for the dropdown.
+    fn all_weather_conditions() -> Vec<WeatherCondition> {
+        vec![
+            WeatherCondition::Clear,
+            WeatherCondition::PartlyCloudy,
+            WeatherCondition::Cloudy,
+            WeatherCondition::Overcast,
+            WeatherCondition::Fog,
+            WeatherCondition::LightRain,
+            WeatherCondition::Rain,
+            WeatherCondition::HeavyRain,
+            WeatherCondition::Thunderstorm,
+            WeatherCondition::Snow,
+            WeatherCondition::Sleet,
+            WeatherCondition::Hail,
+            WeatherCondition::Windy,
+        ]
+    }
+
+    /// Get a display name for a weather condition.
+    fn weather_condition_name(condition: WeatherCondition) -> &'static str {
+        match condition {
+            WeatherCondition::Clear => "Clear",
+            WeatherCondition::PartlyCloudy => "Partly Cloudy",
+            WeatherCondition::Cloudy => "Cloudy",
+            WeatherCondition::Overcast => "Overcast",
+            WeatherCondition::Fog => "Fog",
+            WeatherCondition::LightRain => "Light Rain",
+            WeatherCondition::Rain => "Rain",
+            WeatherCondition::HeavyRain => "Heavy Rain",
+            WeatherCondition::Thunderstorm => "Thunderstorm",
+            WeatherCondition::Snow => "Snow",
+            WeatherCondition::Sleet => "Sleet",
+            WeatherCondition::Hail => "Hail",
+            WeatherCondition::Windy => "Windy",
+        }
     }
 
     /// Render the immersion effects section.

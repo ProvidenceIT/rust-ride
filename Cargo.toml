@@ -86,6 +86,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Stream utilities (for signal handling)
 tokio-stream = "0.1"
+tokio-util = "0.7"
 
 # Channels
 crossbeam = "0.8"
@@ -106,6 +107,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Native File Dialogs
 rfd = "0.14"
+
+# Open URLs in browser
+open = "5.0"
 
 # GPS File Parsing
 gpx = "0.9"
