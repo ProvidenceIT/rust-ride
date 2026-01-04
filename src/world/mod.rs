@@ -37,6 +37,7 @@ use renderer::Renderer;
 use route::{Route, StoredRoute, StoredWaypoint, Waypoint};
 use scene::Scene;
 use terrain::{ImportedRouteTerrain, Road, Terrain, TerrainStyle};
+use weather::{WeatherController, WeatherType};
 use worlds::{RouteDefinition, TimeOfDay, WorldDefinition, WorldTheme};
 
 /// Errors that can occur in the 3D world module
@@ -103,6 +104,8 @@ pub struct World3D {
     stats: WorldStats,
     /// World definition
     world_def: WorldDefinition,
+    /// Weather controller for dynamic weather effects
+    weather_controller: WeatherController,
     /// Is the 3D mode active
     active: bool,
     /// Render width
@@ -153,6 +156,9 @@ impl World3D {
         // Create HUD
         let hud = Hud::new();
 
+        // Create weather controller
+        let weather_controller = WeatherController::new();
+
         Ok(Self {
             renderer: None,
             scene,
@@ -165,6 +171,7 @@ impl World3D {
             hud,
             stats: WorldStats::default(),
             world_def,
+            weather_controller,
             active: false,
             width: 800,
             height: 600,
@@ -222,6 +229,12 @@ impl World3D {
         // Update camera to follow avatar
         self.camera
             .follow(self.avatar.position, self.avatar.direction());
+
+        // Update weather controller (handles transitions and time progression)
+        self.weather_controller.update(delta_time);
+
+        // Apply weather state to scene (updates skybox, fog, lighting)
+        self.scene.apply_weather(self.weather_controller.state());
 
         // Update stats
         let distance_traveled = self.avatar.distance_traveled();
@@ -289,6 +302,37 @@ impl World3D {
     /// Get HUD reference for formatting
     pub fn hud(&self) -> &Hud {
         &self.hud
+    }
+
+    /// Get a reference to the weather controller.
+    ///
+    /// Use this to read the current weather state.
+    pub fn weather_controller(&self) -> &WeatherController {
+        &self.weather_controller
+    }
+
+    /// Get a mutable reference to the weather controller.
+    ///
+    /// Use this to update weather state, e.g., from a `WeatherBridge`:
+    /// ```ignore
+    /// let bridge = WeatherBridge::new(provider.clone(), WeatherUnits::Metric);
+    /// bridge.sync(world.weather_controller_mut()).await?;
+    /// ```
+    pub fn weather_controller_mut(&mut self) -> &mut WeatherController {
+        &mut self.weather_controller
+    }
+
+    /// Set the weather type directly.
+    ///
+    /// This is a convenience method that triggers a weather transition.
+    /// For API-driven weather, use a `WeatherBridge` with `weather_controller_mut()`.
+    pub fn set_weather(&mut self, weather: WeatherType) {
+        self.weather_controller.set_weather(weather);
+    }
+
+    /// Get the current weather state.
+    pub fn weather_state(&self) -> &weather::WeatherState {
+        self.weather_controller.state()
     }
 
     /// Get route progress (0.0 - 1.0)
@@ -420,6 +464,9 @@ impl World3D {
         // Create HUD
         let hud = Hud::new();
 
+        // Create weather controller
+        let weather_controller = WeatherController::new();
+
         Ok(Self {
             renderer: None,
             scene,
@@ -432,6 +479,7 @@ impl World3D {
             hud,
             stats: WorldStats::default(),
             world_def,
+            weather_controller,
             active: false,
             width: 800,
             height: 600,
