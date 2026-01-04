@@ -4,7 +4,9 @@
 
 use super::{SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use chrono::Utc;
+use reqwest::multipart::{Form, Part};
 use reqwest::Client;
+use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -18,6 +20,134 @@ const UPLOAD_TIMEOUT_SECS: u64 = 120;
 
 /// Default Garmin Connect API base URL
 const GARMIN_API_BASE_URL: &str = "https://connect.garmin.com/modern/proxy";
+
+/// FIT file header magic bytes
+const FIT_HEADER_SIZE: u8 = 14;
+const FIT_HEADER_SIGNATURE: &[u8] = b".FIT";
+
+/// Garmin Connect upload API response
+///
+/// When uploading a FIT file, Garmin Connect returns detailed information
+/// about the created activity/activities.
+#[derive(Debug, Deserialize)]
+struct GarminUploadResponse {
+    /// Detailed information about the uploaded activities
+    #[serde(rename = "detailedImportResult")]
+    detailed_import_result: DetailedImportResult,
+}
+
+/// Detailed import result from Garmin Connect
+#[derive(Debug, Deserialize)]
+struct DetailedImportResult {
+    /// Upload UUID assigned by Garmin
+    #[serde(rename = "uploadUuid")]
+    upload_uuid: Option<UploadUuid>,
+    /// List of created activities
+    #[serde(default)]
+    successes: Vec<GarminUploadSuccess>,
+    /// List of failed uploads
+    #[serde(default)]
+    failures: Vec<GarminUploadFailure>,
+}
+
+/// Upload UUID wrapper
+#[derive(Debug, Deserialize)]
+struct UploadUuid {
+    /// The actual UUID string
+    uuid: String,
+}
+
+/// Successful activity creation from Garmin upload
+#[derive(Debug, Deserialize)]
+struct GarminUploadSuccess {
+    /// Internal activity ID assigned by Garmin
+    #[serde(rename = "internalId")]
+    internal_id: u64,
+    /// External ID (matches what we sent)
+    #[serde(rename = "externalId")]
+    #[allow(dead_code)]
+    external_id: Option<String>,
+}
+
+/// Failed upload information
+#[derive(Debug, Deserialize)]
+struct GarminUploadFailure {
+    /// Internal activity ID (if partially processed)
+    #[serde(rename = "internalId")]
+    #[allow(dead_code)]
+    internal_id: Option<u64>,
+    /// External ID
+    #[serde(rename = "externalId")]
+    #[allow(dead_code)]
+    external_id: Option<String>,
+    /// Error messages
+    #[serde(default)]
+    messages: Vec<GarminUploadMessage>,
+}
+
+/// Upload message/error from Garmin
+#[derive(Debug, Deserialize)]
+struct GarminUploadMessage {
+    /// Error code
+    #[allow(dead_code)]
+    code: Option<i32>,
+    /// Error content/message
+    content: Option<String>,
+}
+
+/// Garmin API error response
+#[derive(Debug, Deserialize)]
+struct GarminApiError {
+    /// Error message
+    message: Option<String>,
+    /// Error code
+    #[serde(default)]
+    #[allow(dead_code)]
+    code: Option<String>,
+    /// Detailed errors
+    #[serde(default)]
+    errors: Vec<GarminFieldError>,
+}
+
+/// Garmin field-level error detail
+#[derive(Debug, Deserialize)]
+struct GarminFieldError {
+    /// Error message
+    message: Option<String>,
+    /// Field path
+    #[allow(dead_code)]
+    path: Option<String>,
+}
+
+impl std::fmt::Display for GarminApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref message) = self.message {
+            if self.errors.is_empty() {
+                write!(f, "{}", message)
+            } else {
+                let details: Vec<String> = self
+                    .errors
+                    .iter()
+                    .filter_map(|e| e.message.clone())
+                    .collect();
+                if details.is_empty() {
+                    write!(f, "{}", message)
+                } else {
+                    write!(f, "{} ({})", message, details.join(", "))
+                }
+            }
+        } else if !self.errors.is_empty() {
+            let details: Vec<String> = self
+                .errors
+                .iter()
+                .filter_map(|e| e.message.clone())
+                .collect();
+            write!(f, "{}", details.join(", "))
+        } else {
+            write!(f, "Unknown Garmin API error")
+        }
+    }
+}
 
 /// Garmin Connect API client
 #[allow(dead_code)]
@@ -115,52 +245,282 @@ impl GarminClient {
             .ok_or(SyncError::NotConfigured(SyncPlatform::GarminConnect))
     }
 
+    /// Validate FIT file data before upload.
+    ///
+    /// Checks:
+    /// - Minimum file size (at least header size)
+    /// - FIT file signature (".FIT" at offset 8-12)
+    /// - Header size byte is valid
+    ///
+    /// # Arguments
+    /// * `fit_data` - The FIT file bytes
+    ///
+    /// # Returns
+    /// Ok(()) if valid, or InvalidFitFile error with description
+    pub fn validate_fit_file(fit_data: &[u8]) -> Result<(), SyncError> {
+        // Check minimum size (header must be at least 12 bytes for basic FIT)
+        if fit_data.len() < 12 {
+            return Err(SyncError::InvalidFitFile(format!(
+                "File too small: {} bytes (minimum 12 bytes required)",
+                fit_data.len()
+            )));
+        }
+
+        // Check header size byte (first byte)
+        let header_size = fit_data[0];
+        if header_size != 12 && header_size != FIT_HEADER_SIZE {
+            return Err(SyncError::InvalidFitFile(format!(
+                "Invalid header size: {} (expected 12 or 14)",
+                header_size
+            )));
+        }
+
+        // Check FIT signature at bytes 8-11
+        if fit_data.len() >= 12 {
+            let signature = &fit_data[8..12];
+            if signature != FIT_HEADER_SIGNATURE {
+                return Err(SyncError::InvalidFitFile(
+                    "Missing '.FIT' signature in header".to_string(),
+                ));
+            }
+        }
+
+        // Check total file size is reasonable (at least header + some data)
+        let min_expected_size = header_size as usize + 2; // header + at least CRC
+        if fit_data.len() < min_expected_size {
+            return Err(SyncError::InvalidFitFile(format!(
+                "File truncated: {} bytes (expected at least {})",
+                fit_data.len(),
+                min_expected_size
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Check if an error message indicates a duplicate activity.
+    fn is_duplicate_error(error_msg: &str) -> bool {
+        let lower = error_msg.to_lowercase();
+        lower.contains("duplicate")
+            || lower.contains("already exists")
+            || lower.contains("already uploaded")
+            || lower.contains("identical file")
+    }
+
     /// Upload a FIT file to Garmin Connect
     ///
-    /// Returns the sync record with upload status
+    /// Returns the sync record with upload status. Garmin Connect processes uploads
+    /// synchronously, so the record will have status Completed with an external_id
+    /// containing the activity ID if successful.
+    ///
+    /// # Arguments
+    /// * `ride_id` - The local ride ID
+    /// * `fit_data` - The FIT file data as bytes
+    ///
+    /// # Returns
+    /// A SyncRecord with the activity_id in external_id field
+    ///
+    /// # Errors
+    /// * `InvalidFitFile` - If the FIT file is malformed or too small
+    /// * `DuplicateActivity` - If the activity was already uploaded to Garmin Connect
+    /// * `RateLimited` - If Garmin's rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
     pub async fn upload_activity(
         &self,
         ride_id: &Uuid,
-        _fit_data: &[u8],
+        fit_data: &[u8],
     ) -> Result<SyncRecord, SyncError> {
-        let _token = self.get_access_token().await?;
+        // Validate FIT file before attempting upload
+        Self::validate_fit_file(fit_data)?;
+
+        let token = self.get_access_token().await?;
 
         let record_id = Uuid::new_v4();
 
         tracing::info!(
-            "Uploading activity {} to Garmin Connect (record: {})",
+            "Uploading activity {} to Garmin Connect (record: {}, size: {} bytes)",
             ride_id,
-            record_id
+            record_id,
+            fit_data.len()
         );
 
-        // Garmin Connect uses a different upload flow than Strava
-        // It typically uses the Garmin Connect API or the GarminConnect-Upload endpoint
+        // Build multipart form
+        // Use ride_id as external reference for correlation
+        let filename = format!("{}.fit", ride_id);
 
-        // TODO: Make actual HTTP request to Garmin Connect
-        // POST https://connect.garmin.com/modern/proxy/upload-service/upload/.fit
-        //
-        // Multipart form data:
-        // - file: FIT file data
-        //
-        // Headers:
-        // - Authorization: Bearer {token}
-        // - NK: various required Garmin headers
+        // Create the file part with proper MIME type
+        let file_part = Part::bytes(fit_data.to_vec())
+            .file_name(filename)
+            .mime_str("application/octet-stream")
+            .map_err(|e| SyncError::UploadFailed(format!("Failed to create file part: {}", e)))?;
 
-        // For now, create a pending record
+        // Build the multipart form
+        let form = Form::new().part("file", file_part);
+
+        // Send the upload request with extended timeout for file uploads
+        // Garmin Connect upload endpoint: /upload-service/upload/.fit
+        let url = format!("{}/upload-service/upload/.fit", self.base_url);
+        tracing::debug!("Sending upload request to {}", url);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .bearer_auth(&token)
+            .timeout(Duration::from_secs(UPLOAD_TIMEOUT_SECS))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    tracing::warn!(
+                        "Garmin Connect upload request timed out after {} seconds",
+                        UPLOAD_TIMEOUT_SECS
+                    );
+                    SyncError::Timeout(UPLOAD_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    tracing::warn!("Failed to connect to Garmin Connect: {}", e);
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    tracing::warn!("Failed to send upload request: {}", e);
+                    SyncError::NetworkError(format!("Request failed: {}", e))
+                }
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("Garmin Connect API rate limit exceeded");
+            return Err(SyncError::RateLimited);
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!(
+                "Garmin Connect API returned 401 Unauthorized - token may be expired or revoked"
+            );
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle forbidden (403) - often means token issues
+        if status_code == reqwest::StatusCode::FORBIDDEN {
+            tracing::warn!("Garmin Connect API returned 403 Forbidden - token may be invalid");
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle conflict (409) - usually means duplicate
+        if status_code == reqwest::StatusCode::CONFLICT {
+            tracing::info!("Activity {} already exists on Garmin Connect (409 Conflict)", ride_id);
+            return Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect));
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            // Try to parse as Garmin error response
+            if let Ok(error_response) = serde_json::from_str::<GarminApiError>(&body) {
+                let error_msg = error_response.to_string();
+
+                // Check for duplicate activity error
+                if Self::is_duplicate_error(&error_msg) {
+                    tracing::info!("Activity {} already exists on Garmin Connect", ride_id);
+                    return Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect));
+                }
+
+                tracing::error!("Garmin Connect upload failed: {}", error_msg);
+                return Err(SyncError::UploadFailed(format!(
+                    "Garmin error: {}",
+                    error_msg
+                )));
+            }
+            // Fall back to generic error
+            tracing::error!(
+                "Garmin Connect upload failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::UploadFailed(format!(
+                "Upload failed with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response
+        let upload_response: GarminUploadResponse = serde_json::from_str(&body).map_err(|e| {
+            tracing::warn!("Failed to parse Garmin upload response: {}. Body: {}", e, body);
+            SyncError::UploadFailed(format!("Failed to parse upload response: {}", e))
+        })?;
+
+        // Check for failures in the response
+        if !upload_response.detailed_import_result.failures.is_empty() {
+            let failure = &upload_response.detailed_import_result.failures[0];
+            let error_msgs: Vec<String> = failure
+                .messages
+                .iter()
+                .filter_map(|m| m.content.clone())
+                .collect();
+            let error_msg = if error_msgs.is_empty() {
+                "Unknown upload failure".to_string()
+            } else {
+                error_msgs.join("; ")
+            };
+
+            // Check for duplicate in failure messages
+            if Self::is_duplicate_error(&error_msg) {
+                tracing::info!("Activity {} already exists on Garmin Connect", ride_id);
+                return Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect));
+            }
+
+            tracing::error!("Garmin Connect upload failed: {}", error_msg);
+            return Err(SyncError::UploadFailed(error_msg));
+        }
+
+        // Extract activity ID from successful upload
+        let (external_id, external_url) = if let Some(success) =
+            upload_response.detailed_import_result.successes.first()
+        {
+            let activity_id = success.internal_id.to_string();
+            let activity_url = format!(
+                "https://connect.garmin.com/modern/activity/{}",
+                success.internal_id
+            );
+            tracing::info!(
+                "Garmin Connect upload successful, activity_id: {}",
+                success.internal_id
+            );
+            (Some(activity_id), Some(activity_url))
+        } else if let Some(ref upload_uuid) = upload_response.detailed_import_result.upload_uuid {
+            // If no success but we have an upload UUID, use that
+            tracing::info!(
+                "Garmin Connect upload accepted, upload_uuid: {}",
+                upload_uuid.uuid
+            );
+            (Some(upload_uuid.uuid.clone()), None)
+        } else {
+            tracing::warn!("Garmin Connect upload succeeded but no activity ID returned");
+            (None, None)
+        };
+
+        // Create record with Completed status (Garmin processes synchronously)
         let record = SyncRecord {
             id: record_id,
             ride_id: *ride_id,
             platform: SyncPlatform::GarminConnect,
-            status: SyncRecordStatus::Pending,
-            external_id: None,
-            external_url: None,
+            status: SyncRecordStatus::Completed,
+            external_id,
+            external_url,
             created_at: Utc::now(),
-            completed_at: None,
+            completed_at: Some(Utc::now()),
             error_message: None,
             retry_count: 0,
         };
 
-        tracing::debug!("Garmin Connect upload initiated: {:?}", record);
+        tracing::debug!("Garmin Connect upload completed: {:?}", record);
 
         Ok(record)
     }
@@ -299,6 +659,10 @@ pub fn default_scopes() -> Vec<String> {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // Client Tests
+    // ========================================================================
+
     #[test]
     fn test_client_creation() {
         let client = GarminClient::new();
@@ -368,11 +732,16 @@ mod tests {
         assert_eq!(result.unwrap(), "my_secret_token");
     }
 
+    // ========================================================================
+    // Upload Activity Tests (without token)
+    // ========================================================================
+
     #[tokio::test]
     async fn test_upload_activity_without_token_returns_not_configured() {
         let client = GarminClient::new();
         let ride_id = Uuid::new_v4();
-        let fit_data = vec![0u8; 100];
+        // Create valid FIT data to ensure we get past validation
+        let fit_data = create_valid_fit_header();
 
         let result = client.upload_activity(&ride_id, &fit_data).await;
 
@@ -381,6 +750,23 @@ mod tests {
             Err(SyncError::NotConfigured(SyncPlatform::GarminConnect))
         ));
     }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_invalid_fit_file() {
+        let client = GarminClient::new();
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let invalid_fit_data = vec![0u8; 5]; // Too small
+
+        let result = client.upload_activity(&ride_id, &invalid_fit_data).await;
+
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(_))));
+    }
+
+    // ========================================================================
+    // Other API Method Tests
+    // ========================================================================
 
     #[tokio::test]
     async fn test_get_user_profile_without_token_returns_not_configured() {
@@ -423,6 +809,10 @@ mod tests {
         assert!(!client.is_configured());
     }
 
+    // ========================================================================
+    // Activity Type Tests
+    // ========================================================================
+
     #[test]
     fn test_activity_type_conversion() {
         assert_eq!(
@@ -448,6 +838,10 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // OAuth Scopes Tests
+    // ========================================================================
+
     #[test]
     fn test_default_scopes() {
         let scopes = default_scopes();
@@ -463,5 +857,609 @@ mod tests {
         assert_eq!(scopes::ACTIVITY_READ, "activity:read");
         assert_eq!(scopes::ACTIVITY_WRITE, "activity:write");
         assert_eq!(scopes::DEVICE_READ, "device:read");
+    }
+
+    // ========================================================================
+    // FIT File Validation Tests
+    // ========================================================================
+
+    /// Create a valid FIT file header for testing
+    fn create_valid_fit_header() -> Vec<u8> {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size (14 bytes)
+        data[1] = 0x10; // Protocol version
+        data[2] = 0x00; // Profile version LSB
+        data[3] = 0x00; // Profile version MSB
+        data[4] = 0x00; // Data size LSB
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = 0x00; // Data size MSB
+        // ".FIT" signature at bytes 8-11
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        data[12] = 0x00; // CRC LSB
+        data[13] = 0x00; // CRC MSB
+        data
+    }
+
+    #[test]
+    fn test_validate_fit_file_valid() {
+        let valid_fit = create_valid_fit_header();
+        let result = GarminClient::validate_fit_file(&valid_fit);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_fit_file_valid_12_byte_header() {
+        // 12-byte header version (older FIT format)
+        let mut data = vec![0u8; 14];
+        data[0] = 12; // Header size (12 bytes)
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = GarminClient::validate_fit_file(&data);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_fit_file_too_small() {
+        let tiny_data = vec![0u8; 5];
+        let result = GarminClient::validate_fit_file(&tiny_data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("too small")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_invalid_header_size() {
+        let mut data = vec![0u8; 20];
+        data[0] = 50; // Invalid header size
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = GarminClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("Invalid header size")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_missing_signature() {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size
+        // Missing ".FIT" signature - just zeros
+        let result = GarminClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("signature")));
+    }
+
+    #[test]
+    fn test_validate_fit_file_truncated() {
+        let mut data = vec![0u8; 12]; // Too small for 14-byte header
+        data[0] = 14; // Claims 14-byte header but only 12 bytes
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        let result = GarminClient::validate_fit_file(&data);
+        assert!(matches!(result, Err(SyncError::InvalidFitFile(msg)) if msg.contains("truncated")));
+    }
+
+    // ========================================================================
+    // Duplicate Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_duplicate_error_detection() {
+        assert!(GarminClient::is_duplicate_error(
+            "The activity appears to be a duplicate."
+        ));
+        assert!(GarminClient::is_duplicate_error("Activity already exists"));
+        assert!(GarminClient::is_duplicate_error(
+            "This file has already uploaded"
+        ));
+        assert!(GarminClient::is_duplicate_error("DUPLICATE activity detected"));
+        assert!(GarminClient::is_duplicate_error("identical file detected"));
+
+        // Should not match non-duplicate errors
+        assert!(!GarminClient::is_duplicate_error("Invalid file format"));
+        assert!(!GarminClient::is_duplicate_error("Rate limit exceeded"));
+        assert!(!GarminClient::is_duplicate_error("Server error"));
+    }
+
+    // ========================================================================
+    // Response Parsing Tests
+    // ========================================================================
+
+    #[test]
+    fn test_garmin_api_error_display() {
+        let error = GarminApiError {
+            message: Some("Bad Request".to_string()),
+            code: None,
+            errors: vec![],
+        };
+        assert_eq!(format!("{}", error), "Bad Request");
+
+        let error_with_details = GarminApiError {
+            message: Some("Validation failed".to_string()),
+            code: None,
+            errors: vec![GarminFieldError {
+                message: Some("Invalid file".to_string()),
+                path: Some("file".to_string()),
+            }],
+        };
+        assert_eq!(
+            format!("{}", error_with_details),
+            "Validation failed (Invalid file)"
+        );
+
+        let error_no_message = GarminApiError {
+            message: None,
+            code: None,
+            errors: vec![GarminFieldError {
+                message: Some("Error detail".to_string()),
+                path: None,
+            }],
+        };
+        assert_eq!(format!("{}", error_no_message), "Error detail");
+
+        let error_empty = GarminApiError {
+            message: None,
+            code: None,
+            errors: vec![],
+        };
+        assert_eq!(format!("{}", error_empty), "Unknown Garmin API error");
+    }
+
+    #[test]
+    fn test_garmin_upload_response_deserialization() {
+        let json = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {
+                    "uuid": "abc123-def456"
+                },
+                "successes": [
+                    {
+                        "internalId": 12345678,
+                        "externalId": "test-ride-uuid"
+                    }
+                ],
+                "failures": []
+            }
+        }"#;
+
+        let response: GarminUploadResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(
+            response
+                .detailed_import_result
+                .upload_uuid
+                .as_ref()
+                .unwrap()
+                .uuid,
+            "abc123-def456"
+        );
+        assert_eq!(response.detailed_import_result.successes.len(), 1);
+        assert_eq!(
+            response.detailed_import_result.successes[0].internal_id,
+            12345678
+        );
+        assert!(response.detailed_import_result.failures.is_empty());
+    }
+
+    #[test]
+    fn test_garmin_upload_response_with_failure() {
+        let json = r#"{
+            "detailedImportResult": {
+                "uploadUuid": null,
+                "successes": [],
+                "failures": [
+                    {
+                        "internalId": null,
+                        "externalId": "test-ride",
+                        "messages": [
+                            {
+                                "code": 409,
+                                "content": "Duplicate activity detected"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        let response: GarminUploadResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert!(response.detailed_import_result.successes.is_empty());
+        assert_eq!(response.detailed_import_result.failures.len(), 1);
+        assert_eq!(
+            response.detailed_import_result.failures[0].messages[0].content,
+            Some("Duplicate activity detected".to_string())
+        );
+    }
+
+    #[test]
+    fn test_garmin_upload_response_minimal() {
+        // Minimal response with only required fields
+        let json = r#"{
+            "detailedImportResult": {
+                "successes": [],
+                "failures": []
+            }
+        }"#;
+
+        let response: GarminUploadResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert!(response.detailed_import_result.upload_uuid.is_none());
+        assert!(response.detailed_import_result.successes.is_empty());
+        assert!(response.detailed_import_result.failures.is_empty());
+    }
+}
+
+/// HTTP mocked tests using wiremock
+#[cfg(test)]
+mod http_mocked_tests {
+    use super::*;
+    use wiremock::matchers::{bearer_token, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Create a valid FIT file header for testing
+    fn create_valid_fit_data() -> Vec<u8> {
+        let mut data = vec![0u8; 16];
+        data[0] = 14; // Header size (14 bytes)
+        data[1] = 0x10; // Protocol version
+        data[2] = 0x00; // Profile version LSB
+        data[3] = 0x00; // Profile version MSB
+        data[4] = 0x00; // Data size LSB
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = 0x00; // Data size MSB
+        // ".FIT" signature at bytes 8-11
+        data[8] = b'.';
+        data[9] = b'F';
+        data[10] = b'I';
+        data[11] = b'T';
+        data[12] = 0x00; // CRC LSB
+        data[13] = 0x00; // CRC MSB
+        data
+    }
+
+    // ============================================================================
+    // Upload Activity Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_upload_activity_success() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {
+                    "uuid": "upload-uuid-123"
+                },
+                "successes": [
+                    {
+                        "internalId": 98765432,
+                        "externalId": "test-ride-uuid"
+                    }
+                ],
+                "failures": []
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.ride_id, ride_id);
+        assert_eq!(record.platform, SyncPlatform::GarminConnect);
+        assert_eq!(record.status, SyncRecordStatus::Completed);
+        assert_eq!(record.external_id, Some("98765432".to_string()));
+        assert_eq!(
+            record.external_url,
+            Some("https://connect.garmin.com/modern/activity/98765432".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(result, Err(SyncError::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_forbidden() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_conflict_duplicate() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(409))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(
+            result,
+            Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Invalid file format",
+            "errors": [
+                {"message": "File is corrupted", "path": "file"}
+            ]
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(
+            matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("Invalid file format"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_api_error_duplicate_detection() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Activity already exists in your library"
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(
+            result,
+            Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_generic_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("500")));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_failure_in_response() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": null,
+                "successes": [],
+                "failures": [
+                    {
+                        "internalId": null,
+                        "externalId": "test-ride",
+                        "messages": [
+                            {
+                                "code": 409,
+                                "content": "Duplicate activity detected"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        // Should detect duplicate from failure messages
+        assert!(matches!(
+            result,
+            Err(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_non_duplicate_failure() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": null,
+                "successes": [],
+                "failures": [
+                    {
+                        "internalId": null,
+                        "externalId": "test-ride",
+                        "messages": [
+                            {
+                                "code": 500,
+                                "content": "Processing error occurred"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(
+            matches!(result, Err(SyncError::UploadFailed(msg)) if msg.contains("Processing error"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_success_with_upload_uuid_only() {
+        let mock_server = MockServer::start().await;
+
+        // Response with upload UUID but no successes (might be async processing)
+        let response_body = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {
+                    "uuid": "pending-upload-uuid"
+                },
+                "successes": [],
+                "failures": []
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client.upload_activity(&ride_id, &fit_data).await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("pending-upload-uuid".to_string()));
+        assert!(record.external_url.is_none()); // No URL when only UUID available
     }
 }
