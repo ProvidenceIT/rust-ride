@@ -55,6 +55,12 @@ pub struct WeatherConfig {
     pub units: WeatherUnits,
     /// Refresh interval in minutes
     pub refresh_interval_minutes: u32,
+    /// Whether manual weather override is enabled
+    pub override_enabled: bool,
+    /// Manual weather condition override (when override_enabled is true)
+    pub override_condition: Option<WeatherCondition>,
+    /// Manual temperature override in configured units (when override_enabled is true)
+    pub override_temperature: Option<f32>,
 }
 
 impl Default for WeatherConfig {
@@ -66,6 +72,9 @@ impl Default for WeatherConfig {
             longitude: 0.0,
             units: WeatherUnits::Metric,
             refresh_interval_minutes: 30,
+            override_enabled: false,
+            override_condition: None,
+            override_temperature: None,
         }
     }
 }
@@ -223,6 +232,42 @@ impl WeatherData {
             humidity: 50,
             condition: WeatherCondition::Clear,
             description: "Clear (default)".to_string(),
+            wind_speed: 0.0, // Calm wind
+            wind_direction: 0,
+            pressure: 1013, // Standard atmospheric pressure
+            visibility: 10000,
+            uv_index: None,
+            fetched_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Create weather data from manual override configuration.
+    ///
+    /// Uses the override condition and temperature from config, with sensible
+    /// defaults for other fields (calm wind, normal humidity/pressure).
+    ///
+    /// # Arguments
+    /// * `condition` - The weather condition to use
+    /// * `temperature` - Optional temperature override; uses default if None
+    /// * `units` - The temperature units for default temperature if not overridden
+    pub fn from_override(
+        condition: WeatherCondition,
+        temperature: Option<f32>,
+        units: WeatherUnits,
+    ) -> Self {
+        let (default_temp, _) = match units {
+            WeatherUnits::Metric => (20.0, 20.0),
+            WeatherUnits::Imperial => (68.0, 68.0),
+        };
+
+        let temp = temperature.unwrap_or(default_temp);
+
+        Self {
+            temperature: temp,
+            feels_like: temp,
+            humidity: 50,
+            condition,
+            description: format!("{} (manual override)", condition.emoji()),
             wind_speed: 0.0, // Calm wind
             wind_direction: 0,
             pressure: 1013, // Standard atmospheric pressure
@@ -596,5 +641,133 @@ mod tests {
         // Timestamp should be between before and after
         assert!(weather.fetched_at >= before);
         assert!(weather.fetched_at <= after);
+    }
+
+    // ========== Override Configuration Tests ==========
+
+    #[test]
+    fn test_weather_config_default_override_disabled() {
+        let config = WeatherConfig::default();
+
+        assert!(!config.override_enabled);
+        assert!(config.override_condition.is_none());
+        assert!(config.override_temperature.is_none());
+    }
+
+    #[test]
+    fn test_weather_config_override_fields() {
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: false,
+            latitude: 0.0,
+            longitude: 0.0,
+            units: WeatherUnits::Metric,
+            refresh_interval_minutes: 30,
+            override_enabled: true,
+            override_condition: Some(WeatherCondition::Rain),
+            override_temperature: Some(15.0),
+        };
+
+        assert!(config.override_enabled);
+        assert_eq!(config.override_condition, Some(WeatherCondition::Rain));
+        assert_eq!(config.override_temperature, Some(15.0));
+    }
+
+    #[test]
+    fn test_from_override_with_condition_and_temperature() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::Thunderstorm,
+            Some(25.0),
+            WeatherUnits::Metric,
+        );
+
+        assert_eq!(weather.condition, WeatherCondition::Thunderstorm);
+        assert!((weather.temperature - 25.0).abs() < 0.1);
+        assert!((weather.feels_like - 25.0).abs() < 0.1);
+        assert!(weather.description.contains("(manual override)"));
+    }
+
+    #[test]
+    fn test_from_override_with_condition_only_metric() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::Snow,
+            None, // No temperature override - use default
+            WeatherUnits::Metric,
+        );
+
+        assert_eq!(weather.condition, WeatherCondition::Snow);
+        // Should use default metric temperature (20°C)
+        assert!((weather.temperature - 20.0).abs() < 0.1);
+        assert!((weather.feels_like - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_from_override_with_condition_only_imperial() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::Fog,
+            None, // No temperature override - use default
+            WeatherUnits::Imperial,
+        );
+
+        assert_eq!(weather.condition, WeatherCondition::Fog);
+        // Should use default imperial temperature (68°F)
+        assert!((weather.temperature - 68.0).abs() < 0.1);
+        assert!((weather.feels_like - 68.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_from_override_has_calm_wind() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::HeavyRain,
+            Some(10.0),
+            WeatherUnits::Metric,
+        );
+
+        // Override weather should have calm wind
+        assert!((weather.wind_speed - 0.0).abs() < 0.1);
+        assert_eq!(weather.wind_direction, 0);
+    }
+
+    #[test]
+    fn test_from_override_has_default_values() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::Clear,
+            Some(22.0),
+            WeatherUnits::Metric,
+        );
+
+        // Check sensible defaults for other fields
+        assert_eq!(weather.humidity, 50);
+        assert_eq!(weather.pressure, 1013);
+        assert_eq!(weather.visibility, 10000);
+        assert!(weather.uv_index.is_none());
+    }
+
+    #[test]
+    fn test_from_override_has_current_timestamp() {
+        let before = chrono::Utc::now();
+        let weather = WeatherData::from_override(
+            WeatherCondition::Cloudy,
+            Some(18.0),
+            WeatherUnits::Metric,
+        );
+        let after = chrono::Utc::now();
+
+        // Timestamp should be between before and after
+        assert!(weather.fetched_at >= before);
+        assert!(weather.fetched_at <= after);
+    }
+
+    #[test]
+    fn test_from_override_description_includes_emoji() {
+        let weather = WeatherData::from_override(
+            WeatherCondition::Rain,
+            Some(12.0),
+            WeatherUnits::Metric,
+        );
+
+        // Description should include the condition emoji
+        assert!(weather.description.contains(WeatherCondition::Rain.emoji()));
+        assert!(weather.description.contains("(manual override)"));
     }
 }

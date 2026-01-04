@@ -405,6 +405,25 @@ impl WeatherProvider for OpenWeatherMapProvider {
     }
 
     async fn get_weather(&self) -> Result<WeatherData, WeatherError> {
+        // Check if manual override is enabled
+        {
+            let config = self.config.read().await;
+            if config.override_enabled {
+                if let Some(condition) = config.override_condition {
+                    tracing::debug!(
+                        condition = ?condition,
+                        temperature = ?config.override_temperature,
+                        "Using manual weather override"
+                    );
+                    return Ok(WeatherData::from_override(
+                        condition,
+                        config.override_temperature,
+                        config.units,
+                    ));
+                }
+            }
+        }
+
         // Check cache first - respects refresh_interval_minutes
         if self.is_cache_valid().await {
             if let Some(data) = self.get_cached() {
@@ -1044,5 +1063,201 @@ mod tests {
         // Check calm wind
         assert!((weather.wind_speed - 0.0).abs() < 0.1);
         assert_eq!(weather.wind_direction, 0);
+    }
+
+    // ========== Manual Override Tests ==========
+
+    #[tokio::test]
+    async fn test_override_returns_override_weather_when_enabled() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with override enabled
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            override_enabled: true,
+            override_condition: Some(WeatherCondition::Thunderstorm),
+            override_temperature: Some(18.0),
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Get weather should return override values, not API data
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        assert_eq!(weather.condition, WeatherCondition::Thunderstorm);
+        assert!((weather.temperature - 18.0).abs() < 0.1);
+        assert!(weather.description.contains("(manual override)"));
+    }
+
+    #[tokio::test]
+    async fn test_override_returns_override_condition_without_temperature() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with override enabled but no temperature
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            override_enabled: true,
+            override_condition: Some(WeatherCondition::Snow),
+            override_temperature: None, // Use default temperature
+            ..Default::default()
+        };
+        provider.configure(config);
+
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        assert_eq!(weather.condition, WeatherCondition::Snow);
+        // Should use default metric temperature (20°C)
+        assert!((weather.temperature - 20.0).abs() < 0.1);
+    }
+
+    #[tokio::test]
+    async fn test_override_respects_imperial_units() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with override enabled and imperial units
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 40.7128,
+            longitude: -74.0060,
+            units: WeatherUnits::Imperial,
+            override_enabled: true,
+            override_condition: Some(WeatherCondition::Rain),
+            override_temperature: None, // Use default
+            ..Default::default()
+        };
+        provider.configure(config);
+
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        assert_eq!(weather.condition, WeatherCondition::Rain);
+        // Should use default imperial temperature (68°F)
+        assert!((weather.temperature - 68.0).abs() < 0.1);
+    }
+
+    #[tokio::test]
+    async fn test_override_disabled_does_not_use_override() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with override disabled but override values set
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            override_enabled: false, // Disabled!
+            override_condition: Some(WeatherCondition::Thunderstorm),
+            override_temperature: Some(100.0),
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Record a failure to trigger fallback to default
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Get weather should return default, not override (since override disabled)
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Should be default weather (20°C, Clear), NOT the override values
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+        assert!((weather.temperature - 20.0).abs() < 0.1);
+        assert!(!weather.description.contains("(manual override)"));
+    }
+
+    #[tokio::test]
+    async fn test_override_without_condition_falls_through() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // Configure with override enabled but no condition set
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            override_enabled: true,
+            override_condition: None, // No condition!
+            override_temperature: Some(25.0),
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        // Record a failure to trigger fallback
+        let error = WeatherError::NetworkError("test error".to_string());
+        provider.record_failure(&error).await;
+
+        // Get weather should fall through to default (no override condition set)
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        // Should be default weather since override_condition is None
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+        assert!(!weather.description.contains("(manual override)"));
+    }
+
+    #[tokio::test]
+    async fn test_override_takes_precedence_over_cache() {
+        let provider = OpenWeatherMapProvider::new();
+
+        // First, set up some cached data
+        let cached_weather = super::WeatherData {
+            temperature: 15.0,
+            feels_like: 14.0,
+            humidity: 70,
+            condition: WeatherCondition::Rain,
+            description: "Light rain".to_string(),
+            wind_speed: 5.0,
+            wind_direction: 180,
+            pressure: 1010,
+            visibility: 8000,
+            uv_index: None,
+            fetched_at: chrono::Utc::now(), // Fresh cache
+        };
+        *provider.cached_data.write().await = Some(cached_weather);
+
+        // Configure with override enabled
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            refresh_interval_minutes: 60, // Cache should be valid
+            override_enabled: true,
+            override_condition: Some(WeatherCondition::Clear),
+            override_temperature: Some(30.0),
+        };
+        provider.configure(config);
+
+        // Get weather should return override, not cached data
+        let result = provider.get_weather().await;
+        assert!(result.is_ok());
+
+        let weather = result.unwrap();
+        assert_eq!(weather.condition, WeatherCondition::Clear);
+        assert!((weather.temperature - 30.0).abs() < 0.1);
+        assert!(weather.description.contains("(manual override)"));
     }
 }
