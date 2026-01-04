@@ -3,13 +3,13 @@
   "spec": "016-garmin-connect-sync",
   "state": "building",
   "subtasks": {
-    "completed": 9,
+    "completed": 12,
     "total": 34,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "OAuth Flow Integration",
+    "current": "Sync Service Integration",
     "id": null,
     "total": 4
   },
@@ -18,8 +18,8 @@
     "max": 1
   },
   "session": {
-    "number": 11,
+    "number": 14,
     "started_at": "2026-01-04T13:16:52.834379"
   },
-  "last_update": "2026-01-04T14:16:48.177450"
+  "last_update": "2026-01-04T14:29:33.213939"
 }

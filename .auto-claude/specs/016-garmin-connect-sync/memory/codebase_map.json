@@ -24,7 +24,12 @@
       "description": "GarminClient integrated into SyncService. Token loading from keyring (load_stored_credentials), disconnect/deauthorize, token refresh, and upload queue processing all handle GarminConnect platform. Uses same PlatformClient enum pattern as Strava/TrainingPeaks. Keyring storage uses lowercase platform name (\"garminconnect\") as the credential key.",
       "category": "integration",
       "discovered_at": "2026-01-04T13:22:18.636259+00:00"
+    },
+    "src/integrations/sync/mod.rs": {
+      "description": "SyncPlatform enum defines all supported sync platforms (GarminConnect, Strava, TrainingPeaks, IntervalsIcu, HealthKit). Each platform has display_name(), auth_url_base(), and uses_oauth() methods. SyncConfig::default() initializes all platforms with default PlatformConfig (enabled=false, auto_sync=false).",
+      "category": "architecture",
+      "discovered_at": "2026-01-04T13:25:58.406785+00:00"
     }
   },
-  "last_updated": "2026-01-04T13:22:18.636259+00:00"
+  "last_updated": "2026-01-04T13:25:58.406785+00:00"
 }
