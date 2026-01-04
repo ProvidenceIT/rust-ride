@@ -119,3 +119,14 @@
   - Updated process_single_upload() to call garmin.upload_activity() for GarminConnect
   - Keyring storage uses lowercase platform name "garminconnect" as credential key
   - Added comprehensive tests for Garmin service integration
+
+### Phase 3 - IN PROGRESS
+- 3.1 ✅ Verified GarminConnect platform is properly registered in SyncPlatform enum
+  - GarminConnect already defined in SyncPlatform enum (mod.rs line 72)
+  - display_name() returns "Garmin Connect"
+  - auth_url_base() returns correct OAuth URL
+  - uses_oauth() returns true
+  - SyncConfig::default() includes GarminConnect
+  - PlatformClient::GarminConnect enum variant in service.rs
+  - All integration points verified: token loading, refresh, upload, disconnect
+  - This work was completed as part of subtask 2.4 - no additional changes needed
