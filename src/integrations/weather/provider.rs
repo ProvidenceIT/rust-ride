@@ -104,7 +104,6 @@ impl OpenWeatherMapProvider {
     }
 
     /// Map OpenWeatherMap condition code to our condition
-    #[allow(dead_code)]
     fn map_condition(code: u32) -> WeatherCondition {
         match code {
             200..=232 => WeatherCondition::Thunderstorm,
@@ -147,31 +146,76 @@ impl OpenWeatherMapProvider {
             return Err(WeatherError::LocationMissing);
         }
 
-        let _url = self.build_url(&config, api_key);
+        let url = self.build_url(&config, api_key);
 
         tracing::debug!("Fetching weather data from OpenWeatherMap");
 
-        // TODO: Actually make the HTTP request
-        // For now, return mock data
-        let mock_data = WeatherData {
-            temperature: 22.0,
-            feels_like: 24.0,
-            humidity: 55,
-            condition: WeatherCondition::PartlyCloudy,
-            description: "Partly cloudy".to_string(),
-            wind_speed: 12.0,
-            wind_direction: 180,
-            pressure: 1015,
-            visibility: 10000,
-            uv_index: Some(5.0),
+        // Make the HTTP request
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| WeatherError::NetworkError(e.to_string()))?;
+
+        // Check for HTTP errors
+        if !response.status().is_success() {
+            let status = response.status();
+            if status.as_u16() == 429 {
+                return Err(WeatherError::RateLimited);
+            }
+            return Err(WeatherError::RequestFailed(format!(
+                "HTTP {} - {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("Unknown error")
+            )));
+        }
+
+        // Parse JSON response
+        let owm_response: OwmResponse = response
+            .json()
+            .await
+            .map_err(|e| WeatherError::InvalidResponse(format!("Failed to parse JSON: {}", e)))?;
+
+        // Extract condition from first weather entry
+        let condition = owm_response
+            .weather
+            .first()
+            .map(|w| Self::map_condition(w.id))
+            .unwrap_or(WeatherCondition::Clear);
+
+        let description = owm_response
+            .weather
+            .first()
+            .map(|w| w.description.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        // Map to WeatherData
+        let weather_data = WeatherData {
+            temperature: owm_response.main.temp,
+            feels_like: owm_response.main.feels_like,
+            humidity: owm_response.main.humidity,
+            condition,
+            description,
+            wind_speed: owm_response.wind.speed,
+            wind_direction: owm_response.wind.deg.unwrap_or(0),
+            pressure: owm_response.main.pressure,
+            visibility: owm_response.visibility.unwrap_or(10000),
+            uv_index: None, // UV index requires separate API call
             fetched_at: Utc::now(),
         };
 
+        tracing::debug!(
+            "Weather fetched: {}°, {:?}",
+            weather_data.temperature,
+            weather_data.condition
+        );
+
         // Cache the result
-        *self.cached_data.write().await = Some(mock_data.clone());
+        *self.cached_data.write().await = Some(weather_data.clone());
         *self.last_fetch.write().await = Some(Utc::now());
 
-        Ok(mock_data)
+        Ok(weather_data)
     }
 
     /// Check if cache is valid
