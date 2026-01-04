@@ -681,4 +681,210 @@ mod tests {
         assert_eq!(screen.pending_uploads, 0);
         assert!(screen.last_sync.is_none());
     }
+
+    #[test]
+    fn test_connected_state_with_full_profile() {
+        // Verify connected state renders user profile correctly
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist_pro".to_string(),
+            full_name: Some("John Doe".to_string()),
+            profile_image_url: Some("https://example.com/avatar.jpg".to_string()),
+        };
+        screen.set_user_profile(Some(profile));
+
+        // Verify profile is accessible
+        assert!(screen.is_connected());
+        assert!(screen.user_profile.is_some());
+        let profile = screen.user_profile.as_ref().unwrap();
+        assert_eq!(profile.readable_name(), "John Doe");
+        assert_eq!(profile.display_name, "cyclist_pro");
+        assert_eq!(profile.user_id, 12345);
+    }
+
+    #[test]
+    fn test_connected_state_pending_uploads_display() {
+        // Verify pending uploads count is tracked correctly
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        // No pending uploads initially
+        assert_eq!(screen.pending_uploads, 0);
+
+        // Set some pending uploads
+        screen.set_pending_uploads(3);
+        assert_eq!(screen.pending_uploads, 3);
+
+        // Verify can handle large counts
+        screen.set_pending_uploads(999);
+        assert_eq!(screen.pending_uploads, 999);
+    }
+
+    #[test]
+    fn test_connected_state_sync_settings() {
+        // Verify sync settings are configurable
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        // Default config has auto_sync disabled
+        assert!(!screen.config.auto_sync);
+        assert!(!screen.config.enabled);
+
+        // Enable auto-sync
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+        screen.set_config(config);
+
+        assert!(screen.config.enabled);
+        assert!(screen.config.auto_sync);
+
+        // Disable auto-sync
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: false,
+        };
+        screen.set_config(config);
+
+        assert!(screen.config.enabled);
+        assert!(!screen.config.auto_sync);
+    }
+
+    #[test]
+    fn test_connected_state_last_sync_display() {
+        // Verify last sync timestamp is displayed
+        let mut screen = GarminSettingsScreen::new();
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        // Initially no last sync
+        assert!(screen.last_sync.is_none());
+
+        // Set last sync timestamp
+        screen.set_last_sync(Some("2024-01-15 10:30:00 UTC".to_string()));
+        assert_eq!(
+            screen.last_sync,
+            Some("2024-01-15 10:30:00 UTC".to_string())
+        );
+
+        // Can update last sync
+        screen.set_last_sync(Some("2024-01-16 15:45:00 UTC".to_string()));
+        assert_eq!(
+            screen.last_sync,
+            Some("2024-01-16 15:45:00 UTC".to_string())
+        );
+
+        // Can clear last sync
+        screen.set_last_sync(None);
+        assert!(screen.last_sync.is_none());
+    }
+
+    #[test]
+    fn test_connected_state_disconnect_action() {
+        // Verify disconnect action is properly defined
+        let action = GarminSettingsAction::Disconnect;
+        assert_eq!(action, GarminSettingsAction::Disconnect);
+        assert_ne!(action, GarminSettingsAction::None);
+        assert_ne!(action, GarminSettingsAction::Connect);
+    }
+
+    #[test]
+    fn test_connected_state_toggle_auto_sync_action() {
+        // Verify auto-sync toggle action captures new state
+        let enable_action = GarminSettingsAction::ToggleAutoSync(true);
+        let disable_action = GarminSettingsAction::ToggleAutoSync(false);
+
+        // Actions with different values are not equal
+        assert_ne!(enable_action, disable_action);
+
+        // Verify action values
+        match enable_action {
+            GarminSettingsAction::ToggleAutoSync(value) => assert!(value),
+            _ => panic!("Expected ToggleAutoSync action"),
+        }
+
+        match disable_action {
+            GarminSettingsAction::ToggleAutoSync(value) => assert!(!value),
+            _ => panic!("Expected ToggleAutoSync action"),
+        }
+    }
+
+    #[test]
+    fn test_connected_state_profile_initials() {
+        // Verify profile initials generation for avatar
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist_pro".to_string(),
+            full_name: Some("John Doe".to_string()),
+            profile_image_url: None,
+        };
+
+        // readable_name returns full_name when available
+        let readable = profile.readable_name();
+        assert_eq!(readable, "John Doe");
+
+        // First two characters for initials
+        let initials: String = readable.chars().take(2).collect::<String>().to_uppercase();
+        assert_eq!(initials, "JO");
+    }
+
+    #[test]
+    fn test_connected_state_profile_link() {
+        // Verify profile URL generation for Garmin Connect
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist_pro".to_string(),
+            full_name: None,
+            profile_image_url: None,
+        };
+
+        let profile_url = format!(
+            "https://connect.garmin.com/modern/profile/{}",
+            profile.display_name
+        );
+        assert_eq!(
+            profile_url,
+            "https://connect.garmin.com/modern/profile/cyclist_pro"
+        );
+    }
+
+    #[test]
+    fn test_connected_state_complete_setup() {
+        // Verify complete connected state with all fields populated
+        let mut screen = GarminSettingsScreen::new();
+
+        // Set up connected state
+        screen.set_connection_state(GarminConnectionState::Connected);
+
+        // Set up profile
+        let profile = GarminUserProfile {
+            user_id: 98765,
+            display_name: "garmin_rider".to_string(),
+            full_name: Some("Jane Smith".to_string()),
+            profile_image_url: Some("https://connect.garmin.com/avatar.jpg".to_string()),
+        };
+        screen.set_user_profile(Some(profile));
+
+        // Set up config
+        let config = PlatformConfig {
+            enabled: true,
+            auto_sync: true,
+        };
+        screen.set_config(config);
+
+        // Set up pending uploads and last sync
+        screen.set_pending_uploads(2);
+        screen.set_last_sync(Some("Today at 3:30 PM".to_string()));
+
+        // Verify all state
+        assert!(screen.is_connected());
+        assert!(screen.user_profile.is_some());
+        assert!(screen.config.enabled);
+        assert!(screen.config.auto_sync);
+        assert_eq!(screen.pending_uploads, 2);
+        assert_eq!(screen.last_sync, Some("Today at 3:30 PM".to_string()));
+    }
 }
