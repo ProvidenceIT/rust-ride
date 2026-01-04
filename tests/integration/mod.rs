@@ -22,6 +22,7 @@ mod streaming_test;
 mod sync_integration_test;
 mod trainingpeaks_sync_test;
 mod tts_test;
+mod voice_integration_test;
 mod weather_api_test;
 mod weather_test;
 mod workout_audio_test;

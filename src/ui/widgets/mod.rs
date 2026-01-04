@@ -73,6 +73,9 @@ pub use voice_indicator::{
     CompactVoiceIndicator, ConfirmationCue, VoiceIndicator, VoiceIndicatorResponse,
     VoiceIndicatorState,
 };
+
+#[cfg(feature = "voice-control")]
+pub use voice_indicator::{VoiceIndicatorBridge, VoiceIndicatorBridgeState};
 pub use weather_widget::{WeatherPlaceholder, WeatherWidget, WeatherWidgetSize};
 pub use zone_indicator::{ZoneIndicator, ZoneType};
 pub use hud::{

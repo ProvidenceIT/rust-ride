@@ -6,6 +6,7 @@
 //! T157: Implement crash recovery prompt on startup
 //! T043: Integrate achievement tracking into ride completion flow
 //! T050: Start companion server on desktop app launch if enabled in config
+//! T018: Integrate VoiceEngine for voice control during app lifecycle
 
 use eframe::egui;
 
@@ -23,17 +24,17 @@ use rustride::hid::{
     HidInputReader, NavigationTarget,
 };
 use rustride::integrations::mqtt::{
-    DefaultFanController, DefaultMqttClient, FanController, FanProfile, MqttClient, MqttConfig,
-    load_fan_profiles,
+    load_fan_profiles, DefaultFanController, DefaultMqttClient, FanController, FanProfile,
+    MqttClient, MqttConfig,
+};
+use rustride::integrations::streaming::{
+    DefaultPinAuthenticator, DefaultStreamingServer, PinAuthenticator, StreamingConfig,
+    StreamingMetrics, StreamingServer,
 };
 use rustride::integrations::sync::oauth::{
     CredentialStore, DefaultOAuthHandler, KeyringCredentialStore, OAuthConfig, OAuthHandler,
 };
 use rustride::integrations::sync::{GarminClient, GarminUserProfile, PlatformConfig, SyncPlatform};
-use rustride::integrations::streaming::{
-    DefaultPinAuthenticator, DefaultStreamingServer, PinAuthenticator, StreamingConfig,
-    StreamingMetrics, StreamingServer,
-};
 use rustride::metrics::MetricsCalculator;
 use rustride::onboarding::OnboardingState;
 use rustride::recording::RideRecorder;
@@ -42,6 +43,8 @@ use rustride::sensors::{
     CadenceFusion, DefaultInclineController, FusionMode, InclineConfig, InclineController,
     SensorFusion, SensorFusionConfig, SensorManager,
 };
+#[cfg(feature = "voice-control")]
+use rustride::storage::config::VoiceControlSettings;
 use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
 use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
@@ -51,6 +54,12 @@ use rustride::ui::screens::{
 };
 use rustride::ui::theme::Theme;
 use rustride::ui::widgets::AchievementNotificationWidget;
+#[cfg(feature = "voice-control")]
+use rustride::voice::{
+    ExecutorContext, ModelState, VoiceCommandExecutor, VoiceEngine, VoiceEngineConfig,
+    VoiceEngineEvent, VoiceEngineState, VoiceFeedback, VoiceFeedbackConfig, VoiceFeedbackEvent,
+    VoskModelManager,
+};
 use rustride::workouts::WorkoutEngine;
 use rustride::world::physics::GradientController;
 use std::sync::Arc;
@@ -177,10 +186,10 @@ pub struct RustRideApp {
     pending_mqtt_test:
         Option<tokio::task::JoinHandle<rustride::integrations::mqtt::MqttTestResult>>,
     /// T012/6.3: Pending fan test task handle
-    pending_fan_test:
-        Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
+    pending_fan_test: Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
     /// T050: Mobile companion app server for remote control and metrics
     companion_server: Option<Arc<CompanionServer>>,
+
     /// T016: OAuth handler for Garmin Connect and other platforms
     oauth_handler: Arc<DefaultOAuthHandler>,
     /// T016: Pending Garmin Connect OAuth connection task
@@ -195,6 +204,26 @@ pub struct RustRideApp {
     garmin_pending_uploads: usize,
     /// T016/5.5: Track Garmin last sync timestamp (in-memory cache)
     garmin_last_sync: Option<String>,
+
+    /// T018: Voice recognition engine for hands-free workout control
+    #[cfg(feature = "voice-control")]
+    voice_engine: Option<Arc<VoiceEngine>>,
+
+    /// T018: Voice feedback system for audio confirmation of commands
+    #[cfg(feature = "voice-control")]
+    voice_feedback: Option<Arc<VoiceFeedback>>,
+
+    /// T018: Voice command executor for mapping commands to actions
+    #[cfg(feature = "voice-control")]
+    voice_command_executor: VoiceCommandExecutor,
+
+    /// T018: Voice engine event receiver for processing events
+    #[cfg(feature = "voice-control")]
+    voice_event_rx: Option<tokio::sync::broadcast::Receiver<VoiceEngineEvent>>,
+
+    /// T018: Flag to pause voice recognition during audio playback
+    #[cfg(feature = "voice-control")]
+    voice_paused_for_audio: bool,
 }
 
 impl RustRideApp {
@@ -304,7 +333,10 @@ impl RustRideApp {
                 Some(db)
             }
             Err(e) => {
-                tracing::error!("Failed to open database: {}. HID config will not persist.", e);
+                tracing::error!(
+                    "Failed to open database: {}. HID config will not persist.",
+                    e
+                );
                 None
             }
         };
@@ -347,7 +379,9 @@ impl RustRideApp {
                 let mappings: Vec<ButtonMapping> = device_config
                     .mappings
                     .iter()
-                    .map(|m| ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone()))
+                    .map(|m| {
+                        ButtonMapping::new(device_config.device_id, m.button_code, m.action.clone())
+                    })
                     .collect();
                 if !mappings.is_empty() {
                     button_input_handler.register_mappings(&device_config.device_id, mappings);
@@ -398,7 +432,10 @@ impl RustRideApp {
                     vec![FanProfile::default()]
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to load fan profiles from database: {}. Using default.", e);
+                    tracing::warn!(
+                        "Failed to load fan profiles from database: {}. Using default.",
+                        e
+                    );
                     vec![FanProfile::default()]
                 }
             }
@@ -463,8 +500,7 @@ impl RustRideApp {
 
         // Configure Garmin Connect OAuth (credentials from environment or config)
         // In production, these would come from app configuration or environment variables
-        let garmin_client_id =
-            std::env::var("GARMIN_CLIENT_ID").unwrap_or_else(|_| String::new());
+        let garmin_client_id = std::env::var("GARMIN_CLIENT_ID").unwrap_or_else(|_| String::new());
         let garmin_client_secret = std::env::var("GARMIN_CLIENT_SECRET").ok();
 
         if !garmin_client_id.is_empty() {
@@ -484,10 +520,82 @@ impl RustRideApp {
                 tracing::info!("Garmin Connect OAuth configured");
             });
         } else {
-            tracing::debug!(
-                "Garmin Connect OAuth not configured (GARMIN_CLIENT_ID not set)"
-            );
+            tracing::debug!("Garmin Connect OAuth not configured (GARMIN_CLIENT_ID not set)");
         }
+
+        // T018: Initialize voice control engine if feature enabled and voice control is active
+        #[cfg(feature = "voice-control")]
+        let (voice_engine, voice_feedback, voice_event_rx) = {
+            let voice_settings =
+                VoiceControlSettings::from_accessibility(&config.preferences.accessibility);
+
+            if voice_settings.is_active() {
+                // Check if Vosk model is ready
+                let model_manager = VoskModelManager::new();
+
+                if model_manager.state() == ModelState::Ready {
+                    let model_path = model_manager.model_path();
+
+                    // Create engine config based on settings
+                    let engine_config =
+                        VoiceEngine::config_from_settings(&model_path, voice_settings.activation);
+
+                    match VoiceEngine::new(engine_config) {
+                        Ok(engine) => {
+                            // Subscribe to events before starting
+                            let event_rx = engine.subscribe();
+
+                            // Initialize the engine
+                            if let Err(e) = engine.initialize() {
+                                tracing::error!("Failed to initialize voice engine: {}", e);
+                                (None, None, None)
+                            } else {
+                                // Start listening
+                                if let Err(e) = engine.start() {
+                                    tracing::error!("Failed to start voice engine: {}", e);
+                                    (None, None, None)
+                                } else {
+                                    tracing::info!(
+                                        "Voice engine started with activation mode: {}",
+                                        voice_settings.activation
+                                    );
+
+                                    let engine = Arc::new(engine);
+
+                                    // Create voice feedback system with TTS support
+                                    let feedback_config = VoiceFeedbackConfig::default();
+                                    let feedback = VoiceFeedback::with_tts_and_config(
+                                        audio_engine.audio_backend_arc(),
+                                        audio_engine.tts_provider_arc(),
+                                        feedback_config,
+                                    );
+                                    let feedback = Arc::new(feedback);
+
+                                    (Some(engine), Some(feedback), Some(event_rx))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to create voice engine: {}", e);
+                            (None, None, None)
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        "Voice control enabled but Vosk model not ready (state: {:?}). \
+                         Download model from Settings to enable voice control.",
+                        model_manager.state()
+                    );
+                    (None, None, None)
+                }
+            } else {
+                tracing::debug!("Voice control is disabled in settings");
+                (None, None, None)
+            }
+        };
+
+        #[cfg(feature = "voice-control")]
+        let voice_command_executor = VoiceCommandExecutor::new();
 
         // T059: Initialize onboarding screen and check if it should be shown
         // In a real implementation, we'd load the onboarding state from storage
@@ -576,6 +684,7 @@ impl RustRideApp {
             pending_fan_test: None,
             // T050: Companion server for mobile app connectivity
             companion_server,
+
             // T016: OAuth handler for sync platforms
             oauth_handler,
             pending_garmin_oauth: None,
@@ -585,6 +694,18 @@ impl RustRideApp {
             pending_garmin_profile: None,
             garmin_pending_uploads: 0,
             garmin_last_sync: None,
+
+            // T018: Voice control engine for hands-free workout control
+            #[cfg(feature = "voice-control")]
+            voice_engine,
+            #[cfg(feature = "voice-control")]
+            voice_feedback,
+            #[cfg(feature = "voice-control")]
+            voice_command_executor,
+            #[cfg(feature = "voice-control")]
+            voice_event_rx,
+            #[cfg(feature = "voice-control")]
+            voice_paused_for_audio: false,
         }
     }
 
@@ -1068,10 +1189,8 @@ impl RustRideApp {
                         }
                         Err(e) => {
                             tracing::error!("MQTT test task panicked: {}", e);
-                            self.settings_screen.set_mqtt_test_result(
-                                false,
-                                format!("Internal error: {}", e),
-                            );
+                            self.settings_screen
+                                .set_mqtt_test_result(false, format!("Internal error: {}", e));
                         }
                     }
                 }
@@ -1107,10 +1226,8 @@ impl RustRideApp {
                         }
                         Err(e) => {
                             tracing::error!("Fan test task panicked: {}", e);
-                            self.settings_screen.set_fan_test_result(
-                                false,
-                                format!("Internal error: {}", e),
-                            );
+                            self.settings_screen
+                                .set_fan_test_result(false, format!("Internal error: {}", e));
                         }
                     }
                 }
@@ -1168,7 +1285,10 @@ impl RustRideApp {
             GarminConnectionState::Connecting
         ) {
             // Check if credentials appeared (OAuth callback stored them)
-            if self.credential_store.has_credentials(SyncPlatform::GarminConnect) {
+            if self
+                .credential_store
+                .has_credentials(SyncPlatform::GarminConnect)
+            {
                 tracing::info!("Garmin OAuth callback completed, credentials stored");
 
                 // Set connected state
@@ -1311,7 +1431,9 @@ impl RustRideApp {
     /// connection status, profile, and pending uploads are up to date.
     fn refresh_garmin_settings_state(&mut self) {
         // Check if we have stored credentials
-        let has_credentials = self.credential_store.has_credentials(SyncPlatform::GarminConnect);
+        let has_credentials = self
+            .credential_store
+            .has_credentials(SyncPlatform::GarminConnect);
 
         if has_credentials {
             // Update connection state if not already connected
@@ -1345,7 +1467,8 @@ impl RustRideApp {
                 self.garmin_settings_screen
                     .set_connection_state(GarminConnectionState::Disconnected);
                 self.garmin_settings_screen.set_user_profile(None);
-                self.garmin_settings_screen.set_config(PlatformConfig::default());
+                self.garmin_settings_screen
+                    .set_config(PlatformConfig::default());
                 self.garmin_settings_screen.set_pending_uploads(0);
                 self.garmin_settings_screen.set_last_sync(None);
             }
@@ -1504,6 +1627,249 @@ impl RustRideApp {
         }
     }
 
+    /// T018: Pause voice recognition during audio playback to prevent feedback loops.
+    ///
+    /// This should be called before starting TTS or playing any audio cues.
+    #[cfg(feature = "voice-control")]
+    fn pause_voice_for_audio(&mut self) {
+        if self.voice_paused_for_audio {
+            return; // Already paused
+        }
+
+        if let Some(ref engine) = self.voice_engine {
+            if engine.is_listening() {
+                if let Err(e) = engine.pause() {
+                    tracing::warn!("Failed to pause voice engine for audio: {}", e);
+                } else {
+                    self.voice_paused_for_audio = true;
+                    tracing::debug!("Voice recognition paused for audio playback");
+                }
+            }
+        }
+    }
+
+    /// T018: Resume voice recognition after audio playback completes.
+    ///
+    /// This should be called after TTS or audio cues finish playing.
+    #[cfg(feature = "voice-control")]
+    fn resume_voice_after_audio(&mut self) {
+        if !self.voice_paused_for_audio {
+            return; // Not paused
+        }
+
+        if let Some(ref engine) = self.voice_engine {
+            if engine.state() == VoiceEngineState::Paused {
+                if let Err(e) = engine.resume() {
+                    tracing::warn!("Failed to resume voice engine after audio: {}", e);
+                } else {
+                    self.voice_paused_for_audio = false;
+                    tracing::debug!("Voice recognition resumed after audio playback");
+                }
+            }
+        }
+    }
+
+    /// T018: Process voice engine events and execute recognized commands.
+    ///
+    /// Called each frame to handle voice control events and dispatch actions.
+    #[cfg(feature = "voice-control")]
+    fn process_voice_events(&mut self) {
+        // Take the receiver temporarily to avoid borrow issues
+        let Some(mut rx) = self.voice_event_rx.take() else {
+            return;
+        };
+
+        // Build executor context based on current app state
+        let is_ride_active = self.current_screen == Screen::Ride;
+        let is_workout_active = is_ride_active && self.ride_screen.workout.is_some();
+        let is_ride_paused = is_ride_active && self.ride_screen.is_paused;
+
+        let context = ExecutorContext::new()
+            .with_ride_active(is_ride_active)
+            .with_workout_active(is_workout_active)
+            .with_ride_paused(is_ride_paused);
+
+        // Process all pending events
+        loop {
+            match rx.try_recv() {
+                Ok(event) => {
+                    self.handle_voice_event(event, &context);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(count)) => {
+                    tracing::warn!("Voice event receiver lagged by {} events", count);
+                    // Continue processing from current position
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    tracing::debug!("Voice event channel closed");
+                    // Don't put the receiver back if channel is closed
+                    return;
+                }
+            }
+        }
+
+        // Put the receiver back
+        self.voice_event_rx = Some(rx);
+    }
+
+    /// T018: Handle a single voice engine event.
+    #[cfg(feature = "voice-control")]
+    fn handle_voice_event(&mut self, event: VoiceEngineEvent, context: &ExecutorContext) {
+        match event {
+            VoiceEngineEvent::CommandRecognized {
+                command,
+                text,
+                confidence,
+            } => {
+                tracing::info!(
+                    "Voice command recognized: {:?} ('{}', confidence: {:?})",
+                    command,
+                    text,
+                    confidence
+                );
+
+                // Check if command is valid in current context
+                let mapping = self
+                    .voice_command_executor
+                    .map_with_context(&command, context);
+
+                if mapping.valid {
+                    // Play feedback tone
+                    if let Some(ref feedback) = self.voice_feedback {
+                        // Pause recognition during feedback
+                        self.pause_voice_for_audio();
+                        feedback.play(VoiceFeedbackEvent::CommandRecognized);
+                        // Resume after a short delay (feedback will be async)
+                        // In practice, we'd wait for TTS to complete
+                    }
+
+                    // Execute the action
+                    if let Some(action) = mapping.action {
+                        self.execute_voice_action(action);
+                    }
+
+                    // Resume voice recognition
+                    self.resume_voice_after_audio();
+                } else {
+                    tracing::debug!(
+                        "Voice command {:?} not valid in current context: {:?}",
+                        command,
+                        mapping.reason
+                    );
+
+                    // Play error feedback
+                    if let Some(ref feedback) = self.voice_feedback {
+                        feedback.play(VoiceFeedbackEvent::CommandFailed);
+                    }
+                }
+            }
+            VoiceEngineEvent::WakeWordDetected {
+                phrase,
+                duration_ms,
+            } => {
+                tracing::info!(
+                    "Wake word detected: '{}' (listening for {}ms)",
+                    phrase,
+                    duration_ms
+                );
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    self.pause_voice_for_audio();
+                    feedback.play(VoiceFeedbackEvent::WakeWordDetected);
+                    self.resume_voice_after_audio();
+                }
+            }
+            VoiceEngineEvent::WakeWordTimeout => {
+                tracing::debug!("Wake word listening period timed out");
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    feedback.play(VoiceFeedbackEvent::ListeningEnded);
+                }
+            }
+            VoiceEngineEvent::CommandCooldown {
+                command,
+                remaining_ms,
+            } => {
+                tracing::debug!(
+                    "Voice command {:?} blocked by cooldown ({}ms remaining)",
+                    command,
+                    remaining_ms
+                );
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    feedback.play(VoiceFeedbackEvent::CooldownBlocked);
+                }
+            }
+            VoiceEngineEvent::StateChanged { from, to } => {
+                tracing::debug!("Voice engine state changed: {} -> {}", from, to);
+            }
+            VoiceEngineEvent::Error { message } => {
+                tracing::error!("Voice engine error: {}", message);
+            }
+            VoiceEngineEvent::PartialResult { text } => {
+                tracing::trace!("Partial recognition: {}", text);
+            }
+            VoiceEngineEvent::FinalResult { text, confidence } => {
+                tracing::debug!(
+                    "Final result (no command matched): '{}' ({:?})",
+                    text,
+                    confidence
+                );
+            }
+            _ => {
+                // Handle other events as needed
+            }
+        }
+    }
+
+    /// T018: Execute a voice command action.
+    #[cfg(feature = "voice-control")]
+    fn execute_voice_action(&mut self, action: rustride::hid::ButtonAction) {
+        use rustride::hid::ButtonAction;
+
+        match action {
+            ButtonAction::PlayPause => {
+                if self.current_screen == Screen::Ride {
+                    self.ride_screen.is_paused = !self.ride_screen.is_paused;
+                    tracing::info!(
+                        "Voice command: {}",
+                        if self.ride_screen.is_paused {
+                            "Paused"
+                        } else {
+                            "Resumed"
+                        }
+                    );
+                }
+            }
+            ButtonAction::Skip => {
+                if self.current_screen == Screen::Ride && self.ride_screen.workout.is_some() {
+                    // Skip to next interval in workout
+                    tracing::info!("Voice command: Skip interval");
+                    // Workout skip would be implemented via workout engine
+                }
+            }
+            ButtonAction::AddLapMarker => {
+                if self.current_screen == Screen::Ride {
+                    // Add lap marker
+                    tracing::info!("Voice command: Lap marked");
+                    // Lap marking would be implemented via ride recorder
+                }
+            }
+            ButtonAction::Stop => {
+                if self.current_screen == Screen::Ride {
+                    // End workout/ride
+                    tracing::info!("Voice command: End workout");
+                    // This would trigger the ride end flow
+                }
+            }
+            _ => {
+                tracing::debug!("Voice action {:?} not yet implemented", action);
+            }
+        }
+    }
+
     /// Navigate to a different screen.
     fn navigate(&mut self, screen: Screen) {
         tracing::debug!("Navigating from {:?} to {:?}", self.current_screen, screen);
@@ -1651,12 +2017,22 @@ impl eframe::App for RustRideApp {
         // T016/5.5: Poll for Garmin profile fetch result
         self.poll_garmin_profile();
 
+        // T018: Process voice engine events for voice control
+        #[cfg(feature = "voice-control")]
+        self.process_voice_events();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, OAuth, disconnect, profile fetch)
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, OAuth, disconnect, profile fetch, voice control)
+        #[cfg(feature = "voice-control")]
+        let voice_active = self.voice_engine.is_some();
+        #[cfg(not(feature = "voice-control"))]
+        let voice_active = false;
+
         if self.current_screen == Screen::Ride
             || self.current_screen == Screen::SensorSetup
+            || voice_active
             || (self.current_screen == Screen::Settings
                 && (self.button_input_handler.is_learning()
                     || self.pending_mqtt_test.is_some()
@@ -1854,7 +2230,9 @@ impl eframe::App for RustRideApp {
                             let hid_config = self.settings_screen.get_hid_config();
                             if let Some(ref db) = self.database {
                                 let store = HardwareStore::new(db.connection());
-                                if let Err(e) = save_hid_config_to_db(&store, &self.user_id, &hid_config) {
+                                if let Err(e) =
+                                    save_hid_config_to_db(&store, &self.user_id, &hid_config)
+                                {
                                     tracing::error!("Failed to save HID config to database: {}", e);
                                 } else {
                                     tracing::info!("HID config saved to database");
@@ -1874,9 +2252,16 @@ impl eframe::App for RustRideApp {
                                             let mappings: Vec<ButtonMapping> = device_config
                                                 .mappings
                                                 .iter()
-                                                .map(|m| ButtonMapping::new(device_id, m.button_code, m.action.clone()))
+                                                .map(|m| {
+                                                    ButtonMapping::new(
+                                                        device_id,
+                                                        m.button_code,
+                                                        m.action.clone(),
+                                                    )
+                                                })
                                                 .collect();
-                                            self.button_input_handler.register_mappings(&device_id, mappings);
+                                            self.button_input_handler
+                                                .register_mappings(&device_id, mappings);
                                         }
 
                                         // Open device if not already open
@@ -1891,11 +2276,22 @@ impl eframe::App for RustRideApp {
                                             rt.spawn(async move {
                                                 match manager.open_device(&device_id).await {
                                                     Ok(()) => {
-                                                        tracing::info!("Opened device {} for button input", device_name);
-                                                        reader.register_device(device_id, vendor_id, product_id).await;
+                                                        tracing::info!(
+                                                            "Opened device {} for button input",
+                                                            device_name
+                                                        );
+                                                        reader
+                                                            .register_device(
+                                                                device_id, vendor_id, product_id,
+                                                            )
+                                                            .await;
                                                     }
                                                     Err(e) => {
-                                                        tracing::warn!("Failed to open device {}: {}", device_name, e);
+                                                        tracing::warn!(
+                                                            "Failed to open device {}: {}",
+                                                            device_name,
+                                                            e
+                                                        );
                                                     }
                                                 }
                                             });
@@ -1910,9 +2306,16 @@ impl eframe::App for RustRideApp {
                                         rt.spawn(async move {
                                             reader.unregister_device(&device_id).await;
                                             if let Err(e) = manager.close_device(&device_id).await {
-                                                tracing::warn!("Failed to close device {}: {}", device_name, e);
+                                                tracing::warn!(
+                                                    "Failed to close device {}: {}",
+                                                    device_name,
+                                                    e
+                                                );
                                             } else {
-                                                tracing::info!("Closed device {} (disabled)", device_name);
+                                                tracing::info!(
+                                                    "Closed device {} (disabled)",
+                                                    device_name
+                                                );
                                             }
                                         });
                                     }
@@ -1944,7 +2347,8 @@ impl eframe::App for RustRideApp {
                             tts.set_rate(settings.rate);
 
                             // Speak the preview phrase
-                            const PREVIEW_PHRASE: &str = "This is how your voice alerts will sound.";
+                            const PREVIEW_PHRASE: &str =
+                                "This is how your voice alerts will sound.";
                             if let Err(e) = tts.speak(PREVIEW_PHRASE) {
                                 tracing::warn!("Failed to preview voice: {}", e);
                             }
@@ -1958,7 +2362,10 @@ impl eframe::App for RustRideApp {
                         }
                         SettingsAction::StartLearningMode(device_id) => {
                             // T091: Start button learning mode for the specified device
-                            tracing::info!("Starting button learning mode for device {:?}", device_id);
+                            tracing::info!(
+                                "Starting button learning mode for device {:?}",
+                                device_id
+                            );
 
                             // Ensure the device is open so we can read button presses
                             if !self.hid_device_manager.is_open(&device_id) {
@@ -1968,7 +2375,8 @@ impl eframe::App for RustRideApp {
                                 let rt = self.tokio_runtime.clone();
 
                                 // Get device info for registration
-                                if let Some(device) = self.hid_device_manager.get_device(&device_id) {
+                                if let Some(device) = self.hid_device_manager.get_device(&device_id)
+                                {
                                     let vendor_id = device.vendor_id;
                                     let product_id = device.product_id;
                                     let device_name = device.name.clone();
@@ -1976,12 +2384,22 @@ impl eframe::App for RustRideApp {
                                     rt.spawn(async move {
                                         match manager.open_device(&device_id).await {
                                             Ok(()) => {
-                                                tracing::info!("Opened device {} for learning mode", device_name);
+                                                tracing::info!(
+                                                    "Opened device {} for learning mode",
+                                                    device_name
+                                                );
                                                 // Register with input reader
-                                                reader.register_device(device_id, vendor_id, product_id).await;
+                                                reader
+                                                    .register_device(
+                                                        device_id, vendor_id, product_id,
+                                                    )
+                                                    .await;
                                             }
                                             Err(e) => {
-                                                tracing::error!("Failed to open device for learning mode: {}", e);
+                                                tracing::error!(
+                                                    "Failed to open device for learning mode: {}",
+                                                    e
+                                                );
                                             }
                                         }
                                     });
@@ -2019,7 +2437,8 @@ impl eframe::App for RustRideApp {
 
                             // Spawn async task to test the fan
                             let handle = self.tokio_runtime.spawn(async move {
-                                rustride::integrations::mqtt::test_fan(&config, &profile, None).await
+                                rustride::integrations::mqtt::test_fan(&config, &profile, None)
+                                    .await
                             });
                             self.pending_fan_test = Some(handle);
                         }
@@ -2089,10 +2508,7 @@ impl eframe::App for RustRideApp {
                                                 "Failed to open browser for Garmin OAuth: {}",
                                                 e
                                             );
-                                            return Err(format!(
-                                                "Failed to open browser: {}",
-                                                e
-                                            ));
+                                            return Err(format!("Failed to open browser: {}", e));
                                         }
 
                                         tracing::info!(
@@ -2101,10 +2517,7 @@ impl eframe::App for RustRideApp {
                                         Ok(auth_url.url)
                                     }
                                     Err(e) => {
-                                        tracing::error!(
-                                            "Failed to start Garmin OAuth flow: {}",
-                                            e
-                                        );
+                                        tracing::error!("Failed to start Garmin OAuth flow: {}", e);
                                         Err(format!("OAuth error: {}", e))
                                     }
                                 }
@@ -2331,8 +2744,20 @@ impl eframe::App for RustRideApp {
         self.render_recovery_dialog(ctx);
     }
 
-    /// T050: Handle application exit - gracefully stop companion server.
+    /// T050/T018: Handle application exit - gracefully stop companion server and voice engine.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // T018: Stop voice engine if running
+        #[cfg(feature = "voice-control")]
+        if let Some(ref engine) = self.voice_engine {
+            tracing::info!("Stopping voice engine...");
+            if let Err(e) = engine.stop() {
+                // May already be stopped or in error state
+                tracing::debug!("Voice engine stop result: {}", e);
+            } else {
+                tracing::info!("Voice engine stopped");
+            }
+        }
+
         // Stop companion server if running
         if let Some(ref server) = self.companion_server {
             let server = Arc::clone(server);

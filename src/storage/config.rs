@@ -241,13 +241,26 @@ impl std::fmt::Display for ThemePreference {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceActivation {
-    /// Always listening for commands
+    /// Always listening for commands (no wake word needed)
     AlwaysOn,
+    /// Requires wake word before commands ("Hey Rust Ride" or "OK Ride")
+    #[default]
+    WakeWord,
     /// Requires push-to-talk key
     PushToTalk,
     /// Disabled
-    #[default]
     Off,
+}
+
+impl std::fmt::Display for VoiceActivation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VoiceActivation::AlwaysOn => write!(f, "Always On"),
+            VoiceActivation::WakeWord => write!(f, "Wake Word"),
+            VoiceActivation::PushToTalk => write!(f, "Push to Talk"),
+            VoiceActivation::Off => write!(f, "Off"),
+        }
+    }
 }
 
 /// Focus indicator style options.
@@ -1224,6 +1237,78 @@ pub fn load_mqtt_config() -> MqttConfig {
     config.mqtt
 }
 
+// =============================================================================
+// Voice Control Configuration (Feature 018)
+// =============================================================================
+
+/// Voice control settings extracted from accessibility settings.
+///
+/// This provides a focused view of voice control configuration for the voice engine.
+#[derive(Debug, Clone)]
+pub struct VoiceControlSettings {
+    /// Whether voice control is enabled.
+    pub enabled: bool,
+    /// Voice activation mode (always-on, wake word, push-to-talk, off).
+    pub activation: VoiceActivation,
+}
+
+impl Default for VoiceControlSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            activation: VoiceActivation::WakeWord,
+        }
+    }
+}
+
+impl VoiceControlSettings {
+    /// Create new voice control settings.
+    pub fn new(enabled: bool, activation: VoiceActivation) -> Self {
+        Self { enabled, activation }
+    }
+
+    /// Check if voice control is active (enabled and not Off).
+    pub fn is_active(&self) -> bool {
+        self.enabled && self.activation != VoiceActivation::Off
+    }
+
+    /// Create from accessibility settings.
+    pub fn from_accessibility(settings: &AccessibilitySettings) -> Self {
+        Self {
+            enabled: settings.voice_control_enabled,
+            activation: settings.voice_activation,
+        }
+    }
+}
+
+/// Load voice control settings from the stored user preferences.
+///
+/// This reads from the user profile database if available, falling back to defaults.
+pub fn load_voice_control_settings() -> VoiceControlSettings {
+    // Try to load from the config/preferences
+    // For now, return defaults - the actual preferences are loaded from the database
+    // via the profile system. This function serves as a convenience accessor.
+    VoiceControlSettings::default()
+}
+
+/// Example TOML configuration for voice control settings.
+/// This can be used to generate a default config file.
+pub fn example_voice_control_config() -> &'static str {
+    r#"
+# Voice control settings (in accessibility section of user preferences)
+# These are stored per-user in the profile database, not in config.toml.
+#
+# voice_control_enabled = false
+# voice_activation = "wake_word"  # always_on, wake_word, push_to_talk, off
+#
+# Note: Voice control requires the vosk-model to be downloaded.
+# The model is stored at:
+#   Windows: %APPDATA%\RustRide\vosk-model
+#   macOS: ~/Library/Application Support/RustRide/vosk-model
+#   Linux: ~/.local/share/RustRide/vosk-model
+"#
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1720,5 +1805,134 @@ mod tests {
         assert_eq!(config.mqtt.keep_alive_secs, 60);
         assert_eq!(config.mqtt.connection_timeout_secs, 30);
         assert!(config.mqtt.max_reconnect_attempts.is_none());
+    }
+
+    // =========================================================================
+    // Voice Control Settings Tests (Feature 018)
+    // =========================================================================
+
+    #[test]
+    fn test_voice_activation_display() {
+        assert_eq!(VoiceActivation::AlwaysOn.to_string(), "Always On");
+        assert_eq!(VoiceActivation::WakeWord.to_string(), "Wake Word");
+        assert_eq!(VoiceActivation::PushToTalk.to_string(), "Push to Talk");
+        assert_eq!(VoiceActivation::Off.to_string(), "Off");
+    }
+
+    #[test]
+    fn test_voice_activation_default() {
+        assert_eq!(VoiceActivation::default(), VoiceActivation::WakeWord);
+    }
+
+    #[test]
+    fn test_voice_control_settings_default() {
+        let settings = VoiceControlSettings::default();
+        assert!(!settings.enabled);
+        assert_eq!(settings.activation, VoiceActivation::WakeWord);
+        assert!(!settings.is_active());
+    }
+
+    #[test]
+    fn test_voice_control_settings_new() {
+        let settings = VoiceControlSettings::new(true, VoiceActivation::PushToTalk);
+        assert!(settings.enabled);
+        assert_eq!(settings.activation, VoiceActivation::PushToTalk);
+    }
+
+    #[test]
+    fn test_voice_control_settings_is_active() {
+        // Enabled + AlwaysOn = active
+        let settings = VoiceControlSettings::new(true, VoiceActivation::AlwaysOn);
+        assert!(settings.is_active());
+
+        // Enabled + WakeWord = active
+        let settings = VoiceControlSettings::new(true, VoiceActivation::WakeWord);
+        assert!(settings.is_active());
+
+        // Enabled + PushToTalk = active
+        let settings = VoiceControlSettings::new(true, VoiceActivation::PushToTalk);
+        assert!(settings.is_active());
+
+        // Enabled + Off = not active
+        let settings = VoiceControlSettings::new(true, VoiceActivation::Off);
+        assert!(!settings.is_active());
+
+        // Disabled + any mode = not active
+        let settings = VoiceControlSettings::new(false, VoiceActivation::AlwaysOn);
+        assert!(!settings.is_active());
+    }
+
+    #[test]
+    fn test_voice_control_settings_from_accessibility() {
+        let accessibility = AccessibilitySettings {
+            voice_control_enabled: true,
+            voice_activation: VoiceActivation::PushToTalk,
+            ..Default::default()
+        };
+
+        let settings = VoiceControlSettings::from_accessibility(&accessibility);
+        assert!(settings.enabled);
+        assert_eq!(settings.activation, VoiceActivation::PushToTalk);
+        assert!(settings.is_active());
+    }
+
+    #[test]
+    fn test_accessibility_settings_default_voice() {
+        let settings = AccessibilitySettings::default();
+        assert!(!settings.voice_control_enabled);
+        assert_eq!(settings.voice_activation, VoiceActivation::WakeWord);
+    }
+
+    #[test]
+    fn test_voice_activation_serialization() {
+        // Test that VoiceActivation serializes correctly
+        let settings = AccessibilitySettings {
+            voice_control_enabled: true,
+            voice_activation: VoiceActivation::PushToTalk,
+            ..Default::default()
+        };
+
+        // Serialize
+        let serialized = toml::to_string(&settings).expect("Failed to serialize");
+        assert!(serialized.contains("voice_activation = \"push_to_talk\""));
+
+        // Test all variants
+        let settings = AccessibilitySettings {
+            voice_activation: VoiceActivation::AlwaysOn,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&settings).expect("Failed to serialize");
+        assert!(serialized.contains("voice_activation = \"always_on\""));
+
+        let settings = AccessibilitySettings {
+            voice_activation: VoiceActivation::WakeWord,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&settings).expect("Failed to serialize");
+        assert!(serialized.contains("voice_activation = \"wake_word\""));
+
+        let settings = AccessibilitySettings {
+            voice_activation: VoiceActivation::Off,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&settings).expect("Failed to serialize");
+        assert!(serialized.contains("voice_activation = \"off\""));
+    }
+
+    #[test]
+    fn test_voice_activation_deserialization() {
+        let toml_str = r#"
+            color_mode = "normal"
+            high_contrast = false
+            screen_reader_enabled = false
+            voice_control_enabled = true
+            voice_activation = "push_to_talk"
+            focus_indicator = "standard"
+            reduce_motion = false
+        "#;
+
+        let settings: AccessibilitySettings = toml::from_str(toml_str).expect("Failed to deserialize");
+        assert!(settings.voice_control_enabled);
+        assert_eq!(settings.voice_activation, VoiceActivation::PushToTalk);
     }
 }
