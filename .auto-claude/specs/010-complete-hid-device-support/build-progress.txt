@@ -485,3 +485,90 @@ and reloaded.
 
 ### Verification:
 Manual verification required - changes follow existing patterns and are minimal
+
+## 2026-01-04 - Subtask 5.1 Complete: Unit Tests for HID Input Parsing
+
+### Summary:
+Verified that comprehensive unit tests for Stream Deck and generic input report parsing
+already exist and cover all acceptance criteria. The tests were implemented during
+subtasks 2.2 (Stream Deck protocol support) and 2.3 (Generic USB button controller support).
+
+### Test Coverage Statistics:
+- **streamdeck.rs**: 42 unit tests
+- **generic.rs**: 55 unit tests
+- **Total**: 97 unit tests for HID input parsing
+
+### Acceptance Criteria Coverage:
+
+#### 1. Test Stream Deck button press detection ✅
+Tests covering this criterion:
+- `test_parse_original_button_press` - Original model single button press
+- `test_parse_multiple_buttons` - Multiple simultaneous button presses
+- `test_parse_pedal` - Pedal model button press
+- `test_parse_mk2_format` - MK.2 report format
+- `test_parse_xl_multiple_buttons` - XL model with multiple buttons
+- `test_all_buttons_pressed_original` - All 15 buttons pressed at once
+- `test_all_buttons_pressed_xl` - All 32 buttons pressed at once
+- `test_all_buttons_pressed_mini` - All 6 buttons pressed at once
+- `test_mk2_all_buttons_pressed` - MK.2 all buttons pressed
+- `test_rapid_press_release_sequence` - Rapid press/release cycles
+
+#### 2. Test Stream Deck button release detection ✅
+Tests covering this criterion:
+- `test_parse_original_button_release` - Single button release
+- `test_all_buttons_released_original` - All 15 buttons released
+- `test_pedal_all_pressed_released` - Pedal press and release sequence
+- `test_simultaneous_press_release` - Release one button while pressing another
+- `test_rapid_press_release_sequence` - Release detection in rapid cycles
+
+#### 3. Test generic gamepad button parsing ✅
+Tests covering this criterion:
+- `test_bitmap_parsing` - Bitmap format parsing
+- `test_bitmap_release` - Bitmap button release
+- `test_bitmap_with_report_id` - Bitmap with report ID prefix
+- `test_byte_per_button_parsing` - Byte-per-button format
+- `test_keyboard_parsing` - Keyboard scan code parsing
+- `test_keyboard_key_release` - Keyboard key release detection
+- `test_consumer_control_parsing` - Consumer control (media keys)
+- `test_consumer_control_release` - Consumer control release
+- `test_multi_byte_bitmap` - Multi-byte bitmap (16+ buttons)
+- `test_keyboard_multiple_keys_pressed` - Multiple simultaneous keys
+- `test_keyboard_modifier_combinations` - All modifier keys
+
+#### 4. Test edge cases (multiple buttons, all buttons, no buttons) ✅
+Tests covering this criterion:
+- `test_no_event_when_no_change` - No events when state unchanged
+- `test_all_buttons_pressed_bitmap` - All 32 bitmap buttons pressed
+- `test_all_buttons_released_bitmap` - All 32 bitmap buttons released
+- `test_empty_report` - Empty report handling
+- `test_no_buttons_pressed_initial_state` - Initial state with no buttons
+- `test_rapid_press_release_bitmap` - Rapid bitmap press/release
+- `test_alternating_buttons` - Alternating button patterns
+- `test_alternating_buttons_bitmap` - Alternating bitmap patterns
+- `test_simultaneous_press_release_bitmap` - Simultaneous press/release
+- `test_short_report_handling` - Reports shorter than expected
+- `test_report_with_extra_bytes` - Reports with extra trailing bytes
+- `test_button_count_limit_bitmap` - Button count limiting
+- `test_button_count_limit_byte_per_button` - Byte-per-button limiting
+- `test_offset_with_short_report` - Offset larger than report
+- `test_keyboard_short_report` - Keyboard report too short
+- `test_consumer_control_short_report` - Consumer control too short
+- `test_unknown_format_fallback` - Unknown format defaults to bitmap
+
+### Additional Test Coverage:
+- Device ID preservation tests
+- Timestamp preservation tests
+- Button label generation tests
+- Grid coordinate conversion tests
+- Report format detection tests
+- Known device profile tests
+- Reset states tests
+- Report ID filtering tests
+
+### Files Verified (no changes needed - tests already comprehensive):
+- `src/hid/streamdeck.rs` - 42 tests covering all Stream Deck models
+- `src/hid/generic.rs` - 55 tests covering all report formats
+
+### Verification:
+Manual verification required (cargo not available in sandbox). Tests follow standard
+Rust testing patterns and use mock input reports based on real device capture formats.
