@@ -120,7 +120,7 @@
   - Keyring storage uses lowercase platform name "garminconnect" as credential key
   - Added comprehensive tests for Garmin service integration
 
-### Phase 3 - IN PROGRESS
+### Phase 3 - COMPLETED
 - 3.1 ✅ Verified GarminConnect platform is properly registered in SyncPlatform enum
   - GarminConnect already defined in SyncPlatform enum (mod.rs line 72)
   - display_name() returns "Garmin Connect"
@@ -140,3 +140,17 @@
   - Disconnect handling: garmin.deauthorize() called in handle_disconnect() (lines 1570-1576)
   - Comprehensive tests added for Garmin service integration
   - This work was completed as part of subtask 2.4 - verified complete
+- 3.3 ✅ Added Garmin to upload queue processing with retry logic
+  - Exported SyncErrorExt trait and ErrorCategory from mod.rs
+  - Updated is_retryable_error() to use SyncErrorExt trait for error categorization
+  - Added get_rate_limit_retry_delay() helper for smart retry delays
+  - Updated retry backoff calculation to use rate limit delay when appropriate
+  - Added 14 comprehensive Garmin-specific tests for error handling and queue processing
+- 3.4 ✅ Documented that Garmin uses synchronous processing (no status polling needed)
+  - FINDING: Garmin Connect processes uploads SYNCHRONOUSLY, unlike Strava
+  - Strava: Returns upload_id, requires polling check_upload_status()
+  - Garmin: Returns activity ID immediately in the response
+  - Updated module-level documentation in garmin.rs explaining the processing model
+  - Updated upload_activity() method documentation to clarify synchronous behavior
+  - No check_upload_status() method needed for Garmin - upload completes in single request
+  - The subtask condition "If Garmin uses async processing" is FALSE, so no polling needed

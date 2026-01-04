@@ -10,6 +10,23 @@
 //! - Duplicate activity detection
 //! - Network error recovery
 //! - FIT file validation
+//!
+//! ## Upload Processing Model
+//!
+//! Garmin Connect uses **synchronous** upload processing, unlike Strava which
+//! processes uploads asynchronously:
+//!
+//! - **Garmin Connect**: The upload API immediately returns the activity ID
+//!   (or error) in the response. No status polling is required. The upload
+//!   completes in a single request/response cycle.
+//!
+//! - **Strava**: Returns an upload_id immediately, then processes the file
+//!   asynchronously. Requires calling `check_upload_status()` to poll for
+//!   completion.
+//!
+//! This means GarminClient does NOT need a `check_upload_status()` method.
+//! The `upload_activity()` method returns a `SyncRecord` with `status: Completed`
+//! when successful, or an error if the upload fails.
 
 use super::{SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use chrono::Utc;
@@ -838,15 +855,27 @@ impl GarminClient {
     /// Upload a FIT file to Garmin Connect
     ///
     /// Returns the sync record with upload status. Garmin Connect processes uploads
-    /// synchronously, so the record will have status Completed with an external_id
-    /// containing the activity ID if successful.
+    /// **synchronously** (unlike Strava which is async), so the record will have
+    /// status `Completed` with an `external_id` containing the activity ID if
+    /// successful.
+    ///
+    /// ## Processing Model
+    ///
+    /// Unlike Strava, Garmin Connect does NOT require status polling. The upload
+    /// API immediately returns the activity ID (or error) in the response:
+    ///
+    /// - Returns `SyncRecordStatus::Completed` with activity ID on success
+    /// - Returns appropriate error on failure (no "processing" state)
+    ///
+    /// This is different from Strava's async model which requires calling
+    /// `check_upload_status()` after `upload_activity()`.
     ///
     /// # Arguments
     /// * `ride_id` - The local ride ID
     /// * `fit_data` - The FIT file data as bytes
     ///
     /// # Returns
-    /// A SyncRecord with the activity_id in external_id field
+    /// A SyncRecord with status `Completed` and activity_id in external_id field
     ///
     /// # Errors
     /// * `InvalidFitFile` - If the FIT file is malformed or too small
