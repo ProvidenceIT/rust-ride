@@ -6,6 +6,7 @@
 //! interactions, including:
 //! - Rate limiting with retry-after support
 //! - Token expiry and refresh handling
+//! - Automatic token refresh on expiry
 //! - Duplicate activity detection
 //! - Network error recovery
 //! - FIT file validation
@@ -15,10 +16,64 @@ use chrono::Utc;
 use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::Deserialize;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+
+/// Maximum number of automatic token refresh attempts per API call
+const MAX_AUTO_REFRESH_ATTEMPTS: u32 = 1;
+
+/// Result type for token refresh operations
+pub type TokenRefreshResult = Pin<Box<dyn Future<Output = Result<String, SyncError>> + Send>>;
+
+/// Trait for providing token refresh functionality to GarminClient.
+///
+/// Implement this trait to enable automatic token refresh when the access token
+/// expires during API calls. When a `TokenExpired` error is encountered, the
+/// client will call `refresh_token()` to get a new access token and retry the
+/// request.
+///
+/// # Example
+///
+/// ```ignore
+/// use std::sync::Arc;
+/// use tokio::sync::RwLock;
+///
+/// struct MyTokenRefresher {
+///     oauth_handler: Arc<OAuthHandler>,
+/// }
+///
+/// impl TokenRefresher for MyTokenRefresher {
+///     fn refresh_token(&self) -> TokenRefreshResult {
+///         let handler = self.oauth_handler.clone();
+///         Box::pin(async move {
+///             let tokens = handler.refresh_token(SyncPlatform::GarminConnect).await?;
+///             Ok(tokens.access_token)
+///         })
+///     }
+/// }
+/// ```
+pub trait TokenRefresher: Send + Sync {
+    /// Refresh the access token and return the new token.
+    ///
+    /// This method is called when the client encounters a `TokenExpired` error.
+    /// It should:
+    /// 1. Use the stored refresh token to get new access/refresh tokens
+    /// 2. Store the new tokens appropriately
+    /// 3. Return the new access token
+    ///
+    /// # Returns
+    /// A future that resolves to the new access token or an error.
+    ///
+    /// # Errors
+    /// - `AuthorizationRequired` - If the refresh token is also expired
+    /// - `RefreshFailed` - If the refresh request fails for other reasons
+    /// - `NetworkError` - If the refresh request fails due to network issues
+    fn refresh_token(&self) -> TokenRefreshResult;
+}
 
 /// Default request timeout in seconds
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
@@ -363,6 +418,24 @@ impl std::fmt::Display for GarminApiError {
 }
 
 /// Garmin Connect API client
+///
+/// Provides methods for interacting with the Garmin Connect API, including:
+/// - FIT file upload
+/// - User profile retrieval
+/// - Token deauthorization
+///
+/// ## Automatic Token Refresh
+///
+/// The client supports automatic token refresh when access tokens expire.
+/// When a `TokenRefresher` is set via `set_token_refresher()`, the client
+/// will automatically attempt to refresh the token and retry the request
+/// when a `TokenExpired` error is encountered.
+///
+/// ```ignore
+/// let client = GarminClient::new();
+/// client.set_token_refresher(Arc::new(my_refresher));
+/// // Now API calls will automatically refresh the token if needed
+/// ```
 #[allow(dead_code)]
 pub struct GarminClient {
     /// Access token for API calls
@@ -373,6 +446,8 @@ pub struct GarminClient {
     oauth_base_url: String,
     /// HTTP client for API requests
     http_client: Client,
+    /// Optional token refresher for automatic token refresh
+    token_refresher: Arc<RwLock<Option<Arc<dyn TokenRefresher>>>>,
 }
 
 impl Default for GarminClient {
@@ -395,6 +470,7 @@ impl GarminClient {
             base_url: GARMIN_API_BASE_URL.to_string(),
             oauth_base_url: GARMIN_OAUTH_BASE_URL.to_string(),
             http_client,
+            token_refresher: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -412,6 +488,143 @@ impl GarminClient {
             base_url,
             oauth_base_url,
             http_client,
+            token_refresher: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Set a token refresher for automatic token refresh.
+    ///
+    /// When a token refresher is set, the client will automatically attempt
+    /// to refresh the access token and retry the request when a `TokenExpired`
+    /// error is encountered during API calls.
+    ///
+    /// # Arguments
+    /// * `refresher` - The token refresher implementation
+    ///
+    /// # Example
+    /// ```ignore
+    /// let client = GarminClient::new();
+    /// client.set_token_refresher(Arc::new(my_refresher)).await;
+    /// ```
+    pub async fn set_token_refresher(&self, refresher: Arc<dyn TokenRefresher>) {
+        *self.token_refresher.write().await = Some(refresher);
+    }
+
+    /// Clear the token refresher.
+    ///
+    /// After calling this, the client will no longer attempt automatic
+    /// token refresh on `TokenExpired` errors.
+    pub async fn clear_token_refresher(&self) {
+        *self.token_refresher.write().await = None;
+    }
+
+    /// Check if a token refresher is configured.
+    pub fn has_token_refresher(&self) -> bool {
+        self.token_refresher
+            .try_read()
+            .map(|r| r.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Attempt to refresh the access token using the configured token refresher.
+    ///
+    /// This method is called internally when an API call fails with `TokenExpired`
+    /// and a token refresher is configured.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the token was refreshed successfully
+    /// - `Err(SyncError)` if no refresher is configured or refresh failed
+    async fn attempt_token_refresh(&self) -> Result<(), SyncError> {
+        let refresher = {
+            let guard = self.token_refresher.read().await;
+            guard.clone()
+        };
+
+        match refresher {
+            Some(refresher) => {
+                tracing::info!("Attempting automatic token refresh for Garmin Connect");
+
+                match refresher.refresh_token().await {
+                    Ok(new_token) => {
+                        tracing::info!("Automatic token refresh successful");
+                        self.set_access_token(new_token).await;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::warn!("Automatic token refresh failed: {}", e);
+                        Err(e)
+                    }
+                }
+            }
+            None => {
+                tracing::debug!("No token refresher configured, cannot auto-refresh");
+                Err(SyncError::TokenExpired)
+            }
+        }
+    }
+
+    /// Execute an async operation with automatic token refresh on expiry.
+    ///
+    /// This helper method wraps an API call and automatically handles token
+    /// refresh when the operation fails with `TokenExpired`. If a token refresher
+    /// is configured and the refresh succeeds, the operation is retried once.
+    ///
+    /// # Type Parameters
+    /// * `F` - The async factory function that creates the operation
+    /// * `T` - The return type of the operation
+    ///
+    /// # Arguments
+    /// * `operation_name` - Name of the operation for logging
+    /// * `operation_factory` - Factory function that creates the async operation
+    ///
+    /// # Returns
+    /// The result of the operation, or an error if the operation and refresh both fail
+    async fn with_auto_refresh<F, Fut, T>(
+        &self,
+        operation_name: &str,
+        operation_factory: F,
+    ) -> Result<T, SyncError>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, SyncError>>,
+    {
+        let mut attempts = 0;
+
+        loop {
+            match operation_factory().await {
+                Ok(result) => return Ok(result),
+                Err(SyncError::TokenExpired) if attempts < MAX_AUTO_REFRESH_ATTEMPTS => {
+                    attempts += 1;
+                    tracing::info!(
+                        "Token expired during {}, attempting refresh (attempt {}/{})",
+                        operation_name,
+                        attempts,
+                        MAX_AUTO_REFRESH_ATTEMPTS
+                    );
+
+                    // Try to refresh the token
+                    match self.attempt_token_refresh().await {
+                        Ok(()) => {
+                            tracing::info!("Token refreshed, retrying {}", operation_name);
+                            // Continue loop to retry the operation
+                        }
+                        Err(refresh_error) => {
+                            tracing::warn!(
+                                "Token refresh failed during {}: {}",
+                                operation_name,
+                                refresh_error
+                            );
+                            // If refresh fails with AuthorizationRequired, propagate that
+                            // Otherwise, return the original TokenExpired error
+                            return Err(match refresh_error {
+                                SyncError::AuthorizationRequired => SyncError::AuthorizationRequired,
+                                _ => SyncError::TokenExpired,
+                            });
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
 
@@ -1070,6 +1283,63 @@ impl GarminClient {
         tracing::info!("Successfully deauthorized from Garmin Connect");
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Auto-Refresh Wrappers
+    //
+    // These methods wrap the base API methods and automatically handle token
+    // refresh when the access token expires.
+    // ========================================================================
+
+    /// Upload a FIT file to Garmin Connect with automatic token refresh.
+    ///
+    /// This method wraps `upload_activity` and automatically attempts to refresh
+    /// the access token and retry if the upload fails with `TokenExpired`.
+    ///
+    /// Requires a token refresher to be set via `set_token_refresher()`.
+    ///
+    /// # Arguments
+    /// * `ride_id` - The local ride ID
+    /// * `fit_data` - The FIT file data as bytes
+    ///
+    /// # Returns
+    /// A SyncRecord with the activity_id in external_id field
+    ///
+    /// # Errors
+    /// Same as `upload_activity`, plus:
+    /// * `AuthorizationRequired` - If token refresh fails because re-authorization is needed
+    pub async fn upload_activity_with_refresh(
+        &self,
+        ride_id: Uuid,
+        fit_data: Vec<u8>,
+    ) -> Result<SyncRecord, SyncError> {
+        self.with_auto_refresh("upload_activity", || {
+            let ride_id = ride_id;
+            let fit_data = fit_data.clone();
+            async move { self.upload_activity(&ride_id, &fit_data).await }
+        })
+        .await
+    }
+
+    /// Get user profile with automatic token refresh.
+    ///
+    /// This method wraps `get_user_profile` and automatically attempts to refresh
+    /// the access token and retry if the request fails with `TokenExpired`.
+    ///
+    /// Requires a token refresher to be set via `set_token_refresher()`.
+    ///
+    /// # Returns
+    /// The user profile including id, display name, and profile image URL
+    ///
+    /// # Errors
+    /// Same as `get_user_profile`, plus:
+    /// * `AuthorizationRequired` - If token refresh fails because re-authorization is needed
+    pub async fn get_user_profile_with_refresh(&self) -> Result<GarminUserProfile, SyncError> {
+        self.with_auto_refresh("get_user_profile", || async move {
+            self.get_user_profile().await
+        })
+        .await
     }
 }
 
@@ -1981,6 +2251,286 @@ mod tests {
         assert!(response.detailed_import_result.successes.is_empty());
         assert!(response.detailed_import_result.failures.is_empty());
     }
+
+    // ========================================================================
+    // Token Refresher Tests
+    // ========================================================================
+
+    #[test]
+    fn test_client_has_no_token_refresher_by_default() {
+        let client = GarminClient::new();
+        assert!(!client.has_token_refresher());
+    }
+
+    #[tokio::test]
+    async fn test_set_and_clear_token_refresher() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        /// Test token refresher that tracks if it was called
+        struct TestRefresher {
+            was_called: Arc<AtomicBool>,
+        }
+
+        impl TokenRefresher for TestRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.was_called.store(true, Ordering::SeqCst);
+                Box::pin(async { Ok("new_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::new();
+
+        // Set a token refresher
+        let was_called = Arc::new(AtomicBool::new(false));
+        let refresher = Arc::new(TestRefresher {
+            was_called: was_called.clone(),
+        });
+        client.set_token_refresher(refresher).await;
+
+        assert!(client.has_token_refresher());
+
+        // Clear it
+        client.clear_token_refresher().await;
+        assert!(!client.has_token_refresher());
+    }
+
+    #[tokio::test]
+    async fn test_attempt_token_refresh_no_refresher() {
+        let client = GarminClient::new();
+        let result = client.attempt_token_refresh().await;
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_attempt_token_refresh_success() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        /// Test token refresher that succeeds
+        struct SuccessRefresher {
+            call_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for SuccessRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("refreshed_token_123".to_string()) })
+            }
+        }
+
+        let client = GarminClient::new();
+        let call_count = Arc::new(AtomicU32::new(0));
+        let refresher = Arc::new(SuccessRefresher {
+            call_count: call_count.clone(),
+        });
+        client.set_token_refresher(refresher).await;
+
+        // Attempt refresh
+        let result = client.attempt_token_refresh().await;
+
+        assert!(result.is_ok());
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        // Verify the token was updated
+        let token = client.get_access_token().await.unwrap();
+        assert_eq!(token, "refreshed_token_123");
+    }
+
+    #[tokio::test]
+    async fn test_attempt_token_refresh_failure() {
+        /// Test token refresher that fails
+        struct FailingRefresher;
+
+        impl TokenRefresher for FailingRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async {
+                    Err(SyncError::RefreshFailed("Test refresh failure".to_string()))
+                })
+            }
+        }
+
+        let client = GarminClient::new();
+        client
+            .set_token_refresher(Arc::new(FailingRefresher))
+            .await;
+
+        let result = client.attempt_token_refresh().await;
+
+        assert!(matches!(result, Err(SyncError::RefreshFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_attempt_token_refresh_authorization_required() {
+        /// Test token refresher that returns AuthorizationRequired
+        struct ReauthRefresher;
+
+        impl TokenRefresher for ReauthRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async { Err(SyncError::AuthorizationRequired) })
+            }
+        }
+
+        let client = GarminClient::new();
+        client.set_token_refresher(Arc::new(ReauthRefresher)).await;
+
+        let result = client.attempt_token_refresh().await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_success_no_refresh_needed() {
+        let client = GarminClient::new();
+
+        // Operation succeeds without needing refresh
+        let result = client
+            .with_auto_refresh("test_op", || async { Ok(42) })
+            .await;
+
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_non_token_error_propagated() {
+        let client = GarminClient::new();
+
+        // Operation fails with non-TokenExpired error
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || async {
+                Err(SyncError::NetworkError("test network error".to_string()))
+            })
+            .await;
+
+        assert!(matches!(result, Err(SyncError::NetworkError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_token_expired_no_refresher() {
+        let client = GarminClient::new();
+
+        // Operation fails with TokenExpired, no refresher configured
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || async { Err(SyncError::TokenExpired) })
+            .await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_token_expired_refresh_succeeds_retry_succeeds() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        /// Test token refresher that succeeds
+        struct SuccessRefresher;
+
+        impl TokenRefresher for SuccessRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async { Ok("new_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::new();
+        client.set_token_refresher(Arc::new(SuccessRefresher)).await;
+
+        // Track call count - first call fails, second succeeds
+        let call_count = Arc::new(AtomicU32::new(0));
+        let call_count_clone = call_count.clone();
+
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || {
+                let count = call_count_clone.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if count == 0 {
+                        Err(SyncError::TokenExpired)
+                    } else {
+                        Ok(99)
+                    }
+                }
+            })
+            .await;
+
+        assert_eq!(result.unwrap(), 99);
+        assert_eq!(call_count.load(Ordering::SeqCst), 2); // Called twice: fail then succeed
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_token_expired_refresh_fails() {
+        /// Test token refresher that fails
+        struct FailingRefresher;
+
+        impl TokenRefresher for FailingRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async {
+                    Err(SyncError::RefreshFailed("refresh failed".to_string()))
+                })
+            }
+        }
+
+        let client = GarminClient::new();
+        client.set_token_refresher(Arc::new(FailingRefresher)).await;
+
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || async { Err(SyncError::TokenExpired) })
+            .await;
+
+        // Should return TokenExpired (original error) not RefreshFailed
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_reauth_required_propagated() {
+        /// Test token refresher that returns AuthorizationRequired
+        struct ReauthRefresher;
+
+        impl TokenRefresher for ReauthRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async { Err(SyncError::AuthorizationRequired) })
+            }
+        }
+
+        let client = GarminClient::new();
+        client.set_token_refresher(Arc::new(ReauthRefresher)).await;
+
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || async { Err(SyncError::TokenExpired) })
+            .await;
+
+        // AuthorizationRequired should be propagated
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_max_attempts_respected() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        /// Test token refresher that counts calls
+        struct CountingRefresher {
+            refresh_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for CountingRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.refresh_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("new_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::new();
+        let refresh_count = Arc::new(AtomicU32::new(0));
+        client
+            .set_token_refresher(Arc::new(CountingRefresher {
+                refresh_count: refresh_count.clone(),
+            }))
+            .await;
+
+        // Operation always fails with TokenExpired
+        let result: Result<i32, SyncError> = client
+            .with_auto_refresh("test_op", || async { Err(SyncError::TokenExpired) })
+            .await;
+
+        // Should only attempt refresh MAX_AUTO_REFRESH_ATTEMPTS times (1)
+        assert_eq!(refresh_count.load(Ordering::SeqCst), MAX_AUTO_REFRESH_ATTEMPTS);
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
 }
 
 /// HTTP mocked tests using wiremock
@@ -2674,5 +3224,276 @@ mod http_mocked_tests {
 
         assert!(result.is_ok());
         assert!(!client.is_configured());
+    }
+
+    // ============================================================================
+    // Auto-Refresh Wrapper HTTP Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_refresh_success() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let mock_server = MockServer::start().await;
+
+        let profile_response = r#"{
+            "id": 12345,
+            "displayName": "TestUser",
+            "fullName": "Test User",
+            "profileImageUrlMedium": "https://example.com/image.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .and(bearer_token("valid_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(profile_response))
+            .mount(&mock_server)
+            .await;
+
+        /// Refresher that provides a valid token
+        struct ValidTokenRefresher {
+            call_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for ValidTokenRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("valid_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("valid_token".to_string()).await;
+        let call_count = Arc::new(AtomicU32::new(0));
+        client
+            .set_token_refresher(Arc::new(ValidTokenRefresher {
+                call_count: call_count.clone(),
+            }))
+            .await;
+
+        let result = client.get_user_profile_with_refresh().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.user_id, 12345);
+        assert_eq!(profile.display_name, "TestUser");
+        // Refresh should not have been called since token was valid
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_refresh_expired_then_refreshed() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let mock_server = MockServer::start().await;
+
+        let profile_response = r#"{
+            "id": 99999,
+            "displayName": "RefreshedUser",
+            "fullName": "Refreshed User"
+        }"#;
+
+        // First request with old token returns 401
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .and(bearer_token("old_token"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request with new token succeeds
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .and(bearer_token("refreshed_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(profile_response))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        /// Refresher that provides a new token
+        struct NewTokenRefresher {
+            call_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for NewTokenRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("refreshed_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("old_token".to_string()).await;
+        let call_count = Arc::new(AtomicU32::new(0));
+        client
+            .set_token_refresher(Arc::new(NewTokenRefresher {
+                call_count: call_count.clone(),
+            }))
+            .await;
+
+        let result = client.get_user_profile_with_refresh().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.user_id, 99999);
+        assert_eq!(profile.display_name, "RefreshedUser");
+        // Refresh should have been called once
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_refresh_fails_reauth_required() {
+        let mock_server = MockServer::start().await;
+
+        // Request returns 401
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        /// Refresher that indicates re-authorization is required
+        struct ReauthRefresher;
+
+        impl TokenRefresher for ReauthRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                Box::pin(async { Err(SyncError::AuthorizationRequired) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client.set_access_token("expired_token".to_string()).await;
+        client.set_token_refresher(Arc::new(ReauthRefresher)).await;
+
+        let result = client.get_user_profile_with_refresh().await;
+
+        assert!(matches!(result, Err(SyncError::AuthorizationRequired)));
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_refresh_success() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let mock_server = MockServer::start().await;
+
+        let upload_response = r#"{
+            "detailedImportResult": {
+                "uploadUuid": {"uuid": "abc-123"},
+                "successes": [{"internalId": 12345678}],
+                "failures": []
+            }
+        }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .and(bearer_token("valid_upload_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(upload_response))
+            .mount(&mock_server)
+            .await;
+
+        /// Token refresher for upload test
+        struct UploadRefresher {
+            call_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for UploadRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("valid_upload_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client
+            .set_access_token("valid_upload_token".to_string())
+            .await;
+        let call_count = Arc::new(AtomicU32::new(0));
+        client
+            .set_token_refresher(Arc::new(UploadRefresher {
+                call_count: call_count.clone(),
+            }))
+            .await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client
+            .upload_activity_with_refresh(ride_id, fit_data)
+            .await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("12345678".to_string()));
+        // Refresh should not have been called since token was valid
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_upload_activity_with_refresh_expired_then_refreshed() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let mock_server = MockServer::start().await;
+
+        let upload_response = r#"{
+            "detailedImportResult": {
+                "successes": [{"internalId": 87654321}],
+                "failures": []
+            }
+        }"#;
+
+        // First request with old token returns 401
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .and(bearer_token("expired_upload_token"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request with refreshed token succeeds
+        Mock::given(method("POST"))
+            .and(path("/upload-service/upload/.fit"))
+            .and(bearer_token("new_upload_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(upload_response))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        /// Token refresher for upload retry test
+        struct UploadRetryRefresher {
+            call_count: Arc<AtomicU32>,
+        }
+
+        impl TokenRefresher for UploadRetryRefresher {
+            fn refresh_token(&self) -> TokenRefreshResult {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok("new_upload_token".to_string()) })
+            }
+        }
+
+        let client = GarminClient::with_base_url(mock_server.uri(), mock_server.uri());
+        client
+            .set_access_token("expired_upload_token".to_string())
+            .await;
+        let call_count = Arc::new(AtomicU32::new(0));
+        client
+            .set_token_refresher(Arc::new(UploadRetryRefresher {
+                call_count: call_count.clone(),
+            }))
+            .await;
+
+        let ride_id = Uuid::new_v4();
+        let fit_data = create_valid_fit_data();
+
+        let result = client
+            .upload_activity_with_refresh(ride_id, fit_data)
+            .await;
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+        assert_eq!(record.external_id, Some("87654321".to_string()));
+        // Refresh should have been called once
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 }
