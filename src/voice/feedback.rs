@@ -1,17 +1,32 @@
 //! Voice Feedback System
 //!
-//! Audio feedback for voice control events. Provides distinct tones for:
+//! Audio feedback for voice control events. Provides:
+//!
+//! ## Tone Feedback
+//! Distinct tones for:
 //! - Wake word detected (ascending activation tone)
 //! - Command recognized (positive confirmation tone)
 //! - Command failed (error/descending tone)
 //!
-//! Uses the existing RodioAudioBackend::play_tone() infrastructure.
+//! ## TTS Confirmation
+//! Spoken confirmation of recognized commands using ThreadSafeTtsProvider.
+//! For example: "Pausing", "Skipping interval", "Marking lap".
+//!
+//! ## Microphone Coordination
+//! Coordinates with audio capture to prevent TTS feedback into the microphone
+//! by pausing capture during TTS playback.
+//!
+//! Uses the existing RodioAudioBackend::play_tone() infrastructure and
+//! ThreadSafeTtsProvider for spoken confirmations.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
+use crate::accessibility::voice_control::{VoiceCommand, VoskVoiceControl};
 use crate::audio::backend::{BackendError, RodioAudioBackend};
+use crate::audio::tts::{ThreadSafeTtsProvider, TtsProvider};
 
 /// Voice feedback tone frequencies (in Hz).
 pub mod frequencies {
@@ -105,6 +120,14 @@ pub enum VoiceFeedbackError {
     /// Backend not initialized.
     #[error("Audio backend not initialized")]
     NotInitialized,
+
+    /// TTS provider error.
+    #[error("TTS error: {0}")]
+    TtsError(String),
+
+    /// Microphone is currently capturing (TTS blocked to prevent feedback).
+    #[error("TTS blocked while microphone is capturing")]
+    MicrophoneCapturing,
 }
 
 /// Configuration for voice feedback.
@@ -120,6 +143,12 @@ pub struct VoiceFeedbackConfig {
     pub command_feedback: bool,
     /// Whether to play listening state feedback.
     pub listening_feedback: bool,
+    /// Whether to speak TTS confirmation of commands.
+    /// When enabled, commands are confirmed with spoken text like "Pausing", "Skipping interval".
+    pub tts_confirmation: bool,
+    /// Whether to pause microphone during TTS to prevent feedback loops.
+    /// This should be enabled when using voice control with speakers (not headphones).
+    pub pause_mic_during_tts: bool,
 }
 
 impl Default for VoiceFeedbackConfig {
@@ -130,6 +159,8 @@ impl Default for VoiceFeedbackConfig {
             wake_word_feedback: true,
             command_feedback: true,
             listening_feedback: true,
+            tts_confirmation: true,
+            pause_mic_during_tts: true,
         }
     }
 }
@@ -171,33 +202,136 @@ impl VoiceFeedbackConfig {
         self.listening_feedback = enabled;
         self
     }
+
+    /// Enable or disable TTS command confirmation.
+    ///
+    /// When enabled, recognized commands are spoken aloud using TTS
+    /// (e.g., "Pausing", "Skipping interval").
+    pub fn with_tts_confirmation(mut self, enabled: bool) -> Self {
+        self.tts_confirmation = enabled;
+        self
+    }
+
+    /// Enable or disable microphone pausing during TTS.
+    ///
+    /// When enabled, the microphone is paused during TTS playback to prevent
+    /// the TTS audio from being picked up and causing feedback loops.
+    /// This should be enabled when using speakers instead of headphones.
+    pub fn with_pause_mic_during_tts(mut self, enabled: bool) -> Self {
+        self.pause_mic_during_tts = enabled;
+        self
+    }
+
+    /// Create config with TTS disabled (tones only).
+    pub fn tones_only() -> Self {
+        Self::default().with_tts_confirmation(false)
+    }
 }
 
-/// Voice feedback provider using RodioAudioBackend.
+/// Voice feedback provider using RodioAudioBackend and ThreadSafeTtsProvider.
 ///
-/// Plays distinct audio tones for voice control events:
+/// Provides both audio tones and TTS spoken confirmations for voice control events:
+///
+/// ## Audio Tones
 /// - Wake word detected: Ascending two-note tone (A4 -> E5)
 /// - Command recognized: Single positive tone (C5)
 /// - Command failed: Descending two-note tone (600Hz -> 400Hz)
+///
+/// ## TTS Confirmations
+/// - "Pausing", "Resuming", "Skipping interval", etc.
+/// - Uses VoskVoiceControl::command_confirmation() for text
+///
+/// ## Microphone Coordination
+/// - Tracks microphone state via `is_mic_capturing` atomic bool
+/// - Can pause TTS when microphone is active to prevent feedback
 pub struct VoiceFeedback {
-    /// Reference to the audio backend.
+    /// Reference to the audio backend for tones.
     backend: Arc<RodioAudioBackend>,
+    /// TTS provider for spoken confirmations.
+    tts_provider: Option<Arc<ThreadSafeTtsProvider>>,
     /// Configuration for feedback behavior.
     config: VoiceFeedbackConfig,
+    /// Whether the microphone is currently capturing audio.
+    /// Used to prevent TTS during capture to avoid feedback loops.
+    is_mic_capturing: Arc<AtomicBool>,
 }
 
 impl VoiceFeedback {
-    /// Create a new voice feedback provider.
+    /// Create a new voice feedback provider (tones only, no TTS).
     pub fn new(backend: Arc<RodioAudioBackend>) -> Self {
         Self {
             backend,
+            tts_provider: None,
+            config: VoiceFeedbackConfig::default().with_tts_confirmation(false),
+            is_mic_capturing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Create with TTS support for spoken command confirmations.
+    pub fn with_tts(
+        backend: Arc<RodioAudioBackend>,
+        tts_provider: Arc<ThreadSafeTtsProvider>,
+    ) -> Self {
+        Self {
+            backend,
+            tts_provider: Some(tts_provider),
             config: VoiceFeedbackConfig::default(),
+            is_mic_capturing: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Create with custom configuration.
     pub fn with_config(backend: Arc<RodioAudioBackend>, config: VoiceFeedbackConfig) -> Self {
-        Self { backend, config }
+        Self {
+            backend,
+            tts_provider: None,
+            config,
+            is_mic_capturing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Create with TTS and custom configuration.
+    pub fn with_tts_and_config(
+        backend: Arc<RodioAudioBackend>,
+        tts_provider: Arc<ThreadSafeTtsProvider>,
+        config: VoiceFeedbackConfig,
+    ) -> Self {
+        Self {
+            backend,
+            tts_provider: Some(tts_provider),
+            config,
+            is_mic_capturing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Set the TTS provider.
+    pub fn set_tts_provider(&mut self, provider: Option<Arc<ThreadSafeTtsProvider>>) {
+        self.tts_provider = provider;
+    }
+
+    /// Check if TTS is available.
+    pub fn has_tts(&self) -> bool {
+        self.tts_provider.is_some()
+    }
+
+    /// Get a shared reference to the microphone capturing state.
+    ///
+    /// This should be shared with the VoiceEngine/AudioInputCapture to
+    /// coordinate microphone pausing during TTS playback.
+    pub fn mic_capturing_state(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.is_mic_capturing)
+    }
+
+    /// Set the microphone capturing state.
+    ///
+    /// Called by VoiceEngine when starting/stopping audio capture.
+    pub fn set_mic_capturing(&self, is_capturing: bool) {
+        self.is_mic_capturing.store(is_capturing, Ordering::Release);
+    }
+
+    /// Check if the microphone is currently capturing.
+    pub fn is_mic_capturing(&self) -> bool {
+        self.is_mic_capturing.load(Ordering::Acquire)
     }
 
     /// Get the current configuration.
@@ -371,6 +505,230 @@ impl VoiceFeedback {
         Ok(())
     }
 
+    // =========================================================================
+    // TTS Confirmation Methods
+    // =========================================================================
+
+    /// Speak TTS confirmation of a recognized command.
+    ///
+    /// Uses `VoskVoiceControl::command_confirmation()` to get the confirmation text
+    /// (e.g., "Pausing", "Skipping interval", "Marking lap").
+    ///
+    /// # Microphone Coordination
+    ///
+    /// If `pause_mic_during_tts` is enabled in config and the microphone is currently
+    /// capturing, this method will:
+    /// 1. Return `Err(MicrophoneCapturing)` if called synchronously
+    /// 2. For async version, the caller should pause the mic before calling
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use rustride::voice::feedback::{VoiceFeedback, VoiceFeedbackConfig};
+    /// use rustride::accessibility::voice_control::VoiceCommand;
+    ///
+    /// let feedback = VoiceFeedback::with_tts(backend, tts_provider);
+    ///
+    /// // When a command is recognized:
+    /// feedback.speak_confirmation(&VoiceCommand::Pause)?;  // Speaks "Pausing"
+    /// ```
+    pub fn speak_confirmation(&self, command: &VoiceCommand) -> Result<bool, VoiceFeedbackError> {
+        // Check if TTS confirmation is enabled
+        if !self.config.enabled || !self.config.tts_confirmation {
+            return Ok(false);
+        }
+
+        // Check if TTS provider is available
+        let tts = match &self.tts_provider {
+            Some(provider) => provider,
+            None => {
+                tracing::debug!("TTS confirmation skipped: no TTS provider");
+                return Ok(false);
+            }
+        };
+
+        // Check if microphone is capturing and we should avoid TTS
+        if self.config.pause_mic_during_tts && self.is_mic_capturing() {
+            tracing::debug!("TTS confirmation blocked: microphone is capturing");
+            return Err(VoiceFeedbackError::MicrophoneCapturing);
+        }
+
+        // Get the confirmation text for this command
+        let confirmation_text = VoskVoiceControl::command_confirmation(command);
+
+        // Don't speak for unknown commands
+        if confirmation_text == "Command not recognized" {
+            return Ok(false);
+        }
+
+        tracing::debug!("TTS confirmation: {}", confirmation_text);
+
+        // Speak the confirmation
+        tts.speak(confirmation_text)
+            .map_err(|e| VoiceFeedbackError::TtsError(e.to_string()))?;
+
+        Ok(true)
+    }
+
+    /// Speak TTS confirmation asynchronously (non-blocking).
+    ///
+    /// Spawns a background thread to speak the confirmation. This is preferred
+    /// for use in the voice recognition pipeline to avoid blocking audio processing.
+    ///
+    /// # Microphone Handling
+    ///
+    /// If `pause_mic_during_tts` is enabled, the caller should:
+    /// 1. Pause the microphone before calling
+    /// 2. Resume the microphone after TTS completes
+    ///
+    /// Consider using `speak_confirmation_with_mic_pause()` which handles this
+    /// automatically when a mic pause callback is provided.
+    pub fn speak_confirmation_async(&self, command: VoiceCommand) {
+        // Check if TTS confirmation is enabled
+        if !self.config.enabled || !self.config.tts_confirmation {
+            return;
+        }
+
+        // Check if TTS provider is available
+        let tts = match &self.tts_provider {
+            Some(provider) => Arc::clone(provider),
+            None => return,
+        };
+
+        // Get the confirmation text for this command
+        let confirmation_text = VoskVoiceControl::command_confirmation(&command);
+
+        // Don't speak for unknown commands
+        if confirmation_text == "Command not recognized" {
+            return;
+        }
+
+        // Spawn thread to speak confirmation
+        std::thread::spawn(move || {
+            tracing::debug!("TTS confirmation (async): {}", confirmation_text);
+            if let Err(e) = tts.speak(confirmation_text) {
+                tracing::warn!("TTS confirmation failed: {}", e);
+            }
+        });
+    }
+
+    /// Speak TTS confirmation with automatic microphone pause handling.
+    ///
+    /// This method coordinates with the voice engine to pause the microphone
+    /// during TTS playback, preventing the spoken confirmation from being
+    /// picked up by the microphone and causing a feedback loop.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to confirm
+    /// * `pause_mic` - Callback to pause microphone (called before TTS)
+    /// * `resume_mic` - Callback to resume microphone (called after TTS)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let pause_mic = || engine.pause();
+    /// let resume_mic = || engine.resume();
+    ///
+    /// feedback.speak_confirmation_with_mic_pause(
+    ///     &VoiceCommand::Pause,
+    ///     pause_mic,
+    ///     resume_mic,
+    /// )?;
+    /// ```
+    pub fn speak_confirmation_with_mic_pause<F1, F2>(
+        &self,
+        command: &VoiceCommand,
+        pause_mic: F1,
+        resume_mic: F2,
+    ) -> Result<bool, VoiceFeedbackError>
+    where
+        F1: FnOnce(),
+        F2: FnOnce(),
+    {
+        // Check if TTS confirmation is enabled
+        if !self.config.enabled || !self.config.tts_confirmation {
+            return Ok(false);
+        }
+
+        // Check if TTS provider is available
+        let tts = match &self.tts_provider {
+            Some(provider) => provider,
+            None => return Ok(false),
+        };
+
+        // Get the confirmation text for this command
+        let confirmation_text = VoskVoiceControl::command_confirmation(command);
+
+        // Don't speak for unknown commands
+        if confirmation_text == "Command not recognized" {
+            return Ok(false);
+        }
+
+        // Pause microphone if configured
+        if self.config.pause_mic_during_tts {
+            pause_mic();
+            self.set_mic_capturing(false);
+        }
+
+        tracing::debug!("TTS confirmation (with mic pause): {}", confirmation_text);
+
+        // Speak the confirmation
+        let result = tts.speak(confirmation_text);
+
+        // Resume microphone
+        if self.config.pause_mic_during_tts {
+            resume_mic();
+            self.set_mic_capturing(true);
+        }
+
+        result.map_err(|e| VoiceFeedbackError::TtsError(e.to_string()))?;
+        Ok(true)
+    }
+
+    /// Play both tone feedback and TTS confirmation for a recognized command.
+    ///
+    /// This is a convenience method that:
+    /// 1. Plays the command recognized tone
+    /// 2. Speaks the TTS confirmation (if TTS is enabled and available)
+    ///
+    /// This is the recommended way to provide feedback for recognized commands
+    /// as it gives users both immediate audio feedback (tone) and verbal
+    /// confirmation of what action is being taken.
+    pub fn play_command_with_confirmation(
+        &self,
+        command: &VoiceCommand,
+    ) -> Result<bool, VoiceFeedbackError> {
+        // Play the recognition tone
+        let tone_played = self.play(VoiceFeedbackEvent::CommandRecognized)?;
+
+        // Speak TTS confirmation
+        let tts_spoken = match self.speak_confirmation(command) {
+            Ok(spoken) => spoken,
+            Err(VoiceFeedbackError::MicrophoneCapturing) => {
+                // Microphone is capturing, skip TTS but don't error
+                tracing::debug!("Skipping TTS confirmation while mic is capturing");
+                false
+            }
+            Err(e) => {
+                // Log other TTS errors but don't fail
+                tracing::warn!("TTS confirmation error: {}", e);
+                false
+            }
+        };
+
+        Ok(tone_played || tts_spoken)
+    }
+
+    /// Check if TTS confirmation is enabled in the configuration.
+    pub fn is_tts_confirmation_enabled(&self) -> bool {
+        self.config.tts_confirmation && self.tts_provider.is_some()
+    }
+
+    // =========================================================================
+    // Async Playback Methods
+    // =========================================================================
+
     /// Play wake word feedback asynchronously (non-blocking).
     ///
     /// Spawns a background thread to play the tones.
@@ -506,6 +864,8 @@ mod tests {
         assert!(config.wake_word_feedback);
         assert!(config.command_feedback);
         assert!(config.listening_feedback);
+        assert!(config.tts_confirmation);
+        assert!(config.pause_mic_during_tts);
     }
 
     #[test]
@@ -609,6 +969,116 @@ mod tests {
         let total = durations::COMMAND_FAILED_NOTE * 2 + durations::COMMAND_FAILED_PAUSE;
         // Should be under 400ms
         assert!(total < 400, "Command failed feedback is {}ms, should be < 400ms", total);
+    }
+
+    // ========================================================================
+    // TTS Confirmation Config Tests
+    // ========================================================================
+
+    #[test]
+    fn test_feedback_config_tts_confirmation() {
+        let config = VoiceFeedbackConfig::new()
+            .with_tts_confirmation(true)
+            .with_pause_mic_during_tts(true);
+
+        assert!(config.tts_confirmation);
+        assert!(config.pause_mic_during_tts);
+
+        let config = VoiceFeedbackConfig::new()
+            .with_tts_confirmation(false)
+            .with_pause_mic_during_tts(false);
+
+        assert!(!config.tts_confirmation);
+        assert!(!config.pause_mic_during_tts);
+    }
+
+    #[test]
+    fn test_feedback_config_tones_only() {
+        let config = VoiceFeedbackConfig::tones_only();
+        assert!(config.enabled);
+        assert!(!config.tts_confirmation);
+        // Other defaults should still apply
+        assert!(config.wake_word_feedback);
+        assert!(config.command_feedback);
+    }
+
+    #[test]
+    fn test_mic_capturing_state() {
+        let is_capturing = Arc::new(AtomicBool::new(false));
+
+        // Test initial state
+        assert!(!is_capturing.load(Ordering::Acquire));
+
+        // Test state change
+        is_capturing.store(true, Ordering::Release);
+        assert!(is_capturing.load(Ordering::Acquire));
+
+        is_capturing.store(false, Ordering::Release);
+        assert!(!is_capturing.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_command_confirmation_text() {
+        // Test that command_confirmation returns expected text
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::Pause),
+            "Pausing"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::Resume),
+            "Resuming"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::Skip),
+            "Skipping interval"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::TakeLap),
+            "Marking lap"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::Start),
+            "Starting ride"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::End),
+            "Ending ride"
+        );
+        assert_eq!(
+            VoskVoiceControl::command_confirmation(&VoiceCommand::Unknown("foo".to_string())),
+            "Command not recognized"
+        );
+    }
+
+    #[test]
+    fn test_tts_confirmation_enabled_check() {
+        // Without TTS provider, TTS confirmation is not enabled
+        let config = VoiceFeedbackConfig::default();
+        assert!(config.tts_confirmation);
+        // But we can't test is_tts_confirmation_enabled() without VoiceFeedback
+        // because it requires a backend, which requires audio hardware
+    }
+
+    #[test]
+    fn test_voice_feedback_error_variants() {
+        // Test that all error variants can be constructed
+        let _e1 = VoiceFeedbackError::NotInitialized;
+        let _e2 = VoiceFeedbackError::TtsError("test error".to_string());
+        let _e3 = VoiceFeedbackError::MicrophoneCapturing;
+
+        // Test error messages
+        assert_eq!(
+            format!("{}", VoiceFeedbackError::NotInitialized),
+            "Audio backend not initialized"
+        );
+        assert_eq!(
+            format!("{}", VoiceFeedbackError::TtsError("test".to_string())),
+            "TTS error: test"
+        );
+        assert_eq!(
+            format!("{}", VoiceFeedbackError::MicrophoneCapturing),
+            "TTS blocked while microphone is capturing"
+        );
     }
 
     // Note: Tests that require actual audio hardware are in tests/voice_integration.rs
