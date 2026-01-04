@@ -327,7 +327,7 @@
           "id": "5.3",
           "title": "Create comprehensive audio integration tests",
           "description": "Write integration tests that verify the complete audio pipeline from workout events through to tone generation. Create mock audio backend for CI testing without actual audio output.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Tests for WorkoutAudioBridge event processing",
             "Tests for AchievementAudioBridge notifications",
@@ -338,7 +338,9 @@
           "files": [
             "tests/integration/audio_integration_test.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Integration tests for the complete audio pipeline are already implemented in tests/integration/audio_pipeline_test.rs (committed in 944d959). The test file includes:\n\n**MockAudioBackend** - Comprehensive mock implementation for CI testing without actual audio output:\n- Records all played tones, sounds, and spoken texts\n- Simulates failure mode for error testing\n- Tracks playback counts, queue processing, event subscriptions\n- Implements full AudioEngine trait\n\n**MockAlertManager** - Captures triggered alerts for verification:\n- Tracks all triggered alerts with types and contexts\n- Supports cooldown simulation and configuration\n\n**Comprehensive test coverage:**\n- WorkoutAudioBridge: workout start, interval changes, countdown sequences, recovery intervals, lifecycle events, trainer disconnect/reconnect\n- AchievementAudioBridge: tier-based chimes (Bronze through Legendary), level-up sounds, multiple achievements, config toggles\n- MilestoneAudioBridge: distance, time, calorie milestones, personal records, voice announcements\n- Volume control: volume levels, per-category muting, mute states\n- Audio queue: priority ordering, queue processing, expiration\n- CuePattern: countdown mapping, achievement mapping, milestone mapping, tone generation\n- Error handling: graceful failure handling, bridge error recovery\n- Full pipeline: complete workout simulation, combined achievement/milestone audio, rapid event processing\n\nAll acceptance criteria met:\n- Tests for WorkoutAudioBridge event processing \u2713\n- Tests for AchievementAudioBridge notifications \u2713\n- Tests for volume control and muting \u2713\n- Tests for audio queue priority and expiration \u2713\n- CI-compatible mock backend tests \u2713",
+          "updated_at": "2026-01-04T14:29:08.555092+00:00"
         },
         {
           "id": "5.4",
@@ -444,6 +446,6 @@
     "ToneGenerator already uses rodio for sine wave generation - this can be extended",
     "AudioEngine has the structure but TODOs in play_sound() and play_tone() methods"
   ],
-  "last_updated": "2026-01-04T14:25:29.460020+00:00",
+  "last_updated": "2026-01-04T14:29:08.555092+00:00",
   "recoveryNote": "Task recovered from stuck state at 2026-01-04T14:14:43.027Z"
 }
