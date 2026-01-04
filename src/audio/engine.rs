@@ -331,9 +331,25 @@ impl DefaultAudioEngine {
         &self.tts_provider
     }
 
+    /// Get a shared reference to the TTS provider (Arc clone)
+    ///
+    /// Use this when you need to store or pass the TTS provider to other
+    /// components that require Arc<ThreadSafeTtsProvider>.
+    pub fn tts_provider_arc(&self) -> Arc<ThreadSafeTtsProvider> {
+        Arc::clone(&self.tts_provider)
+    }
+
     /// Get access to the audio backend for advanced sound operations
     pub fn audio_backend(&self) -> &RodioAudioBackend {
         &self.audio_backend
+    }
+
+    /// Get a shared reference to the audio backend (Arc clone)
+    ///
+    /// Use this when you need to store or pass the audio backend to other
+    /// components that require Arc<RodioAudioBackend>.
+    pub fn audio_backend_arc(&self) -> Arc<RodioAudioBackend> {
+        Arc::clone(&self.audio_backend)
     }
 
     /// Update audio configuration

@@ -6,6 +6,7 @@
 //! T157: Implement crash recovery prompt on startup
 //! T043: Integrate achievement tracking into ride completion flow
 //! T050: Start companion server on desktop app launch if enabled in config
+//! T018: Integrate VoiceEngine for voice control during app lifecycle
 
 use eframe::egui;
 
@@ -47,6 +48,14 @@ use rustride::ui::theme::Theme;
 use rustride::ui::widgets::AchievementNotificationWidget;
 use rustride::workouts::WorkoutEngine;
 use rustride::world::physics::GradientController;
+#[cfg(feature = "voice-control")]
+use rustride::voice::{
+    VoiceEngine, VoiceEngineConfig, VoiceEngineEvent, VoiceEngineState,
+    VoskModelManager, ModelState, VoiceFeedback, VoiceFeedbackConfig,
+    VoiceFeedbackEvent, VoiceCommandExecutor, ExecutorContext,
+};
+#[cfg(feature = "voice-control")]
+use rustride::storage::config::VoiceControlSettings;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex as TokioMutex;
@@ -172,6 +181,26 @@ pub struct RustRideApp {
         Option<tokio::task::JoinHandle<rustride::integrations::mqtt::FanTestResult>>,
     /// T050: Mobile companion app server for remote control and metrics
     companion_server: Option<Arc<CompanionServer>>,
+
+    /// T018: Voice recognition engine for hands-free workout control
+    #[cfg(feature = "voice-control")]
+    voice_engine: Option<Arc<VoiceEngine>>,
+
+    /// T018: Voice feedback system for audio confirmation of commands
+    #[cfg(feature = "voice-control")]
+    voice_feedback: Option<Arc<VoiceFeedback>>,
+
+    /// T018: Voice command executor for mapping commands to actions
+    #[cfg(feature = "voice-control")]
+    voice_command_executor: VoiceCommandExecutor,
+
+    /// T018: Voice engine event receiver for processing events
+    #[cfg(feature = "voice-control")]
+    voice_event_rx: Option<tokio::sync::broadcast::Receiver<VoiceEngineEvent>>,
+
+    /// T018: Flag to pause voice recognition during audio playback
+    #[cfg(feature = "voice-control")]
+    voice_paused_for_audio: bool,
 }
 
 impl RustRideApp {
@@ -387,6 +416,83 @@ impl RustRideApp {
             None
         };
 
+        // T018: Initialize voice control engine if feature enabled and voice control is active
+        #[cfg(feature = "voice-control")]
+        let (voice_engine, voice_feedback, voice_event_rx) = {
+            let voice_settings = VoiceControlSettings::from_accessibility(
+                &config.preferences.accessibility
+            );
+
+            if voice_settings.is_active() {
+                // Check if Vosk model is ready
+                let model_manager = VoskModelManager::new();
+
+                if model_manager.state() == ModelState::Ready {
+                    let model_path = model_manager.model_path();
+
+                    // Create engine config based on settings
+                    let engine_config = VoiceEngine::config_from_settings(
+                        &model_path,
+                        voice_settings.activation,
+                    );
+
+                    match VoiceEngine::new(engine_config) {
+                        Ok(engine) => {
+                            // Subscribe to events before starting
+                            let event_rx = engine.subscribe();
+
+                            // Initialize the engine
+                            if let Err(e) = engine.initialize() {
+                                tracing::error!("Failed to initialize voice engine: {}", e);
+                                (None, None, None)
+                            } else {
+                                // Start listening
+                                if let Err(e) = engine.start() {
+                                    tracing::error!("Failed to start voice engine: {}", e);
+                                    (None, None, None)
+                                } else {
+                                    tracing::info!(
+                                        "Voice engine started with activation mode: {}",
+                                        voice_settings.activation
+                                    );
+
+                                    let engine = Arc::new(engine);
+
+                                    // Create voice feedback system with TTS support
+                                    let feedback_config = VoiceFeedbackConfig::default();
+                                    let feedback = VoiceFeedback::with_tts_and_config(
+                                        audio_engine.audio_backend_arc(),
+                                        audio_engine.tts_provider_arc(),
+                                        feedback_config,
+                                    );
+                                    let feedback = Arc::new(feedback);
+
+                                    (Some(engine), Some(feedback), Some(event_rx))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to create voice engine: {}", e);
+                            (None, None, None)
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        "Voice control enabled but Vosk model not ready (state: {:?}). \
+                         Download the model from Settings to enable voice control.",
+                        model_manager.state()
+                    );
+                    (None, None, None)
+                }
+            } else {
+                tracing::debug!("Voice control is disabled in settings");
+                (None, None, None)
+            }
+        };
+
+        #[cfg(feature = "voice-control")]
+        let voice_command_executor = VoiceCommandExecutor::new();
+
         // T059: Initialize onboarding screen and check if it should be shown
         // In a real implementation, we'd load the onboarding state from storage
         let onboarding_state = load_onboarding_state();
@@ -457,6 +563,17 @@ impl RustRideApp {
             pending_fan_test: None,
             // T050: Companion server for mobile app connectivity
             companion_server,
+            // T018: Voice control engine for hands-free workout control
+            #[cfg(feature = "voice-control")]
+            voice_engine,
+            #[cfg(feature = "voice-control")]
+            voice_feedback,
+            #[cfg(feature = "voice-control")]
+            voice_command_executor,
+            #[cfg(feature = "voice-control")]
+            voice_event_rx,
+            #[cfg(feature = "voice-control")]
+            voice_paused_for_audio: false,
         }
     }
 
@@ -1142,6 +1259,233 @@ impl RustRideApp {
         }
     }
 
+    /// T018: Pause voice recognition during audio playback to prevent feedback loops.
+    ///
+    /// This should be called before starting TTS or playing any audio cues.
+    #[cfg(feature = "voice-control")]
+    fn pause_voice_for_audio(&mut self) {
+        if self.voice_paused_for_audio {
+            return; // Already paused
+        }
+
+        if let Some(ref engine) = self.voice_engine {
+            if engine.is_listening() {
+                if let Err(e) = engine.pause() {
+                    tracing::warn!("Failed to pause voice engine for audio: {}", e);
+                } else {
+                    self.voice_paused_for_audio = true;
+                    tracing::debug!("Voice recognition paused for audio playback");
+                }
+            }
+        }
+    }
+
+    /// T018: Resume voice recognition after audio playback completes.
+    ///
+    /// This should be called after TTS or audio cues finish playing.
+    #[cfg(feature = "voice-control")]
+    fn resume_voice_after_audio(&mut self) {
+        if !self.voice_paused_for_audio {
+            return; // Not paused
+        }
+
+        if let Some(ref engine) = self.voice_engine {
+            if engine.state() == VoiceEngineState::Paused {
+                if let Err(e) = engine.resume() {
+                    tracing::warn!("Failed to resume voice engine after audio: {}", e);
+                } else {
+                    self.voice_paused_for_audio = false;
+                    tracing::debug!("Voice recognition resumed after audio playback");
+                }
+            }
+        }
+    }
+
+    /// T018: Process voice engine events and execute recognized commands.
+    ///
+    /// Called each frame to handle voice control events and dispatch actions.
+    #[cfg(feature = "voice-control")]
+    fn process_voice_events(&mut self) {
+        // Take the receiver temporarily to avoid borrow issues
+        let Some(mut rx) = self.voice_event_rx.take() else {
+            return;
+        };
+
+        // Build executor context based on current app state
+        let is_ride_active = self.current_screen == Screen::Ride;
+        let is_workout_active = is_ride_active && self.ride_screen.workout.is_some();
+        let is_ride_paused = is_ride_active && self.ride_screen.is_paused;
+
+        let context = ExecutorContext::new()
+            .with_ride_active(is_ride_active)
+            .with_workout_active(is_workout_active)
+            .with_ride_paused(is_ride_paused);
+
+        // Process all pending events
+        loop {
+            match rx.try_recv() {
+                Ok(event) => {
+                    self.handle_voice_event(event, &context);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(count)) => {
+                    tracing::warn!("Voice event receiver lagged by {} events", count);
+                    // Continue processing from current position
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    tracing::debug!("Voice event channel closed");
+                    // Don't put the receiver back if channel is closed
+                    return;
+                }
+            }
+        }
+
+        // Put the receiver back
+        self.voice_event_rx = Some(rx);
+    }
+
+    /// T018: Handle a single voice engine event.
+    #[cfg(feature = "voice-control")]
+    fn handle_voice_event(&mut self, event: VoiceEngineEvent, context: &ExecutorContext) {
+        match event {
+            VoiceEngineEvent::CommandRecognized { command, text, confidence } => {
+                tracing::info!(
+                    "Voice command recognized: {:?} ('{}', confidence: {:?})",
+                    command,
+                    text,
+                    confidence
+                );
+
+                // Check if command is valid in current context
+                let mapping = self.voice_command_executor.map_with_context(&command, context);
+
+                if mapping.valid {
+                    // Play feedback tone
+                    if let Some(ref feedback) = self.voice_feedback {
+                        // Pause recognition during feedback
+                        self.pause_voice_for_audio();
+                        feedback.play(VoiceFeedbackEvent::CommandRecognized);
+                        // Resume after a short delay (feedback will be async)
+                        // In practice, we'd wait for TTS to complete
+                    }
+
+                    // Execute the action
+                    if let Some(action) = mapping.action {
+                        self.execute_voice_action(action);
+                    }
+
+                    // Resume voice recognition
+                    self.resume_voice_after_audio();
+                } else {
+                    tracing::debug!(
+                        "Voice command {:?} not valid in current context: {:?}",
+                        command,
+                        mapping.reason
+                    );
+
+                    // Play error feedback
+                    if let Some(ref feedback) = self.voice_feedback {
+                        feedback.play(VoiceFeedbackEvent::CommandFailed);
+                    }
+                }
+            }
+            VoiceEngineEvent::WakeWordDetected { phrase, duration_ms } => {
+                tracing::info!(
+                    "Wake word detected: '{}' (listening for {}ms)",
+                    phrase,
+                    duration_ms
+                );
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    self.pause_voice_for_audio();
+                    feedback.play(VoiceFeedbackEvent::WakeWordDetected);
+                    self.resume_voice_after_audio();
+                }
+            }
+            VoiceEngineEvent::WakeWordTimeout => {
+                tracing::debug!("Wake word listening period timed out");
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    feedback.play(VoiceFeedbackEvent::ListeningEnded);
+                }
+            }
+            VoiceEngineEvent::CommandCooldown { command, remaining_ms } => {
+                tracing::debug!(
+                    "Voice command {:?} blocked by cooldown ({}ms remaining)",
+                    command,
+                    remaining_ms
+                );
+
+                if let Some(ref feedback) = self.voice_feedback {
+                    feedback.play(VoiceFeedbackEvent::CooldownBlocked);
+                }
+            }
+            VoiceEngineEvent::StateChanged { from, to } => {
+                tracing::debug!("Voice engine state changed: {} -> {}", from, to);
+            }
+            VoiceEngineEvent::Error { message } => {
+                tracing::error!("Voice engine error: {}", message);
+            }
+            VoiceEngineEvent::PartialResult { text } => {
+                tracing::trace!("Partial recognition: {}", text);
+            }
+            VoiceEngineEvent::FinalResult { text, confidence } => {
+                tracing::debug!(
+                    "Final result (no command matched): '{}' ({:?})",
+                    text,
+                    confidence
+                );
+            }
+            _ => {
+                // Handle other events as needed
+            }
+        }
+    }
+
+    /// T018: Execute a voice command action.
+    #[cfg(feature = "voice-control")]
+    fn execute_voice_action(&mut self, action: rustride::hid::ButtonAction) {
+        use rustride::hid::ButtonAction;
+
+        match action {
+            ButtonAction::PlayPause => {
+                if self.current_screen == Screen::Ride {
+                    self.ride_screen.is_paused = !self.ride_screen.is_paused;
+                    tracing::info!(
+                        "Voice command: {}",
+                        if self.ride_screen.is_paused { "Paused" } else { "Resumed" }
+                    );
+                }
+            }
+            ButtonAction::Skip => {
+                if self.current_screen == Screen::Ride && self.ride_screen.workout.is_some() {
+                    // Skip to next interval in workout
+                    tracing::info!("Voice command: Skip interval");
+                    // Workout skip would be implemented via workout engine
+                }
+            }
+            ButtonAction::AddLapMarker => {
+                if self.current_screen == Screen::Ride {
+                    // Add lap marker
+                    tracing::info!("Voice command: Lap marked");
+                    // Lap marking would be implemented via ride recorder
+                }
+            }
+            ButtonAction::Stop => {
+                if self.current_screen == Screen::Ride {
+                    // End workout/ride
+                    tracing::info!("Voice command: End workout");
+                    // This would trigger the ride end flow
+                }
+            }
+            _ => {
+                tracing::debug!("Voice action {:?} not yet implemented", action);
+            }
+        }
+    }
+
     /// Navigate to a different screen.
     fn navigate(&mut self, screen: Screen) {
         tracing::debug!("Navigating from {:?} to {:?}", self.current_screen, screen);
@@ -1280,12 +1624,22 @@ impl eframe::App for RustRideApp {
         // T012/6.3: Poll for fan test result
         self.poll_fan_test();
 
+        // T018: Process voice engine events for voice control
+        #[cfg(feature = "voice-control")]
+        self.process_voice_events();
+
         // Update ride time if recording
         self.update_ride_time();
 
-        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test)
+        // Request repaint to keep UI responsive (for sensor updates, HID learning mode, MQTT test, fan test, voice control)
+        #[cfg(feature = "voice-control")]
+        let voice_active = self.voice_engine.is_some();
+        #[cfg(not(feature = "voice-control"))]
+        let voice_active = false;
+
         if self.current_screen == Screen::Ride
             || self.current_screen == Screen::SensorSetup
+            || voice_active
             || (self.current_screen == Screen::Settings
                 && (self.button_input_handler.is_learning()
                     || self.pending_mqtt_test.is_some()
@@ -1735,8 +2089,20 @@ impl eframe::App for RustRideApp {
         self.render_recovery_dialog(ctx);
     }
 
-    /// T050: Handle application exit - gracefully stop companion server.
+    /// T050/T018: Handle application exit - gracefully stop companion server and voice engine.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // T018: Stop voice engine if running
+        #[cfg(feature = "voice-control")]
+        if let Some(ref engine) = self.voice_engine {
+            tracing::info!("Stopping voice engine...");
+            if let Err(e) = engine.stop() {
+                // May already be stopped or in error state
+                tracing::debug!("Voice engine stop result: {}", e);
+            } else {
+                tracing::info!("Voice engine stopped");
+            }
+        }
+
         // Stop companion server if running
         if let Some(ref server) = self.companion_server {
             let server = Arc::clone(server);
