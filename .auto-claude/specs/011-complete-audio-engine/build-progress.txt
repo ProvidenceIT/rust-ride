@@ -161,7 +161,19 @@ The implementation plan has been created with 5 phases and 17 subtasks total.
   - Queue pressure handling (drops low-priority items when full)
   - Expired/dropped tracking with counters
   - Event emission for ItemExpired, ItemDropped, QueuePressure
-- Comprehensive tests for all timing features
+- Updated process_queue() to actively USE timing safeguards:
+  - Enforces min_audio_gap_ms between audio items (except time-critical)
+  - Records playback end time via record_playback_end() for gap enforcement
+  - Logs time-critical item playback with age tracking
+- Updated WorkoutAudioBridge with countdown sync safeguards:
+  - Added countdown_max_age_ms config (default: 500ms)
+  - Added use_queued_countdown config (default: true)
+  - Queue-based countdown tones with proper expiration via countdown_tone_with_timing()
+  - Pattern expiration check before each tone
+  - Legacy direct mode with timing check for backward compatibility
+- Comprehensive tests for all timing features:
+  - test_countdown_event_queued_mode - verifies queue-based countdown
+  - test_countdown_timing_safeguards - verifies expiration settings
 
 ## Remaining Subtasks
 

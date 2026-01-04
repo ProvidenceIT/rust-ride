@@ -12,12 +12,20 @@
 //! - **3, 2, 1 seconds**: Tone-only with escalating urgency (no voice to avoid overlap)
 //!
 //! This approach ensures countdown cues are clear and don't overlap with each other.
+//!
+//! # Timing Safeguards
+//!
+//! Countdown sounds have a maximum age threshold (default 500ms). If a countdown
+//! tone cannot be played within this window, it is skipped to maintain synchronization
+//! with the actual workout timing. This prevents audio lag from accumulating.
 
 use crate::audio::alerts::{AlertContext, AlertManager, AlertType};
 use crate::audio::engine::AudioEngine;
 use crate::audio::tones::CuePattern;
+use crate::audio::AudioItem;
 use crate::workouts::types::WorkoutEvent;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Configuration for the workout audio bridge.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -49,6 +57,18 @@ pub struct WorkoutAudioBridgeConfig {
     /// Other thresholds in countdown_thresholds will receive tone-only feedback.
     #[serde(default = "default_countdown_voice_thresholds")]
     pub countdown_voice_thresholds: Vec<u32>,
+    /// Maximum age in milliseconds for countdown sounds to be played.
+    /// If a countdown tone cannot be played within this window from when
+    /// the countdown event was received, it will be skipped to maintain
+    /// synchronization with workout timing. Default: 500ms
+    #[serde(default = "default_countdown_max_age_ms")]
+    pub countdown_max_age_ms: u64,
+    /// Whether to use the queue-based approach for countdown tones.
+    /// When true, countdown tones are queued through the audio engine
+    /// with proper expiration handling. When false, tones are played
+    /// directly (legacy behavior). Default: true
+    #[serde(default = "default_use_queued_countdown")]
+    pub use_queued_countdown: bool,
 }
 
 fn default_countdown_thresholds() -> Vec<u32> {
@@ -57,6 +77,14 @@ fn default_countdown_thresholds() -> Vec<u32> {
 
 fn default_countdown_voice_thresholds() -> Vec<u32> {
     vec![10, 5]
+}
+
+fn default_countdown_max_age_ms() -> u64 {
+    500 // Countdown sounds must play within 500ms to stay synchronized
+}
+
+fn default_use_queued_countdown() -> bool {
+    true // Use queue-based approach for better timing management
 }
 
 impl Default for WorkoutAudioBridgeConfig {
@@ -72,6 +100,8 @@ impl Default for WorkoutAudioBridgeConfig {
             countdown_voice_enabled: true,
             countdown_thresholds: default_countdown_thresholds(),
             countdown_voice_thresholds: default_countdown_voice_thresholds(),
+            countdown_max_age_ms: default_countdown_max_age_ms(),
+            use_queued_countdown: default_use_queued_countdown(),
         }
     }
 }
@@ -296,9 +326,17 @@ impl<A: AlertManager, E: AudioEngine> WorkoutAudioBridge<A, E> {
     /// - **10, 5 seconds**: Voice announcement + countdown tick tone
     /// - **3, 2, 1 seconds**: Tone-only with escalating urgency patterns
     ///
+    /// # Timing Safeguards
+    ///
+    /// Countdown sounds are queued with a short expiration time (default 500ms).
+    /// If the audio queue is backed up and a countdown tone cannot be played
+    /// within its expiration window, it will be dropped to maintain synchronization
+    /// with the actual workout timing.
+    ///
     /// This approach prevents voice announcements from overlapping during the
     /// final rapid countdown while still providing clear audio feedback.
     async fn handle_countdown(&self, seconds_remaining: u32) {
+        let event_time = Instant::now();
         tracing::debug!("Handling countdown: {} seconds", seconds_remaining);
 
         // Check if this second is in our configured thresholds
@@ -320,7 +358,13 @@ impl<A: AlertManager, E: AudioEngine> WorkoutAudioBridge<A, E> {
         // Play countdown tone if sounds are enabled
         if self.config.countdown_sounds_enabled {
             if let Some(cue_pattern) = pattern {
-                self.play_countdown_tone(cue_pattern).await;
+                if self.config.use_queued_countdown {
+                    // Queue-based approach: better timing management via engine
+                    self.queue_countdown_tones(cue_pattern, event_time).await;
+                } else {
+                    // Legacy direct approach: play tones immediately
+                    self.play_countdown_tone_direct(cue_pattern, event_time).await;
+                }
             }
         }
 
@@ -335,17 +379,73 @@ impl<A: AlertManager, E: AudioEngine> WorkoutAudioBridge<A, E> {
         }
     }
 
-    /// Play a countdown tone pattern via the audio engine.
-    async fn play_countdown_tone(&self, pattern: CuePattern) {
-        // Get the tones for this pattern
+    /// Queue countdown tones through the audio engine for proper timing management.
+    ///
+    /// This method queues each tone in the pattern as an AudioItem with a short
+    /// expiration time. The audio engine will drop expired items, keeping
+    /// countdown sounds synchronized with workout timing.
+    async fn queue_countdown_tones(&self, pattern: CuePattern, event_time: Instant) {
         let tones = pattern.tones();
+        let max_age_ms = self.config.countdown_max_age_ms;
 
         for tone in tones {
+            // Check if we've exceeded the max age before processing more tones
+            let elapsed = event_time.elapsed().as_millis() as u64;
+            if elapsed > max_age_ms {
+                tracing::debug!(
+                    "Countdown pattern expired after {}ms, skipping remaining tones",
+                    elapsed
+                );
+                break;
+            }
+
             if tone.is_pause() {
                 // Sleep for pause duration
                 tokio::time::sleep(std::time::Duration::from_millis(tone.duration_ms)).await;
             } else {
-                // Play the tone
+                // Queue the tone with countdown category and short expiration
+                // Adjust remaining expiration time based on how much time has passed
+                let remaining_ms = max_age_ms.saturating_sub(elapsed);
+                if remaining_ms > 0 {
+                    let item = AudioItem::countdown_tone_with_timing(
+                        tone.frequency_hz as u32,
+                        tone.duration_ms as u32,
+                        remaining_ms,
+                    );
+                    self.audio_engine.queue(item);
+
+                    // Wait for the tone duration before queueing next tone
+                    // This maintains proper timing between pattern notes
+                    tokio::time::sleep(std::time::Duration::from_millis(tone.duration_ms)).await;
+                }
+            }
+        }
+    }
+
+    /// Play countdown tones directly (legacy approach) with timing check.
+    ///
+    /// This method plays tones immediately via play_tone but adds a timing
+    /// check to ensure we don't play stale countdown sounds.
+    async fn play_countdown_tone_direct(&self, pattern: CuePattern, event_time: Instant) {
+        let tones = pattern.tones();
+        let max_age_ms = self.config.countdown_max_age_ms;
+
+        for tone in tones {
+            // Check if we've exceeded the max age before playing
+            let elapsed = event_time.elapsed().as_millis() as u64;
+            if elapsed > max_age_ms {
+                tracing::debug!(
+                    "Countdown pattern expired after {}ms (direct mode), skipping remaining tones",
+                    elapsed
+                );
+                break;
+            }
+
+            if tone.is_pause() {
+                // Sleep for pause duration
+                tokio::time::sleep(std::time::Duration::from_millis(tone.duration_ms)).await;
+            } else {
+                // Play the tone directly
                 if let Err(e) = self
                     .audio_engine
                     .play_tone(tone.frequency_hz as u32, tone.duration_ms as u32)
@@ -427,6 +527,7 @@ mod tests {
         played_tones: Mutex<Vec<(u32, u32)>>, // (frequency_hz, duration_ms)
         played_sounds: Mutex<Vec<String>>,
         spoken_texts: Mutex<Vec<String>>,
+        queued_items: Mutex<Vec<AudioItem>>,
         volume: Mutex<u8>,
         event_tx: broadcast::Sender<AudioEvent>,
     }
@@ -438,6 +539,7 @@ mod tests {
                 played_tones: Mutex::new(Vec::new()),
                 played_sounds: Mutex::new(Vec::new()),
                 spoken_texts: Mutex::new(Vec::new()),
+                queued_items: Mutex::new(Vec::new()),
                 volume: Mutex::new(80),
                 event_tx,
             }
@@ -445,6 +547,10 @@ mod tests {
 
         fn get_played_tones(&self) -> Vec<(u32, u32)> {
             self.played_tones.lock().unwrap().clone()
+        }
+
+        fn get_queued_items(&self) -> Vec<AudioItem> {
+            self.queued_items.lock().unwrap().clone()
         }
     }
 
@@ -479,8 +585,8 @@ mod tests {
             *self.volume.lock().unwrap()
         }
 
-        fn queue(&self, _item: AudioItem) {
-            // No-op for mock
+        fn queue(&self, item: AudioItem) {
+            self.queued_items.lock().unwrap().push(item);
         }
 
         fn is_playing(&self) -> bool {
@@ -493,6 +599,14 @@ mod tests {
 
         fn subscribe_events(&self) -> broadcast::Receiver<AudioEvent> {
             self.event_tx.subscribe()
+        }
+    }
+
+    /// Create a config that uses direct tones (not queued) for backward compatible tests
+    fn direct_countdown_config() -> WorkoutAudioBridgeConfig {
+        WorkoutAudioBridgeConfig {
+            use_queued_countdown: false,
+            ..Default::default()
         }
     }
 
@@ -568,7 +682,9 @@ mod tests {
     async fn test_countdown_event_voice_and_tones() {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
-        let bridge = WorkoutAudioBridge::new(alert_manager.clone(), audio_engine.clone());
+        // Use direct countdown mode for backward-compatible test
+        let config = direct_countdown_config();
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
         // Test 10 and 5 seconds - should trigger both voice and tone
         let events = vec![
@@ -596,7 +712,7 @@ mod tests {
             }
         }
 
-        // Tones should also be played for 10s and 5s
+        // Tones should also be played for 10s and 5s (direct mode)
         let tones = audio_engine.get_played_tones();
         assert!(!tones.is_empty(), "Should have played countdown tones for 10s and 5s");
     }
@@ -605,7 +721,9 @@ mod tests {
     async fn test_countdown_event_final_tones_only() {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
-        let bridge = WorkoutAudioBridge::new(alert_manager.clone(), audio_engine.clone());
+        // Use direct countdown mode for backward-compatible test
+        let config = direct_countdown_config();
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
         // Test 3, 2, 1 seconds - should trigger tones only (no voice)
         let events = vec![
@@ -625,7 +743,7 @@ mod tests {
         let triggered = alert_manager.get_triggered_alerts();
         assert_eq!(triggered.len(), 0, "Final countdown (3, 2, 1) should not trigger voice announcements");
 
-        // But tones should be played
+        // But tones should be played (direct mode)
         let tones = audio_engine.get_played_tones();
         assert!(!tones.is_empty(), "Should have played countdown tones for 3, 2, 1 seconds");
     }
@@ -634,7 +752,9 @@ mod tests {
     async fn test_countdown_event_all_seconds() {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
-        let bridge = WorkoutAudioBridge::new(alert_manager.clone(), audio_engine.clone());
+        // Use direct countdown mode for backward-compatible test
+        let config = direct_countdown_config();
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
         // Test full countdown sequence
         let events = vec![
@@ -650,9 +770,67 @@ mod tests {
         let triggered = alert_manager.get_triggered_alerts();
         assert_eq!(triggered.len(), 2, "Only 10s and 5s should trigger voice");
 
-        // All 5 should trigger tones
+        // All 5 should trigger tones (direct mode)
         let tones = audio_engine.get_played_tones();
         assert!(!tones.is_empty(), "Should have played tones for all countdown seconds");
+    }
+
+    #[tokio::test]
+    async fn test_countdown_event_queued_mode() {
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let audio_engine = Arc::new(MockAudioEngine::new());
+        // Default config uses queued countdown
+        let bridge = WorkoutAudioBridge::new(alert_manager.clone(), audio_engine.clone());
+
+        // Test 10 seconds countdown - should queue tones instead of playing directly
+        let events = vec![WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 10,
+        }];
+        bridge.process_events(&events).await;
+
+        // In queued mode, tones should be queued not played directly
+        let direct_tones = audio_engine.get_played_tones();
+        assert!(direct_tones.is_empty(), "In queued mode, tones should not be played directly");
+
+        // Items should be queued
+        let queued = audio_engine.get_queued_items();
+        assert!(!queued.is_empty(), "Should have queued countdown tones");
+
+        // All queued items should have countdown category
+        for item in &queued {
+            assert!(item.is_time_critical(), "Countdown items should be time-critical");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_countdown_timing_safeguards() {
+        // Test that countdown items have proper expiration settings
+        let alert_manager = Arc::new(MockAlertManager::new());
+        let audio_engine = Arc::new(MockAudioEngine::new());
+        let config = WorkoutAudioBridgeConfig {
+            countdown_max_age_ms: 300, // Custom 300ms max age
+            use_queued_countdown: true,
+            ..Default::default()
+        };
+        let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
+
+        let events = vec![WorkoutEvent::IntervalCountdown {
+            seconds_remaining: 5,
+        }];
+        bridge.process_events(&events).await;
+
+        // Check that queued items have appropriate expiration
+        let queued = audio_engine.get_queued_items();
+        assert!(!queued.is_empty(), "Should have queued items");
+
+        for item in &queued {
+            // Max queue time should be <= our configured max age
+            assert!(
+                item.max_queue_time.as_millis() <= 300,
+                "Item max queue time ({:?}) should be <= 300ms",
+                item.max_queue_time
+            );
+        }
     }
 
     #[tokio::test]
@@ -718,10 +896,7 @@ mod tests {
             announce_trainer_status: false,
             announce_recovery_intervals: false,
             announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -748,7 +923,8 @@ mod tests {
 
         // No tones should be played either when countdowns are disabled
         let tones = audio_engine.get_played_tones();
-        assert!(tones.is_empty(), "No countdown tones when announce_countdowns is false");
+        let queued = audio_engine.get_queued_items();
+        assert!(tones.is_empty() && queued.is_empty(), "No countdown tones when announce_countdowns is false");
     }
 
     #[tokio::test]
@@ -762,10 +938,7 @@ mod tests {
             announce_trainer_status: false,
             announce_recovery_intervals: false,
             announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -795,16 +968,8 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
             announce_recovery_intervals: false, // Disable recovery-specific announcements
-            announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -836,6 +1001,9 @@ mod tests {
         assert!(config.countdown_voice_enabled);
         assert_eq!(config.countdown_thresholds, vec![10, 5, 3, 2, 1]);
         assert_eq!(config.countdown_voice_thresholds, vec![10, 5]);
+        // New timing safeguard settings
+        assert_eq!(config.countdown_max_age_ms, 500); // 500ms default
+        assert!(config.use_queued_countdown); // Queued mode by default
     }
 
     #[tokio::test]
@@ -843,16 +1011,12 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
             announce_countdowns: false,
             announce_workout_lifecycle: false,
             announce_trainer_status: false,
             announce_recovery_intervals: false,
             announce_motivational_messages: true, // Enable motivational messages
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -876,16 +1040,11 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
             announce_countdowns: false,
             announce_workout_lifecycle: false,
             announce_trainer_status: false,
-            announce_recovery_intervals: true,
             announce_motivational_messages: true, // Enable motivational messages
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -909,16 +1068,10 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
             announce_countdowns: false,
             announce_workout_lifecycle: false,
             announce_trainer_status: false,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false, // Disabled
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine, config);
 
@@ -956,16 +1109,8 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false,
             countdown_sounds_enabled: false, // Disable countdown sounds
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -980,9 +1125,10 @@ mod tests {
         let triggered = alert_manager.get_triggered_alerts();
         assert_eq!(triggered.len(), 2, "Voice should be triggered for 10s and 5s");
 
-        // But no tones should be played
+        // But no tones should be played or queued
         let tones = audio_engine.get_played_tones();
-        assert!(tones.is_empty(), "No tones when countdown_sounds_enabled is false");
+        let queued = audio_engine.get_queued_items();
+        assert!(tones.is_empty() && queued.is_empty(), "No tones when countdown_sounds_enabled is false");
     }
 
     #[tokio::test]
@@ -990,16 +1136,9 @@ mod tests {
         let alert_manager = Arc::new(MockAlertManager::new());
         let audio_engine = Arc::new(MockAudioEngine::new());
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
             countdown_voice_enabled: false, // Disable countdown voice
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
-            countdown_voice_thresholds: vec![10, 5],
+            use_queued_countdown: false,    // Use direct mode so we can check played_tones
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -1014,7 +1153,7 @@ mod tests {
         let triggered = alert_manager.get_triggered_alerts();
         assert!(triggered.is_empty(), "No voice when countdown_voice_enabled is false");
 
-        // But tones should still be played
+        // But tones should still be played (direct mode)
         let tones = audio_engine.get_played_tones();
         assert!(!tones.is_empty(), "Tones should still play when only voice is disabled");
     }
@@ -1025,16 +1164,10 @@ mod tests {
         let audio_engine = Arc::new(MockAudioEngine::new());
         // Custom thresholds: only 5 and 3 second countdown
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
             countdown_thresholds: vec![5, 3], // Only 5 and 3 seconds
             countdown_voice_thresholds: vec![5], // Only 5 seconds gets voice
+            use_queued_countdown: false, // Use direct mode for checking played_tones
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -1067,16 +1200,10 @@ mod tests {
         let audio_engine = Arc::new(MockAudioEngine::new());
         // Custom thresholds: only 3, 2, 1
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
             countdown_thresholds: vec![3, 2, 1],
             countdown_voice_thresholds: vec![3],
+            use_queued_countdown: false, // Use direct mode for checking played_tones
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -1093,7 +1220,8 @@ mod tests {
 
         // No tones either
         let tones = audio_engine.get_played_tones();
-        assert!(tones.is_empty(), "No tones for out-of-threshold seconds");
+        let queued = audio_engine.get_queued_items();
+        assert!(tones.is_empty() && queued.is_empty(), "No tones for out-of-threshold seconds");
     }
 
     #[tokio::test]
@@ -1102,16 +1230,9 @@ mod tests {
         let audio_engine = Arc::new(MockAudioEngine::new());
         // Voice thresholds is a subset of countdown thresholds
         let config = WorkoutAudioBridgeConfig {
-            announce_interval_changes: true,
-            announce_countdowns: true,
-            announce_workout_lifecycle: true,
-            announce_trainer_status: true,
-            announce_recovery_intervals: true,
-            announce_motivational_messages: false,
-            countdown_sounds_enabled: true,
-            countdown_voice_enabled: true,
-            countdown_thresholds: vec![10, 5, 3, 2, 1],
             countdown_voice_thresholds: vec![10], // Only 10 gets voice
+            use_queued_countdown: false, // Use direct mode for checking played_tones
+            ..Default::default()
         };
         let bridge = WorkoutAudioBridge::with_config(alert_manager.clone(), audio_engine.clone(), config);
 
@@ -1145,10 +1266,14 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("countdown_thresholds"));
         assert!(json.contains("countdown_voice_thresholds"));
+        assert!(json.contains("countdown_max_age_ms"));
+        assert!(json.contains("use_queued_countdown"));
 
         let deserialized: WorkoutAudioBridgeConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.countdown_thresholds, vec![10, 5, 3, 2, 1]);
         assert_eq!(deserialized.countdown_voice_thresholds, vec![10, 5]);
+        assert_eq!(deserialized.countdown_max_age_ms, 500);
+        assert!(deserialized.use_queued_countdown);
     }
 
     #[test]
@@ -1169,5 +1294,8 @@ mod tests {
         // Should use defaults for missing fields
         assert_eq!(config.countdown_thresholds, vec![10, 5, 3, 2, 1]);
         assert_eq!(config.countdown_voice_thresholds, vec![10, 5]);
+        // New timing fields should also get defaults
+        assert_eq!(config.countdown_max_age_ms, 500);
+        assert!(config.use_queued_countdown);
     }
 }

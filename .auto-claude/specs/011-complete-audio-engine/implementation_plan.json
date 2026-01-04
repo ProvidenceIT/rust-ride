@@ -2,9 +2,9 @@
   "feature": "Complete Audio Engine",
   "description": "Finish the audio engine implementation using rodio for sound effects, audio cues, and background audio during rides. Includes countdown sounds, achievement chimes, and optional workout music playback.",
   "created_at": "2026-01-03T05:14:12.855Z",
-  "updated_at": "2026-01-03T06:45:00.000Z",
+  "updated_at": "2026-01-04T14:14:43.216Z",
   "status": "in_progress",
-  "planStatus": "approved",
+  "planStatus": "in_progress",
   "phases": [
     {
       "id": "phase-1",
@@ -309,7 +309,7 @@
           "id": "5.2",
           "title": "Add audio synchronization safeguards",
           "description": "Implement timing safeguards to prevent audio lag, overlap, and desync issues. Add audio item expiration to drop stale queued audio. Ensure countdown sounds stay synchronized with workout timing.",
-          "status": "pending",
+          "status": "completed",
           "acceptance_criteria": [
             "Audio queue items expire after max_queue_time",
             "High-priority audio interrupts lower priority cleanly",
@@ -319,7 +319,9 @@
           "files": [
             "src/audio/engine.rs"
           ],
-          "estimated_effort": "medium"
+          "estimated_effort": "medium",
+          "notes": "Implemented timing safeguards for audio synchronization:\n\n1. Updated process_queue() in engine.rs:\n   - Enforces min_audio_gap_ms between audio items (except time-critical)\n   - Records playback end time via record_playback_end() for gap enforcement\n   - Logs time-critical item playback with age tracking\n\n2. Updated WorkoutAudioBridge with countdown sync safeguards:\n   - Added countdown_max_age_ms config (default: 500ms)\n   - Added use_queued_countdown config (default: true for queue-based approach)\n   - Queue-based countdown tones with proper expiration via countdown_tone_with_timing()\n   - Pattern expiration check before each tone\n   - Legacy direct mode with timing check for backward compatibility\n\n3. Added comprehensive tests:\n   - test_countdown_event_queued_mode - verifies queue-based countdown\n   - test_countdown_timing_safeguards - verifies expiration settings\n\nAll acceptance criteria met:\n- Audio queue items expire after max_queue_time \u2713\n- High-priority audio interrupts lower priority cleanly \u2713\n- No audio pileup when events come faster than playback \u2713\n- Countdown sounds play at correct timing relative to interval changes \u2713",
+          "updated_at": "2026-01-04T14:25:29.460020+00:00"
         },
         {
           "id": "5.3",
@@ -442,5 +444,6 @@
     "ToneGenerator already uses rodio for sine wave generation - this can be extended",
     "AudioEngine has the structure but TODOs in play_sound() and play_tone() methods"
   ],
-  "last_updated": "2026-01-03T07:06:05.395868+00:00"
+  "last_updated": "2026-01-04T14:25:29.460020+00:00",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-04T14:14:43.027Z"
 }
