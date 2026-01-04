@@ -40,8 +40,9 @@ use rustride::sensors::{
 use rustride::storage::config::{get_data_dir, AppConfig, UserProfile};
 use rustride::storage::{Database, HardwareStore};
 use rustride::ui::screens::{
-    AnalyticsScreen, AvatarScreen, FanControlAction, HomeScreen, OnboardingScreen, RideScreen,
-    RideView, Screen, SensorSetupScreen, SettingsScreen, WorldSelectScreen,
+    AnalyticsScreen, AvatarScreen, FanControlAction, GarminSettingsAction, GarminSettingsScreen,
+    HomeScreen, OnboardingScreen, RideScreen, RideView, Screen, SensorSetupScreen, SettingsScreen,
+    WorldSelectScreen,
 };
 use rustride::ui::theme::Theme;
 use rustride::ui::widgets::AchievementNotificationWidget;
@@ -107,6 +108,8 @@ pub struct RustRideApp {
     analytics_screen: AnalyticsScreen,
     /// Settings screen state
     settings_screen: SettingsScreen,
+    /// Garmin Connect settings screen state
+    garmin_settings_screen: GarminSettingsScreen,
     /// T043: Incline/slope mode controller
     incline_controller: DefaultInclineController,
     /// T043: Gradient controller for route-based resistance
@@ -425,6 +428,7 @@ impl RustRideApp {
             avatar_screen: AvatarScreen::new(),
             analytics_screen: AnalyticsScreen::new(),
             settings_screen,
+            garmin_settings_screen: GarminSettingsScreen::new(),
             incline_controller,
             gradient_controller,
             mqtt_client,
@@ -1578,6 +1582,65 @@ impl eframe::App for RustRideApp {
                             self.pending_fan_test = Some(handle);
                         }
                         SettingsAction::None => {}
+                        SettingsAction::TestAudio(_test_type) => {
+                            // TODO: Play test audio sound
+                        }
+                        SettingsAction::AudioConfigChanged(_config) => {
+                            // TODO: Save audio config
+                        }
+                        SettingsAction::NavigateToStravaSettings => {
+                            // Navigate to Strava settings screen
+                            self.navigate(Screen::StravaSettings);
+                        }
+                        SettingsAction::NavigateToTrainingPeaksSettings => {
+                            // Navigate to TrainingPeaks settings screen
+                            self.navigate(Screen::TrainingPeaksSettings);
+                        }
+                        SettingsAction::NavigateToGarminSettings => {
+                            // Navigate to Garmin Connect settings screen
+                            self.navigate(Screen::GarminSettings);
+                        }
+                    }
+                }
+                Screen::GarminSettings => {
+                    // T016: Garmin Connect settings screen
+                    let (next_screen, action) = self.garmin_settings_screen.show(ui);
+
+                    // Handle navigation
+                    if let Some(screen) = next_screen {
+                        self.navigate(screen);
+                    }
+
+                    // Handle actions (Connect, Disconnect, ToggleAutoSync are handled in subsequent subtasks)
+                    match action {
+                        GarminSettingsAction::None | GarminSettingsAction::Back => {
+                            // Back is already handled via next_screen navigation
+                        }
+                        GarminSettingsAction::Connect => {
+                            // TODO: Subtask 5.2 - Start OAuth flow
+                        }
+                        GarminSettingsAction::Disconnect => {
+                            // TODO: Subtask 5.3 - Handle disconnect
+                        }
+                        GarminSettingsAction::ToggleAutoSync(_enabled) => {
+                            // TODO: Subtask 5.4 - Handle auto-sync toggle
+                        }
+                    }
+                }
+                Screen::StravaSettings => {
+                    // TODO: Strava settings screen - to be implemented
+                    ui.heading("Strava Settings");
+                    ui.label("Strava settings - coming soon");
+                    if ui.button("<- Back to Settings").clicked() {
+                        self.navigate(Screen::Settings);
+                    }
+                }
+                Screen::TrainingPeaksSettings => {
+                    // TODO: TrainingPeaks settings screen - to be implemented
+                    ui.heading("TrainingPeaks Settings");
+                    ui.label("TrainingPeaks settings - coming soon");
+                    if ui.button("<- Back to Settings").clicked() {
+                        self.navigate(Screen::Settings);
                     }
                 }
                 Screen::WorldSelect => {
