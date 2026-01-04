@@ -145,8 +145,9 @@
           "file_paths": [
             "src/integrations/sync/mod.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Verified that GarminConnect is already fully registered in all required locations:\n\n1. SyncPlatform enum in mod.rs (line 72) with display_name(), auth_url_base(), and uses_oauth() methods\n2. SyncConfig::default() includes GarminConnect in platforms map (line 130)\n3. PlatformClient::GarminConnect enum variant in service.rs (line 449)\n4. GarminClient initialization in spawn_with_db() (lines 486-489)\n5. Token loading for GarminConnect (line 1496)\n6. Token refresh handling (lines 1398-1400)\n7. Upload processing (lines 919-930)\n8. Disconnect handling (lines 1570-1576)\n9. Config persistence with platform name mapping\n10. OAuth support in oauth.rs with GarminTokenResponse, error handling, and token URL\n\nThis work was completed as part of subtask 2.4 (Garmin credentials storage). All tests pass.",
+          "updated_at": "2026-01-04T13:25:50.053002+00:00"
         },
         {
           "id": "3.2",
@@ -155,8 +156,9 @@
           "file_paths": [
             "src/integrations/sync/service.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Verified GarminClient is fully integrated into SyncService. All integration was completed during subtask 2.4:\n\n1. Import: `use super::garmin::GarminClient;` (line 11)\n2. PlatformClient enum: `GarminConnect(GarminClient)` variant (line 449)\n3. Client initialization: GarminClient::new() in spawn_with_db() (lines 486-489)\n4. Token loading: GarminConnect included in load_stored_credentials() loop (lines 1496, 1510-1514)\n5. Token refresh: set_access_token() called on garmin client (lines 1398-1400)\n6. Upload processing: process_single_upload() calls garmin.upload_activity() with correct signature (lines 919-930)\n7. Disconnect handling: garmin.deauthorize() called in handle_disconnect() (lines 1570-1576)\n\nComprehensive tests added:\n- test_get_garmin_status_not_connected\n- test_queue_garmin_upload_requires_connection\n- test_update_garmin_config\n- test_garmin_sync_event_debug\n- test_platform_client_enum_garmin\n- test_garmin_platform_in_default_config\n\nUpload signature verified: upload_activity(&self, ride_id: &Uuid, fit_data: &[u8]) matches service call.",
+          "updated_at": "2026-01-04T13:28:20.420811+00:00"
         },
         {
           "id": "3.3",
@@ -434,5 +436,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:22:30.381801+00:00"
+  "last_updated": "2026-01-04T13:28:20.420811+00:00"
 }
