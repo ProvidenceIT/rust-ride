@@ -7,6 +7,9 @@ pub mod provider;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// Import WeatherType for mapping from API conditions to 3D world types
+use crate::world::weather::WeatherType;
+
 // Re-export main types
 pub use provider::{
     OpenWeatherMapProvider, WeatherProvider, WeatherRefreshHandle, WeatherRefreshScheduler,
@@ -157,6 +160,41 @@ impl WeatherCondition {
             WeatherCondition::Sleet => "cloud-sleet",
             WeatherCondition::Hail => "cloud-hail",
             WeatherCondition::Windy => "wind",
+        }
+    }
+
+    /// Convert to 3D world WeatherType for driving visual effects.
+    ///
+    /// Maps the 13 API weather conditions to the 6 world weather types:
+    /// - Clear/Windy -> Clear (wind affects particles, not visibility)
+    /// - PartlyCloudy/Cloudy/Overcast -> Cloudy
+    /// - LightRain/Rain -> Rain
+    /// - HeavyRain/Thunderstorm/Hail -> HeavyRain (intense precipitation)
+    /// - Fog -> Fog
+    /// - Snow/Sleet -> Snow (winter precipitation)
+    pub fn to_weather_type(&self) -> WeatherType {
+        match self {
+            // Clear sky conditions (wind handled via wind_speed parameter)
+            WeatherCondition::Clear | WeatherCondition::Windy => WeatherType::Clear,
+
+            // Cloudy conditions (varying cloud coverage)
+            WeatherCondition::PartlyCloudy
+            | WeatherCondition::Cloudy
+            | WeatherCondition::Overcast => WeatherType::Cloudy,
+
+            // Light to moderate rain
+            WeatherCondition::LightRain | WeatherCondition::Rain => WeatherType::Rain,
+
+            // Heavy/intense precipitation (includes thunderstorms and hail)
+            WeatherCondition::HeavyRain
+            | WeatherCondition::Thunderstorm
+            | WeatherCondition::Hail => WeatherType::HeavyRain,
+
+            // Low visibility conditions
+            WeatherCondition::Fog => WeatherType::Fog,
+
+            // Winter precipitation (snow and sleet share snow effects)
+            WeatherCondition::Snow | WeatherCondition::Sleet => WeatherType::Snow,
         }
     }
 }
@@ -392,5 +430,95 @@ mod tests {
         let error = WeatherError::CredentialError("Test error".to_string());
         assert!(error.to_string().contains("Credential error"));
         assert!(error.to_string().contains("Test error"));
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_clear() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(WeatherCondition::Clear.to_weather_type(), WeatherType::Clear);
+        assert_eq!(WeatherCondition::Windy.to_weather_type(), WeatherType::Clear);
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_cloudy() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(
+            WeatherCondition::PartlyCloudy.to_weather_type(),
+            WeatherType::Cloudy
+        );
+        assert_eq!(WeatherCondition::Cloudy.to_weather_type(), WeatherType::Cloudy);
+        assert_eq!(
+            WeatherCondition::Overcast.to_weather_type(),
+            WeatherType::Cloudy
+        );
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_rain() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(WeatherCondition::LightRain.to_weather_type(), WeatherType::Rain);
+        assert_eq!(WeatherCondition::Rain.to_weather_type(), WeatherType::Rain);
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_heavy_rain() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(
+            WeatherCondition::HeavyRain.to_weather_type(),
+            WeatherType::HeavyRain
+        );
+        assert_eq!(
+            WeatherCondition::Thunderstorm.to_weather_type(),
+            WeatherType::HeavyRain
+        );
+        assert_eq!(WeatherCondition::Hail.to_weather_type(), WeatherType::HeavyRain);
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_fog() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(WeatherCondition::Fog.to_weather_type(), WeatherType::Fog);
+    }
+
+    #[test]
+    fn test_weather_condition_to_weather_type_snow() {
+        use crate::world::weather::WeatherType;
+        assert_eq!(WeatherCondition::Snow.to_weather_type(), WeatherType::Snow);
+        assert_eq!(WeatherCondition::Sleet.to_weather_type(), WeatherType::Snow);
+    }
+
+    #[test]
+    fn test_weather_condition_all_variants_mapped() {
+        use crate::world::weather::WeatherType;
+        // Ensure all 13 variants map to valid WeatherType values
+        let conditions = [
+            WeatherCondition::Clear,
+            WeatherCondition::PartlyCloudy,
+            WeatherCondition::Cloudy,
+            WeatherCondition::Overcast,
+            WeatherCondition::Fog,
+            WeatherCondition::LightRain,
+            WeatherCondition::Rain,
+            WeatherCondition::HeavyRain,
+            WeatherCondition::Thunderstorm,
+            WeatherCondition::Snow,
+            WeatherCondition::Sleet,
+            WeatherCondition::Hail,
+            WeatherCondition::Windy,
+        ];
+
+        for condition in conditions {
+            let weather_type = condition.to_weather_type();
+            // Verify each maps to one of the 6 valid types
+            assert!(matches!(
+                weather_type,
+                WeatherType::Clear
+                    | WeatherType::Cloudy
+                    | WeatherType::Rain
+                    | WeatherType::HeavyRain
+                    | WeatherType::Fog
+                    | WeatherType::Snow
+            ));
+        }
     }
 }
