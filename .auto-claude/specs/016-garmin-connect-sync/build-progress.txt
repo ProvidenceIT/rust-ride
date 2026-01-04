@@ -1,156 +1,100 @@
 # Garmin Connect Sync - Build Progress
 
-## Status: Planning Complete
+## Overview
+Add Garmin Connect API integration for uploading completed rides with automatic background sync.
 
-## Implementation Plan Summary
+## Estimated Total: 40 hours
 
-### Phase 1: Garmin Connect API Client Implementation
-- 1.1 Implement Garmin OAuth configuration and constants
-- 1.2 Implement GarminClient HTTP client setup
-- 1.3 Implement Garmin FIT file upload endpoint
-- 1.4 Implement Garmin user profile retrieval
-- 1.5 Implement Garmin deauthorization/logout
-- 1.6 Add Garmin API error handling
+---
 
-### Phase 2: OAuth Flow Integration
-- 2.1 Add Garmin OAuth provider configuration
-- 2.2 Implement Garmin token exchange flow
-- 2.3 Implement Garmin token refresh
-- 2.4 Add Garmin credentials storage
+## Phase 1: Garmin Connect API Client Implementation (12 hours)
+- [x] 1.1: Implement Garmin OAuth configuration and constants (2h)
+- [x] 1.2: Implement GarminClient HTTP client setup (2h)
+- [x] 1.3: Implement Garmin FIT file upload endpoint (3h)
+- [x] 1.4: Implement Garmin user profile retrieval (2h)
+- [x] 1.5: Implement Garmin deauthorization/logout (1.5h)
+- [x] 1.6: Add Garmin API error handling (1.5h)
 
-### Phase 3: Sync Service Integration
-- 3.1 Add GarminConnect platform to SyncPlatform enum
-- 3.2 Integrate GarminClient with SyncService
-- 3.3 Add Garmin to upload queue processing
-- 3.4 Implement Garmin upload status polling
+## Phase 2: OAuth Flow Integration (8 hours)
+- [x] 2.1: Add Garmin OAuth provider configuration (2h)
+- [x] 2.2: Implement Garmin token exchange flow (2h)
+- [x] 2.3: Implement Garmin token refresh (2h)
+- [x] 2.4: Add Garmin credentials storage (2h)
 
-### Phase 4: Settings UI Implementation
-- 4.1 Create GarminSettingsScreen struct and state
-- 4.2 Implement disconnected state UI
-- 4.3 Implement connected state UI
-- 4.4 Implement connecting/disconnecting states
-- 4.5 Implement error state UI
-- 4.6 Add Garmin settings to screens module
-- 4.7 Add Garmin Connect option to main settings
+## Phase 3: Sync Service Integration (6 hours)
+- [x] 3.1: Add GarminConnect platform to SyncPlatform enum (0.5h)
+- [x] 3.2: Integrate GarminClient with SyncService (2h)
+- [x] 3.3: Add Garmin to upload queue processing (2h)
+- [x] 3.4: Implement Garmin upload status polling (1.5h) - N/A: Garmin uses synchronous uploads
 
-### Phase 5: App Integration and Event Handling
-- 5.1 Add Garmin settings screen rendering to app
-- 5.2 Implement Garmin connect action handler
-- 5.3 Implement Garmin disconnect action handler
-- 5.4 Implement Garmin auto-sync toggle handler
-- 5.5 Update Garmin settings state from sync service
+## Phase 4: Settings UI Implementation (7 hours)
+- [x] 4.1: Create GarminSettingsScreen struct and state (1.5h)
+- [x] 4.2: Implement disconnected state UI (1h)
+- [x] 4.3: Implement connected state UI (1.5h)
+- [x] 4.4: Implement connecting/disconnecting states (1h)
+- [x] 4.5: Implement error state UI (1h)
+- [x] 4.6: Add Garmin settings to screens module (0.5h)
+- [x] 4.7: Add Garmin Connect option to main settings (0.5h)
 
-### Phase 6: Testing
-- 6.1 Add GarminClient unit tests
-- 6.2 Add GarminClient HTTP mocked tests
-- 6.3 Add GarminSettingsScreen tests
-- 6.4 Add integration tests for Garmin sync flow
+## Phase 5: App Integration and Event Handling (5 hours)
+- [x] 5.1: Add Garmin settings screen rendering to app (1h)
+- [x] 5.2: Implement Garmin connect action handler (1.5h)
+- [x] 5.3: Implement Garmin disconnect action handler (1h)
+- [x] 5.4: Implement Garmin auto-sync toggle handler (0.5h)
+- [x] 5.5: Update Garmin settings state from sync service (1h)
 
-### Phase 7: Final Verification
-- 7.1 Run cargo build and fix any compilation errors
-- 7.2 Run cargo test and fix any test failures
-- 7.3 Run cargo clippy and fix any warnings
-- 7.4 Verify acceptance criteria
+## Phase 6: Testing (5 hours)
+- [x] 6.1: Add GarminClient unit tests (2h)
+- [ ] 6.2: Add GarminClient HTTP mocked tests (1.5h)
+- [ ] 6.3: Add GarminSettingsScreen tests (1h)
+- [ ] 6.4: Add integration tests for Garmin sync flow (0.5h)
 
-## Codebase Analysis
+## Phase 7: Final Verification (2 hours)
+- [ ] 7.1: Run cargo build and fix any compilation errors
+- [ ] 7.2: Run cargo test and fix any test failures
+- [ ] 7.3: Run cargo clippy and fix any warnings
+- [ ] 7.4: Verify acceptance criteria
 
-### Existing Infrastructure
-- GarminClient skeleton exists at src/integrations/sync/garmin.rs (placeholder methods)
-- SyncPlatform::GarminConnect already defined in mod.rs
-- Strava integration fully implemented (good pattern to follow)
-- OAuth infrastructure exists in oauth.rs
-- Upload queue and sync store implemented in sync_store.rs
-- Settings UI pattern established with StravaSettingsScreen
+---
 
-### Key Files to Modify
-1. src/integrations/sync/garmin.rs - Complete API client implementation
-2. src/integrations/sync/oauth.rs - Add Garmin OAuth provider
-3. src/integrations/sync/service.rs - Integrate Garmin client
-4. src/ui/screens/settings_garmin.rs - New file for settings UI
-5. src/ui/screens/mod.rs - Register new screen
-6. src/ui/screens/settings.rs - Add Garmin to integrations list
-7. src/app.rs - Handle Garmin settings actions
+## Acceptance Criteria Mapping
+- AC1 (Connect account): 1.1-1.2, 2.1-2.4, 4.1-4.5, 5.1-5.2
+- AC2 (Auto upload): 3.1-3.3, 5.4
+- AC3 (FIT files preserved): 1.3, 6.1-6.2
+- AC4 (Connection status visible): 4.1-4.7, 5.5
+- AC5 (Failed uploads queue for retry): 1.6, 3.3
 
-## Progress Log
+---
 
-2026-01-04: Implementation plan created with 7 phases and 28 subtasks
+## Session Log
 
-### Phase 1 - COMPLETED
-- 1.1 ✅ Implemented Garmin OAuth configuration and constants
-- 1.2 ✅ Implemented GarminClient HTTP client setup
-- 1.3 ✅ Implemented Garmin FIT file upload endpoint
-- 1.4 ✅ Implemented Garmin user profile retrieval
-- 1.5 ✅ Implemented Garmin deauthorization/logout
-- 1.6 ✅ Added Garmin API error handling
+### 2026-01-04 - Subtask 6.1: Add GarminClient Unit Tests
 
-### Phase 2 - COMPLETED
-- 2.1 ✅ Added Garmin OAuth provider configuration
-  - Added comprehensive HTTP mocked tests for Garmin OAuth token exchange
-  - Added HTTP mocked tests for Garmin OAuth token refresh
-  - Added authorization URL building test for Garmin
-  - Added response parsing tests for GarminTokenResponse and GarminOAuthErrorResponse
-  - Tests cover: success cases, error cases (invalid_grant, invalid_client, server errors),
-    optional scope field handling, missing client secret handling
-  - Follows exact pattern of Strava and TrainingPeaks OAuth tests
-- 2.2 ✅ Implemented Garmin token exchange flow
-  - OAuth callback handler exchanges authorization code for access/refresh tokens
-  - exchange_garmin_token method sends form-encoded POST to Garmin token endpoint
-  - handle_callback routes GarminConnect platform to exchange_garmin_token
-  - GarminTokenResponse parsing with expires_in to DateTime conversion
-  - GarminOAuthErrorResponse parsing for error cases
-  - State parameter validation for CSRF protection
-  - Comprehensive test coverage (success, errors, edge cases)
-  - Implementation completed as part of Phase 1 and 2.1, verified complete
-- 2.3 ✅ Implemented Garmin token refresh
-  - Added TokenRefresher trait for pluggable token refresh callback
-  - Added token_refresher infrastructure to GarminClient (set/clear/has_token_refresher)
-  - Added attempt_token_refresh() internal method
-  - Added with_auto_refresh() helper for automatic retry on TokenExpired
-  - Added upload_activity_with_refresh() and get_user_profile_with_refresh() wrapper methods
-  - Limits refresh attempts to MAX_AUTO_REFRESH_ATTEMPTS (1)
-  - Propagates AuthorizationRequired from refresh failures
-  - Comprehensive unit and HTTP mocked tests
-- 2.4 ✅ Added Garmin credentials storage
-  - Added GarminClient import and PlatformClient::GarminConnect enum variant in service.rs
-  - Initialized GarminClient in spawn_with_db() alongside Strava and TrainingPeaks
-  - Updated load_stored_credentials() to load Garmin tokens from keyring on startup
-  - Updated handle_disconnect() to call garmin.deauthorize() and clear credentials
-  - Updated check_and_refresh_token() to set Garmin access token after refresh
-  - Updated process_single_upload() to call garmin.upload_activity() for GarminConnect
-  - Keyring storage uses lowercase platform name "garminconnect" as credential key
-  - Added comprehensive tests for Garmin service integration
+**Work Completed:**
+- Reviewed existing test coverage in src/integrations/sync/garmin.rs
+- Found comprehensive tests already exist for:
+  - Client creation: test_client_creation, test_client_with_custom_base_url
+  - Token management: test_set_token, test_clear_token, test_get_access_token_*
+  - Token refresher: test_client_has_no_token_refresher_by_default, test_set_and_clear_token_refresher, test_attempt_token_refresh_*
+  - Auto-refresh: test_with_auto_refresh_* (7 tests covering all scenarios)
+  - Configuration: test_http_client_exists, test_timeout_constants
+  - Error categories: test_error_category_*, test_sync_error_ext_*
+  - Rate limiting: test_rate_limit_info_*
+  - FIT validation: test_validate_fit_file_*
 
-### Phase 3 - COMPLETED
-- 3.1 ✅ Verified GarminConnect platform is properly registered in SyncPlatform enum
-  - GarminConnect already defined in SyncPlatform enum (mod.rs line 72)
-  - display_name() returns "Garmin Connect"
-  - auth_url_base() returns correct OAuth URL
-  - uses_oauth() returns true
-  - SyncConfig::default() includes GarminConnect
-  - PlatformClient::GarminConnect enum variant in service.rs
-  - All integration points verified: token loading, refresh, upload, disconnect
-  - This work was completed as part of subtask 2.4 - no additional changes needed
-- 3.2 ✅ Verified GarminClient is fully integrated with SyncService
-  - Import: use super::garmin::GarminClient; (line 11)
-  - PlatformClient enum: GarminConnect(GarminClient) variant (line 449)
-  - Client initialization: GarminClient::new() in spawn_with_db() (lines 486-489)
-  - Token loading: GarminConnect included in load_stored_credentials() loop
-  - Token refresh: set_access_token() called on garmin client (lines 1398-1400)
-  - Upload processing: process_single_upload() calls garmin.upload_activity() (lines 919-930)
-  - Disconnect handling: garmin.deauthorize() called in handle_disconnect() (lines 1570-1576)
-  - Comprehensive tests added for Garmin service integration
-  - This work was completed as part of subtask 2.4 - verified complete
-- 3.3 ✅ Added Garmin to upload queue processing with retry logic
-  - Exported SyncErrorExt trait and ErrorCategory from mod.rs
-  - Updated is_retryable_error() to use SyncErrorExt trait for error categorization
-  - Added get_rate_limit_retry_delay() helper for smart retry delays
-  - Updated retry backoff calculation to use rate limit delay when appropriate
-  - Added 14 comprehensive Garmin-specific tests for error handling and queue processing
-- 3.4 ✅ Documented that Garmin uses synchronous processing (no status polling needed)
-  - FINDING: Garmin Connect processes uploads SYNCHRONOUSLY, unlike Strava
-  - Strava: Returns upload_id, requires polling check_upload_status()
-  - Garmin: Returns activity ID immediately in the response
-  - Updated module-level documentation in garmin.rs explaining the processing model
-  - Updated upload_activity() method documentation to clarify synchronous behavior
-  - No check_upload_status() method needed for Garmin - upload completes in single request
-  - The subtask condition "If Garmin uses async processing" is FALSE, so no polling needed
+**Additional Tests Added:**
+1. `test_client_default_impl` - Verifies Default trait implementation matches new()
+2. `test_set_token_multiple_times_updates_correctly` - Verifies token updates work correctly
+3. `test_client_base_url_constants` - Verifies correct default base URLs
+4. `test_is_configured_reflects_token_state` - Comprehensive token state lifecycle test
+5. `test_timeout_durations_are_reasonable` - Validates timeout values are sensible
+
+**Total Test Coverage for 6.1:**
+- 90+ unit tests covering GarminClient creation, token management, and configuration
+- Tests for all public methods and trait implementations
+- Comprehensive error handling and edge case coverage
+
+**Notes:**
+- Garmin uses synchronous upload processing (unlike Strava's async model)
+- Token refresher trait enables automatic token refresh on TokenExpired errors
+- Error categorization (ErrorCategory enum) enables smart retry logic

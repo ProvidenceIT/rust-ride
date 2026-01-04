@@ -1546,6 +1546,83 @@ mod tests {
         assert_eq!(result.unwrap(), "my_secret_token");
     }
 
+    #[test]
+    fn test_client_default_impl() {
+        // Verify Default trait implementation matches new()
+        let client_new = GarminClient::new();
+        let client_default = GarminClient::default();
+
+        // Both should have same configuration
+        assert_eq!(client_new.base_url(), client_default.base_url());
+        assert!(!client_new.is_configured());
+        assert!(!client_default.is_configured());
+        assert!(!client_new.has_token_refresher());
+        assert!(!client_default.has_token_refresher());
+    }
+
+    #[tokio::test]
+    async fn test_set_token_multiple_times_updates_correctly() {
+        let client = GarminClient::new();
+
+        // Set first token
+        client.set_access_token("token_v1".to_string()).await;
+        let result = client.get_access_token().await;
+        assert_eq!(result.unwrap(), "token_v1");
+
+        // Update to second token
+        client.set_access_token("token_v2".to_string()).await;
+        let result = client.get_access_token().await;
+        assert_eq!(result.unwrap(), "token_v2");
+
+        // Update to third token
+        client.set_access_token("token_v3".to_string()).await;
+        let result = client.get_access_token().await;
+        assert_eq!(result.unwrap(), "token_v3");
+    }
+
+    #[test]
+    fn test_client_base_url_constants() {
+        // Verify the client uses correct default base URLs
+        let client = GarminClient::new();
+        assert_eq!(client.base_url(), GARMIN_API_BASE_URL);
+        assert_eq!(client.base_url(), "https://connect.garmin.com/modern/proxy");
+    }
+
+    #[tokio::test]
+    async fn test_is_configured_reflects_token_state() {
+        let client = GarminClient::new();
+
+        // Initially not configured
+        assert!(!client.is_configured());
+
+        // After setting token, configured
+        client.set_access_token("test".to_string()).await;
+        assert!(client.is_configured());
+
+        // After clearing token, not configured
+        client.clear_token().await;
+        assert!(!client.is_configured());
+
+        // Can set again after clear
+        client.set_access_token("another".to_string()).await;
+        assert!(client.is_configured());
+    }
+
+    #[test]
+    fn test_timeout_durations_are_reasonable() {
+        let default = GarminClient::default_timeout();
+        let upload = GarminClient::upload_timeout();
+
+        // Default timeout should be at least 30 seconds
+        assert!(default.as_secs() >= 30);
+
+        // Upload timeout should be longer than default (for large files)
+        assert!(upload > default);
+
+        // Upload timeout should not exceed 5 minutes
+        assert!(upload.as_secs() <= 300);
+    }
+
     // ========================================================================
     // Error Category Tests
     // ========================================================================
