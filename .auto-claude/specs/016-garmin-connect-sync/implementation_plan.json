@@ -1,0 +1,436 @@
+{
+  "feature": "Garmin Connect Sync",
+  "description": "Add Garmin Connect API integration for uploading completed rides with automatic background sync",
+  "created_at": "2026-01-04T12:16:29.520Z",
+  "updated_at": "2026-01-04T12:30:00.000Z",
+  "status": "in_progress",
+  "planStatus": "approved",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Garmin Connect API Client Implementation",
+      "description": "Implement the full Garmin Connect API client with OAuth authentication, FIT file upload, and profile retrieval",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Implement Garmin OAuth configuration and constants",
+          "description": "Add Garmin Connect OAuth endpoints, client credentials handling, and token structures. Garmin uses OAuth 2.0 for authorization.",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs",
+            "src/integrations/sync/oauth.rs"
+          ],
+          "status": "completed",
+          "notes": "Added Garmin OAuth structures (GarminTokenResponse, GarminOAuthErrorResponse), token exchange and refresh methods, GARMIN_TOKEN_URL constant, and OAuth scopes module with default_scopes function. Implementation follows Strava/TrainingPeaks patterns.",
+          "updated_at": "2026-01-04T12:28:07.393974+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Implement GarminClient HTTP client setup",
+          "description": "Complete the GarminClient struct with HTTP client, access token storage, and base URL configuration following the Strava pattern",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "Added HTTP client (reqwest::Client), timeout constants (DEFAULT_TIMEOUT_SECS=60, UPLOAD_TIMEOUT_SECS=120), GARMIN_API_BASE_URL constant, with_base_url() test constructor, accessor methods (base_url(), http_client(), upload_timeout(), default_timeout()), and get_access_token() helper. Updated all API methods to use the new helper. Added comprehensive tests. Follows StravaClient pattern exactly.",
+          "updated_at": "2026-01-04T12:32:11.545814+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Implement Garmin FIT file upload endpoint",
+          "description": "Implement upload_activity method for uploading FIT files to Garmin Connect using multipart form data. Handle response parsing and error cases.",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "Implemented upload_activity method with multipart form data upload. Added: GarminUploadResponse/DetailedImportResult/GarminUploadSuccess/GarminUploadFailure structs for response parsing, GarminApiError with Display impl, validate_fit_file() for FIT validation, is_duplicate_error() for duplicate detection. Full error handling for rate limiting (429), unauthorized (401), forbidden (403), conflict/duplicate (409), and generic errors. Comprehensive unit tests and HTTP mocked tests with wiremock. Follows Strava pattern exactly.",
+          "updated_at": "2026-01-04T12:40:43.396556+00:00"
+        },
+        {
+          "id": "1.4",
+          "title": "Implement Garmin user profile retrieval",
+          "description": "Implement get_user_profile method to fetch the authenticated user's Garmin Connect profile for display in settings",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "Implemented get_user_profile method with HTTP call to /userprofile-service/socialProfile endpoint. Added GarminSocialProfileResponse struct for API response parsing with fields: user_id, display_name, full_name, and profile image URLs (small/medium/large). Updated GarminUserProfile struct to include full_name field and readable_name() method. Full error handling for rate limiting (429), unauthorized (401), forbidden (403), and generic API errors. Comprehensive unit tests and HTTP mocked tests with wiremock. Follows StravaClient get_athlete pattern exactly.",
+          "updated_at": "2026-01-04T12:45:37.773256+00:00"
+        },
+        {
+          "id": "1.5",
+          "title": "Implement Garmin deauthorization/logout",
+          "description": "Implement logout method to revoke OAuth tokens and clear local credentials",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "Implemented deauthorize() method following the Strava pattern. Added oauth_base_url configuration to GarminClient, GARMIN_OAUTH_BASE_URL constant, and comprehensive error handling that always clears the local token regardless of API response. Updated with_base_url() to accept both API and OAuth URLs. Added unit tests for deauthorize without token and comprehensive HTTP mocked tests using wiremock for all scenarios (success, rate limit, unauthorized, not found, server error, API error with body).",
+          "updated_at": "2026-01-04T12:50:33.473081+00:00"
+        },
+        {
+          "id": "1.6",
+          "title": "Add Garmin API error handling",
+          "description": "Implement comprehensive error handling for Garmin API responses including rate limiting, token expiry, duplicate detection, and network errors",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "Implemented comprehensive error handling utilities for Garmin API responses: Added ErrorCategory enum for classifying errors (Transient, RateLimited, Authentication, Client, Server, Permanent) with retry logic helpers. Added RateLimitInfo struct for parsing Retry-After headers and rate limit information. Added SyncErrorExt trait providing is_retryable(), requires_auth_refresh(), is_rate_limited(), is_duplicate(), and retry_delay_secs() methods. Added helper methods on GarminClient: handle_error_status() for consistent HTTP status mapping, map_request_error() for network error categorization, and parse_error_response() for API error parsing. Added comprehensive tests for all new functionality.",
+          "updated_at": "2026-01-04T12:55:26.115744+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "OAuth Flow Integration",
+      "description": "Integrate Garmin OAuth flow with the existing OAuth infrastructure",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Add Garmin OAuth provider configuration",
+          "description": "Register Garmin Connect as an OAuth provider in the oauth.rs module with correct endpoints and scopes",
+          "file_paths": [
+            "src/integrations/sync/oauth.rs"
+          ],
+          "status": "completed",
+          "notes": "Added comprehensive OAuth tests for Garmin Connect in oauth.rs following the exact pattern of Strava and TrainingPeaks. Tests include: HTTP mocked tests for token exchange (success, invalid code, invalid client, server error, invalid JSON), HTTP mocked tests for token refresh (success, invalid_grant, invalid_token, generic error, server error), authorization URL building test verifying Garmin-specific format (no scope in auth URL), response parsing tests for GarminTokenResponse (with/without optional scope field), error response parsing tests (invalid_grant, invalid_client, invalid_request, unauthorized), and test for missing client secret handling. The Garmin OAuth provider was already registered in Phase 1 with token exchange/refresh methods and token URL - this subtask completes the test coverage.",
+          "updated_at": "2026-01-04T13:02:44.810524+00:00"
+        },
+        {
+          "id": "2.2",
+          "title": "Implement Garmin token exchange flow",
+          "description": "Implement the OAuth callback handler to exchange authorization code for access/refresh tokens",
+          "file_paths": [
+            "src/integrations/sync/oauth.rs",
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "completed",
+          "notes": "OAuth callback handler for Garmin token exchange is fully implemented. The exchange_garmin_token method (oauth.rs:603-673) handles authorization code exchange with Garmin's token endpoint, including form-encoded POST request, GarminTokenResponse parsing with expires_in to DateTime conversion, and comprehensive error handling via GarminOAuthErrorResponse. The handle_callback method correctly routes GarminConnect to this exchange method with state validation for CSRF protection. Comprehensive test coverage includes: token exchange success, optional scope handling, invalid_grant/invalid_client errors, server errors, and invalid JSON responses. Implementation was completed as part of Phase 1 (1.1) and Phase 2.1, verified complete.",
+          "updated_at": "2026-01-04T13:06:37.075615+00:00"
+        },
+        {
+          "id": "2.3",
+          "title": "Implement Garmin token refresh",
+          "description": "Implement automatic token refresh when access tokens expire",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "2.4",
+          "title": "Add Garmin credentials storage",
+          "description": "Store Garmin OAuth tokens securely using the existing keyring/credential storage pattern",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs",
+            "src/integrations/sync/service.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Sync Service Integration",
+      "description": "Integrate Garmin Connect with the existing sync service for automatic uploads",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Add GarminConnect platform to SyncPlatform enum",
+          "description": "Ensure GarminConnect is properly registered in the SyncPlatform enum and related types",
+          "file_paths": [
+            "src/integrations/sync/mod.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "3.2",
+          "title": "Integrate GarminClient with SyncService",
+          "description": "Add GarminClient to SyncService struct and implement platform-specific upload logic",
+          "file_paths": [
+            "src/integrations/sync/service.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "3.3",
+          "title": "Add Garmin to upload queue processing",
+          "description": "Ensure the upload queue handles Garmin Connect uploads with proper retry logic and status tracking",
+          "file_paths": [
+            "src/integrations/sync/service.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "3.4",
+          "title": "Implement Garmin upload status polling",
+          "description": "If Garmin uses async processing, implement status polling similar to Strava's check_upload_status",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs",
+            "src/integrations/sync/service.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Settings UI Implementation",
+      "description": "Create the Garmin Connect settings screen following the Strava UI pattern",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Create GarminSettingsScreen struct and state",
+          "description": "Create settings_garmin.rs with connection state enum, actions, and screen state following Strava pattern",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.2",
+          "title": "Implement disconnected state UI",
+          "description": "Render connect button, features list, and Garmin branding when not connected",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.3",
+          "title": "Implement connected state UI",
+          "description": "Render user profile, sync settings, pending uploads count, and disconnect button when connected",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.4",
+          "title": "Implement connecting/disconnecting states",
+          "description": "Add spinner and status message UI for OAuth flow in progress",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.5",
+          "title": "Implement error state UI",
+          "description": "Display error messages with retry button when connection fails",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.6",
+          "title": "Add Garmin settings to screens module",
+          "description": "Register GarminSettingsScreen in the screens module and add Screen variant",
+          "file_paths": [
+            "src/ui/screens/mod.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "4.7",
+          "title": "Add Garmin Connect option to main settings",
+          "description": "Add Garmin Connect entry to the main settings screen integrations list",
+          "file_paths": [
+            "src/ui/screens/settings.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "App Integration and Event Handling",
+      "description": "Wire up the Garmin settings UI with the sync service in the main app",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Add Garmin settings screen rendering to app",
+          "description": "Handle Screen::GarminSettings in the main app render loop",
+          "file_paths": [
+            "src/app.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "5.2",
+          "title": "Implement Garmin connect action handler",
+          "description": "Handle GarminSettingsAction::Connect by starting OAuth flow",
+          "file_paths": [
+            "src/app.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "5.3",
+          "title": "Implement Garmin disconnect action handler",
+          "description": "Handle GarminSettingsAction::Disconnect by calling deauthorize and clearing credentials",
+          "file_paths": [
+            "src/app.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "5.4",
+          "title": "Implement Garmin auto-sync toggle handler",
+          "description": "Handle GarminSettingsAction::ToggleAutoSync by updating platform config",
+          "file_paths": [
+            "src/app.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "5.5",
+          "title": "Update Garmin settings state from sync service",
+          "description": "Populate GarminSettingsScreen with connection status, profile, and pending uploads from sync service",
+          "file_paths": [
+            "src/app.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Testing",
+      "description": "Add comprehensive tests for Garmin Connect integration",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Add GarminClient unit tests",
+          "description": "Test client creation, token management, and configuration",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "6.2",
+          "title": "Add GarminClient HTTP mocked tests",
+          "description": "Test upload, profile fetch, and deauthorization with mocked HTTP responses using wiremock",
+          "file_paths": [
+            "src/integrations/sync/garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "6.3",
+          "title": "Add GarminSettingsScreen tests",
+          "description": "Test connection state transitions, profile display, and action handling",
+          "file_paths": [
+            "src/ui/screens/settings_garmin.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "6.4",
+          "title": "Add integration tests for Garmin sync flow",
+          "description": "Test end-to-end flow of connecting, uploading, and disconnecting",
+          "file_paths": [
+            "tests/garmin_sync_test.rs"
+          ],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Final Verification",
+      "description": "Verify all acceptance criteria are met and code compiles",
+      "subtasks": [
+        {
+          "id": "7.1",
+          "title": "Run cargo build and fix any compilation errors",
+          "description": "Ensure the project compiles without errors",
+          "file_paths": [],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "7.2",
+          "title": "Run cargo test and fix any test failures",
+          "description": "Ensure all tests pass",
+          "file_paths": [],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "7.3",
+          "title": "Run cargo clippy and fix any warnings",
+          "description": "Ensure code passes linter checks",
+          "file_paths": [],
+          "status": "pending",
+          "notes": ""
+        },
+        {
+          "id": "7.4",
+          "title": "Verify acceptance criteria",
+          "description": "Check all acceptance criteria: connect account, auto upload, FIT preservation, connection status in settings, failed upload retry queue",
+          "file_paths": [],
+          "status": "pending",
+          "notes": ""
+        }
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "ac-1",
+      "description": "User can connect Garmin Connect account",
+      "status": "pending"
+    },
+    {
+      "id": "ac-2",
+      "description": "Rides upload to Garmin Connect automatically",
+      "status": "pending"
+    },
+    {
+      "id": "ac-3",
+      "description": "FIT files upload correctly with all data preserved",
+      "status": "pending"
+    },
+    {
+      "id": "ac-4",
+      "description": "Connection status visible in settings",
+      "status": "pending"
+    },
+    {
+      "id": "ac-5",
+      "description": "Failed uploads queue for retry",
+      "status": "pending"
+    }
+  ],
+  "qa_signoff": {
+    "status": "pending",
+    "tests_passed": "",
+    "issues": ""
+  },
+  "last_updated": "2026-01-04T13:06:37.075615+00:00"
+}
