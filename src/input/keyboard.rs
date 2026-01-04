@@ -100,6 +100,11 @@ pub enum KeyAction {
     EndRide,
     SkipInterval,
 
+    // Voice control
+    /// Push-to-talk for voice control.
+    /// When this key is held, voice recognition is active.
+    PushToTalk,
+
     // Metrics
     AnnounceMetrics,
 
@@ -128,6 +133,8 @@ impl KeyAction {
             KeyAction::EndRide => KeyboardShortcut::new(Key::E),
             KeyAction::SkipInterval => KeyboardShortcut::new(Key::N),
 
+            KeyAction::PushToTalk => KeyboardShortcut::new(Key::F4),
+
             KeyAction::AnnounceMetrics => KeyboardShortcut::ctrl(Key::M),
 
             KeyAction::ShowShortcuts => KeyboardShortcut::new(Key::F1),
@@ -152,6 +159,8 @@ impl KeyAction {
             KeyAction::PauseRide => "Pause/resume ride",
             KeyAction::EndRide => "End ride",
             KeyAction::SkipInterval => "Skip to next interval",
+
+            KeyAction::PushToTalk => "Push-to-talk voice control (hold)",
 
             KeyAction::AnnounceMetrics => "Announce current metrics",
 
@@ -201,6 +210,7 @@ impl KeyboardHandler {
             KeyAction::PauseRide,
             KeyAction::EndRide,
             KeyAction::SkipInterval,
+            KeyAction::PushToTalk,
             KeyAction::AnnounceMetrics,
             KeyAction::ShowShortcuts,
             KeyAction::OpenSettings,

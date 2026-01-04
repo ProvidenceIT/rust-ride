@@ -68,6 +68,7 @@ pub mod recognizer;
 pub mod engine;
 pub mod command_parser;
 pub mod wake_word;
+pub mod push_to_talk;
 
 // Re-export main types
 pub use model_manager::{
@@ -96,4 +97,8 @@ pub use command_parser::{
 pub use wake_word::{
     WakeWordDetector, WakeWordConfig, WakeWordEvent, WakeWordState,
     DEFAULT_ACTIVE_LISTENING_DURATION_MS, WAKE_PHRASES, wake_word_grammar,
+};
+pub use push_to_talk::{
+    PushToTalkHandler, PushToTalkConfig, PushToTalkEvent, PushToTalkKey, PushToTalkState,
+    DEFAULT_PUSH_TO_TALK_KEY, DEFAULT_MIN_HOLD_DURATION_MS, DEFAULT_MAX_HOLD_DURATION_MS,
 };
