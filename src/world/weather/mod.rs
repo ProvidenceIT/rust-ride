@@ -4,6 +4,10 @@ pub mod particles;
 pub mod skybox;
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+// Import weather provider types for the bridge
+use crate::integrations::weather::{WeatherData, WeatherProvider, WeatherUnits};
 
 /// Weather condition type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -270,6 +274,168 @@ impl Default for WeatherController {
     }
 }
 
+/// Bridge between weather API data and the 3D world rendering system.
+///
+/// The `WeatherBridge` connects fetched weather data from external APIs
+/// (like OpenWeatherMap) to the `WeatherController`, updating the 3D world
+/// state when new data arrives. It handles:
+///
+/// - Converting API weather conditions to world weather types
+/// - Converting wind speed units (m/s or mph) to km/h for the world
+/// - Triggering smooth weather transition animations
+///
+/// # Example
+///
+/// ```ignore
+/// let provider = Arc::new(OpenWeatherMapProvider::new());
+/// let mut controller = WeatherController::new();
+/// let bridge = WeatherBridge::new(provider.clone(), WeatherUnits::Metric);
+///
+/// // Sync weather data to the controller
+/// if let Err(e) = bridge.sync(&mut controller).await {
+///     tracing::warn!("Failed to sync weather: {}", e);
+/// }
+/// ```
+pub struct WeatherBridge<P: WeatherProvider> {
+    /// Weather data provider (e.g., OpenWeatherMapProvider)
+    provider: Arc<P>,
+    /// Units used by the provider for wind speed conversion
+    units: WeatherUnits,
+    /// Last synced weather type (to detect changes)
+    last_weather_type: Option<WeatherType>,
+}
+
+impl<P: WeatherProvider> WeatherBridge<P> {
+    /// Create a new weather bridge with the given provider.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - The weather data provider to use
+    /// * `units` - The units the provider returns (affects wind speed conversion)
+    pub fn new(provider: Arc<P>, units: WeatherUnits) -> Self {
+        Self {
+            provider,
+            units,
+            last_weather_type: None,
+        }
+    }
+
+    /// Sync weather data from the provider to the controller.
+    ///
+    /// This method:
+    /// 1. Fetches current weather data from the provider
+    /// 2. Converts the weather condition to a world WeatherType
+    /// 3. Applies wind speed (converted to km/h) and direction
+    /// 4. Triggers a weather transition if the condition changed
+    ///
+    /// # Arguments
+    ///
+    /// * `controller` - The weather controller to update
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if weather was synced and changed,
+    /// `Ok(false)` if synced but unchanged, or an error if fetch failed.
+    pub async fn sync(
+        &mut self,
+        controller: &mut WeatherController,
+    ) -> Result<bool, crate::integrations::weather::WeatherError> {
+        // Fetch current weather data
+        let weather_data = self.provider.get_weather().await?;
+
+        // Apply weather data to controller
+        let changed = self.apply_weather_data(controller, &weather_data);
+
+        Ok(changed)
+    }
+
+    /// Sync using cached data only (no API call).
+    ///
+    /// This is useful for initial sync when you don't want to trigger
+    /// a fresh API call, or when operating in offline mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `controller` - The weather controller to update
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(true)` if cached data was applied and weather changed,
+    /// `Some(false)` if applied but unchanged, or `None` if no cached data.
+    pub fn sync_from_cache(&mut self, controller: &mut WeatherController) -> Option<bool> {
+        let weather_data = self.provider.get_cached()?;
+        Some(self.apply_weather_data(controller, &weather_data))
+    }
+
+    /// Apply weather data to the controller, returning whether weather type changed.
+    fn apply_weather_data(
+        &mut self,
+        controller: &mut WeatherController,
+        weather_data: &WeatherData,
+    ) -> bool {
+        // Convert weather condition to world weather type
+        let weather_type = weather_data.condition.to_weather_type();
+
+        // Convert wind speed to km/h
+        let wind_speed_kmh = self.convert_wind_speed(weather_data.wind_speed);
+
+        // Apply wind data to the state
+        let state = controller.state_mut();
+        state.wind_speed_kmh = wind_speed_kmh;
+        state.wind_direction_degrees = weather_data.wind_direction as f32;
+
+        // Check if weather type changed (triggers transition animation)
+        let weather_changed = self.last_weather_type != Some(weather_type);
+        if weather_changed {
+            tracing::info!(
+                previous = ?self.last_weather_type,
+                new = ?weather_type,
+                wind_kmh = wind_speed_kmh,
+                wind_dir = weather_data.wind_direction,
+                "Weather condition changed, triggering transition"
+            );
+            controller.set_weather(weather_type);
+            self.last_weather_type = Some(weather_type);
+        } else {
+            tracing::debug!(
+                weather = ?weather_type,
+                wind_kmh = wind_speed_kmh,
+                wind_dir = weather_data.wind_direction,
+                "Weather synced (no change)"
+            );
+        }
+
+        weather_changed
+    }
+
+    /// Convert wind speed from provider units to km/h.
+    ///
+    /// OpenWeatherMap returns:
+    /// - Metric: m/s (multiply by 3.6 to get km/h)
+    /// - Imperial: mph (multiply by 1.60934 to get km/h)
+    fn convert_wind_speed(&self, wind_speed: f32) -> f32 {
+        match self.units {
+            WeatherUnits::Metric => wind_speed * 3.6, // m/s to km/h
+            WeatherUnits::Imperial => wind_speed * 1.60934, // mph to km/h
+        }
+    }
+
+    /// Get the current weather type (if synced).
+    pub fn current_weather_type(&self) -> Option<WeatherType> {
+        self.last_weather_type
+    }
+
+    /// Get a reference to the provider.
+    pub fn provider(&self) -> &Arc<P> {
+        &self.provider
+    }
+
+    /// Update the units setting (e.g., if user changes preference).
+    pub fn set_units(&mut self, units: WeatherUnits) {
+        self.units = units;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +464,273 @@ mod tests {
         assert_eq!(TimeOfDay::from_hours(12.0), TimeOfDay::Day);
         assert_eq!(TimeOfDay::from_hours(18.0), TimeOfDay::Dusk);
         assert_eq!(TimeOfDay::from_hours(22.0), TimeOfDay::Night);
+    }
+
+    // ========== WeatherBridge Tests ==========
+
+    use crate::integrations::weather::{WeatherCondition, WeatherError};
+    use chrono::Utc;
+    use std::sync::RwLock;
+
+    /// Mock weather provider for testing WeatherBridge
+    struct MockWeatherProvider {
+        data: RwLock<Option<WeatherData>>,
+        should_fail: RwLock<bool>,
+    }
+
+    impl MockWeatherProvider {
+        fn new() -> Self {
+            Self {
+                data: RwLock::new(None),
+                should_fail: RwLock::new(false),
+            }
+        }
+
+        fn set_weather_data(&self, data: WeatherData) {
+            *self.data.write().unwrap() = Some(data);
+        }
+
+        fn set_should_fail(&self, fail: bool) {
+            *self.should_fail.write().unwrap() = fail;
+        }
+    }
+
+    impl crate::integrations::weather::WeatherProvider for MockWeatherProvider {
+        fn configure(&self, _config: crate::integrations::weather::WeatherConfig) {}
+
+        async fn get_weather(&self) -> Result<WeatherData, WeatherError> {
+            if *self.should_fail.read().unwrap() {
+                return Err(WeatherError::NetworkError("Mock failure".to_string()));
+            }
+            self.data
+                .read()
+                .unwrap()
+                .clone()
+                .ok_or(WeatherError::NetworkError("No mock data".to_string()))
+        }
+
+        async fn refresh(&self) -> Result<WeatherData, WeatherError> {
+            self.get_weather().await
+        }
+
+        fn is_available(&self) -> bool {
+            self.data.read().unwrap().is_some()
+        }
+
+        fn get_cached(&self) -> Option<WeatherData> {
+            self.data.read().unwrap().clone()
+        }
+
+        fn last_updated(&self) -> Option<chrono::DateTime<Utc>> {
+            self.data.read().unwrap().as_ref().map(|d| d.fetched_at)
+        }
+    }
+
+    fn create_test_weather_data(condition: WeatherCondition, wind_speed: f32, wind_dir: u16) -> WeatherData {
+        WeatherData {
+            temperature: 20.0,
+            feels_like: 18.0,
+            humidity: 65,
+            condition,
+            description: "Test weather".to_string(),
+            wind_speed,
+            wind_direction: wind_dir,
+            pressure: 1013,
+            visibility: 10000,
+            uv_index: None,
+            fetched_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_weather_bridge_creation() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let bridge: WeatherBridge<MockWeatherProvider> = WeatherBridge::new(provider, WeatherUnits::Metric);
+
+        assert!(bridge.current_weather_type().is_none());
+    }
+
+    #[test]
+    fn test_weather_bridge_wind_speed_conversion_metric() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let bridge: WeatherBridge<MockWeatherProvider> = WeatherBridge::new(provider, WeatherUnits::Metric);
+
+        // 10 m/s should convert to 36 km/h
+        let converted = bridge.convert_wind_speed(10.0);
+        assert!((converted - 36.0).abs() < 0.001);
+
+        // 5 m/s should convert to 18 km/h
+        let converted = bridge.convert_wind_speed(5.0);
+        assert!((converted - 18.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_weather_bridge_wind_speed_conversion_imperial() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let bridge: WeatherBridge<MockWeatherProvider> = WeatherBridge::new(provider, WeatherUnits::Imperial);
+
+        // 10 mph should convert to ~16.0934 km/h
+        let converted = bridge.convert_wind_speed(10.0);
+        assert!((converted - 16.0934).abs() < 0.001);
+
+        // 60 mph should convert to ~96.56 km/h
+        let converted = bridge.convert_wind_speed(60.0);
+        assert!((converted - 96.5604).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_weather_bridge_sync_applies_weather_type() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Rain,
+            5.0, // m/s
+            180, // degrees (south)
+        ));
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        let changed = bridge.sync(&mut controller).await.unwrap();
+
+        assert!(changed);
+        assert_eq!(controller.state().weather, WeatherType::Rain);
+        assert_eq!(bridge.current_weather_type(), Some(WeatherType::Rain));
+    }
+
+    #[tokio::test]
+    async fn test_weather_bridge_sync_applies_wind_data() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Clear,
+            10.0, // 10 m/s = 36 km/h
+            270,  // degrees (west)
+        ));
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        bridge.sync(&mut controller).await.unwrap();
+
+        let state = controller.state();
+        assert!((state.wind_speed_kmh - 36.0).abs() < 0.001);
+        assert!((state.wind_direction_degrees - 270.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_weather_bridge_sync_no_change_returns_false() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Clear,
+            5.0,
+            0,
+        ));
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        // First sync - should report change
+        let changed1 = bridge.sync(&mut controller).await.unwrap();
+        assert!(changed1);
+
+        // Second sync with same weather - should report no change
+        let changed2 = bridge.sync(&mut controller).await.unwrap();
+        assert!(!changed2);
+    }
+
+    #[tokio::test]
+    async fn test_weather_bridge_sync_weather_transition() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let mut bridge = WeatherBridge::new(Arc::clone(&provider), WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        // First: Clear weather
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Clear,
+            5.0,
+            0,
+        ));
+        bridge.sync(&mut controller).await.unwrap();
+        assert_eq!(controller.state().weather, WeatherType::Clear);
+        assert_eq!(controller.state().previous_weather, None);
+        assert!((controller.state().transition_progress - 1.0).abs() < 0.001);
+
+        // Second: Change to Rain - should trigger transition
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Rain,
+            8.0,
+            90,
+        ));
+        let changed = bridge.sync(&mut controller).await.unwrap();
+
+        assert!(changed);
+        assert_eq!(controller.state().weather, WeatherType::Rain);
+        assert_eq!(controller.state().previous_weather, Some(WeatherType::Clear));
+        assert!((controller.state().transition_progress - 0.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_weather_bridge_sync_error() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        provider.set_should_fail(true);
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        let result = bridge.sync(&mut controller).await;
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_weather_bridge_sync_from_cache() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        provider.set_weather_data(create_test_weather_data(
+            WeatherCondition::Cloudy,
+            3.0,
+            45,
+        ));
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        let result = bridge.sync_from_cache(&mut controller);
+
+        assert_eq!(result, Some(true));
+        assert_eq!(controller.state().weather, WeatherType::Cloudy);
+    }
+
+    #[test]
+    fn test_weather_bridge_sync_from_cache_no_data() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        // Don't set any data
+
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+        let mut controller = WeatherController::new();
+
+        let result = bridge.sync_from_cache(&mut controller);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_weather_bridge_set_units() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let mut bridge = WeatherBridge::new(provider, WeatherUnits::Metric);
+
+        // Initially metric
+        assert!((bridge.convert_wind_speed(10.0) - 36.0).abs() < 0.001);
+
+        // Change to imperial
+        bridge.set_units(WeatherUnits::Imperial);
+        assert!((bridge.convert_wind_speed(10.0) - 16.0934).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_weather_bridge_provider_access() {
+        let provider = Arc::new(MockWeatherProvider::new());
+        let bridge = WeatherBridge::new(Arc::clone(&provider), WeatherUnits::Metric);
+
+        // Should be able to access the provider through the bridge
+        assert!(!bridge.provider().is_available()); // No data set yet
     }
 }
