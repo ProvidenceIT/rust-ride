@@ -119,6 +119,31 @@ struct GarminFieldError {
     path: Option<String>,
 }
 
+/// Garmin social profile API response
+///
+/// Response from /userprofile-service/socialProfile endpoint
+#[derive(Debug, Deserialize)]
+struct GarminSocialProfileResponse {
+    /// User ID
+    #[serde(rename = "id")]
+    user_id: u64,
+    /// Display name (username)
+    #[serde(rename = "displayName")]
+    display_name: String,
+    /// Full name (optional)
+    #[serde(rename = "fullName")]
+    full_name: Option<String>,
+    /// Profile image URL (small)
+    #[serde(rename = "profileImageUrlSmall")]
+    profile_image_url_small: Option<String>,
+    /// Profile image URL (medium)
+    #[serde(rename = "profileImageUrlMedium")]
+    profile_image_url_medium: Option<String>,
+    /// Profile image URL (large)
+    #[serde(rename = "profileImageUrlLarge")]
+    profile_image_url_large: Option<String>,
+}
+
 impl std::fmt::Display for GarminApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref message) = self.message {
@@ -526,15 +551,111 @@ impl GarminClient {
     }
 
     /// Get user profile
+    ///
+    /// Fetches the authenticated user's profile from Garmin Connect.
+    ///
+    /// # Returns
+    /// The user profile including id, display name, and profile image URL
+    ///
+    /// # Errors
+    /// * `NotConfigured` - If no access token is set
+    /// * `RateLimited` - If Garmin's rate limit was exceeded
+    /// * `TokenExpired` - If the access token is invalid or expired
+    /// * `Timeout` - If the request timed out
+    /// * `NetworkError` - If a network error occurred
     pub async fn get_user_profile(&self) -> Result<GarminUserProfile, SyncError> {
-        let _token = self.get_access_token().await?;
+        let token = self.get_access_token().await?;
 
-        // TODO: GET https://connect.garmin.com/modern/proxy/userprofile-service/socialProfile
+        tracing::debug!("Fetching Garmin Connect user profile");
+
+        let url = format!("{}/userprofile-service/socialProfile", self.base_url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    SyncError::Timeout(DEFAULT_TIMEOUT_SECS)
+                } else if e.is_connect() {
+                    SyncError::NetworkError(format!("Connection failed: {}", e))
+                } else {
+                    SyncError::NetworkError(format!("Failed to fetch user profile: {}", e))
+                }
+            })?;
+
+        let status_code = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SyncError::NetworkError(format!("Failed to read response body: {}", e)))?;
+
+        // Handle rate limiting (429 Too Many Requests)
+        if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            tracing::warn!("Garmin Connect API rate limit exceeded");
+            return Err(SyncError::RateLimited);
+        }
+
+        // Handle unauthorized (401)
+        if status_code == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::warn!(
+                "Garmin Connect API returned 401 Unauthorized - token may be expired or revoked"
+            );
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle forbidden (403) - often means token issues
+        if status_code == reqwest::StatusCode::FORBIDDEN {
+            tracing::warn!("Garmin Connect API returned 403 Forbidden - token may be invalid");
+            return Err(SyncError::TokenExpired);
+        }
+
+        // Handle other errors
+        if !status_code.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<GarminApiError>(&body) {
+                tracing::error!("Garmin Connect profile fetch failed: {}", error_response);
+                return Err(SyncError::ApiError(format!(
+                    "Garmin error: {}",
+                    error_response
+                )));
+            }
+            tracing::error!(
+                "Garmin Connect profile fetch failed with status {}: {}",
+                status_code,
+                body
+            );
+            return Err(SyncError::ApiError(format!(
+                "Failed to fetch profile with status {}: {}",
+                status_code, body
+            )));
+        }
+
+        // Parse successful response
+        let profile_response: GarminSocialProfileResponse =
+            serde_json::from_str(&body).map_err(|e| {
+                SyncError::ApiError(format!("Failed to parse profile response: {}", e))
+            })?;
+
+        tracing::info!(
+            "Fetched Garmin Connect user profile: {} (id: {})",
+            profile_response.display_name,
+            profile_response.user_id
+        );
+
+        // Convert to GarminUserProfile
+        // Use medium image URL if available, fallback to small, then large
+        let profile_image_url = profile_response
+            .profile_image_url_medium
+            .or(profile_response.profile_image_url_small)
+            .or(profile_response.profile_image_url_large);
 
         Ok(GarminUserProfile {
-            display_name: "Test User".to_string(),
-            profile_image_url: None,
-            user_id: 0,
+            user_id: profile_response.user_id,
+            display_name: profile_response.display_name,
+            full_name: profile_response.full_name,
+            profile_image_url,
         })
     }
 
@@ -576,9 +697,23 @@ impl GarminClient {
 /// Garmin user profile
 #[derive(Debug, Clone)]
 pub struct GarminUserProfile {
-    pub display_name: String,
-    pub profile_image_url: Option<String>,
+    /// User ID
     pub user_id: u64,
+    /// Display name (username)
+    pub display_name: String,
+    /// Full name (optional, e.g., "John Doe")
+    pub full_name: Option<String>,
+    /// Profile image URL (optional)
+    pub profile_image_url: Option<String>,
+}
+
+impl GarminUserProfile {
+    /// Get a human-readable name for display
+    ///
+    /// Returns full_name if available, otherwise display_name
+    pub fn readable_name(&self) -> &str {
+        self.full_name.as_deref().unwrap_or(&self.display_name)
+    }
 }
 
 /// Garmin activity summary
@@ -849,6 +984,102 @@ mod tests {
         assert!(scopes.contains(&scopes::PROFILE_READ.to_string()));
         assert!(scopes.contains(&scopes::ACTIVITY_READ.to_string()));
         assert!(!scopes.contains(&scopes::DEVICE_READ.to_string()));
+    }
+
+    // ========================================================================
+    // User Profile Tests
+    // ========================================================================
+
+    #[test]
+    fn test_garmin_user_profile_readable_name_with_full_name() {
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist123".to_string(),
+            full_name: Some("John Doe".to_string()),
+            profile_image_url: None,
+        };
+        assert_eq!(profile.readable_name(), "John Doe");
+    }
+
+    #[test]
+    fn test_garmin_user_profile_readable_name_without_full_name() {
+        let profile = GarminUserProfile {
+            user_id: 12345,
+            display_name: "cyclist123".to_string(),
+            full_name: None,
+            profile_image_url: None,
+        };
+        assert_eq!(profile.readable_name(), "cyclist123");
+    }
+
+    #[test]
+    fn test_garmin_social_profile_response_deserialization() {
+        let json = r#"{
+            "id": 12345678,
+            "displayName": "cyclist123",
+            "fullName": "John Doe",
+            "profileImageUrlSmall": "https://example.com/small.jpg",
+            "profileImageUrlMedium": "https://example.com/medium.jpg",
+            "profileImageUrlLarge": "https://example.com/large.jpg"
+        }"#;
+
+        let response: GarminSocialProfileResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.user_id, 12345678);
+        assert_eq!(response.display_name, "cyclist123");
+        assert_eq!(response.full_name, Some("John Doe".to_string()));
+        assert_eq!(
+            response.profile_image_url_small,
+            Some("https://example.com/small.jpg".to_string())
+        );
+        assert_eq!(
+            response.profile_image_url_medium,
+            Some("https://example.com/medium.jpg".to_string())
+        );
+        assert_eq!(
+            response.profile_image_url_large,
+            Some("https://example.com/large.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_garmin_social_profile_response_minimal() {
+        let json = r#"{
+            "id": 99999,
+            "displayName": "user99999"
+        }"#;
+
+        let response: GarminSocialProfileResponse =
+            serde_json::from_str(json).expect("Deserialization should succeed");
+
+        assert_eq!(response.user_id, 99999);
+        assert_eq!(response.display_name, "user99999");
+        assert!(response.full_name.is_none());
+        assert!(response.profile_image_url_small.is_none());
+        assert!(response.profile_image_url_medium.is_none());
+        assert!(response.profile_image_url_large.is_none());
+    }
+
+    #[test]
+    fn test_garmin_social_profile_response_ignores_extra_fields() {
+        // Garmin API may return additional fields - ensure we handle them gracefully
+        let json = r#"{
+            "id": 12345678,
+            "displayName": "cyclist123",
+            "fullName": "John Doe",
+            "userName": "cyclist123",
+            "profileVisibility": "PUBLIC",
+            "location": "San Francisco",
+            "bio": "I love cycling!",
+            "profileImageUrlSmall": "https://example.com/small.jpg"
+        }"#;
+
+        let response: GarminSocialProfileResponse = serde_json::from_str(json)
+            .expect("Deserialization should succeed with extra fields");
+
+        assert_eq!(response.user_id, 12345678);
+        assert_eq!(response.display_name, "cyclist123");
     }
 
     #[test]
@@ -1461,5 +1692,203 @@ mod http_mocked_tests {
         let record = result.unwrap();
         assert_eq!(record.external_id, Some("pending-upload-uuid".to_string()));
         assert!(record.external_url.is_none()); // No URL when only UUID available
+    }
+
+    // ============================================================================
+    // Get User Profile Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_user_profile_success() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 12345678,
+            "displayName": "cyclist123",
+            "fullName": "John Doe",
+            "profileImageUrlSmall": "https://example.com/small.jpg",
+            "profileImageUrlMedium": "https://example.com/medium.jpg",
+            "profileImageUrlLarge": "https://example.com/large.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.user_id, 12345678);
+        assert_eq!(profile.display_name, "cyclist123");
+        assert_eq!(profile.full_name, Some("John Doe".to_string()));
+        // Should prefer medium image URL
+        assert_eq!(
+            profile.profile_image_url,
+            Some("https://example.com/medium.jpg".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_minimal_response() {
+        let mock_server = MockServer::start().await;
+
+        // Response with only required fields
+        let response_body = r#"{
+            "id": 99999,
+            "displayName": "user99999"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.user_id, 99999);
+        assert_eq!(profile.display_name, "user99999");
+        assert!(profile.full_name.is_none());
+        assert!(profile.profile_image_url.is_none());
+        // Test readable_name when full_name is None
+        assert_eq!(profile.readable_name(), "user99999");
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_with_small_image_only() {
+        let mock_server = MockServer::start().await;
+
+        let response_body = r#"{
+            "id": 11111,
+            "displayName": "user11111",
+            "profileImageUrlSmall": "https://example.com/small.jpg"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        // Should fallback to small image when medium not available
+        assert_eq!(
+            profile.profile_image_url,
+            Some("https://example.com/small.jpg".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_rate_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(matches!(result, Err(SyncError::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_forbidden() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(matches!(result, Err(SyncError::TokenExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_api_error() {
+        let mock_server = MockServer::start().await;
+
+        let error_body = r#"{
+            "message": "Resource Not Found"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(404).set_body_string(error_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(
+            matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("Resource Not Found"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_user_profile_server_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/userprofile-service/socialProfile"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = GarminClient::with_base_url(mock_server.uri());
+        client.set_access_token("test_token".to_string()).await;
+
+        let result = client.get_user_profile().await;
+
+        assert!(matches!(result, Err(SyncError::ApiError(msg)) if msg.contains("500")));
     }
 }
