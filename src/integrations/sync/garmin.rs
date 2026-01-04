@@ -1,6 +1,14 @@
 //! Garmin Connect API Integration
 //!
 //! T105: Implement Garmin Connect API upload.
+//!
+//! This module provides comprehensive error handling for all Garmin Connect API
+//! interactions, including:
+//! - Rate limiting with retry-after support
+//! - Token expiry and refresh handling
+//! - Duplicate activity detection
+//! - Network error recovery
+//! - FIT file validation
 
 use super::{SyncError, SyncPlatform, SyncRecord, SyncRecordStatus};
 use chrono::Utc;
@@ -27,6 +35,183 @@ const GARMIN_OAUTH_BASE_URL: &str = "https://connect.garmin.com/oauth-service/oa
 /// FIT file header magic bytes
 const FIT_HEADER_SIZE: u8 = 14;
 const FIT_HEADER_SIGNATURE: &[u8] = b".FIT";
+
+/// Default retry delay in seconds when rate limited without Retry-After header
+const DEFAULT_RATE_LIMIT_RETRY_SECS: u64 = 60;
+
+/// Maximum retry attempts for transient errors
+const MAX_RETRY_ATTEMPTS: u32 = 3;
+
+/// Error categorization for retry and recovery logic
+///
+/// Classifies errors into categories that help determine the appropriate
+/// recovery strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    /// Transient errors that should be retried (network issues, timeouts)
+    Transient,
+    /// Rate limit errors that require waiting before retry
+    RateLimited,
+    /// Authentication errors requiring token refresh or re-authorization
+    Authentication,
+    /// Client errors that should not be retried (invalid data, bad request)
+    Client,
+    /// Server errors that may be retried after a delay
+    Server,
+    /// Permanent errors that should not be retried (duplicate activity)
+    Permanent,
+}
+
+impl ErrorCategory {
+    /// Check if errors in this category should be retried
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            ErrorCategory::Transient | ErrorCategory::RateLimited | ErrorCategory::Server
+        )
+    }
+
+    /// Get the recommended initial retry delay in seconds
+    pub fn initial_retry_delay_secs(&self) -> u64 {
+        match self {
+            ErrorCategory::Transient => 5,
+            ErrorCategory::RateLimited => DEFAULT_RATE_LIMIT_RETRY_SECS,
+            ErrorCategory::Server => 30,
+            _ => 0, // Non-retryable
+        }
+    }
+
+    /// Get the maximum number of retry attempts for this category
+    pub fn max_retry_attempts(&self) -> u32 {
+        match self {
+            ErrorCategory::Transient => MAX_RETRY_ATTEMPTS,
+            ErrorCategory::RateLimited => 1, // Wait and retry once
+            ErrorCategory::Server => 2,
+            _ => 0, // Non-retryable
+        }
+    }
+}
+
+/// Rate limit information extracted from API response
+#[derive(Debug, Clone)]
+pub struct RateLimitInfo {
+    /// Seconds to wait before retrying (from Retry-After header or default)
+    pub retry_after_secs: u64,
+    /// Whether this is a hard limit (daily) vs soft limit (per-minute)
+    pub is_hard_limit: bool,
+}
+
+impl Default for RateLimitInfo {
+    fn default() -> Self {
+        Self {
+            retry_after_secs: DEFAULT_RATE_LIMIT_RETRY_SECS,
+            is_hard_limit: false,
+        }
+    }
+}
+
+impl RateLimitInfo {
+    /// Create rate limit info from HTTP response headers
+    pub fn from_headers(headers: &reqwest::header::HeaderMap) -> Self {
+        // Try to parse Retry-After header
+        let retry_after_secs = headers
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(DEFAULT_RATE_LIMIT_RETRY_SECS);
+
+        // Check for daily limit indicator (varies by API)
+        let is_hard_limit = headers
+            .get("x-ratelimit-remaining")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(|remaining| remaining == 0)
+            .unwrap_or(false);
+
+        Self {
+            retry_after_secs,
+            is_hard_limit,
+        }
+    }
+
+    /// Get the retry delay as a Duration
+    pub fn retry_delay(&self) -> Duration {
+        Duration::from_secs(self.retry_after_secs)
+    }
+}
+
+/// Extension trait for SyncError to support error categorization and retry logic
+pub trait SyncErrorExt {
+    /// Get the error category for retry/recovery logic
+    fn category(&self) -> ErrorCategory;
+
+    /// Check if this error should be retried
+    fn is_retryable(&self) -> bool;
+
+    /// Check if this error requires authentication refresh
+    fn requires_auth_refresh(&self) -> bool;
+
+    /// Check if this error is due to rate limiting
+    fn is_rate_limited(&self) -> bool;
+
+    /// Check if this error is due to a duplicate activity
+    fn is_duplicate(&self) -> bool;
+
+    /// Get the recommended retry delay in seconds
+    fn retry_delay_secs(&self) -> u64;
+}
+
+impl SyncErrorExt for SyncError {
+    fn category(&self) -> ErrorCategory {
+        match self {
+            SyncError::NotConfigured(_) => ErrorCategory::Client,
+            SyncError::AuthorizationRequired => ErrorCategory::Authentication,
+            SyncError::TokenExpired => ErrorCategory::Authentication,
+            SyncError::RefreshFailed(_) => ErrorCategory::Authentication,
+            SyncError::UploadFailed(msg) => {
+                // Check for server errors in the message
+                if msg.contains("500") || msg.contains("502") || msg.contains("503") {
+                    ErrorCategory::Server
+                } else {
+                    ErrorCategory::Client
+                }
+            }
+            SyncError::ApiError(msg) => {
+                if msg.contains("500") || msg.contains("502") || msg.contains("503") {
+                    ErrorCategory::Server
+                } else {
+                    ErrorCategory::Client
+                }
+            }
+            SyncError::CredentialError(_) => ErrorCategory::Permanent,
+            SyncError::NetworkError(_) => ErrorCategory::Transient,
+            SyncError::DuplicateActivity(_) => ErrorCategory::Permanent,
+            SyncError::InvalidFitFile(_) => ErrorCategory::Client,
+            SyncError::Timeout(_) => ErrorCategory::Transient,
+            SyncError::RateLimited => ErrorCategory::RateLimited,
+        }
+    }
+
+    fn is_retryable(&self) -> bool {
+        self.category().is_retryable()
+    }
+
+    fn requires_auth_refresh(&self) -> bool {
+        matches!(self.category(), ErrorCategory::Authentication)
+    }
+
+    fn is_rate_limited(&self) -> bool {
+        matches!(self, SyncError::RateLimited)
+    }
+
+    fn is_duplicate(&self) -> bool {
+        matches!(self, SyncError::DuplicateActivity(_))
+    }
+
+    fn retry_delay_secs(&self) -> u64 {
+        self.category().initial_retry_delay_secs()
+    }
+}
 
 /// Garmin Connect upload API response
 ///
@@ -275,6 +460,104 @@ impl GarminClient {
             .await
             .clone()
             .ok_or(SyncError::NotConfigured(SyncPlatform::GarminConnect))
+    }
+
+    /// Handle common HTTP status code errors with consistent logging and error mapping.
+    ///
+    /// Returns `Some(SyncError)` for known error status codes, or `None` if the
+    /// status code should be handled differently by the caller.
+    ///
+    /// This method handles:
+    /// - 429 Too Many Requests → RateLimited
+    /// - 401 Unauthorized → TokenExpired
+    /// - 403 Forbidden → TokenExpired (often means invalid token)
+    /// - 409 Conflict → DuplicateActivity
+    fn handle_error_status(
+        status: reqwest::StatusCode,
+        context: &str,
+    ) -> Option<SyncError> {
+        match status {
+            reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                tracing::warn!("Garmin Connect API rate limit exceeded during {}", context);
+                Some(SyncError::RateLimited)
+            }
+            reqwest::StatusCode::UNAUTHORIZED => {
+                tracing::warn!(
+                    "Garmin Connect API returned 401 Unauthorized during {} - token may be expired or revoked",
+                    context
+                );
+                Some(SyncError::TokenExpired)
+            }
+            reqwest::StatusCode::FORBIDDEN => {
+                tracing::warn!(
+                    "Garmin Connect API returned 403 Forbidden during {} - token may be invalid",
+                    context
+                );
+                Some(SyncError::TokenExpired)
+            }
+            reqwest::StatusCode::CONFLICT => {
+                tracing::info!("Garmin Connect returned 409 Conflict during {} - likely duplicate", context);
+                Some(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+            }
+            _ => None,
+        }
+    }
+
+    /// Map a reqwest error to a SyncError with appropriate categorization.
+    ///
+    /// This method handles common network error cases:
+    /// - Timeout errors → Timeout
+    /// - Connection errors → NetworkError (connection failed)
+    /// - Other errors → NetworkError (request failed)
+    fn map_request_error(err: reqwest::Error, timeout_secs: u64, context: &str) -> SyncError {
+        if err.is_timeout() {
+            tracing::warn!(
+                "Garmin Connect {} request timed out after {} seconds",
+                context,
+                timeout_secs
+            );
+            SyncError::Timeout(timeout_secs)
+        } else if err.is_connect() {
+            tracing::warn!("Failed to connect to Garmin Connect during {}: {}", context, err);
+            SyncError::NetworkError(format!("Connection failed: {}", err))
+        } else {
+            tracing::warn!("Failed to send {} request to Garmin Connect: {}", context, err);
+            SyncError::NetworkError(format!("Request failed: {}", err))
+        }
+    }
+
+    /// Parse error response body and create appropriate SyncError.
+    ///
+    /// Attempts to parse the body as a Garmin API error response. If parsing
+    /// succeeds, checks for duplicate activity indicators before returning
+    /// a generic upload error.
+    fn parse_error_response(
+        status: reqwest::StatusCode,
+        body: &str,
+        context: &str,
+    ) -> SyncError {
+        // Try to parse as Garmin error response
+        if let Ok(error_response) = serde_json::from_str::<GarminApiError>(body) {
+            let error_msg = error_response.to_string();
+
+            // Check for duplicate activity error
+            if Self::is_duplicate_error(&error_msg) {
+                tracing::info!("Garmin Connect {} detected as duplicate: {}", context, error_msg);
+                return SyncError::DuplicateActivity(SyncPlatform::GarminConnect);
+            }
+
+            tracing::error!("Garmin Connect {} failed: {}", context, error_msg);
+            return SyncError::UploadFailed(format!("Garmin error: {}", error_msg));
+        }
+
+        // Fall back to generic error with status code
+        tracing::error!(
+            "Garmin Connect {} failed with status {}: {}",
+            context,
+            status,
+            body
+        );
+        SyncError::UploadFailed(format!("Failed with status {}: {}", status, body))
     }
 
     /// Validate FIT file data before upload.
@@ -962,6 +1245,264 @@ mod tests {
         client.set_access_token("my_secret_token".to_string()).await;
         let result = client.get_access_token().await;
         assert_eq!(result.unwrap(), "my_secret_token");
+    }
+
+    // ========================================================================
+    // Error Category Tests
+    // ========================================================================
+
+    #[test]
+    fn test_error_category_is_retryable() {
+        assert!(ErrorCategory::Transient.is_retryable());
+        assert!(ErrorCategory::RateLimited.is_retryable());
+        assert!(ErrorCategory::Server.is_retryable());
+        assert!(!ErrorCategory::Client.is_retryable());
+        assert!(!ErrorCategory::Authentication.is_retryable());
+        assert!(!ErrorCategory::Permanent.is_retryable());
+    }
+
+    #[test]
+    fn test_error_category_initial_retry_delay() {
+        assert_eq!(ErrorCategory::Transient.initial_retry_delay_secs(), 5);
+        assert_eq!(
+            ErrorCategory::RateLimited.initial_retry_delay_secs(),
+            DEFAULT_RATE_LIMIT_RETRY_SECS
+        );
+        assert_eq!(ErrorCategory::Server.initial_retry_delay_secs(), 30);
+        assert_eq!(ErrorCategory::Client.initial_retry_delay_secs(), 0);
+        assert_eq!(ErrorCategory::Permanent.initial_retry_delay_secs(), 0);
+    }
+
+    #[test]
+    fn test_error_category_max_retry_attempts() {
+        assert_eq!(ErrorCategory::Transient.max_retry_attempts(), MAX_RETRY_ATTEMPTS);
+        assert_eq!(ErrorCategory::RateLimited.max_retry_attempts(), 1);
+        assert_eq!(ErrorCategory::Server.max_retry_attempts(), 2);
+        assert_eq!(ErrorCategory::Client.max_retry_attempts(), 0);
+        assert_eq!(ErrorCategory::Permanent.max_retry_attempts(), 0);
+    }
+
+    // ========================================================================
+    // Rate Limit Info Tests
+    // ========================================================================
+
+    #[test]
+    fn test_rate_limit_info_default() {
+        let info = RateLimitInfo::default();
+        assert_eq!(info.retry_after_secs, DEFAULT_RATE_LIMIT_RETRY_SECS);
+        assert!(!info.is_hard_limit);
+    }
+
+    #[test]
+    fn test_rate_limit_info_retry_delay() {
+        let info = RateLimitInfo {
+            retry_after_secs: 120,
+            is_hard_limit: false,
+        };
+        assert_eq!(info.retry_delay(), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_rate_limit_info_from_headers_with_retry_after() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("retry-after", "300".parse().unwrap());
+
+        let info = RateLimitInfo::from_headers(&headers);
+        assert_eq!(info.retry_after_secs, 300);
+    }
+
+    #[test]
+    fn test_rate_limit_info_from_headers_no_retry_after() {
+        let headers = reqwest::header::HeaderMap::new();
+
+        let info = RateLimitInfo::from_headers(&headers);
+        assert_eq!(info.retry_after_secs, DEFAULT_RATE_LIMIT_RETRY_SECS);
+    }
+
+    #[test]
+    fn test_rate_limit_info_from_headers_hard_limit() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-ratelimit-remaining", "0".parse().unwrap());
+
+        let info = RateLimitInfo::from_headers(&headers);
+        assert!(info.is_hard_limit);
+    }
+
+    #[test]
+    fn test_rate_limit_info_from_headers_soft_limit() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-ratelimit-remaining", "50".parse().unwrap());
+
+        let info = RateLimitInfo::from_headers(&headers);
+        assert!(!info.is_hard_limit);
+    }
+
+    // ========================================================================
+    // SyncErrorExt Tests
+    // ========================================================================
+
+    #[test]
+    fn test_sync_error_ext_category_network_error() {
+        let error = SyncError::NetworkError("connection failed".to_string());
+        assert_eq!(error.category(), ErrorCategory::Transient);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_timeout() {
+        let error = SyncError::Timeout(60);
+        assert_eq!(error.category(), ErrorCategory::Transient);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_rate_limited() {
+        let error = SyncError::RateLimited;
+        assert_eq!(error.category(), ErrorCategory::RateLimited);
+        assert!(error.is_retryable());
+        assert!(error.is_rate_limited());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_token_expired() {
+        let error = SyncError::TokenExpired;
+        assert_eq!(error.category(), ErrorCategory::Authentication);
+        assert!(error.requires_auth_refresh());
+        assert!(!error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_duplicate() {
+        let error = SyncError::DuplicateActivity(SyncPlatform::GarminConnect);
+        assert_eq!(error.category(), ErrorCategory::Permanent);
+        assert!(error.is_duplicate());
+        assert!(!error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_invalid_fit() {
+        let error = SyncError::InvalidFitFile("bad file".to_string());
+        assert_eq!(error.category(), ErrorCategory::Client);
+        assert!(!error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_server_error() {
+        let error = SyncError::UploadFailed("status 500: Internal Server Error".to_string());
+        assert_eq!(error.category(), ErrorCategory::Server);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_category_client_error() {
+        let error = SyncError::UploadFailed("Bad Request".to_string());
+        assert_eq!(error.category(), ErrorCategory::Client);
+        assert!(!error.is_retryable());
+    }
+
+    #[test]
+    fn test_sync_error_ext_retry_delay() {
+        assert_eq!(SyncError::NetworkError("test".to_string()).retry_delay_secs(), 5);
+        assert_eq!(SyncError::RateLimited.retry_delay_secs(), DEFAULT_RATE_LIMIT_RETRY_SECS);
+        assert_eq!(
+            SyncError::UploadFailed("500 error".to_string()).retry_delay_secs(),
+            30
+        );
+        assert_eq!(SyncError::TokenExpired.retry_delay_secs(), 0);
+    }
+
+    // ========================================================================
+    // Helper Method Tests
+    // ========================================================================
+
+    #[test]
+    fn test_handle_error_status_rate_limit() {
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            "upload",
+        );
+        assert!(matches!(result, Some(SyncError::RateLimited)));
+    }
+
+    #[test]
+    fn test_handle_error_status_unauthorized() {
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::UNAUTHORIZED,
+            "profile fetch",
+        );
+        assert!(matches!(result, Some(SyncError::TokenExpired)));
+    }
+
+    #[test]
+    fn test_handle_error_status_forbidden() {
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::FORBIDDEN,
+            "upload",
+        );
+        assert!(matches!(result, Some(SyncError::TokenExpired)));
+    }
+
+    #[test]
+    fn test_handle_error_status_conflict() {
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::CONFLICT,
+            "upload",
+        );
+        assert!(matches!(
+            result,
+            Some(SyncError::DuplicateActivity(SyncPlatform::GarminConnect))
+        ));
+    }
+
+    #[test]
+    fn test_handle_error_status_other() {
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::BAD_REQUEST,
+            "upload",
+        );
+        assert!(result.is_none());
+
+        let result = GarminClient::handle_error_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "upload",
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_error_response_with_garmin_error() {
+        let body = r#"{"message": "Invalid file format", "errors": []}"#;
+        let error = GarminClient::parse_error_response(
+            reqwest::StatusCode::BAD_REQUEST,
+            body,
+            "upload",
+        );
+        assert!(matches!(error, SyncError::UploadFailed(msg) if msg.contains("Invalid file format")));
+    }
+
+    #[test]
+    fn test_parse_error_response_with_duplicate() {
+        let body = r#"{"message": "Activity already exists", "errors": []}"#;
+        let error = GarminClient::parse_error_response(
+            reqwest::StatusCode::BAD_REQUEST,
+            body,
+            "upload",
+        );
+        assert!(matches!(
+            error,
+            SyncError::DuplicateActivity(SyncPlatform::GarminConnect)
+        ));
+    }
+
+    #[test]
+    fn test_parse_error_response_non_json() {
+        let body = "Internal Server Error";
+        let error = GarminClient::parse_error_response(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            body,
+            "upload",
+        );
+        assert!(matches!(error, SyncError::UploadFailed(msg) if msg.contains("500")));
     }
 
     // ========================================================================
