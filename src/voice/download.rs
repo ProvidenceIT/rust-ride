@@ -721,4 +721,330 @@ mod tests {
             DownloadProgress::Downloading { bytes_received: 100, .. }
         ));
     }
+
+    // ==========================================================================
+    // Additional coverage tests
+    // ==========================================================================
+
+    #[test]
+    fn test_download_error_display() {
+        // NetworkError
+        let err = DownloadError::NetworkError("Connection refused".to_string());
+        assert!(err.to_string().contains("Download failed"));
+        assert!(err.to_string().contains("Connection refused"));
+
+        // ChecksumMismatch
+        let err = DownloadError::ChecksumMismatch {
+            expected: "abc123".to_string(),
+            actual: "def456".to_string(),
+        };
+        assert!(err.to_string().contains("Checksum verification failed"));
+        assert!(err.to_string().contains("abc123"));
+        assert!(err.to_string().contains("def456"));
+
+        // DirectoryCreationFailed
+        let err = DownloadError::DirectoryCreationFailed("Permission denied".to_string());
+        assert!(err.to_string().contains("Failed to create directory"));
+
+        // WriteFailed
+        let err = DownloadError::WriteFailed("Disk full".to_string());
+        assert!(err.to_string().contains("Failed to write file"));
+
+        // ExtractionFailed
+        let err = DownloadError::ExtractionFailed("Invalid archive".to_string());
+        assert!(err.to_string().contains("Extraction failed"));
+
+        // InstallationFailed
+        let err = DownloadError::InstallationFailed("Move failed".to_string());
+        assert!(err.to_string().contains("Installation failed"));
+
+        // Cancelled
+        let err = DownloadError::Cancelled;
+        assert!(err.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn test_download_error_from_io_error() {
+        let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
+        let err: DownloadError = io_error.into();
+        assert!(err.to_string().contains("IO error"));
+    }
+
+    #[test]
+    fn test_download_error_from_vosk_model_error() {
+        let model_error = VoskModelError::DirectoryNotFound(PathBuf::from("/test/path"));
+        let err: DownloadError = model_error.into();
+        assert!(err.to_string().contains("Model manager error"));
+    }
+
+    #[test]
+    fn test_download_progress_clone() {
+        let progress = DownloadProgress::Downloading {
+            bytes_received: 500,
+            total_bytes: Some(1000),
+        };
+        let cloned = progress.clone();
+        assert_eq!(progress.percent(), cloned.percent());
+
+        let progress = DownloadProgress::Error("test error".to_string());
+        let cloned = progress.clone();
+        if let (DownloadProgress::Error(orig), DownloadProgress::Error(clone)) = (&progress, &cloned) {
+            assert_eq!(orig, clone);
+        }
+    }
+
+    #[test]
+    fn test_download_progress_debug() {
+        let progress = DownloadProgress::Downloading {
+            bytes_received: 500,
+            total_bytes: Some(1000),
+        };
+        let debug_str = format!("{:?}", progress);
+        assert!(debug_str.contains("500"));
+        assert!(debug_str.contains("1000"));
+    }
+
+    #[test]
+    fn test_download_progress_percent_other_variants() {
+        // Extracting - no percent
+        let progress = DownloadProgress::Extracting;
+        assert_eq!(progress.percent(), None);
+
+        // Installing - no percent
+        let progress = DownloadProgress::Installing;
+        assert_eq!(progress.percent(), None);
+
+        // Error - no percent
+        let progress = DownloadProgress::Error("test".to_string());
+        assert_eq!(progress.percent(), None);
+    }
+
+    #[test]
+    fn test_download_progress_percent_zero_total() {
+        let progress = DownloadProgress::Downloading {
+            bytes_received: 100,
+            total_bytes: Some(0),
+        };
+        assert_eq!(progress.percent(), None);
+    }
+
+    #[test]
+    fn test_model_downloader_default() {
+        let downloader = ModelDownloader::default();
+        assert!(downloader.download_url.contains("vosk"));
+        assert!(!downloader.expected_sha256.is_empty());
+    }
+
+    #[test]
+    fn test_format_bytes_edge_cases() {
+        // Zero bytes
+        assert_eq!(format_bytes(0), "0 B");
+
+        // Exactly 1 KB
+        assert_eq!(format_bytes(1024), "1.0 KB");
+
+        // Exactly 1 MB
+        assert_eq!(format_bytes(1048576), "1.0 MB");
+
+        // Exactly 1 GB
+        assert_eq!(format_bytes(1073741824), "1.0 GB");
+
+        // Just under 1 KB
+        assert_eq!(format_bytes(1023), "1023 B");
+
+        // Just under 1 MB
+        assert_eq!(format_bytes(1048575), "1024.0 KB");
+
+        // Just under 1 GB
+        assert_eq!(format_bytes(1073741823), "1024.0 MB");
+    }
+
+    #[test]
+    fn test_verify_checksum_file_not_found() {
+        let downloader = ModelDownloader::new();
+        let result = downloader.verify_checksum(Path::new("/nonexistent/file.zip"));
+        assert!(matches!(result, Err(DownloadError::IoError(_))));
+    }
+
+    #[test]
+    fn test_verify_checksum_case_insensitive() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.bin");
+
+        let content = b"test content for sha256";
+        std::fs::write(&file_path, content).unwrap();
+
+        // Calculate expected hash
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let expected_hash = hex::encode(hasher.finalize()).to_uppercase();
+
+        // Create downloader with uppercase hash
+        let downloader = ModelDownloader::with_url_and_hash(
+            "https://example.com/model.zip",
+            &expected_hash,
+        );
+
+        // Verify should succeed (case insensitive comparison)
+        let result = downloader.verify_checksum(&file_path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_copy_dir_all_empty_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let src = temp_dir.path().join("src");
+        let dst = temp_dir.path().join("dst");
+
+        // Create empty source directory
+        std::fs::create_dir_all(&src).unwrap();
+
+        // Copy
+        copy_dir_all(&src, &dst).unwrap();
+
+        // Verify destination exists and is empty
+        assert!(dst.exists());
+        assert!(dst.is_dir());
+        let entries: Vec<_> = std::fs::read_dir(&dst).unwrap().collect();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_copy_dir_all_deeply_nested() {
+        let temp_dir = TempDir::new().unwrap();
+        let src = temp_dir.path().join("src");
+        let dst = temp_dir.path().join("dst");
+
+        // Create deeply nested structure
+        std::fs::create_dir_all(src.join("a/b/c/d/e")).unwrap();
+        std::fs::write(src.join("a/b/c/d/e/deep.txt"), b"deep content").unwrap();
+        std::fs::write(src.join("a/b/mid.txt"), b"mid content").unwrap();
+
+        // Copy
+        copy_dir_all(&src, &dst).unwrap();
+
+        // Verify deep file
+        assert!(dst.join("a/b/c/d/e/deep.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(dst.join("a/b/c/d/e/deep.txt")).unwrap(),
+            "deep content"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.join("a/b/mid.txt")).unwrap(),
+            "mid content"
+        );
+    }
+
+    #[test]
+    fn test_install_model_creates_parent_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let extracted = temp_dir.path().join("extracted");
+        let final_dir = temp_dir.path().join("nested/deeply/final");
+
+        // Create extracted model structure
+        std::fs::create_dir_all(extracted.join("am")).unwrap();
+        std::fs::write(extracted.join("am").join("final.mdl"), b"model").unwrap();
+
+        let downloader = ModelDownloader::new();
+
+        // Install to nested path (should create parent directories)
+        let result = downloader.install_model(&extracted, &final_dir);
+        assert!(result.is_ok());
+
+        // Verify
+        assert!(final_dir.join("am").join("final.mdl").exists());
+    }
+
+    #[test]
+    fn test_extract_zip_invalid_archive() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("invalid.zip");
+        let extract_dir = temp_dir.path().join("extract");
+
+        // Create an invalid zip file (just random bytes)
+        std::fs::write(&zip_path, b"not a valid zip file").unwrap();
+
+        let downloader = ModelDownloader::new();
+        let result = downloader.extract_zip(&zip_path, &extract_dir);
+
+        assert!(matches!(result, Err(DownloadError::ExtractionFailed(_))));
+    }
+
+    #[test]
+    fn test_extract_zip_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("nonexistent.zip");
+        let extract_dir = temp_dir.path().join("extract");
+
+        let downloader = ModelDownloader::new();
+        let result = downloader.extract_zip(&zip_path, &extract_dir);
+
+        assert!(matches!(result, Err(DownloadError::IoError(_))));
+    }
+
+    #[test]
+    fn test_progress_channel_multiple_events() {
+        let (callback, mut rx) = ModelDownloader::create_progress_channel();
+
+        // Send a sequence of progress events
+        callback(DownloadProgress::Starting);
+        callback(DownloadProgress::Downloading {
+            bytes_received: 100,
+            total_bytes: Some(1000),
+        });
+        callback(DownloadProgress::Downloading {
+            bytes_received: 500,
+            total_bytes: Some(1000),
+        });
+        callback(DownloadProgress::Downloading {
+            bytes_received: 1000,
+            total_bytes: Some(1000),
+        });
+        callback(DownloadProgress::Verifying);
+        callback(DownloadProgress::Extracting);
+        callback(DownloadProgress::Installing);
+        callback(DownloadProgress::Complete);
+
+        // Verify we receive all events
+        let mut event_count = 0;
+        while rx.try_recv().is_ok() {
+            event_count += 1;
+        }
+        assert_eq!(event_count, 8);
+    }
+
+    #[test]
+    fn test_progress_channel_error_event() {
+        let (callback, mut rx) = ModelDownloader::create_progress_channel();
+
+        callback(DownloadProgress::Error("Test error".to_string()));
+
+        let progress = rx.try_recv().unwrap();
+        if let DownloadProgress::Error(msg) = progress {
+            assert_eq!(msg, "Test error");
+        } else {
+            panic!("Expected Error variant");
+        }
+    }
+
+    #[test]
+    fn test_download_buffer_size_constant() {
+        // Verify the buffer size is reasonable (64KB)
+        assert_eq!(DOWNLOAD_BUFFER_SIZE, 64 * 1024);
+    }
+
+    #[test]
+    fn test_checksum_mismatch_error_fields() {
+        let err = DownloadError::ChecksumMismatch {
+            expected: "expected_hash".to_string(),
+            actual: "actual_hash".to_string(),
+        };
+
+        if let DownloadError::ChecksumMismatch { expected, actual } = err {
+            assert_eq!(expected, "expected_hash");
+            assert_eq!(actual, "actual_hash");
+        } else {
+            panic!("Expected ChecksumMismatch variant");
+        }
+    }
 }

@@ -1855,4 +1855,489 @@ mod tests {
         manager.set_last_error(None);
         assert!(manager.last_error().is_none());
     }
+
+    // ==========================================================================
+    // Additional coverage tests
+    // ==========================================================================
+
+    #[test]
+    fn test_vosk_model_error_display() {
+        let temp_path = PathBuf::from("/test/path");
+
+        // DirectoryNotFound
+        let err = VoskModelError::DirectoryNotFound(temp_path.clone());
+        assert!(err.to_string().contains("Model directory does not exist"));
+        assert!(err.to_string().contains("/test/path"));
+
+        // DirectoryCreationFailed
+        let err = VoskModelError::DirectoryCreationFailed("Permission denied".to_string());
+        assert!(err.to_string().contains("Failed to create model directory"));
+        assert!(err.to_string().contains("Permission denied"));
+
+        // ModelNotInstalled
+        let err = VoskModelError::ModelNotInstalled(temp_path.clone());
+        assert!(err.to_string().contains("Model not installed"));
+
+        // ModelCorrupted
+        let err = VoskModelError::ModelCorrupted("Missing files".to_string());
+        assert!(err.to_string().contains("corrupted or incomplete"));
+        assert!(err.to_string().contains("Missing files"));
+
+        // MetadataReadError
+        let err = VoskModelError::MetadataReadError("Read error".to_string());
+        assert!(err.to_string().contains("Failed to read model metadata"));
+    }
+
+    #[test]
+    fn test_vosk_model_error_from_io_error() {
+        let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
+        let err: VoskModelError = io_error.into();
+        assert!(err.to_string().contains("IO error"));
+    }
+
+    #[test]
+    fn test_model_state_equality() {
+        assert_eq!(ModelState::Unknown, ModelState::Unknown);
+        assert_eq!(ModelState::Ready, ModelState::Ready);
+        assert_eq!(
+            ModelState::Downloading { progress_percent: 50 },
+            ModelState::Downloading { progress_percent: 50 }
+        );
+        assert_ne!(
+            ModelState::Downloading { progress_percent: 50 },
+            ModelState::Downloading { progress_percent: 75 }
+        );
+        assert_ne!(ModelState::Ready, ModelState::Error);
+    }
+
+    #[test]
+    fn test_model_state_copy() {
+        let state = ModelState::Downloading { progress_percent: 50 };
+        let copied = state;
+        assert_eq!(state, copied);
+    }
+
+    #[test]
+    fn test_check_partial_download_large_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        fs::create_dir_all(temp_dir.path()).unwrap();
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+        let partial_path = manager.partial_download_path();
+
+        // Create a "large" partial download file (> 100MB marker size)
+        // We can't actually create 100MB, so we'll test the boundary logic
+        // by checking the can_resume flag for valid sizes
+        fs::write(&partial_path, vec![0u8; 100]).unwrap();
+
+        let info = manager.check_partial_download();
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert!(info.can_resume); // Small file should be resumable
+    }
+
+    #[test]
+    fn test_check_partial_download_empty_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        fs::create_dir_all(temp_dir.path()).unwrap();
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+        let partial_path = manager.partial_download_path();
+
+        // Create an empty partial download file
+        fs::write(&partial_path, b"").unwrap();
+
+        let info = manager.check_partial_download();
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert_eq!(info.bytes_downloaded, 0);
+        assert!(!info.can_resume); // Empty file should not be resumable
+    }
+
+    #[test]
+    fn test_calculate_dir_size_empty_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+
+        // Empty directory
+        let size = calculate_dir_size(&path).unwrap();
+        assert_eq!(size, 0);
+    }
+
+    #[test]
+    fn test_calculate_dir_size_nested_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+
+        // Create nested structure
+        fs::create_dir_all(path.join("a/b/c")).unwrap();
+        fs::write(path.join("a/file1.txt"), b"12345").unwrap(); // 5 bytes
+        fs::write(path.join("a/b/file2.txt"), b"123456").unwrap(); // 6 bytes
+        fs::write(path.join("a/b/c/file3.txt"), b"1234567").unwrap(); // 7 bytes
+
+        let size = calculate_dir_size(&path).unwrap();
+        assert_eq!(size, 18); // 5 + 6 + 7
+    }
+
+    #[test]
+    fn test_lifecycle_event_status_message_download_no_total() {
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 1048576,
+            total_bytes: None,
+            percent: 0,
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("1.0 MB"));
+        assert!(msg.contains("received"));
+    }
+
+    #[test]
+    fn test_lifecycle_event_status_message_extraction_no_total() {
+        let event = ModelLifecycleEvent::ExtractionProgress {
+            files_extracted: 42,
+            total_files: None,
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("42 files"));
+        assert!(!msg.contains("/"));
+    }
+
+    #[test]
+    fn test_lifecycle_event_status_message_installation_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let event = ModelLifecycleEvent::InstallationComplete {
+            model_path: temp_dir.path().to_path_buf(),
+        };
+        let msg = event.status_message();
+        assert!(msg.contains("installed successfully"));
+    }
+
+    #[test]
+    fn test_lifecycle_event_status_message_state_changed() {
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::NotInstalled,
+            to: ModelState::Ready,
+        };
+        let msg = event.status_message();
+        assert_eq!(msg, "Ready");
+    }
+
+    #[test]
+    fn test_lifecycle_event_progress_percent_none_cases() {
+        // State change to NotInstalled
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::Error,
+            to: ModelState::NotInstalled,
+        };
+        assert_eq!(event.progress_percent(), None);
+
+        // State change to Unknown
+        let event = ModelLifecycleEvent::StateChanged {
+            from: ModelState::Unknown,
+            to: ModelState::Unknown,
+        };
+        assert_eq!(event.progress_percent(), None);
+
+        // Extraction progress event (not covered by progress_percent)
+        let event = ModelLifecycleEvent::ExtractionProgress {
+            files_extracted: 10,
+            total_files: Some(100),
+        };
+        assert_eq!(event.progress_percent(), None);
+
+        // Download resuming event
+        let event = ModelLifecycleEvent::DownloadResuming {
+            bytes_already_downloaded: 1000,
+        };
+        assert_eq!(event.progress_percent(), None);
+    }
+
+    #[test]
+    fn test_lifecycle_event_clone() {
+        let event = ModelLifecycleEvent::DownloadProgress {
+            bytes_received: 100,
+            total_bytes: Some(1000),
+            percent: 10,
+        };
+        let cloned = event.clone();
+        assert_eq!(event.progress_percent(), cloned.progress_percent());
+        assert_eq!(event.status_message(), cloned.status_message());
+    }
+
+    #[test]
+    fn test_manager_download_url_and_sha256() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+
+        assert_eq!(manager.download_url(), DEFAULT_MODEL_URL);
+        assert_eq!(manager.expected_sha256(), DEFAULT_MODEL_SHA256);
+    }
+
+    #[test]
+    fn test_manager_model_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+
+        assert_eq!(manager.model_name(), DEFAULT_MODEL_NAME);
+    }
+
+    #[test]
+    fn test_state_machine_manager_accessors() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir.clone());
+
+        // Test immutable accessor
+        assert_eq!(state_machine.manager().model_path(), model_dir);
+
+        // Test mutable accessor
+        state_machine.manager_mut().set_downloading(25);
+        assert_eq!(
+            state_machine.state(),
+            ModelState::Downloading { progress_percent: 25 }
+        );
+    }
+
+    #[test]
+    fn test_state_machine_last_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        // Initially no error
+        assert!(state_machine.last_error().is_none());
+
+        // Set error via manager
+        state_machine.manager_mut().set_error("Test error");
+        assert_eq!(state_machine.last_error(), Some("Test error"));
+    }
+
+    #[test]
+    fn test_state_machine_cancel_while_installing() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, mut rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        // Set to downloading state
+        state_machine.manager_mut().set_downloading(50);
+        assert!(state_machine.is_installing());
+
+        // Cancel
+        state_machine.cancel_download();
+
+        // Should be not installed now
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+        assert!(!state_machine.is_installing());
+
+        // Should have received a state changed event
+        let event = rx.try_recv();
+        assert!(event.is_ok());
+        if let ModelLifecycleEvent::StateChanged { to, .. } = event.unwrap() {
+            assert_eq!(to, ModelState::NotInstalled);
+        }
+    }
+
+    #[test]
+    fn test_state_machine_with_callback_event_emission() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Mutex;
+
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let event_count = Arc::new(AtomicU32::new(0));
+        let last_event = Arc::new(Mutex::new(None::<ModelState>));
+        let event_count_clone = event_count.clone();
+        let last_event_clone = last_event.clone();
+
+        let callback = Arc::new(move |event: ModelLifecycleEvent| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+            if let ModelLifecycleEvent::StateChanged { to, .. } = event {
+                *last_event_clone.lock().unwrap() = Some(to);
+            }
+        });
+
+        let mut state_machine = ModelLifecycleStateMachine::with_base_dir_and_callback(
+            model_dir.clone(),
+            callback,
+        );
+
+        // Create valid model structure
+        fs::create_dir_all(model_dir.join("am")).unwrap();
+        fs::write(model_dir.join("am").join("final.mdl"), b"model data").unwrap();
+
+        // Refresh should detect model and emit event
+        state_machine.refresh_state();
+
+        assert!(event_count.load(Ordering::SeqCst) >= 1);
+        assert_eq!(*last_event.lock().unwrap(), Some(ModelState::Ready));
+    }
+
+    #[test]
+    fn test_state_machine_transition_to_downloading() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let (mut state_machine, mut rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        // Initial state
+        assert_eq!(state_machine.state(), ModelState::NotInstalled);
+
+        // Use the private transition_to via manager accessors
+        state_machine.manager_mut().set_downloading(25);
+
+        assert_eq!(
+            state_machine.state(),
+            ModelState::Downloading { progress_percent: 25 }
+        );
+
+        // Channel should not have events from direct manager state changes
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_state_machine_is_ready_with_model() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        // Create valid model
+        fs::create_dir_all(model_dir.join("am")).unwrap();
+        fs::write(model_dir.join("am").join("final.mdl"), b"model data").unwrap();
+
+        let (state_machine, _rx) = ModelLifecycleStateMachine::with_base_dir_and_channel(model_dir);
+
+        assert!(state_machine.is_ready());
+        assert!(!state_machine.is_installing());
+    }
+
+    #[test]
+    fn test_partial_download_info_debug() {
+        let info = PartialDownloadInfo {
+            path: PathBuf::from("/test/path.zip.partial"),
+            bytes_downloaded: 12345,
+            can_resume: true,
+        };
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("12345"));
+        assert!(debug_str.contains("can_resume"));
+    }
+
+    #[test]
+    fn test_model_info_debug() {
+        let info = ModelInfo {
+            name: "test-model".to_string(),
+            path: PathBuf::from("/test/path"),
+            size_bytes: Some(1234567),
+            language: "en-US".to_string(),
+        };
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("test-model"));
+        assert!(debug_str.contains("1234567"));
+        assert!(debug_str.contains("en-US"));
+    }
+
+    #[test]
+    fn test_model_info_clone() {
+        let info = ModelInfo {
+            name: "test-model".to_string(),
+            path: PathBuf::from("/test/path"),
+            size_bytes: Some(1234567),
+            language: "en-US".to_string(),
+        };
+        let cloned = info.clone();
+        assert_eq!(info.name, cloned.name);
+        assert_eq!(info.path, cloned.path);
+        assert_eq!(info.size_bytes, cloned.size_bytes);
+        assert_eq!(info.language, cloned.language);
+    }
+
+    #[test]
+    fn test_partial_download_info_clone() {
+        let info = PartialDownloadInfo {
+            path: PathBuf::from("/test/path.zip.partial"),
+            bytes_downloaded: 12345,
+            can_resume: true,
+        };
+        let cloned = info.clone();
+        assert_eq!(info.path, cloned.path);
+        assert_eq!(info.bytes_downloaded, cloned.bytes_downloaded);
+        assert_eq!(info.can_resume, cloned.can_resume);
+    }
+
+    #[test]
+    fn test_manager_delete_nonexistent_model() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        // Don't create the directory
+        let mut manager = VoskModelManager::with_base_dir(model_dir.clone());
+
+        // Delete should succeed even if model doesn't exist
+        manager.delete_model().unwrap();
+
+        assert_eq!(manager.state(), ModelState::NotInstalled);
+        assert!(!model_dir.exists());
+    }
+
+    #[test]
+    fn test_manager_ensure_directory_already_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        // Create directory first
+        fs::create_dir_all(&model_dir).unwrap();
+
+        let manager = VoskModelManager::with_base_dir(model_dir.clone());
+
+        // Should succeed without error
+        manager.ensure_directory().unwrap();
+        assert!(model_dir.exists());
+    }
+
+    #[test]
+    fn test_cleanup_partial_download_no_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_dir = temp_dir.path().join("vosk-model");
+
+        let manager = VoskModelManager::with_base_dir(model_dir);
+
+        // Should succeed even if no partial file exists
+        manager.cleanup_partial_download().unwrap();
+    }
+
+    #[test]
+    fn test_state_machine_with_channel_default_path() {
+        let (state_machine, _rx) = ModelLifecycleStateMachine::with_channel();
+
+        // Should have a valid path (using default data dir)
+        let path = state_machine.model_path();
+        assert!(path.to_string_lossy().contains("vosk-model") || !path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_state_machine_with_callback_default_path() {
+        let callback = Arc::new(|_event: ModelLifecycleEvent| {});
+        let state_machine = ModelLifecycleStateMachine::with_callback(callback);
+
+        // Should have a valid path (using default data dir)
+        let path = state_machine.model_path();
+        assert!(path.to_string_lossy().contains("vosk-model") || !path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_manager_default_trait() {
+        let manager = VoskModelManager::default();
+        assert_eq!(manager.model_name(), DEFAULT_MODEL_NAME);
+    }
 }

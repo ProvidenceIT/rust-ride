@@ -1084,4 +1084,298 @@ mod tests {
 
         let _ = capture.stop();
     }
+
+    // ==========================================================================
+    // Additional coverage tests
+    // ==========================================================================
+
+    #[test]
+    fn test_audio_input_error_display() {
+        // NoDevice
+        let err = AudioInputError::NoDevice;
+        assert!(err.to_string().contains("No audio input device"));
+
+        // ConfigError
+        let err = AudioInputError::ConfigError("Invalid config".to_string());
+        assert!(err.to_string().contains("Failed to get default input config"));
+        assert!(err.to_string().contains("Invalid config"));
+
+        // UnsupportedFormat
+        let err = AudioInputError::UnsupportedFormat(SampleFormat::I64);
+        assert!(err.to_string().contains("Unsupported sample format"));
+
+        // StreamBuildError
+        let err = AudioInputError::StreamBuildError("Build failed".to_string());
+        assert!(err.to_string().contains("Failed to build input stream"));
+
+        // StreamStartError
+        let err = AudioInputError::StreamStartError("Start failed".to_string());
+        assert!(err.to_string().contains("Failed to start stream"));
+
+        // StreamStopError
+        let err = AudioInputError::StreamStopError("Stop failed".to_string());
+        assert!(err.to_string().contains("Failed to stop stream"));
+
+        // NotRunning
+        let err = AudioInputError::NotRunning;
+        assert!(err.to_string().contains("not running"));
+
+        // AlreadyRunning
+        let err = AudioInputError::AlreadyRunning;
+        assert!(err.to_string().contains("already running"));
+
+        // DeviceError
+        let err = AudioInputError::DeviceError("Device gone".to_string());
+        assert!(err.to_string().contains("Device error"));
+
+        // PlatformError
+        let err = AudioInputError::PlatformError("Platform issue".to_string());
+        assert!(err.to_string().contains("Platform-specific error"));
+    }
+
+    #[test]
+    fn test_audio_input_device_info_clone_and_debug() {
+        let info = AudioInputDeviceInfo {
+            name: "Test Device".to_string(),
+            is_default: true,
+            sample_rates: vec![16000, 44100, 48000],
+            max_channels: 2,
+        };
+
+        // Clone
+        let cloned = info.clone();
+        assert_eq!(info.name, cloned.name);
+        assert_eq!(info.is_default, cloned.is_default);
+        assert_eq!(info.sample_rates, cloned.sample_rates);
+        assert_eq!(info.max_channels, cloned.max_channels);
+
+        // Debug
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("Test Device"));
+        assert!(debug_str.contains("16000"));
+    }
+
+    #[test]
+    fn test_audio_input_config_clone_and_debug() {
+        let config = AudioInputConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.sample_rate, cloned.sample_rate);
+        assert_eq!(config.channels, cloned.channels);
+        assert_eq!(config.buffer_size, cloned.buffer_size);
+        assert_eq!(config.device_name, cloned.device_name);
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("16000"));
+    }
+
+    #[test]
+    fn test_capture_state_enum() {
+        assert_eq!(CaptureState::Idle, CaptureState::Idle);
+        assert_ne!(CaptureState::Idle, CaptureState::Running);
+        assert_ne!(CaptureState::Running, CaptureState::Stopped);
+        assert_ne!(CaptureState::Stopped, CaptureState::Error);
+
+        // Copy trait
+        let state = CaptureState::Running;
+        let copied = state;
+        assert_eq!(state, copied);
+
+        // Clone trait
+        let cloned = state.clone();
+        assert_eq!(state, cloned);
+
+        // Debug trait
+        let debug_str = format!("{:?}", CaptureState::Error);
+        assert!(debug_str.contains("Error"));
+    }
+
+    #[test]
+    fn test_ring_buffer_read_more_than_available() {
+        let buffer = AudioRingBuffer::new(100);
+        buffer.write(&[1, 2, 3, 4, 5]);
+
+        // Request more than available
+        let samples = buffer.read(10);
+        assert_eq!(samples, vec![1, 2, 3, 4, 5]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_ring_buffer_peek_more_than_available() {
+        let buffer = AudioRingBuffer::new(100);
+        buffer.write(&[1, 2, 3]);
+
+        // Peek more than available
+        let peeked = buffer.peek(10);
+        assert_eq!(peeked, vec![1, 2, 3]);
+        // Buffer should still have all samples
+        assert_eq!(buffer.len(), 3);
+    }
+
+    #[test]
+    fn test_ring_buffer_read_empty() {
+        let buffer = AudioRingBuffer::new(100);
+
+        // Read from empty buffer
+        let samples = buffer.read(10);
+        assert!(samples.is_empty());
+
+        let samples = buffer.read_all();
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn test_ring_buffer_debug() {
+        let buffer = AudioRingBuffer::new(100);
+        buffer.write(&[1, 2, 3]);
+
+        let debug_str = format!("{:?}", buffer);
+        assert!(debug_str.contains("AudioRingBuffer"));
+    }
+
+    #[test]
+    fn test_capture_read_samples() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+
+        // Write directly to buffer
+        capture.buffer.write(&[1, 2, 3, 4, 5]);
+
+        // Read via capture
+        let samples = capture.read_samples(3);
+        assert_eq!(samples, vec![1, 2, 3]);
+
+        let samples = capture.read_all_samples();
+        assert_eq!(samples, vec![4, 5]);
+    }
+
+    #[test]
+    fn test_capture_available_samples() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+
+        assert_eq!(capture.available_samples(), 0);
+
+        capture.buffer.write(&[0i16; 100]);
+        assert_eq!(capture.available_samples(), 100);
+    }
+
+    #[test]
+    fn test_capture_device_info_none_initially() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+        assert!(capture.device_info().is_none());
+    }
+
+    #[test]
+    fn test_pause_when_not_running() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+        let result = capture.pause();
+        assert!(matches!(result, Err(AudioInputError::NotRunning)));
+    }
+
+    #[test]
+    fn test_resume_when_not_running() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+        let result = capture.resume();
+        assert!(matches!(result, Err(AudioInputError::NotRunning)));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(VOSK_SAMPLE_RATE, 16000);
+        assert_eq!(VOSK_CHANNELS, 1);
+        assert_eq!(DEFAULT_BUFFER_SIZE, 16000 * 4); // 4 seconds
+    }
+
+    #[test]
+    fn test_ring_buffer_multiple_writes() {
+        let buffer = AudioRingBuffer::new(100);
+
+        buffer.write(&[1, 2, 3]);
+        buffer.write(&[4, 5, 6]);
+        buffer.write(&[7, 8, 9]);
+
+        assert_eq!(buffer.len(), 9);
+        let samples = buffer.read_all();
+        assert_eq!(samples, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn test_ring_buffer_overflow_in_chunks() {
+        let buffer = AudioRingBuffer::new(5);
+
+        // Write in multiple chunks that overflow
+        buffer.write(&[1, 2, 3]);
+        buffer.write(&[4, 5, 6]);
+        buffer.write(&[7, 8]);
+
+        // Should only have last 5 samples
+        assert_eq!(buffer.len(), 5);
+        let samples = buffer.read_all();
+        assert_eq!(samples, vec![4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_config_builder_chained() {
+        let config = AudioInputConfig::for_vosk()
+            .with_sample_rate(44100)
+            .with_buffer_size(88200)
+            .with_device("Microphone");
+
+        assert_eq!(config.sample_rate, 44100);
+        assert_eq!(config.buffer_size, 88200);
+        assert_eq!(config.device_name, Some("Microphone".to_string()));
+    }
+
+    #[test]
+    fn test_buffered_duration_empty() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+        let duration = capture.buffered_duration();
+        assert_eq!(duration.as_millis(), 0);
+    }
+
+    #[test]
+    fn test_buffered_duration_various_sizes() {
+        let config = AudioInputConfig::default(); // 16kHz
+        let capture = AudioInputCapture::new(config).unwrap();
+
+        // 8000 samples = 0.5 seconds
+        capture.buffer.write(&[0i16; 8000]);
+        let duration = capture.buffered_duration();
+        assert!((duration.as_millis() as i64 - 500).abs() < 10);
+
+        // Clear and add 32000 samples = 2 seconds
+        capture.buffer.clear();
+        capture.buffer.write(&[0i16; 32000]);
+        let duration = capture.buffered_duration();
+        assert!((duration.as_millis() as i64 - 2000).abs() < 10);
+    }
+
+    #[test]
+    fn test_ring_buffer_has_data_persists() {
+        let buffer = AudioRingBuffer::new(100);
+
+        assert!(!buffer.has_data());
+
+        buffer.write(&[1, 2, 3]);
+        assert!(buffer.has_data());
+
+        // has_data should persist even after reading all
+        buffer.read_all();
+        assert!(buffer.has_data());
+
+        // has_data persists even after clear
+        buffer.clear();
+        assert!(buffer.has_data());
+    }
+
+    #[test]
+    fn test_buffer_arc_clone() {
+        let capture = AudioInputCapture::for_vosk().unwrap();
+
+        let buffer1 = capture.buffer();
+        let buffer2 = capture.buffer();
+
+        // Both should point to same buffer
+        buffer1.write(&[1, 2, 3]);
+        assert_eq!(buffer2.len(), 3);
+    }
 }
