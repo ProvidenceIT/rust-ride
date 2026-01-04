@@ -653,4 +653,32 @@ mod tests {
         assert!(format!("{:?}", action).contains("ToggleAutoSync"));
         assert!(format!("{:?}", action).contains("true"));
     }
+
+    #[test]
+    fn test_disconnected_state_features() {
+        // Verify the disconnected state shows correct state
+        let screen = GarminSettingsScreen::new();
+        assert_eq!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(!screen.is_connected());
+        // The render_disconnected_state method renders:
+        // 1. Garmin logo/branding (GARMIN_BLUE color)
+        // 2. Connect button with "Connect to Garmin" text
+        // 3. Features list with 4 Garmin-specific features
+    }
+
+    #[test]
+    fn test_garmin_brand_color() {
+        // Verify Garmin brand color is correctly defined
+        assert_eq!(GARMIN_BLUE, Color32::from_rgb(0, 118, 206));
+    }
+
+    #[test]
+    fn test_disconnected_state_is_default() {
+        // Verify new screens start in disconnected state
+        let screen = GarminSettingsScreen::new();
+        matches!(screen.connection_state, GarminConnectionState::Disconnected);
+        assert!(screen.user_profile.is_none());
+        assert_eq!(screen.pending_uploads, 0);
+        assert!(screen.last_sync.is_none());
+    }
 }

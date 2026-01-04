@@ -167,8 +167,9 @@
           "file_paths": [
             "src/integrations/sync/service.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Implemented Garmin upload queue retry logic and status tracking:\n\n1. Exported SyncErrorExt trait and ErrorCategory from mod.rs for consistent error handling across the codebase\n\n2. Updated is_retryable_error() in service.rs to use SyncErrorExt trait for sophisticated error categorization that considers:\n   - Error category (Transient, RateLimited, Server, Client, Authentication, Permanent)\n   - Error message content for ApiError and UploadFailed variants (5xx server errors are retryable, 4xx client errors are not)\n\n3. Added get_rate_limit_retry_delay() helper method for smart retry delays based on error category\n\n4. Updated retry backoff calculation to use rate limit delay (from RateLimited error category) when appropriate instead of just exponential backoff\n\n5. Added comprehensive Garmin-specific tests (14 new tests):\n   - test_sync_error_ext_retryable_errors: transient, timeout, rate limit, server errors\n   - test_sync_error_ext_non_retryable_errors: auth, duplicate, invalid FIT, client errors\n   - test_sync_error_ext_garmin_specific_categorization: Garmin duplicate and rate limit\n   - test_garmin_upload_retry_event_structure: UploadFailed event with retry info\n   - test_garmin_upload_completed_event_structure: UploadCompleted with external ID\n   - test_garmin_upload_duplicate_event: duplicate detection handling\n   - test_garmin_reauthorization_required_event: auth failure handling\n   - test_garmin_upload_queue_entry_structure: queue entry creation\n   - test_garmin_upload_queue_entry_with_retry: retry scheduling\n   - test_garmin_sync_record_status_transitions: status enum validation\n   - test_garmin_rate_limit_retry_delay: ErrorCategory delay configuration\n   - test_garmin_error_category_max_retries: max retry attempts per category\n   - test_garmin_upload_started_event: async event subscription\n   - test_garmin_queue_processing_started_event: queue processing events",
+          "updated_at": "2026-01-04T13:34:57.218981+00:00"
         },
         {
           "id": "3.4",
@@ -178,8 +179,9 @@
             "src/integrations/sync/garmin.rs",
             "src/integrations/sync/service.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "FINDING: Garmin Connect uses SYNCHRONOUS upload processing, unlike Strava which uses async.\n\nKey differences:\n- Strava: Returns upload_id immediately, requires polling check_upload_status() to get activity_id\n- Garmin: Returns activity_id immediately in the upload response, no polling needed\n\nSince the subtask condition \"If Garmin uses async processing\" is FALSE, no status polling implementation was needed.\n\nDocumentation added to garmin.rs:\n1. Module-level documentation explaining the Upload Processing Model\n2. Enhanced upload_activity() method documentation clarifying synchronous behavior\n3. Clear explanation that check_upload_status() is NOT needed for Garmin\n\nThe upload_activity() method already returns SyncRecordStatus::Completed on success.",
+          "updated_at": "2026-01-04T13:39:41.952127+00:00"
         }
       ]
     },
@@ -195,8 +197,9 @@
           "file_paths": [
             "src/ui/screens/settings_garmin.rs"
           ],
-          "status": "pending",
-          "notes": ""
+          "status": "completed",
+          "notes": "Created settings_garmin.rs with full implementation following Strava pattern:\\n\\n1. GarminConnectionState enum with 5 states: Disconnected, Connecting, Connected, Disconnecting, Error(String)\\n2. GarminSettingsAction enum with 5 actions: None, Back, Connect, Disconnect, ToggleAutoSync(bool)\\n3. GarminSettingsScreen struct with:\\n   - connection_state: GarminConnectionState\\n   - user_profile: Option<GarminUserProfile>\\n   - config: PlatformConfig\\n   - pending_uploads: usize\\n   - last_sync: Option<String>\\n4. Setter methods: set_connection_state, set_user_profile, set_config, set_pending_uploads, set_last_sync\\n5. is_connected() helper method\\n6. show() method with state-based rendering\\n7. State-specific render methods: render_disconnected_state, render_connecting_state, render_connected_state, render_disconnecting_state, render_error_state\\n8. GARMIN_BLUE brand color constant\\n9. Comprehensive unit tests (11 tests covering all states, actions, and configurations)",
+          "updated_at": "2026-01-04T13:42:59.081453+00:00"
         },
         {
           "id": "4.2",
@@ -436,5 +439,5 @@
     "tests_passed": "",
     "issues": ""
   },
-  "last_updated": "2026-01-04T13:28:20.420811+00:00"
+  "last_updated": "2026-01-04T13:42:59.081453+00:00"
 }

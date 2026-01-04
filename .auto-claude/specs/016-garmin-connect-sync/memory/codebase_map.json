@@ -1,9 +1,9 @@
 {
   "discovered_files": {
     "src/integrations/sync/garmin.rs": {
-      "description": "Automatic token refresh implemented via TokenRefresher trait and with_auto_refresh() helper. Use upload_activity_with_refresh() and get_user_profile_with_refresh() for operations that should auto-retry on token expiry. Set refresher via set_token_refresher(Arc::new(my_refresher)). The refresher should implement TokenRefresher::refresh_token() returning the new access token.",
-      "category": "pattern",
-      "discovered_at": "2026-01-04T13:16:11.842677+00:00"
+      "description": "Garmin Connect API uses SYNCHRONOUS upload processing - returns activity ID immediately in the response (unlike Strava which uses async and requires polling). The upload_activity() method returns SyncRecordStatus::Completed directly. No check_upload_status() method is needed for Garmin.",
+      "category": "api-behavior",
+      "discovered_at": "2026-01-04T13:39:09.604038+00:00"
     },
     "src/integrations/sync/strava.rs": {
       "description": "Fully implemented Strava client with multipart FIT upload, OAuth token management, athlete profile retrieval, deauthorization, and comprehensive error handling. Use as pattern for Garmin implementation.",
@@ -21,15 +21,20 @@
       "discovered_at": "2026-01-04T13:07:15.504255+00:00"
     },
     "src/integrations/sync/service.rs": {
-      "description": "GarminClient integrated into SyncService. Token loading from keyring (load_stored_credentials), disconnect/deauthorize, token refresh, and upload queue processing all handle GarminConnect platform. Uses same PlatformClient enum pattern as Strava/TrainingPeaks. Keyring storage uses lowercase platform name (\"garminconnect\") as the credential key.",
-      "category": "integration",
-      "discovered_at": "2026-01-04T13:22:18.636259+00:00"
+      "description": "Upload queue retry logic uses SyncErrorExt trait from garmin.rs for sophisticated error categorization. is_retryable_error() delegates to SyncErrorExt::is_retryable() which considers error category (Transient, RateLimited, Server, Client, Authentication, Permanent) and message content. Rate-limited errors use get_rate_limit_retry_delay() for API-suggested delays instead of exponential backoff. Garmin uploads are processed via process_single_upload() which handles TokenExpired (re-auth required), DuplicateActivity (marked completed), InvalidFitFile (permanent failure), and retryable errors (scheduled for retry with backoff).",
+      "category": "implementation",
+      "discovered_at": "2026-01-04T13:35:13.244722+00:00"
     },
     "src/integrations/sync/mod.rs": {
       "description": "SyncPlatform enum defines all supported sync platforms (GarminConnect, Strava, TrainingPeaks, IntervalsIcu, HealthKit). Each platform has display_name(), auth_url_base(), and uses_oauth() methods. SyncConfig::default() initializes all platforms with default PlatformConfig (enabled=false, auto_sync=false).",
       "category": "architecture",
       "discovered_at": "2026-01-04T13:25:58.406785+00:00"
+    },
+    "src/ui/screens/settings_garmin.rs": {
+      "description": "GarminSettingsScreen provides UI for Garmin Connect integration following the Strava pattern: GarminConnectionState enum (5 states), GarminSettingsAction enum (5 actions), screen state with user profile/config/pending uploads. Uses GARMIN_BLUE (rgb 0,118,206) brand color. Renders profile with readable_name() from GarminUserProfile, links to connect.garmin.com/modern/profile/{display_name}.",
+      "category": "ui",
+      "discovered_at": "2026-01-04T13:42:59.195885+00:00"
     }
   },
-  "last_updated": "2026-01-04T13:25:58.406785+00:00"
+  "last_updated": "2026-01-04T13:42:59.195885+00:00"
 }
