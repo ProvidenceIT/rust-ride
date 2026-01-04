@@ -90,6 +90,8 @@ pub use engine::{
     VoiceEngine, VoiceEngineConfig, VoiceEngineError, VoiceEngineEvent, VoiceEngineState,
     CommandCooldown, ActivationMode,
 };
+// Re-export VoiceActivation from config for convenience
+pub use crate::storage::config::VoiceActivation;
 pub use command_parser::{
     CommandParser, ParseResult, levenshtein_distance, string_similarity,
     DEFAULT_MIN_CONFIDENCE,

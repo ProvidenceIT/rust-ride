@@ -72,6 +72,7 @@ use thiserror::Error;
 use tokio::sync::broadcast;
 
 use crate::accessibility::voice_control::VoiceCommand;
+use crate::storage::config::VoiceActivation;
 
 use super::audio_input::{AudioInputCapture, AudioInputConfig, AudioInputError};
 use super::recognizer::{
@@ -129,6 +130,33 @@ impl std::fmt::Display for ActivationMode {
             ActivationMode::AlwaysListening => write!(f, "Always Listening"),
             ActivationMode::WakeWord => write!(f, "Wake Word"),
             ActivationMode::PushToTalk => write!(f, "Push to Talk"),
+        }
+    }
+}
+
+/// Convert from config VoiceActivation to engine ActivationMode.
+///
+/// Note: `VoiceActivation::Off` maps to `ActivationMode::WakeWord` because the engine
+/// doesn't have an "off" state - disabling voice control should be done by not
+/// starting the engine rather than setting a mode.
+impl From<VoiceActivation> for ActivationMode {
+    fn from(activation: VoiceActivation) -> Self {
+        match activation {
+            VoiceActivation::AlwaysOn => ActivationMode::AlwaysListening,
+            VoiceActivation::WakeWord => ActivationMode::WakeWord,
+            VoiceActivation::PushToTalk => ActivationMode::PushToTalk,
+            VoiceActivation::Off => ActivationMode::WakeWord, // Default to WakeWord when disabled
+        }
+    }
+}
+
+/// Convert from engine ActivationMode to config VoiceActivation.
+impl From<ActivationMode> for VoiceActivation {
+    fn from(mode: ActivationMode) -> Self {
+        match mode {
+            ActivationMode::AlwaysListening => VoiceActivation::AlwaysOn,
+            ActivationMode::WakeWord => VoiceActivation::WakeWord,
+            ActivationMode::PushToTalk => VoiceActivation::PushToTalk,
         }
     }
 }
@@ -1615,6 +1643,54 @@ impl VoiceEngine {
 
         self.send_command(|response_tx| EngineCommand::Deactivate { response_tx })
     }
+
+    /// Apply voice control settings from config.
+    ///
+    /// This method allows runtime mode switching without restart by converting
+    /// the config-level `VoiceActivation` setting to the engine's `ActivationMode`.
+    ///
+    /// # Arguments
+    ///
+    /// * `activation` - The voice activation mode from `AccessibilitySettings`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use rustride::storage::config::VoiceActivation;
+    /// use rustride::voice::VoiceEngine;
+    ///
+    /// let engine = VoiceEngine::new(config)?;
+    /// engine.initialize()?;
+    /// engine.start()?;
+    ///
+    /// // User changes setting in UI
+    /// let new_activation = VoiceActivation::PushToTalk;
+    /// engine.apply_voice_activation(new_activation)?;
+    /// ```
+    pub fn apply_voice_activation(&self, activation: VoiceActivation) -> Result<(), VoiceEngineError> {
+        let mode: ActivationMode = activation.into();
+        self.set_activation_mode(mode)
+    }
+
+    /// Get the current activation mode as a config VoiceActivation.
+    ///
+    /// This converts the engine's internal `ActivationMode` to the config-level
+    /// `VoiceActivation` enum for saving to settings.
+    pub fn voice_activation(&self) -> VoiceActivation {
+        self.activation_mode().into()
+    }
+
+    /// Create a VoiceEngineConfig from VoiceActivation settings.
+    ///
+    /// This is a helper to create engine configuration that respects the
+    /// user's accessibility settings.
+    pub fn config_from_settings(
+        model_path: impl AsRef<Path>,
+        activation: VoiceActivation,
+    ) -> VoiceEngineConfig {
+        let mode: ActivationMode = activation.into();
+        VoiceEngineConfig::for_commands(&model_path).with_activation_mode(mode)
+    }
 }
 
 impl Drop for VoiceEngine {
@@ -2193,6 +2269,129 @@ mod tests {
         } else {
             panic!("Expected ActivationModeChanged event");
         }
+    }
+
+    // ========================================
+    // VoiceActivation <-> ActivationMode Conversion Tests
+    // ========================================
+
+    #[test]
+    fn test_voice_activation_to_activation_mode_always_on() {
+        let activation = VoiceActivation::AlwaysOn;
+        let mode: ActivationMode = activation.into();
+        assert_eq!(mode, ActivationMode::AlwaysListening);
+    }
+
+    #[test]
+    fn test_voice_activation_to_activation_mode_wake_word() {
+        let activation = VoiceActivation::WakeWord;
+        let mode: ActivationMode = activation.into();
+        assert_eq!(mode, ActivationMode::WakeWord);
+    }
+
+    #[test]
+    fn test_voice_activation_to_activation_mode_push_to_talk() {
+        let activation = VoiceActivation::PushToTalk;
+        let mode: ActivationMode = activation.into();
+        assert_eq!(mode, ActivationMode::PushToTalk);
+    }
+
+    #[test]
+    fn test_voice_activation_to_activation_mode_off() {
+        // Off maps to WakeWord (default) since engine doesn't have an "off" mode
+        let activation = VoiceActivation::Off;
+        let mode: ActivationMode = activation.into();
+        assert_eq!(mode, ActivationMode::WakeWord);
+    }
+
+    #[test]
+    fn test_activation_mode_to_voice_activation_always_listening() {
+        let mode = ActivationMode::AlwaysListening;
+        let activation: VoiceActivation = mode.into();
+        assert_eq!(activation, VoiceActivation::AlwaysOn);
+    }
+
+    #[test]
+    fn test_activation_mode_to_voice_activation_wake_word() {
+        let mode = ActivationMode::WakeWord;
+        let activation: VoiceActivation = mode.into();
+        assert_eq!(activation, VoiceActivation::WakeWord);
+    }
+
+    #[test]
+    fn test_activation_mode_to_voice_activation_push_to_talk() {
+        let mode = ActivationMode::PushToTalk;
+        let activation: VoiceActivation = mode.into();
+        assert_eq!(activation, VoiceActivation::PushToTalk);
+    }
+
+    #[test]
+    fn test_roundtrip_voice_activation_to_mode_and_back() {
+        // AlwaysOn
+        let activation = VoiceActivation::AlwaysOn;
+        let mode: ActivationMode = activation.into();
+        let back: VoiceActivation = mode.into();
+        assert_eq!(back, VoiceActivation::AlwaysOn);
+
+        // WakeWord
+        let activation = VoiceActivation::WakeWord;
+        let mode: ActivationMode = activation.into();
+        let back: VoiceActivation = mode.into();
+        assert_eq!(back, VoiceActivation::WakeWord);
+
+        // PushToTalk
+        let activation = VoiceActivation::PushToTalk;
+        let mode: ActivationMode = activation.into();
+        let back: VoiceActivation = mode.into();
+        assert_eq!(back, VoiceActivation::PushToTalk);
+    }
+
+    #[test]
+    fn test_engine_apply_voice_activation() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path);
+        let engine = VoiceEngine::new(config).unwrap();
+
+        // Apply voice activation from config
+        let result = engine.apply_voice_activation(VoiceActivation::PushToTalk);
+        assert!(result.is_ok());
+        assert_eq!(engine.activation_mode(), ActivationMode::PushToTalk);
+
+        // Apply another mode
+        let result = engine.apply_voice_activation(VoiceActivation::AlwaysOn);
+        assert!(result.is_ok());
+        assert_eq!(engine.activation_mode(), ActivationMode::AlwaysListening);
+    }
+
+    #[test]
+    fn test_engine_voice_activation_getter() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngineConfig::new(&model_path)
+            .with_activation_mode(ActivationMode::PushToTalk);
+        let engine = VoiceEngine::new(config).unwrap();
+
+        // Get voice activation (config-level enum)
+        assert_eq!(engine.voice_activation(), VoiceActivation::PushToTalk);
+    }
+
+    #[test]
+    fn test_engine_config_from_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir.path().join("model");
+        std::fs::create_dir_all(&model_path).unwrap();
+
+        let config = VoiceEngine::config_from_settings(&model_path, VoiceActivation::AlwaysOn);
+        assert_eq!(config.activation_mode, ActivationMode::AlwaysListening);
+        assert!(config.grammar.is_some()); // Should have command grammar
+
+        let config = VoiceEngine::config_from_settings(&model_path, VoiceActivation::PushToTalk);
+        assert_eq!(config.activation_mode, ActivationMode::PushToTalk);
     }
 
     // Note: Tests that require actual audio hardware and Vosk model are in tests/voice_integration.rs
