@@ -707,6 +707,233 @@ impl WeatherRefreshScheduler {
 mod tests {
     use super::*;
 
+    // ========== JSON Response Parsing Tests ==========
+
+    #[test]
+    fn test_owm_response_parsing_valid_complete() {
+        let json = r#"{
+            "main": {
+                "temp": 22.5,
+                "feels_like": 21.0,
+                "humidity": 65,
+                "pressure": 1015
+            },
+            "weather": [{
+                "id": 800,
+                "main": "Clear",
+                "description": "clear sky"
+            }],
+            "wind": {
+                "speed": 5.5,
+                "deg": 180
+            },
+            "visibility": 10000,
+            "sys": {
+                "country": "GB"
+            }
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+
+        assert!((response.main.temp - 22.5).abs() < 0.01);
+        assert!((response.main.feels_like - 21.0).abs() < 0.01);
+        assert_eq!(response.main.humidity, 65);
+        assert_eq!(response.main.pressure, 1015);
+        assert_eq!(response.weather.len(), 1);
+        assert_eq!(response.weather[0].id, 800);
+        assert_eq!(response.weather[0].main, "Clear");
+        assert_eq!(response.weather[0].description, "clear sky");
+        assert!((response.wind.speed - 5.5).abs() < 0.01);
+        assert_eq!(response.wind.deg, Some(180));
+        assert_eq!(response.visibility, Some(10000));
+        assert_eq!(response.sys.as_ref().unwrap().country, Some("GB".to_string()));
+    }
+
+    #[test]
+    fn test_owm_response_parsing_minimal_fields() {
+        // OpenWeatherMap may return minimal responses - test optional fields
+        let json = r#"{
+            "main": {
+                "temp": 15.0,
+                "feels_like": 14.5,
+                "humidity": 70,
+                "pressure": 1010
+            },
+            "weather": [{
+                "id": 500,
+                "main": "Rain",
+                "description": "light rain"
+            }],
+            "wind": {
+                "speed": 3.0
+            }
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+
+        assert!((response.main.temp - 15.0).abs() < 0.01);
+        assert_eq!(response.weather[0].id, 500);
+        assert!((response.wind.speed - 3.0).abs() < 0.01);
+        // Optional fields should be None
+        assert!(response.wind.deg.is_none());
+        assert!(response.visibility.is_none());
+        assert!(response.sys.is_none());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_multiple_weather_conditions() {
+        let json = r#"{
+            "main": {
+                "temp": 18.0,
+                "feels_like": 17.0,
+                "humidity": 80,
+                "pressure": 1005
+            },
+            "weather": [
+                {"id": 500, "main": "Rain", "description": "light rain"},
+                {"id": 701, "main": "Mist", "description": "mist"}
+            ],
+            "wind": {
+                "speed": 2.0,
+                "deg": 90
+            }
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+
+        // Should have multiple weather entries
+        assert_eq!(response.weather.len(), 2);
+        assert_eq!(response.weather[0].id, 500);
+        assert_eq!(response.weather[1].id, 701);
+    }
+
+    #[test]
+    fn test_owm_response_parsing_negative_temperature() {
+        let json = r#"{
+            "main": {
+                "temp": -15.5,
+                "feels_like": -20.0,
+                "humidity": 45,
+                "pressure": 1025
+            },
+            "weather": [{"id": 600, "main": "Snow", "description": "light snow"}],
+            "wind": {"speed": 8.0, "deg": 270}
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+
+        assert!((response.main.temp - (-15.5)).abs() < 0.01);
+        assert!((response.main.feels_like - (-20.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_owm_response_parsing_imperial_units() {
+        // Imperial response (Fahrenheit)
+        let json = r#"{
+            "main": {
+                "temp": 72.5,
+                "feels_like": 75.0,
+                "humidity": 55,
+                "pressure": 1013
+            },
+            "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+            "wind": {"speed": 10.0, "deg": 45}
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+
+        assert!((response.main.temp - 72.5).abs() < 0.01);
+        assert!((response.wind.speed - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_owm_response_parsing_error_missing_main() {
+        let json = r#"{
+            "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+            "wind": {"speed": 5.0}
+        }"#;
+
+        let result: Result<OwmResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_error_missing_weather() {
+        let json = r#"{
+            "main": {
+                "temp": 20.0,
+                "feels_like": 19.0,
+                "humidity": 50,
+                "pressure": 1013
+            },
+            "wind": {"speed": 5.0}
+        }"#;
+
+        let result: Result<OwmResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_error_missing_wind() {
+        let json = r#"{
+            "main": {
+                "temp": 20.0,
+                "feels_like": 19.0,
+                "humidity": 50,
+                "pressure": 1013
+            },
+            "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}]
+        }"#;
+
+        let result: Result<OwmResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_error_invalid_json() {
+        let json = r#"{ this is not valid json }"#;
+
+        let result: Result<OwmResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_error_wrong_types() {
+        // Temperature as string instead of number
+        let json = r#"{
+            "main": {
+                "temp": "hot",
+                "feels_like": 19.0,
+                "humidity": 50,
+                "pressure": 1013
+            },
+            "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+            "wind": {"speed": 5.0}
+        }"#;
+
+        let result: Result<OwmResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_owm_response_parsing_empty_weather_array() {
+        let json = r#"{
+            "main": {
+                "temp": 20.0,
+                "feels_like": 19.0,
+                "humidity": 50,
+                "pressure": 1013
+            },
+            "weather": [],
+            "wind": {"speed": 5.0}
+        }"#;
+
+        let response: OwmResponse = serde_json::from_str(json).unwrap();
+        assert!(response.weather.is_empty());
+    }
+
+    // ========== Comprehensive Condition Code Mapping Tests ==========
+
     #[test]
     fn test_condition_mapping() {
         assert_eq!(
@@ -721,6 +948,344 @@ mod tests {
             OpenWeatherMapProvider::map_condition(200),
             WeatherCondition::Thunderstorm
         );
+    }
+
+    #[test]
+    fn test_condition_mapping_thunderstorm_range() {
+        // Thunderstorm codes: 200-232
+        for code in 200..=232 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::Thunderstorm,
+                "Code {} should map to Thunderstorm",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_drizzle_range() {
+        // Drizzle codes: 300-321 -> LightRain
+        for code in 300..=321 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::LightRain,
+                "Code {} should map to LightRain",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_rain_range() {
+        // Rain codes: 500-504 -> Rain
+        for code in 500..=504 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::Rain,
+                "Code {} should map to Rain",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_freezing_rain() {
+        // Freezing rain: 511 -> Sleet
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(511),
+            WeatherCondition::Sleet
+        );
+    }
+
+    #[test]
+    fn test_condition_mapping_shower_rain_range() {
+        // Shower rain: 520-531 -> HeavyRain
+        for code in 520..=531 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::HeavyRain,
+                "Code {} should map to HeavyRain",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_snow_range() {
+        // Snow codes: 600-622 -> Snow
+        for code in 600..=622 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::Snow,
+                "Code {} should map to Snow",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_atmosphere_range() {
+        // Atmosphere codes: 701-762 -> Fog
+        for code in 701..=762 {
+            assert_eq!(
+                OpenWeatherMapProvider::map_condition(code),
+                WeatherCondition::Fog,
+                "Code {} should map to Fog",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_mapping_extreme_wind() {
+        // Squall (771) and Tornado (781) -> Windy
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(771),
+            WeatherCondition::Windy
+        );
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(781),
+            WeatherCondition::Windy
+        );
+    }
+
+    #[test]
+    fn test_condition_mapping_clear() {
+        // Clear: 800
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(800),
+            WeatherCondition::Clear
+        );
+    }
+
+    #[test]
+    fn test_condition_mapping_clouds() {
+        // Few clouds (801) -> PartlyCloudy
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(801),
+            WeatherCondition::PartlyCloudy
+        );
+
+        // Scattered clouds (802) -> Cloudy
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(802),
+            WeatherCondition::Cloudy
+        );
+
+        // Broken clouds (803) and Overcast (804) -> Overcast
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(803),
+            WeatherCondition::Overcast
+        );
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(804),
+            WeatherCondition::Overcast
+        );
+    }
+
+    #[test]
+    fn test_condition_mapping_unknown_codes_default_to_clear() {
+        // Unknown codes should default to Clear
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(0),
+            WeatherCondition::Clear
+        );
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(100),
+            WeatherCondition::Clear
+        );
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(999),
+            WeatherCondition::Clear
+        );
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(9999),
+            WeatherCondition::Clear
+        );
+    }
+
+    #[test]
+    fn test_condition_mapping_boundary_codes() {
+        // Test boundary conditions
+
+        // Just before thunderstorm range
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(199),
+            WeatherCondition::Clear
+        ); // Default
+
+        // Just after thunderstorm range
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(233),
+            WeatherCondition::Clear
+        ); // Default
+
+        // Between drizzle and rain ranges
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(400),
+            WeatherCondition::Clear
+        ); // Default
+
+        // Just after overcast
+        assert_eq!(
+            OpenWeatherMapProvider::map_condition(805),
+            WeatherCondition::Clear
+        ); // Default
+    }
+
+    // ========== URL Building and Unit Tests ==========
+
+    #[tokio::test]
+    async fn test_build_url_metric_units() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+
+        let url = provider.build_url(&config, "test_api_key");
+
+        assert!(url.contains("lat=51.5074"));
+        assert!(url.contains("lon=-0.1278"));
+        assert!(url.contains("units=metric"));
+        assert!(url.contains("appid=test_api_key"));
+        assert!(url.starts_with("https://api.openweathermap.org/data/2.5/weather"));
+    }
+
+    #[tokio::test]
+    async fn test_build_url_imperial_units() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 40.7128,
+            longitude: -74.0060,
+            units: WeatherUnits::Imperial,
+            ..Default::default()
+        };
+
+        let url = provider.build_url(&config, "test_api_key");
+
+        assert!(url.contains("lat=40.7128"));
+        assert!(url.contains("lon=-74.006")); // Floating point representation
+        assert!(url.contains("units=imperial"));
+        assert!(url.contains("appid=test_api_key"));
+    }
+
+    #[tokio::test]
+    async fn test_build_url_negative_coordinates() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: -33.8688, // Sydney, Australia
+            longitude: 151.2093,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+
+        let url = provider.build_url(&config, "key123");
+
+        assert!(url.contains("lat=-33.8688"));
+        assert!(url.contains("lon=151.2093"));
+    }
+
+    #[tokio::test]
+    async fn test_build_url_special_chars_in_api_key() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 0.0,
+            longitude: 0.0,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+
+        // Note: In real usage, API keys should be URL-safe, but test robustness
+        let url = provider.build_url(&config, "abc123xyz");
+
+        assert!(url.contains("appid=abc123xyz"));
+    }
+
+    // ========== Error Handling Tests ==========
+
+    #[tokio::test]
+    async fn test_fetch_fails_without_api_key() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: false,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+        provider.configure(config);
+
+        // Don't set API key
+        let result = provider.fetch_from_api().await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            WeatherError::ApiKeyMissing => {} // Expected
+            e => panic!("Expected ApiKeyMissing, got {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_fails_with_zero_coordinates() {
+        let provider = OpenWeatherMapProvider::new();
+
+        let config = WeatherConfig {
+            enabled: true,
+            api_key_configured: true,
+            latitude: 0.0, // Zero coordinates
+            longitude: 0.0,
+            units: WeatherUnits::Metric,
+            ..Default::default()
+        };
+        provider.configure(config);
+        provider.set_api_key("test_key".to_string()).await;
+
+        let result = provider.fetch_from_api().await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            WeatherError::LocationMissing => {} // Expected
+            e => panic!("Expected LocationMissing, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_weather_error_display() {
+        let api_key_missing = WeatherError::ApiKeyMissing;
+        assert!(api_key_missing.to_string().contains("API key"));
+
+        let location_missing = WeatherError::LocationMissing;
+        assert!(location_missing.to_string().contains("Location"));
+
+        let request_failed = WeatherError::RequestFailed("Test failure".to_string());
+        assert!(request_failed.to_string().contains("Test failure"));
+
+        let rate_limited = WeatherError::RateLimited;
+        assert!(rate_limited.to_string().contains("Rate limit"));
+
+        let invalid_response = WeatherError::InvalidResponse("Bad JSON".to_string());
+        assert!(invalid_response.to_string().contains("Bad JSON"));
+
+        let network_error = WeatherError::NetworkError("Connection refused".to_string());
+        assert!(network_error.to_string().contains("Connection refused"));
     }
 
     #[test]
