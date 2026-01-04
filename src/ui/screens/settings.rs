@@ -20,7 +20,7 @@ use crate::ui::settings::{AudioSettingsAction, AudioSettingsPanel, AudioSettings
 use crate::hid::{ButtonAction, HidConfig, HidDevice, HidDeviceConfig, HidDeviceStatus};
 use crate::integrations::mqtt::{FanProfile, MqttConfig, MqttCredentialStore, PayloadFormat};
 use crate::integrations::sync::{SyncConfig, SyncPlatform};
-use crate::integrations::weather::{WeatherConfig, WeatherUnits};
+use crate::integrations::weather::{WeatherCondition, WeatherConfig, WeatherUnits};
 use crate::metrics::analytics::{FtpConfidence, PowerProfile, RiderType};
 use crate::metrics::zones::{HRZones, PowerZones};
 use crate::sensors::InclineConfig;
@@ -169,6 +169,8 @@ pub struct SettingsScreen {
     weather_lat_input: String,
     /// T100: Weather longitude input buffer
     weather_lon_input: String,
+    /// T100: Weather temperature override input buffer
+    weather_temp_override_input: String,
     /// T109: Sync/platform configuration
     pub sync_config: SyncConfig,
     /// T109: Show/hide sync section
@@ -603,6 +605,7 @@ impl SettingsScreen {
             show_weather: false,
             weather_lat_input: "0.0".to_string(),
             weather_lon_input: "0.0".to_string(),
+            weather_temp_override_input: "20".to_string(),
             sync_config: SyncConfig::default(),
             show_sync: false,
             platform_states: vec![
@@ -642,6 +645,16 @@ impl SettingsScreen {
     pub fn set_weather_config(&mut self, config: WeatherConfig) {
         self.weather_lat_input = format!("{:.4}", config.latitude);
         self.weather_lon_input = format!("{:.4}", config.longitude);
+        // Initialize temperature override input from config or use default based on units
+        self.weather_temp_override_input = config
+            .override_temperature
+            .map(|t| format!("{:.0}", t))
+            .unwrap_or_else(|| {
+                match config.units {
+                    WeatherUnits::Metric => "20".to_string(),
+                    WeatherUnits::Imperial => "68".to_string(),
+                }
+            });
         self.weather_config = config;
     }
 
@@ -1582,9 +1595,166 @@ impl SettingsScreen {
                             self.has_changes = true;
                         }
                     });
+
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+
+                    // Manual Override section
+                    ui.label(RichText::new("Manual Override").strong());
+                    ui.add_space(4.0);
+
+                    // Override toggle
+                    if ui
+                        .checkbox(
+                            &mut self.weather_config.override_enabled,
+                            "Use manual weather conditions",
+                        )
+                        .on_hover_text("Override live weather with manually selected conditions")
+                        .changed()
+                    {
+                        self.has_changes = true;
+                    }
+
+                    // Override controls (only shown when override is enabled)
+                    ui.add_enabled_ui(self.weather_config.override_enabled, |ui| {
+                        ui.add_space(4.0);
+
+                        // Weather condition dropdown
+                        ui.horizontal(|ui| {
+                            ui.label("Condition:");
+                            let current_condition = self.weather_config.override_condition
+                                .unwrap_or(WeatherCondition::Clear);
+                            let selected_text = format!(
+                                "{} {}",
+                                current_condition.emoji(),
+                                Self::weather_condition_name(current_condition)
+                            );
+
+                            egui::ComboBox::from_id_salt("weather_condition_override")
+                                .selected_text(selected_text)
+                                .width(180.0)
+                                .show_ui(ui, |ui| {
+                                    for condition in Self::all_weather_conditions() {
+                                        let label = format!(
+                                            "{} {}",
+                                            condition.emoji(),
+                                            Self::weather_condition_name(condition)
+                                        );
+                                        if ui
+                                            .selectable_label(
+                                                self.weather_config.override_condition == Some(condition),
+                                                label,
+                                            )
+                                            .clicked()
+                                        {
+                                            self.weather_config.override_condition = Some(condition);
+                                            self.has_changes = true;
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(4.0);
+
+                        // Temperature slider
+                        ui.horizontal(|ui| {
+                            ui.label("Temperature:");
+                            let (min_temp, max_temp, suffix) = match self.weather_config.units {
+                                WeatherUnits::Metric => (-20.0, 45.0, "°C"),
+                                WeatherUnits::Imperial => (-4.0, 113.0, "°F"),
+                            };
+                            let mut temp = self.weather_config.override_temperature
+                                .unwrap_or(match self.weather_config.units {
+                                    WeatherUnits::Metric => 20.0,
+                                    WeatherUnits::Imperial => 68.0,
+                                });
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut temp, min_temp..=max_temp)
+                                        .suffix(suffix)
+                                        .step_by(1.0),
+                                )
+                                .changed()
+                            {
+                                self.weather_config.override_temperature = Some(temp);
+                                self.weather_temp_override_input = format!("{:.0}", temp);
+                                self.has_changes = true;
+                            }
+                        });
+
+                        ui.add_space(8.0);
+
+                        // Preview of selected weather
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width() - 8.0);
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Preview:").weak());
+                                let condition = self.weather_config.override_condition
+                                    .unwrap_or(WeatherCondition::Clear);
+                                let temp = self.weather_config.override_temperature
+                                    .unwrap_or(match self.weather_config.units {
+                                        WeatherUnits::Metric => 20.0,
+                                        WeatherUnits::Imperial => 68.0,
+                                    });
+                                let temp_suffix = match self.weather_config.units {
+                                    WeatherUnits::Metric => "°C",
+                                    WeatherUnits::Imperial => "°F",
+                                };
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{}  {}  {:.0}{}",
+                                        condition.emoji(),
+                                        Self::weather_condition_name(condition),
+                                        temp,
+                                        temp_suffix
+                                    ))
+                                    .size(16.0),
+                                );
+                            });
+                        });
+                    });
                 });
             }
         });
+    }
+
+    /// Get all weather conditions for the dropdown.
+    fn all_weather_conditions() -> Vec<WeatherCondition> {
+        vec![
+            WeatherCondition::Clear,
+            WeatherCondition::PartlyCloudy,
+            WeatherCondition::Cloudy,
+            WeatherCondition::Overcast,
+            WeatherCondition::Fog,
+            WeatherCondition::LightRain,
+            WeatherCondition::Rain,
+            WeatherCondition::HeavyRain,
+            WeatherCondition::Thunderstorm,
+            WeatherCondition::Snow,
+            WeatherCondition::Sleet,
+            WeatherCondition::Hail,
+            WeatherCondition::Windy,
+        ]
+    }
+
+    /// Get a display name for a weather condition.
+    fn weather_condition_name(condition: WeatherCondition) -> &'static str {
+        match condition {
+            WeatherCondition::Clear => "Clear",
+            WeatherCondition::PartlyCloudy => "Partly Cloudy",
+            WeatherCondition::Cloudy => "Cloudy",
+            WeatherCondition::Overcast => "Overcast",
+            WeatherCondition::Fog => "Fog",
+            WeatherCondition::LightRain => "Light Rain",
+            WeatherCondition::Rain => "Rain",
+            WeatherCondition::HeavyRain => "Heavy Rain",
+            WeatherCondition::Thunderstorm => "Thunderstorm",
+            WeatherCondition::Snow => "Snow",
+            WeatherCondition::Sleet => "Sleet",
+            WeatherCondition::Hail => "Hail",
+            WeatherCondition::Windy => "Windy",
+        }
     }
 
     /// Render the immersion effects section.
