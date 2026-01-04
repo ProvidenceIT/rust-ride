@@ -30,6 +30,9 @@ pub enum WeatherError {
 
     #[error("Network error: {0}")]
     NetworkError(String),
+
+    #[error("Credential error: {0}")]
+    CredentialError(String),
 }
 
 /// Weather configuration
@@ -195,6 +198,125 @@ impl WeatherData {
     }
 }
 
+/// Service name used for keyring entries
+const WEATHER_KEYRING_SERVICE: &str = "RustRide-Weather";
+
+/// Keyring key for the OpenWeatherMap API key
+const WEATHER_API_KEY_ENTRY: &str = "openweathermap-api-key";
+
+/// Secure storage for weather API keys using the OS keyring.
+///
+/// This provides platform-specific secure storage:
+/// - Windows: Windows Credential Manager
+/// - macOS: macOS Keychain
+/// - Linux: Secret Service (via libsecret)
+pub struct WeatherCredentialStore {
+    service_name: String,
+}
+
+impl Default for WeatherCredentialStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WeatherCredentialStore {
+    /// Create a new weather credential store with default service name.
+    pub fn new() -> Self {
+        Self {
+            service_name: WEATHER_KEYRING_SERVICE.to_string(),
+        }
+    }
+
+    /// Create a new weather credential store with a custom service name.
+    /// Useful for testing or multiple instances.
+    pub fn with_service_name(service_name: impl Into<String>) -> Self {
+        Self {
+            service_name: service_name.into(),
+        }
+    }
+
+    /// Create a keyring entry for the API key.
+    fn entry(&self) -> Result<keyring::Entry, WeatherError> {
+        keyring::Entry::new(&self.service_name, WEATHER_API_KEY_ENTRY)
+            .map_err(|e| WeatherError::CredentialError(format!("Failed to create keyring entry: {}", e)))
+    }
+
+    /// Store the OpenWeatherMap API key securely.
+    ///
+    /// # Arguments
+    /// * `api_key` - The API key to store
+    pub fn save_api_key(&self, api_key: &str) -> Result<(), WeatherError> {
+        let entry = self.entry()?;
+        entry
+            .set_password(api_key)
+            .map_err(|e| WeatherError::CredentialError(format!("Failed to store API key: {}", e)))?;
+
+        tracing::debug!("Stored weather API key in OS keyring");
+        Ok(())
+    }
+
+    /// Retrieve the OpenWeatherMap API key from secure storage.
+    ///
+    /// # Returns
+    /// * `Ok(Some(key))` - API key was found
+    /// * `Ok(None)` - No API key stored
+    /// * `Err(WeatherError)` - An error occurred accessing the keyring
+    pub fn load_api_key(&self) -> Result<Option<String>, WeatherError> {
+        let entry = self.entry()?;
+
+        match entry.get_password() {
+            Ok(key) => {
+                tracing::debug!("Retrieved weather API key from OS keyring");
+                Ok(Some(key))
+            }
+            Err(keyring::Error::NoEntry) => {
+                tracing::debug!("No weather API key found in OS keyring");
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::error!("Failed to retrieve weather API key: {}", e);
+                Err(WeatherError::CredentialError(format!(
+                    "Failed to retrieve API key: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Delete the stored API key.
+    pub fn clear_api_key(&self) -> Result<(), WeatherError> {
+        let entry = self.entry()?;
+
+        match entry.delete_credential() {
+            Ok(()) => {
+                tracing::debug!("Deleted weather API key from OS keyring");
+                Ok(())
+            }
+            Err(keyring::Error::NoEntry) => {
+                // Already deleted or never existed - not an error
+                tracing::debug!("No weather API key to delete");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Failed to delete weather API key: {}", e);
+                Err(WeatherError::CredentialError(format!(
+                    "Failed to delete API key: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Check if an API key is stored without retrieving it.
+    pub fn has_api_key(&self) -> bool {
+        match self.load_api_key() {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +364,31 @@ mod tests {
 
         assert_eq!(data.formatted_temperature(WeatherUnits::Metric), "25°C");
         assert_eq!(data.formatted_temperature(WeatherUnits::Imperial), "25°F");
+    }
+
+    #[test]
+    fn test_credential_store_default() {
+        let store = WeatherCredentialStore::new();
+        assert_eq!(store.service_name, WEATHER_KEYRING_SERVICE);
+    }
+
+    #[test]
+    fn test_credential_store_custom_service() {
+        let custom_name = "RustRide-Weather-Test";
+        let store = WeatherCredentialStore::with_service_name(custom_name);
+        assert_eq!(store.service_name, custom_name);
+    }
+
+    #[test]
+    fn test_credential_store_default_impl() {
+        let store = WeatherCredentialStore::default();
+        assert_eq!(store.service_name, WEATHER_KEYRING_SERVICE);
+    }
+
+    #[test]
+    fn test_credential_error_display() {
+        let error = WeatherError::CredentialError("Test error".to_string());
+        assert!(error.to_string().contains("Credential error"));
+        assert!(error.to_string().contains("Test error"));
     }
 }
