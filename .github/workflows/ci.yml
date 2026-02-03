@@ -14,7 +14,7 @@ jobs:
   # Format check
   fmt:
     name: Format Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - os: Linux
-            runner: ubuntu-latest
+            runner: [self-hosted, linux]
           - os: Windows
             runner: windows-latest
           - os: macOS
@@ -54,7 +54,7 @@ jobs:
       matrix:
         include:
           - os: Linux
-            runner: ubuntu-latest
+            runner: [self-hosted, linux]
           - os: Windows
             runner: windows-latest
           - os: macOS-x64
@@ -80,7 +80,7 @@ jobs:
   # Documentation check
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +95,7 @@ jobs:
   # T078: ARM64 cross-compilation for Raspberry Pi
   cross-compile-arm64:
     name: Cross-Compile Linux ARM64
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -126,7 +126,7 @@ jobs:
   # Security audit
   security:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
