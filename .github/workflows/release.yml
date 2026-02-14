@@ -95,7 +95,7 @@ jobs:
   build-windows:
     name: Build (Windows x64)
     needs: create-release
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]
     steps:
       - uses: actions/checkout@v4
 
@@ -171,7 +171,7 @@ jobs:
   build-macos-x64:
     name: Build (macOS x64 Intel)
     needs: create-release
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, X64]
     steps:
       - uses: actions/checkout@v4
 
@@ -217,7 +217,7 @@ jobs:
   build-macos-arm64:
     name: Build (macOS ARM64 Apple Silicon)
     needs: create-release
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
 

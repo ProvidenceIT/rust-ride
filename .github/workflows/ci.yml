@@ -32,9 +32,9 @@ jobs:
           - os: Linux
             runner: [self-hosted, linux]
           - os: Windows
-            runner: windows-latest
+            runner: [self-hosted, windows]
           - os: macOS
-            runner: macos-latest
+            runner: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
 
@@ -56,11 +56,11 @@ jobs:
           - os: Linux
             runner: [self-hosted, linux]
           - os: Windows
-            runner: windows-latest
+            runner: [self-hosted, windows]
           - os: macOS-x64
-            runner: macos-15
+            runner: [self-hosted, macOS, X64]
           - os: macOS-arm64
-            runner: macos-latest
+            runner: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
 
