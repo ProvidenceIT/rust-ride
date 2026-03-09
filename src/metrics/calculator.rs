@@ -359,18 +359,6 @@ mod tests {
         }
     }
 
-    fn make_cadence_reading(cadence: u8) -> SensorReading {
-        SensorReading {
-            sensor_id: Uuid::new_v4(),
-            timestamp: Instant::now(),
-            power_watts: None,
-            cadence_rpm: Some(cadence),
-            heart_rate_bpm: None,
-            speed_kmh: None,
-            distance_delta_m: None,
-        }
-    }
-
     #[test]
     fn test_metrics_calculator_basic() {
         let mut calc = MetricsCalculator::new(200);

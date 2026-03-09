@@ -452,6 +452,48 @@ impl OAuthHandler for DefaultOAuthHandler {
         Ok(tokens)
     }
 
+    async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
+        self.refresh_token_impl(platform).await
+    }
+
+    fn is_authorized(&self, platform: SyncPlatform) -> bool {
+        self.tokens
+            .try_read()
+            .map(|t| t.contains_key(&platform))
+            .unwrap_or(false)
+    }
+
+    fn get_token_status(&self, platform: SyncPlatform) -> TokenStatus {
+        let tokens = match self.tokens.try_read() {
+            Ok(t) => t,
+            Err(_) => return TokenStatus::NotConfigured,
+        };
+
+        match tokens.get(&platform) {
+            None => TokenStatus::NotConfigured,
+            Some(token) => {
+                let now = Utc::now();
+                if token.expires_at <= now {
+                    TokenStatus::Expired
+                } else if token.expires_at <= now + Duration::minutes(5) {
+                    TokenStatus::NeedsRefresh
+                } else {
+                    let expires_in = (token.expires_at - now).to_std().unwrap_or_default();
+                    TokenStatus::Valid { expires_in }
+                }
+            }
+        }
+    }
+
+    async fn revoke(&self, platform: SyncPlatform) -> Result<(), SyncError> {
+        self.tokens.write().await.remove(&platform);
+        tracing::info!("Revoked authorization for {:?}", platform);
+        Ok(())
+    }
+}
+
+// Private helper methods for platform-specific OAuth operations
+impl DefaultOAuthHandler {
     /// Exchange authorization code for tokens with Strava's OAuth endpoint
     async fn exchange_strava_token(
         &self,
@@ -672,7 +714,8 @@ impl OAuthHandler for DefaultOAuthHandler {
         })
     }
 
-    async fn refresh_token(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
+    /// Internal implementation of refresh_token
+    async fn refresh_token_impl(&self, platform: SyncPlatform) -> Result<TokenResponse, SyncError> {
         let current = self.tokens.read().await.get(&platform).cloned();
 
         let current = current.ok_or(SyncError::AuthorizationRequired)?;
@@ -985,41 +1028,6 @@ impl OAuthHandler for DefaultOAuthHandler {
             refresh_token: Some(garmin_response.refresh_token),
             expires_at,
         })
-    }
-
-    fn is_authorized(&self, platform: SyncPlatform) -> bool {
-        self.tokens
-            .try_read()
-            .map(|t| t.contains_key(&platform))
-            .unwrap_or(false)
-    }
-
-    fn get_token_status(&self, platform: SyncPlatform) -> TokenStatus {
-        let tokens = match self.tokens.try_read() {
-            Ok(t) => t,
-            Err(_) => return TokenStatus::NotConfigured,
-        };
-
-        match tokens.get(&platform) {
-            None => TokenStatus::NotConfigured,
-            Some(token) => {
-                let now = Utc::now();
-                if token.expires_at <= now {
-                    TokenStatus::Expired
-                } else if token.expires_at <= now + Duration::minutes(5) {
-                    TokenStatus::NeedsRefresh
-                } else {
-                    let expires_in = (token.expires_at - now).to_std().unwrap_or_default();
-                    TokenStatus::Valid { expires_in }
-                }
-            }
-        }
-    }
-
-    async fn revoke(&self, platform: SyncPlatform) -> Result<(), SyncError> {
-        self.tokens.write().await.remove(&platform);
-        tracing::info!("Revoked authorization for {:?}", platform);
-        Ok(())
     }
 }
 

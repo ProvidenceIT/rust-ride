@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generic_bitmap_parsing() {
+    fn test_generic_bitmap_parsing_direct() {
         let device_id = Uuid::new_v4();
         let mut device_info = OpenDeviceInfo::new(device_id, 0x1234, 0x5678);
         device_info.button_count = 8; // Limit to 8 buttons for this test

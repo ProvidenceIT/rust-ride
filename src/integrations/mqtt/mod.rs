@@ -17,8 +17,7 @@ pub use fan::{
     delete_fan_profile, load_active_fan_profile, load_fan_profiles, save_fan_profile, save_fan_profiles,
 };
 
-// Re-export credential store
-pub use crate::integrations::mqtt::MqttCredentialStore;
+// MqttCredentialStore is defined in this module (below)
 
 /// MQTT-related errors
 #[derive(Debug, Error)]
