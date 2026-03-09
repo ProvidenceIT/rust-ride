@@ -35,10 +35,8 @@
 //! ## Feature: Mobile Companion App (014)
 
 pub mod discovery;
-#[cfg(target_os = "linux")]
 pub mod handlers;
 pub mod qr;
-#[cfg(target_os = "linux")]
 pub mod server;
 pub mod streaming;
 pub mod types;
@@ -46,7 +44,6 @@ pub mod types;
 // Re-export commonly used types
 pub use discovery::{CompanionMdnsAdvertiser, COMPANION_PROTOCOL_VERSION, COMPANION_SERVICE_TYPE};
 pub use qr::{generate_pairing_qr_code, CompanionConnectionData, CompanionQrCode, QrCodeError};
-#[cfg(target_os = "linux")]
 pub use server::CompanionServer;
 pub use streaming::{MetricsStreamer, MetricsStreamerConfig, SensorEventProcessor, StreamingMetrics};
 pub use types::{

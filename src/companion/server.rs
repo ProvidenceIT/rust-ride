@@ -103,7 +103,7 @@ pub struct CompanionServer {
     /// mDNS service advertiser for auto-discovery.
     mdns_advertiser: CompanionMdnsAdvertiser,
     /// Optional daemon state for workout control integration.
-    daemon_state: Option<Arc<RwLock<super::state::DaemonState>>>,
+    daemon_state: Option<Arc<RwLock<crate::daemon::state::DaemonState>>>,
 }
 
 impl CompanionServer {
@@ -135,7 +135,7 @@ impl CompanionServer {
     /// * `daemon_state` - Shared daemon state for workout control
     pub fn with_daemon_state(
         config: CompanionConfig,
-        daemon_state: Arc<RwLock<super::state::DaemonState>>,
+        daemon_state: Arc<RwLock<crate::daemon::state::DaemonState>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
 
@@ -156,12 +156,12 @@ impl CompanionServer {
     ///
     /// This enables workout control commands to directly interact with
     /// the daemon's session state.
-    pub fn set_daemon_state(&mut self, daemon_state: Arc<RwLock<super::state::DaemonState>>) {
+    pub fn set_daemon_state(&mut self, daemon_state: Arc<RwLock<crate::daemon::state::DaemonState>>) {
         self.daemon_state = Some(daemon_state);
     }
 
     /// Get the daemon state if available.
-    pub fn daemon_state(&self) -> Option<Arc<RwLock<super::state::DaemonState>>> {
+    pub fn daemon_state(&self) -> Option<Arc<RwLock<crate::daemon::state::DaemonState>>> {
         self.daemon_state.clone()
     }
 
@@ -247,7 +247,7 @@ impl CompanionServer {
         event_tx: broadcast::Sender<CompanionEvent>,
         max_connections: u8,
         require_pin: bool,
-        daemon_state: Option<Arc<RwLock<super::state::DaemonState>>>,
+        daemon_state: Option<Arc<RwLock<crate::daemon::state::DaemonState>>>,
     ) {
         loop {
             tokio::select! {
@@ -325,7 +325,7 @@ impl CompanionServer {
         current_pin: Arc<RwLock<Option<String>>>,
         event_tx: broadcast::Sender<CompanionEvent>,
         require_pin: bool,
-        daemon_state: Option<Arc<RwLock<super::state::DaemonState>>>,
+        daemon_state: Option<Arc<RwLock<crate::daemon::state::DaemonState>>>,
     ) -> Result<(), CompanionError> {
         // Upgrade to WebSocket
         let ws_stream = tokio_tungstenite::accept_async(stream)
