@@ -17,7 +17,7 @@ jobs:
   # Create the release first
   create-release:
     name: Create Release
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -263,7 +263,7 @@ jobs:
   build-linux:
     name: Build (Linux x64)
     needs: create-release
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -329,7 +329,7 @@ jobs:
   checksums:
     name: Generate Checksums
     needs: [create-release, build-windows, build-macos-x64, build-macos-arm64, build-linux]
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     steps:
       - name: Download all release assets
         uses: robinraju/release-downloader@v1
@@ -357,7 +357,7 @@ jobs:
   release-summary:
     name: Release Summary
     needs: [create-release, build-windows, build-macos-x64, build-macos-arm64, build-linux, checksums]
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check release status
